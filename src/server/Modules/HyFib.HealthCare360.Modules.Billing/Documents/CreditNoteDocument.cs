@@ -14,9 +14,10 @@ internal sealed record CreditNoteRecipient(string Name, string? Gstin, string? A
 /// and GSTIN (the letterhead), the words "Credit note", its number and date, the recipient (a payer registered for GST
 /// with its GSTIN and address; the patient otherwise), the number and date of the tax invoice it reduces, each service it
 /// corrects with its taxable value, GST rate and the GST credited, the reason, and the signature. A credit note the
-/// Invoice Registration Portal registered carries its IRN and signed QR code (rule 48(4)); one issued after the bill's GST
-/// could be reduced says that it lowers the amount and not the GST (s.34(2)). A write-off prints as a write-off note, which
-/// is not a tax document. The counter prints it in English: it is a GST document.
+/// Invoice Registration Portal registered carries its IRN and signed QR code (rule 48(4)), and one due an IRN that has
+/// none says so in their place; one issued after the bill's GST could be reduced says that it lowers the amount and not
+/// the GST (s.34(2)). A write-off prints as a write-off note, which is not a tax document. The counter prints it in
+/// English: it is a GST document.
 /// </summary>
 internal static class CreditNoteDocument
 {
@@ -25,6 +26,7 @@ internal static class CreditNoteDocument
         .einvoice { display: flex; gap: 10px; align-items: center; margin: 6px 0; font-size: 10px; }
         .einvoice-qr { width: 32mm; height: 32mm; }
         .irn { font-family: monospace; word-break: break-all; }
+        .einvoice-due { border: 1.5px solid #333; border-radius: 4px; padding: 6px 8px; margin: 8px 0; font-weight: 700; }
         .hdr td { vertical-align: top; }
         .h-org { display: flex; gap: 10px; align-items: flex-start; }
         .h-logo { max-height: 18mm; max-width: 40mm; object-fit: contain; }
@@ -46,12 +48,17 @@ internal static class CreditNoteDocument
 
         """;
 
-    /// <summary>The note under the letterhead of the facility that issued its bill.</summary>
+    /// <summary>
+    /// The note under the letterhead of the facility that issued its bill. <paramref name="missingIrn"/>: why a note due an
+    /// IRN has none (the e-invoice register's answer), said in place of the IRN.
+    /// </summary>
     public static async Task<PrintableDocument> BuildAsync(
-        BillDetail bill, CreditNoteDto note, CreditNoteRecipient recipient, DocumentAssets assets, CancellationToken cancellationToken) =>
-        Build(bill, note, recipient, await assets.LetterheadAsync(bill.FacilityId, PrintTemplateCatalog.Bill, cancellationToken));
+        BillDetail bill, CreditNoteDto note, CreditNoteRecipient recipient, DocumentAssets assets, MissingIrn? missingIrn,
+        CancellationToken cancellationToken) =>
+        Build(bill, note, recipient, await assets.LetterheadAsync(bill.FacilityId, PrintTemplateCatalog.Bill, cancellationToken), missingIrn);
 
-    public static PrintableDocument Build(BillDetail bill, CreditNoteDto note, CreditNoteRecipient recipient, DocumentLetterhead letterhead)
+    public static PrintableDocument Build(
+        BillDetail bill, CreditNoteDto note, CreditNoteRecipient recipient, DocumentLetterhead letterhead, MissingIrn? missingIrn = null)
     {
         var writeOff = note.Kind == CreditNoteKind.WriteOff;
         var title = writeOff ? "Write-off note" : "Credit note";
@@ -76,7 +83,7 @@ internal static class CreditNoteDocument
                       {(bill.IsTaxInvoice && bill.PlaceOfSupply is { } place ? Html.Of($"<div>Place of supply: {Gstin.States.GetValueOrDefault(place, place)} ({place})</div>") : Html.Empty)}
                     </div>
                   </div>
-                  {EInvoiceBox(note)}
+                  {EInvoiceBox(note, missingIrn)}
                   {(writeOff ? WriteOff(note) : Lines(bill, note))}
                   <div class="box">Reason: {note.Reason}</div>
                   {Gst(bill, note)}
@@ -89,9 +96,19 @@ internal static class CreditNoteDocument
         };
     }
 
-    /// <summary>The IRN the portal gave the credit note (a <c>CRN</c>), its acknowledgement and the signed QR code it must carry.</summary>
-    private static Html EInvoiceBox(CreditNoteDto note) => note.EInvoice is not { } e
-        ? Html.Empty
+    /// <summary>
+    /// The IRN the portal gave the credit note (a <c>CRN</c>), its acknowledgement and the signed QR code it must carry. In
+    /// its place, a note due an IRN that has none says so: rule 48(4), through notification 13/2020-Central Tax, asks it of
+    /// an e-invoicing hospital's credit notes as of its invoices (rule 48(5), which voids an invoice without one, speaks of
+    /// invoices only).
+    /// </summary>
+    private static Html EInvoiceBox(CreditNoteDto note, MissingIrn? missingIrn) => note.EInvoice is not { } e
+        ? missingIrn switch
+        {
+            MissingIrn.Pending => Html.Of($"<div class=\"einvoice-due keep\">E-invoice pending: this credit note has no IRN yet, which GST rule 48(4) requires.</div>"),
+            MissingIrn.IrnCancelled => Html.Of($"<div class=\"einvoice-due keep\">IRN cancelled: this credit note no longer has the IRN GST rule 48(4) requires.</div>"),
+            _ => Html.Empty,
+        }
         : Html.Of($"""
             <div class="einvoice keep">
               {Html.Image(ImageData.FromDataUri(e.QrCodeSvg), "E-invoice QR code", "einvoice-qr")}

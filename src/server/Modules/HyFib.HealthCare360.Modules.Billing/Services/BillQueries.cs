@@ -63,7 +63,11 @@ internal static class BillQueries
                 $"This bill is dated {date:d MMM yyyy}, but GSTR-1 for {GstFilingService.Words((date.Year, date.Month))} was already filed (ARN {filing.Arn}, {filing.FiledOn:d MMM yyyy}). It is not in that return: report it as an amendment (B2BA or B2CSA) in the next GSTR-1.");
     }
 
-    public static async Task<BillDetail?> DetailAsync(HospitalDbContext db, Guid billId, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// The bill as the screens and every print of it see it, its e-invoice as the register says now
+    /// (<see cref="IEInvoiceRegister.PrintAsync"/>): the live IRN, or why a bill due one has none.
+    /// </summary>
+    public static async Task<BillDetail?> DetailAsync(HospitalDbContext db, Guid billId, TimeProvider time, IEInvoiceRegister einvoices, CancellationToken ct)
     {
         var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == billId, ct);
         if (bill is null)
@@ -105,8 +109,7 @@ internal static class BillQueries
             l.PractitionerId is { } pid ? practitioners.GetValueOrDefault(pid) : null, l.DepartmentId, l.ServiceDate, IsReturn: l.GrossAmount < 0,
             l.Device)).ToList();
 
-        var einvoice = await db.Set<EInvoice>().AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Source == BillEInvoiceSource.Key && e.SourceId == bill.Id && e.Status == EInvoiceStatus.Registered, ct);
+        var einvoice = await einvoices.PrintAsync(BillEInvoiceSource.Key, bill.Id, ct);
         return new BillDetail(
             bill.Id, bill.BillNumber, bill.Type, bill.IsFinalBill, bill.Status, bill.FacilityId, bill.PatientId, patient?.Uhid, patient?.FullName,
             bill.VisitId, bill.AdmissionId, bill.IpAccountId, bill.PayerType, bill.PayerId, payerName, bill.TariffPlanId, planName, bill.PolicyId,
@@ -123,7 +126,7 @@ internal static class BillQueries
             pending is null ? null : ToDto(pending, bill.BillNumber, patient?.Uhid, patient?.FullName),
             package,
             bill.Version,
-            einvoice is null ? null : EInvoiceService.Stamp(einvoice),
+            einvoice.Stamp,
             bill.FreeTreatmentReason,
             bill.FreeTreatmentAmount,
             debits.Select(n => new DebitNoteDto(
@@ -134,7 +137,8 @@ internal static class BillQueries
                 debitIrns.TryGetValue(n.Id, out var irn) ? EInvoiceService.Stamp(irn) : null)).ToList(),
             bill.DebitAmount,
             bill.PayerDebitAmount,
-            await LateForFiledReturnAsync(db, bill, ct));
+            await LateForFiledReturnAsync(db, bill, ct),
+            einvoice.Missing);
     }
 
     /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>

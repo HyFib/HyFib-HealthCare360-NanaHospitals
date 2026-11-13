@@ -14,7 +14,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Documents;
 /// document, so its message is never sent: a document header can't go empty, and the outbox gives up on it when it
 /// expires.
 /// </summary>
-internal sealed class BillDocumentSource(HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, IPatientLanguageSource languages, TimeProvider time)
+internal sealed class BillDocumentSource(
+    HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, IPatientLanguageSource languages, TimeProvider time, IEInvoiceRegister einvoices)
     : INotificationDocumentSource
 {
     public const string DocumentKind = "billing.bill";
@@ -23,7 +24,7 @@ internal sealed class BillDocumentSource(HospitalDbContext db, DocumentAssets as
 
     public async Task<NotificationFile?> CreateAsync(Guid id, CancellationToken cancellationToken)
     {
-        var bill = await BillQueries.DetailAsync(db, id, time, cancellationToken);
+        var bill = await BillQueries.DetailAsync(db, id, time, einvoices, cancellationToken);
         if (bill is null || !BillSharing.CanShare(bill.Status))
         {
             return null;

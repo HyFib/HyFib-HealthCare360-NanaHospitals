@@ -91,6 +91,8 @@
   "doc.bill.ack_no": "ஒப்புகை எண்",
   "doc.bill.ack_date": "ஒப்புகை தேதி",
   "doc.bill.einvoice_qr": "மின்-விலைப்பட்டியலின் கையொப்பமிட்ட QR குறியீடு",
+  "doc.bill.einvoice_pending": "மின்-விலைப்பட்டியல் நிலுவையில் உள்ளது: இது இன்னும் வாங்குபவருக்குச் செல்லுபடியாகும் வரி விலைப்பட்டியல் அல்ல (GST விதி 48(5)).",
+  "doc.bill.einvoice_irn_cancelled": "IRN ரத்து செய்யப்பட்டது: இது வாங்குபவருக்குச் செல்லுபடியாகும் வரி விலைப்பட்டியல் அல்ல (GST விதி 48(5)).",
   "doc.bill.cgst_rate": "CGST விகிதம்",
   "doc.bill.sgst_rate": "SGST விகிதம்",
   "doc.bill.payments_received": "பெறப்பட்ட தொகைகள்",
