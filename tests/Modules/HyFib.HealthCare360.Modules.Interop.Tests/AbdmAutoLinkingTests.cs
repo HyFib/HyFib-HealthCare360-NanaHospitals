@@ -83,4 +83,28 @@ public sealed class AbdmAutoLinkingTests
     public void Other_patients_records_are_left_to_staff(string? address, bool hasBirthDate, bool merged, bool vip, SensitiveCategory categories, string why) =>
         AbdmAutoLinking.NotLinkedAutomatically(address, hasBirthDate ? new DateOnly(1984, 5, 1) : null, merged ? Guid.NewGuid() : null, vip, categories)
             .ShouldNotBeNull().ShouldContain(why);
+
+    [Fact]
+    public void A_job_waits_twice_as_long_each_time_up_to_the_longest_wait()
+    {
+        AbdmAutoLinking.WaitAfter(0, AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait).ShouldBe(TimeSpan.FromMinutes(10));
+        AbdmAutoLinking.WaitAfter(1, AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait).ShouldBe(TimeSpan.FromMinutes(20));
+        AbdmAutoLinking.WaitAfter(3, AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait).ShouldBe(TimeSpan.FromMinutes(80));
+        AbdmAutoLinking.WaitAfter(4, AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait).ShouldBe(TimeSpan.FromHours(2));
+        AbdmAutoLinking.WaitAfter(500, AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait).ShouldBe(TimeSpan.FromHours(2));
+        AbdmAutoLinking.WaitAfter(0, AbdmAutoLinking.TokenWait, AbdmAutoLinking.LongestTokenWait).ShouldBe(TimeSpan.FromSeconds(30));
+        AbdmAutoLinking.WaitAfter(4, AbdmAutoLinking.TokenWait, AbdmAutoLinking.LongestTokenWait).ShouldBe(TimeSpan.FromMinutes(5));
+    }
+
+    [Fact]
+    public void A_prescription_whose_dsc_never_comes_waits_some_thirty_times_in_its_two_days_not_hundreds()
+    {
+        var (waits, waited) = (0, TimeSpan.Zero);
+        while (waited < AbdmAutoLinking.Lifetime)
+        {
+            waited += AbdmAutoLinking.WaitAfter(waits++, AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait);
+        }
+
+        waits.ShouldBeLessThanOrEqualTo(30);
+    }
 }

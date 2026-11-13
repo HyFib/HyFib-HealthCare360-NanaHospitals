@@ -251,12 +251,12 @@ internal sealed class AbdmLinkingService(
 
         if (type == AbdmRecordType.Prescription && await records.PrescriptionNotIssuedAsync(id, ct) is { } notIssued)
         {
-            return AbdmAutoLinkResult.Wait(AbdmAutoLinking.SignatureWait, notIssued.Message);
+            return AbdmAutoLinkResult.Wait(AbdmAutoLinking.SignatureWait, AbdmAutoLinking.LongestSignatureWait, notIssued.Message);
         }
 
         if (await Unscoped().AnyAsync(r => r.PatientId == source.PatientId && r.Status == AbdmLinkStatus.AwaitingToken, ct))
         {
-            return AbdmAutoLinkResult.Wait(AbdmAutoLinking.TokenWait, "A link token for the patient's ABHA address is being asked for.");
+            return AbdmAutoLinkResult.Wait(AbdmAutoLinking.TokenWait, AbdmAutoLinking.LongestTokenWait, "A link token for the patient's ABHA address is being asked for.");
         }
 
         var linked = await LinkAsync(source.PatientId, source.FacilityId, [AbdmCareContexts.Describe(type, id, source.RecordedAt, source.Label)], automatic: true, retryOf: null, ct);

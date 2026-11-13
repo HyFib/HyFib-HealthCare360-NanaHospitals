@@ -7,8 +7,11 @@ using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
-/// <summary>A record to link to its patient's ABHA without staff: the outbox job's payload.</summary>
-internal sealed record AbdmAutoLinkJob(AbdmRecordType Type, Guid RecordId, Guid PatientId);
+/// <summary>
+/// A record to link to its patient's ABHA without staff: the outbox job's payload, and how many times it has waited
+/// (<see cref="AbdmAutoLinking.WaitAfter"/>).
+/// </summary>
+internal sealed record AbdmAutoLinkJob(AbdmRecordType Type, Guid RecordId, Guid PatientId, int Waits = 0);
 
 /// <summary>What became of one automatic link.</summary>
 internal enum AbdmAutoLinkOutcome
@@ -23,13 +26,14 @@ internal enum AbdmAutoLinkOutcome
     Wait,
 }
 
-internal sealed record AbdmAutoLinkResult(AbdmAutoLinkOutcome Outcome, string Reason, TimeSpan RetryAfter = default)
+/// <param name="FirstWait">For a wait, how long the first is; each after it twice as long, up to <paramref name="LongestWait"/>.</param>
+internal sealed record AbdmAutoLinkResult(AbdmAutoLinkOutcome Outcome, string Reason, TimeSpan FirstWait = default, TimeSpan LongestWait = default)
 {
     public static AbdmAutoLinkResult Requested(AbdmLinkView view) => new(AbdmAutoLinkOutcome.Requested, $"Request {view.Id:D}: {view.Status}.");
 
     public static AbdmAutoLinkResult Nothing(string reason) => new(AbdmAutoLinkOutcome.NothingToDo, reason);
 
-    public static AbdmAutoLinkResult Wait(TimeSpan retryAfter, string reason) => new(AbdmAutoLinkOutcome.Wait, reason, retryAfter);
+    public static AbdmAutoLinkResult Wait(TimeSpan first, TimeSpan longest, string reason) => new(AbdmAutoLinkOutcome.Wait, reason, first, longest);
 }
 
 /// <summary>
@@ -60,11 +64,25 @@ internal static class AbdmAutoLinking
     /// <summary>How long a queued record keeps being tried, its waits for a DSC or a link token included.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(2);
 
-    /// <summary>The wait while a link token for the patient's ABHA address is being asked for (it comes in seconds).</summary>
+    /// <summary>The first wait while a link token for the patient's ABHA address is being asked for (it comes in seconds).</summary>
     public static readonly TimeSpan TokenWait = TimeSpan.FromSeconds(30);
 
-    /// <summary>The wait while a signed prescription waits for the doctor's DSC before it may be issued.</summary>
+    /// <summary>The longest wait for a link token: a request the gateway never answers is failed by the sweeper soon after.</summary>
+    public static readonly TimeSpan LongestTokenWait = TimeSpan.FromMinutes(5);
+
+    /// <summary>The first wait while a signed prescription waits for the doctor's DSC before it may be issued.</summary>
     public static readonly TimeSpan SignatureWait = TimeSpan.FromMinutes(10);
+
+    /// <summary>The longest wait for a DSC, which may come at the end of the doctor's day, or never.</summary>
+    public static readonly TimeSpan LongestSignatureWait = TimeSpan.FromHours(2);
+
+    /// <summary>
+    /// How long a job waits after it has waited <paramref name="waits"/> times: <paramref name="first"/>, then twice as long
+    /// each time, up to <paramref name="longest"/>. Each wait is a new outbox message, kept as the outbox keeps every
+    /// message, so a prescription whose DSC never comes leaves some thirty of them in its two days rather than hundreds.
+    /// </summary>
+    public static TimeSpan WaitAfter(int waits, TimeSpan first, TimeSpan longest) =>
+        waits >= 16 || first.Ticks << Math.Max(waits, 0) >= longest.Ticks ? longest : TimeSpan.FromTicks(first.Ticks << Math.Max(waits, 0));
 
     /// <summary>
     /// The record the event completed, as it is linked: its kind and id, its patient, and the facility it was made in
@@ -190,11 +208,12 @@ internal sealed class AbdmAutoLinkHandler(
             result = await scope.ServiceProvider.GetRequiredService<AbdmLinkingService>().LinkAutomaticallyAsync(job.Type, job.RecordId, cancellationToken);
         }
 
+        var wait = AbdmAutoLinking.WaitAfter(job.Waits, result.FirstWait, result.LongestWait);
         switch (result.Outcome)
         {
-            case AbdmAutoLinkOutcome.Wait when OutboxRetryPolicy.ExpiryOf(message) - time.GetUtcNow() is var left && left > result.RetryAfter:
-                outbox.Enqueue(Type, job, message.FacilityId, delay: result.RetryAfter, expiresIn: left);
-                log.LogDebug("Linking {Type} {RecordId} automatically waits {Wait}: {Reason}", job.Type, job.RecordId, result.RetryAfter, result.Reason);
+            case AbdmAutoLinkOutcome.Wait when OutboxRetryPolicy.ExpiryOf(message) - time.GetUtcNow() is var left && left > wait:
+                outbox.Enqueue(Type, job with { Waits = job.Waits + 1 }, message.FacilityId, delay: wait, expiresIn: left);
+                log.LogDebug("Linking {Type} {RecordId} automatically waits {Wait}: {Reason}", job.Type, job.RecordId, wait, result.Reason);
                 break;
             case AbdmAutoLinkOutcome.Wait:
                 log.LogWarning("Gave up linking {Type} {RecordId} to the patient's ABHA automatically: {Reason}", job.Type, job.RecordId, result.Reason);
