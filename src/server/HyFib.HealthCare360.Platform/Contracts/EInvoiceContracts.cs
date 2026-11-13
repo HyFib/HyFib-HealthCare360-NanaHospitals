@@ -176,8 +176,21 @@ public sealed record IrpIrn(
 /// <summary>The portal's answer to a cancellation: the IRN and when it was cancelled.</summary>
 public sealed record IrpCancellation(string Irn, DateTimeOffset CancelledAt);
 
-/// <summary>An e-way bill generated from an IRN (NIC API <c>ewaybill</c>): its number, date and the last moment it is valid.</summary>
-public sealed record IrpEwayBill(long EwbNo, DateTimeOffset EwbDate, DateTimeOffset? ValidTill);
+/// <summary>
+/// An e-way bill generated from an IRN (NIC API <c>ewaybill</c>, or read back by <c>ewaybill/irn/{irn}</c>): its number,
+/// date and the last moment it is valid, when the portal gives one. <paramref name="Status"/>, read back only: how the
+/// portal holds it now, with the IRN's codes (<see cref="IrpIrn.ActiveStatus"/>, <see cref="IrpIrn.CancelledStatus"/>);
+/// null when the answer did not say, which confirms neither. A cancelled one may come without its date: then it is
+/// <see cref="DateTimeOffset.MinValue"/>.
+/// </summary>
+public sealed record IrpEwayBill(long EwbNo, DateTimeOffset EwbDate, DateTimeOffset? ValidTill, string? Status = null)
+{
+    /// <summary>The portal holds the e-way bill as live: its answer says so.</summary>
+    public bool IsActive => string.Equals(Status, IrpIrn.ActiveStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The portal holds the e-way bill as cancelled (on the e-way bill portal, within 24 hours of it: CGST rule 138(9)).</summary>
+    public bool IsCancelled => string.Equals(Status, IrpIrn.CancelledStatus, StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>
 /// The portal refused the call: its error code (2150 duplicate IRN, 2270 past the cancellation window, and so on) and
@@ -190,6 +203,12 @@ public sealed record IrpError(string Code, string Message, string? ExistingIrn =
 
     /// <summary>The portal's code for a cancellation asked for more than 24 hours after the IRN was generated.</summary>
     public const string CancelWindowCrossed = "2270";
+
+    /// <summary>The portal's code for an e-way bill asked for from an IRN that already has one ("EwayBill is already generated for this IRN").</summary>
+    public const string EwayBillExists = "4002";
+
+    /// <summary>The portal's code when asked for the e-way bill of an IRN it holds none for ("Eway Bill details are not found").</summary>
+    public const string EwayBillNotFound = "4005";
 
     /// <summary>Not a code of the portal's: the call did not reach it or got no answer.</summary>
     public const string Unreachable = "unreachable";
@@ -212,7 +231,8 @@ public sealed record IrpResult<T>(T? Value, IrpError? Error) where T : class
 /// The Invoice Registration Portal (GST rule 48(4)), reached directly (NIC) or through a GST suvidha provider, configured
 /// per facility under Administration → Integrations (<c>integrations.irp</c>). It takes the e-invoice JSON Billing builds
 /// (INV-01) and answers with the IRN and the signed QR code; it cancels an IRN within 24 hours; it gives an IRN's details
-/// back; and it generates an e-way bill for goods from an IRN. The authentication token is the provider's business.
+/// back; it generates an e-way bill for goods from an IRN, and gives that e-way bill back. The authentication token is the
+/// provider's business.
 /// <paramref name="sellerGstin"/> on every call is the GSTIN the facility registers under, which the portal's credentials
 /// are for.
 /// </summary>
@@ -230,4 +250,10 @@ public interface IInvoiceRegistrationPortal
 
     /// <summary>Generates the e-way bill of a registered IRN; <paramref name="request"/> is the API's <c>ewaybill</c> body.</summary>
     Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(Guid facilityId, string sellerGstin, JsonObject request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The e-way bill the portal holds for <paramref name="irn"/>, with its status (NIC API <c>ewaybill/irn/{irn}</c>);
+    /// refused with <see cref="IrpError.EwayBillNotFound"/> when it holds none.
+    /// </summary>
+    Task<IrpResult<IrpEwayBill>> GetEwayBillAsync(Guid facilityId, string sellerGstin, string irn, CancellationToken cancellationToken);
 }
