@@ -1027,8 +1027,10 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   days (`IrnVerification`; the portal gives an IRN's details for about three days after its generation,
   `IrpIrn.DetailsWindow`). It is recorded only when the portal holds it, active (its answer says `ACT`: one that does
   not say confirms nothing), under the acknowledgement given, with a signed QR code naming the document (422
-  `einvoice.irp_unconfirmed` with what differs), and the portal's signed invoice is kept with it. When the portal
-  cannot be asked, nothing is recorded: 422 `einvoice.irp_unreachable` when it does not answer,
+  `einvoice.irp_unconfirmed` with what differs). What is kept and printed is then the portal's own: its signed QR code,
+  its signed invoice and the time it generated the IRN, whatever was pasted, since HC360 does not hold the portal's key
+  and never checks a pasted code's signature (`IrnVerification.Recorded`). When the portal cannot be asked, nothing is
+  recorded: 422 `einvoice.irp_unreachable` when it does not answer,
   `einvoice.irp_not_connected` when the connection is switched on but cannot be used (its credentials are incomplete).
   Meanwhile an administrator can switch the connection off to record IRNs without the check. An older IRN is recorded
   on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was checked. The staff
