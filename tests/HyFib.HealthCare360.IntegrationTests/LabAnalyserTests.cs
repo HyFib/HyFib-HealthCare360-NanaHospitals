@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
+using HyFib.HealthCare360.Integrations.Laboratory.Hl7;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
@@ -896,6 +897,88 @@ public sealed class LabAnalyserTests(HospitalServer server)
             .ShouldBeInRange(before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
     }
 
+    [Fact]
+    public async Task An_analyser_that_names_another_registered_patient_for_a_tube_has_its_results_kept_and_the_tube_is_untouched()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var other = await RegisterPatientAsync();
+        var tube = await SampleAsync(admin, lab, "LAB-FBS", receive: false);
+        var owner = await SheetAsync(lab, tube);
+        owner.SampleStatus.ShouldBe(SampleStatus.Collected);
+
+        // The analyser holds the tube's barcode against another registered patient (typed in at the analyser, or a sample
+        // number reused while it still held that patient), and names that patient by UHID (P.3).
+        string[] swapped = [$"P|1|{other.Uhid}", $"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|94|mg/dL||N||F"];
+        (await AnalyserSendsAsync("EM360", swapped)).ShouldNotBeNull().Accepted.ShouldBeTrue("acknowledged, so the analyser moves on");
+
+        var untouched = await SheetAsync(lab, tube);
+        untouched.SampleStatus.ShouldBe(SampleStatus.Collected, "a tube is not received for another patient's results");
+        untouched.Lines.ShouldAllBe(pending => pending.Value == null);
+        var kept = (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem();
+        (kept.Reason, kept.Value, kept.SampleId, kept.PatientId, kept.Uhid)
+            .ShouldBe((UnmatchedResultReason.PatientMismatch, "94", tube.Id, owner.PatientId, owner.Uhid));
+        kept.Detail.ShouldBe($"EM360 sent sample {tube.Barcode} for patient {other.Uhid}, not the sample's patient {owner.PatientName} ({owner.Uhid}).");
+
+        // Sent again after a lost acknowledgement: acknowledged, and kept once.
+        (await AnalyserSendsAsync("EM360", swapped)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem().Id.ShouldBe(kept.Id);
+
+        // The tube patient's own UHID, in lower case and padded as an analyser may write it, puts the result on the tube
+        // whatever the name beside it (corrected since the order went out), and the tube is received.
+        (await AnalyserSendsAsync("EM360", $"P|1| {owner.Uhid.ToLowerInvariant()} |||SOMEONE^ELSE", $"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|96|mg/dL||N||F"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var stored = await SheetAsync(lab, tube);
+        stored.SampleStatus.ShouldNotBe(SampleStatus.Collected);
+        var line = stored.Lines.ShouldHaveSingleItem();
+        (line.Value, line.InstrumentCode).ShouldBe(("96", "EM360"));
+    }
+
+    [Fact]
+    public async Task Without_a_uhid_the_name_an_hl7_analyser_sends_decides_whether_its_results_go_on_the_tube()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        var owner = await SheetAsync(lab, tube);
+
+        // The analyser's own patient number (no registered patient has it) says nothing, and the name is another patient's.
+        (await Hl7AnalyserSendsAsync("EM360", "PID|1||LAB-77||VERMA^RAVI", $"OBR|1||{tube.Barcode}", "OBX|1|NM|GLU||97|mg/dL|||||F"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBeNull();
+        var kept = (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem();
+        (kept.Reason, kept.Value).ShouldBe((UnmatchedResultReason.PatientMismatch, "97"));
+        kept.Detail.ShouldBe($"EM360 sent sample {tube.Barcode} for VERMA RAVI, not the sample's patient {owner.PatientName} ({owner.Uhid}).");
+
+        // The tube patient's name as the analyser writes it (family name first, in capitals) puts the result on the tube.
+        var names = owner.PatientName.Split(' ');
+        (await Hl7AnalyserSendsAsync("EM360", $"PID|1||LAB-77||{names[^1].ToUpperInvariant()}^{names[0].ToUpperInvariant()}",
+                $"OBR|1||{tube.Barcode}", "OBX|1|NM|GLU||98|mg/dL|||||F"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("98");
+    }
+
+    [Fact]
+    public async Task A_patient_mismatch_put_on_the_tube_anyway_waits_for_a_pathologist_who_is_told_whom_the_analyser_named()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var other = await RegisterPatientAsync();
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        (await AnalyserSendsAsync("EM360", $"P|1|{other.Uhid}", $"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|90|mg/dL||N||F"))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var kept = (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem();
+        kept.Reason.ShouldBe(UnmatchedResultReason.PatientMismatch);
+
+        // The technician finds the analyser held stale details and the tube is right: the value goes on its test, and
+        // waits for a pathologist, who is told what was overridden.
+        await AssignAsync(lab, kept.Id, (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().ResultId);
+        var entered = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        (entered.Status, entered.Value, entered.AutoValidated).ShouldBe((LabResultStatus.Entered, "90", false));
+        entered.HeldReasons.ShouldBe([UnmatchedResultService.AssignedReason, $"{UnmatchedResultService.PatientMismatchReason} {kept.Detail}"]);
+        (await AuditedAsync(admin, "lab.unmatched.assigned", kept.Id)).Details.ShouldNotBeNull().ShouldContain(nameof(UnmatchedResultReason.PatientMismatch));
+    }
+
     /// <summary>
     /// The EM 360 runs each of its glucose controls today, on its target mean, so today's QC for glucose on it is accepted
     /// and its results may auto-validate. The demo seed runs them on the morning the server starts, which is yesterday once
@@ -933,7 +1016,13 @@ public sealed class LabAnalyserTests(HospitalServer server)
     }
 
     /// <summary>A walk-in order for the test <paramref name="code"/>, its one tube collected and received in the lab.</summary>
-    private async Task<CreatedSample> ReceivedSampleAsync(ApiClient admin, ApiClient lab, string code)
+    private Task<CreatedSample> ReceivedSampleAsync(ApiClient admin, ApiClient lab, string code) => SampleAsync(admin, lab, code, receive: true);
+
+    /// <summary>
+    /// A walk-in order for the test <paramref name="code"/> for a newly registered patient, its one tube collected and,
+    /// when <paramref name="receive"/>, received in the lab.
+    /// </summary>
+    private async Task<CreatedSample> SampleAsync(ApiClient admin, ApiClient lab, string code, bool receive)
     {
         var patient = await RegisterPatientAsync();
         var test = (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code);
@@ -948,8 +1037,11 @@ public sealed class LabAnalyserTests(HospitalServer server)
         try
         {
             await lab.PostAsync<List<SampleLabel>>($"/api/v1/lab/orders/{order.Id}/collect", new CollectSamplesRequest(null, null, null));
-            var outcome = (await lab.PostAsync<List<ReceiveOutcome>>("/api/v1/lab/samples/receive", new ReceiveSamplesRequest([tube.Barcode]))).ShouldHaveSingleItem();
-            outcome.Received.ShouldBeTrue(outcome.Message);
+            if (receive)
+            {
+                var outcome = (await lab.PostAsync<List<ReceiveOutcome>>("/api/v1/lab/samples/receive", new ReceiveSamplesRequest([tube.Barcode]))).ShouldHaveSingleItem();
+                outcome.Received.ShouldBeTrue(outcome.Message);
+            }
         }
         finally
         {
@@ -976,6 +1068,28 @@ public sealed class LabAnalyserTests(HospitalServer server)
 
         var instrument = new LabInstrumentSettings { Code = code, Name = code, Protocol = LabProtocol.Astm };
         return await server.Services.GetRequiredService<ILabMessageProcessor>().SubmitResultsAsync(instrument, results, raw, Ct);
+    }
+
+    /// <summary>
+    /// An HL7 ORU^R01 from the analyser (the segments after its MSH), read by the gateway's own mapper with the default
+    /// sample-id fields and handed to the LIS as its MLLP session hands it. Null when the mapper found no results in it.
+    /// </summary>
+    private async Task<LabSubmitOutcome?> Hl7AnalyserSendsAsync(string code, params string[] segments)
+    {
+        var raw = string.Join("\r", [$@"MSH|^~\&|{code}|Lab|HC360|HC360|{Stamp(DateTimeOffset.UtcNow)}||ORU^R01|{Letters(12)}|P|2.5.1", .. segments]) + "\r";
+        if (!Hl7Message.TryParse(raw, out var message, out var error))
+        {
+            throw new InvalidOperationException(error);
+        }
+
+        var mapped = Hl7ResultMapper.Map(message, code, null, raw, DateTimeOffset.UtcNow, India);
+        if (mapped.Messages.Count == 0)
+        {
+            return null;
+        }
+
+        var instrument = new LabInstrumentSettings { Code = code, Name = code, Protocol = LabProtocol.Hl7v2 };
+        return await server.Services.GetRequiredService<ILabMessageProcessor>().SubmitResultsAsync(instrument, mapped.Messages, raw, Ct);
     }
 
     /// <summary>The channels <paramref name="analyser"/> sends that no test maps, as Lab setup lists them.</summary>
