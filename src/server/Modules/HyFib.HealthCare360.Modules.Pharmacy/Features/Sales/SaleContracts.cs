@@ -73,7 +73,20 @@ public sealed record PharmacySaleItemDto(
     string? SubstitutionReason);
 
 /// <param name="RefundOfPaymentId">A refund: the payment it paid back, in that payment's mode.</param>
-public sealed record PharmacyPaymentDto(Guid Id, PaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset ReceivedAt, bool IsRefund, Guid? RefundOfPaymentId = null);
+/// <param name="ApprovalCode">A card or UPI payment taken on the terminal: its approval code.</param>
+/// <param name="CardLast4">A card payment taken on the terminal: the last four digits of the card.</param>
+/// <param name="TerminalSaleId">The terminal sale the payment was taken on.</param>
+public sealed record PharmacyPaymentDto(
+    Guid Id,
+    PaymentMode Mode,
+    decimal Amount,
+    string? Reference,
+    DateTimeOffset ReceivedAt,
+    bool IsRefund,
+    Guid? RefundOfPaymentId = null,
+    string? ApprovalCode = null,
+    string? CardLast4 = null,
+    Guid? TerminalSaleId = null);
 
 /// <summary>Everything the GST invoice print needs (letterhead comes from the facility master).</summary>
 /// <param name="EInvoice">The live IRN the portal gave this B2B invoice, printed with its signed QR code.</param>
@@ -128,7 +141,7 @@ public sealed record PharmacySaleDetail(
     bool OwnSale = false,
     MissingIrn? MissingIrn = null);
 
-public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference);
+public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference, Guid? TerminalSaleId = null);
 
 /// <param name="Restock">Put the returned quantity back on the shelf (unopened and in date); damaged returns are not restocked.</param>
 public sealed record SaleReturnLine(Guid SaleItemId, decimal Quantity, bool Restock);
@@ -199,6 +212,7 @@ public sealed class CounterSaleRequestValidator : AbstractValidator<CounterSaleR
         RuleFor(x => x.DiscountPercent).InclusiveBetween(0, 100);
         RuleFor(x => x.Payments).Must(p => p.Count <= 6).WithMessage("Split the bill into at most 6 payments.");
         RuleForEach(x => x.Payments).SetValidator(new SalePaymentValidator());
+        RuleFor(x => x.Payments).Must(SalePaymentValidator.EachTerminalSaleOnce).WithMessage("Each terminal payment can be recorded once.");
         RuleFor(x => x.Buyer!.Gstin).Must(Gstin.IsValid).WithMessage("Check the buyer's GSTIN: it is not a valid number.").When(x => x.Buyer is not null);
         RuleFor(x => x.Buyer!.LegalName).NotEmpty().SafeText(200).When(x => x.Buyer is not null);
         RuleFor(x => x.Buyer!.Address).SafeText(300).When(x => x.Buyer?.Address is not null);
@@ -214,6 +228,8 @@ public sealed class CollectPaymentRequestValidator : AbstractValidator<CollectPa
         RuleFor(x => x.Amount).GreaterThan(0).PrecisionScale(18, 2, true).WithMessage("Use at most 2 decimal places.");
         RuleFor(x => x.Mode).NotEqual(PaymentMode.Credit).WithMessage("Collect the balance in cash, card or UPI.");
         RuleFor(x => x.Reference).MaximumLength(64);
+        RuleFor(x => x.TerminalSaleId).Null().When(x => x.Mode is not (PaymentMode.Card or PaymentMode.Upi))
+            .WithMessage("Only a card or UPI payment is taken on the terminal.");
     }
 }
 

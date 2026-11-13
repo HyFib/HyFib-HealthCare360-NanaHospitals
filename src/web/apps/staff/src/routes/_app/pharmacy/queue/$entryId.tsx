@@ -111,7 +111,13 @@ import { MedicineSearch } from '@/modules/pharmacy/MedicineSearch';
 import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
 import { ScanCheck } from '@/modules/pharmacy/ScanCheck';
 import { scannedBatchProblem } from '@/modules/pharmacy/tags';
-import { checkPayments, defaultPayments, resolvePayments, type PaymentDraft } from '@/modules/pharmacy/payments';
+import {
+  checkPayments,
+  defaultPayments,
+  paymentsRequest,
+  resolvePayments,
+  type PaymentDraft,
+} from '@/modules/pharmacy/payments';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { SafetyOverrides } from '@/modules/pharmacy/SafetyOverrides';
 import { unacknowledgedOverrides } from '@/modules/pharmacy/overrideAcknowledgement';
@@ -521,11 +527,7 @@ function EntryScreen({
         lines,
         counsellingNotes: notes.trim() || null,
         discountPercent: free ? 0 : discountPercent,
-        payments: free
-          ? []
-          : resolved
-              .filter((p) => p.amount > 0)
-              .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
+        payments: free ? [] : paymentsRequest(resolved),
         confirmControlledDrugs: controlled.length > 0 && confirmControlled,
       });
       return { kind: 'sale', sale, labels };
@@ -991,6 +993,7 @@ function EntryScreen({
                     check={paymentCheck}
                     creditAllowed
                     disabled={!canDispense}
+                    patientId={entry.patient.id}
                   />
                 </div>
               </Section>

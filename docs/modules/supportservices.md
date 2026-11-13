@@ -144,7 +144,11 @@ changed. Delivery: Planned → Delivered or NotTaken; Delivered → Returned.
 | POST | `/menu` | `canteen.menu.manage` | `SaveMenuItemRequest` (code, name, category, price, gstRate 0/5/12/18/28, hsnSac (4, 6 or 8 digits; empty = SAC 996333), priceIncludesGst, isVeg, isAvailable, trackStock) → 201 |
 | PUT | `/menu/{id}` | `canteen.menu.manage` | `SaveMenuItemRequest` (+`version`) → 204 |
 | POST | `/menu/{id}/stock` | `canteen.menu.manage` | `StockMovementRequest` (Receipt/Adjustment/Wastage, quantity, reason) → `MenuItemDto` |
-| POST | `/sales` | `canteen.sales.create` | `CreateSaleRequest` (customerType Staff/Attendant/Visitor/Patient, customerName, employeeCode + name (StaffCredit), patientId, paymentMode Cash/Upi/Card/StaffCredit, paymentReference, lines[menuItemId, quantity]) → 201 `CanteenSaleDto` (bill number, taxable, CGST, SGST, gross, round-off, net, lines with HSN/SAC code and GST rate) |
+| POST | `/sales` | `canteen.sales.create` | `CreateSaleRequest` (customerType Staff/Attendant/Visitor/Patient, customerName, employeeCode + name (StaffCredit), patientId, paymentMode Cash/Upi/Card/StaffCredit, paymentReference, terminalSaleId?, lines[menuItemId, quantity]) → 201 `CanteenSaleDto` (bill number, taxable, CGST, SGST, gross, round-off, net, lines with HSN/SAC code and GST rate; for a bill paid on the terminal also `approvalCode`, `cardLast4` and `terminalSaleId`) |
+| POST | `/terminal-sales` | `canteen.sales.create` | `{amount, terminalId, mode Card/Upi, patientId?}` → `CounterTerminalSale` (id, counter, provider, terminalId, transactionId, amount, mode, status, approvalCode, cardLast4, rrn, message, usedFor, createdAt, completedAt). Pushes the amount to the terminal |
+| GET | `/terminal-sales/{id}` | same | → `CounterTerminalSale` (polls the terminal) |
+| POST | `/terminal-sales/{id}/cancel` | same | → `CounterTerminalSale`; a sale the customer paid first stays approved |
+| GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no bill records it yet and the accountants have not closed it, within 2 days, newest first |
 | GET | `/sales?date&status&paymentMode&employeeCode&search` (paged) | sales.create or reports.read | → `PagedResult<CanteenSaleListItem>` |
 | GET | `/sales/{id}` | same | → `CanteenSaleDto` with `pendingCancellation` (a cancellation waiting) and `ownSale` (the reader sold it) |
 | POST | `/sales/{id}/cancel` | `canteen.sales.cancel` | `CancelSaleRequest` → 202 the approval request (`canteen.sale_cancel`); the bill stands until approved. Same business day only (422 `canteen.day_closed`, `canteen.sale_cancelled`) |
@@ -163,6 +167,28 @@ trail has `canteen.sale_cancelled` with both names. Approved only over the bill 
 A card or UPI bill's `paymentReference` (the RRN or approval code from the charge slip, or the UPI reference) is how
 Billing's card and UPI settlement matches the acquirer's transaction with the bill; a bill without one is listed there
 as not settled. See *Card and UPI reconciliation* in [billing.md](billing.md).
+
+**Card and UPI on the terminal.** The canteen takes card and UPI payments on the hospital's Pine Labs terminal through
+the Platform contract `ICounterTerminal`, which Billing implements (see
+[integrations.md](integrations.md#cardupi-pos-int-pos)). The counter starts the sale on `/terminal-sales` for the bill's
+total and follows it until the customer has paid, and `CreateSaleRequest.terminalSaleId` then saves the bill with it.
+The bill's net amount must equal the terminal sale's, and `terminalSaleId` is refused unless the mode is Card or Upi.
+Nothing is typed: `paymentReference` becomes the terminal's RRN (else the approval code), and the bill keeps
+`approvalCode`, `cardLast4` and `terminalSaleId` (columns of `canteen_sales`; `CanteenSaleDto` has them).
+* The terminal sale is recorded in the same database transaction as the bill, once. Another bill naming it is refused
+  (409 `pos.sale_used`). A sale that is not the canteen's, not approved or of another amount is refused: 422
+  `pos.sale_unknown`, `pos.sale_pending`, `pos.sale_not_paid`, `pos.sale_amount`, `pos.sale_mode`, `pos.sale_closed`
+  (the accountants closed it).
+* A sale approved on the terminal that no bill records within the facility's `billing.pos.recheck` time (15 minutes by
+  default) is raised in Billing › Gateway reconciliation as an unrecorded payment, and the accountants are alerted
+  once. Recording it on a bill later clears it; once an accountant resolves it instead (the money refunded on the
+  terminal), it is no longer offered to the counter or recorded.
+* Billing's settlement match finds the bill by its RRN or approval code, and never matches it with a Billing receipt.
+
+On the canteen's bill screen, **Take on terminal** asks for the card or UPI and the terminal id (remembered on the
+computer) and sends the bill's total. Once approved, **Finish the bill** saves the bill with the payment. The cart is
+locked while a terminal payment is attached. The dialog also lists **Already paid on the terminal** with **Use this
+payment**, for a payment taken before the screen was closed.
 
 ### Staff credit — `/api/v1/canteen/staff-credit`
 | Method | Path | Permission | Request → response |
@@ -383,8 +409,9 @@ Bio-medical waste: `waste_bags` (unique `barcode`; `handover_weight_kg`), `waste
 Housekeeping: `cleaning_areas` (unique `code` per facility), `cleaning_records` (one standing cleaning per area, day and
 slot; one sent back makes way for the next), `cleaning_requests`.
 
-Canteen bills keep `cancel_requested_by(_name)`, `cancelled_by_name`, `refund_mode` and `refund_amount`; ambulance trips
-keep `charge_waived_by(_name)`, `charge_waived_at` and `waiver_requested_by_name`.
+Canteen bills keep `cancel_requested_by(_name)`, `cancelled_by_name`, `refund_mode` and `refund_amount`, and
+`approval_code`, `card_last4` and `terminal_sale_id` when paid on the terminal; ambulance trips keep
+`charge_waived_by(_name)`, `charge_waived_at` and `waiver_requested_by_name`.
 
 Ambulance: `ambulance_vehicles` (unique registration), `ambulance_trips` (unique `number` per facility; one open trip per vehicle).
 

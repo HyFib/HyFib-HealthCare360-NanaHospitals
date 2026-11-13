@@ -39,6 +39,10 @@ public sealed record StockMovementRequest(StockMovementKind Kind, int Quantity, 
 
 public sealed record SaleLineInput(Guid MenuItemId, int Quantity);
 
+/// <param name="TerminalSaleId">
+/// A card or UPI payment taken on the hospital's terminal (<c>ICounterTerminal</c>): its reference, approval code and card's
+/// last four digits come from the terminal, not from the counter.
+/// </param>
 public sealed record CreateSaleRequest(
     CanteenCustomerType CustomerType,
     string? CustomerName,
@@ -47,7 +51,8 @@ public sealed record CreateSaleRequest(
     Guid? PatientId,
     CanteenPaymentMode PaymentMode,
     string? PaymentReference,
-    IReadOnlyList<SaleLineInput> Lines);
+    IReadOnlyList<SaleLineInput> Lines,
+    Guid? TerminalSaleId = null);
 
 public sealed record CanteenSaleLineDto(
     Guid MenuItemId,
@@ -87,7 +92,10 @@ public sealed record CanteenSaleDto(
     CanteenPaymentMode? RefundMode,
     decimal? RefundAmount,
     uint Version,
-    IReadOnlyList<CanteenSaleLineDto> Lines)
+    IReadOnlyList<CanteenSaleLineDto> Lines,
+    string? ApprovalCode = null,
+    string? CardLast4 = null,
+    Guid? TerminalSaleId = null)
 {
     /// <summary>The cancellation waiting for a second person, if one was asked for.</summary>
     public CanteenPendingCancellation? PendingCancellation { get; init; }
@@ -185,6 +193,8 @@ public sealed class CreateSaleRequestValidator : AbstractValidator<CreateSaleReq
         RuleFor(x => x.CustomerName).MaximumLength(200);
         RuleFor(x => x.EmployeeName).MaximumLength(200);
         RuleFor(x => x.PaymentReference).MaximumLength(64);
+        RuleFor(x => x.TerminalSaleId).Null().When(x => x.PaymentMode is not (CanteenPaymentMode.Card or CanteenPaymentMode.Upi))
+            .WithMessage("Only a card or UPI payment is taken on the terminal.");
         RuleFor(x => x.EmployeeCode).Must(StaffCreditRules.IsValidEmployeeCode)
             .When(x => x.PaymentMode == CanteenPaymentMode.StaffCredit || !string.IsNullOrWhiteSpace(x.EmployeeCode))
             .WithMessage("Enter the employee code (letters, digits, '/' or '-').");

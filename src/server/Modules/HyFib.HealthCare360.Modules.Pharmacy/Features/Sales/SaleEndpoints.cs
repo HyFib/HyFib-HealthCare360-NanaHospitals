@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 using HyFib.HealthCare360.Modules.Pharmacy.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
@@ -17,6 +18,8 @@ internal static class SaleEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/pharmacy").WithTags("Pharmacy");
+
+        group.MapCounterTerminalSales(PharmacyDayBookSource.Key, PharmacyPermissions.Dispense, PharmacyPermissions.Sales);
 
         group.MapGet("/stock", Stock).RequireAnyPermission(PharmacyPermissions.CounterStaff);
         group.MapGet("/stock/batches", async (Guid storeId, Guid itemId, StockService stock, CancellationToken ct) =>
@@ -192,7 +195,7 @@ internal static class SaleEndpoints
                 i.Id, i.ItemId, i.ItemName, i.GenericName, i.HsnCode, i.Schedule, i.BatchNumber, i.ExpiryDate, i.Quantity, i.UnitMrp, i.GstRate,
                 i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount, i.NetAmount, i.ReturnedQuantity, i.IsSubstitution,
                 i.PrescribedDrugName, i.SubstitutionReason)).ToList(),
-            sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund, p.RefundOfPaymentId)).ToList(),
+            sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund, p.RefundOfPaymentId, p.ApprovalCode, p.CardLast4, p.TerminalSaleId)).ToList(),
             sale.Version,
             sale.BuyerAddress,
             einvoice.Stamp,

@@ -25,6 +25,7 @@ public sealed class CanteenService(
     IEmployeeDirectory employees,
     IApprovals approvals,
     IAuditLogger audit,
+    ICounterTerminal terminal,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -118,6 +119,22 @@ public sealed class CanteenService(
             CashierName = currentUser.DisplayName,
         };
         sale.ApplyTotals(totals);
+        if (request.TerminalSaleId is { } terminalSaleId)
+        {
+            // The terminal sale is marked used in this unit of work, so it is kept with the bill or not at all.
+            var mode = request.PaymentMode == CanteenPaymentMode.Upi ? CounterPaymentMode.Upi : CounterPaymentMode.Card;
+            var used = await terminal.UseAsync(new CounterTerminalUse(CanteenDayBookSource.Key, terminalSaleId, sale.Id, sale.BillNumber, mode, sale.NetAmount), ct);
+            if (used.IsFailure)
+            {
+                return used.Error!;
+            }
+
+            sale.TerminalSaleId = terminalSaleId;
+            sale.PaymentReference = used.Value.Reference;
+            sale.ApprovalCode = used.Value.ApprovalCode;
+            sale.CardLast4 = used.Value.CardLast4;
+        }
+
         db.Add(sale);
 
         if (request.PaymentMode == CanteenPaymentMode.StaffCredit)
@@ -141,7 +158,9 @@ public sealed class CanteenService(
         }
         catch (DbUpdateConcurrencyException)
         {
-            return Error.Conflict("canteen.stock_changed", "Stock changed while billing (another counter sold the same item). Please bill again.");
+            return request.TerminalSaleId is null
+                ? Error.Conflict("canteen.stock_changed", "Stock changed while billing (another counter sold the same item). Please bill again.")
+                : Error.Conflict("canteen.changed", "The stock or the terminal payment changed while billing (another bill may have used the same terminal payment). Please check and bill again.");
         }
 
         await transaction.CommitAsync(ct);
@@ -360,7 +379,8 @@ public sealed class CanteenService(
         s.SgstAmount, s.GrossAmount, s.RoundOff, s.NetAmount, s.PaymentMode, s.PaymentReference, s.Status, s.CashierName, s.CancelledAt, s.CancelReason,
         s.CancelRequestedByName, s.CancelledByName, s.RefundMode, s.RefundAmount, s.Version,
         s.Lines.Select(l => new CanteenSaleLineDto(l.MenuItemId, l.ItemName, l.HsnSac, l.Quantity, l.UnitPrice, l.GstRate, l.TaxableAmount, l.CgstAmount, l.SgstAmount,
-            l.LineTotal)).ToList());
+            l.LineTotal)).ToList(),
+        s.ApprovalCode, s.CardLast4, s.TerminalSaleId);
 
     internal static MenuItemDto ToDto(MenuItem m) => new(
         m.Id, m.Code, m.Name, m.Category, m.Price, m.GstRate, m.HsnSac, m.PriceIncludesGst, m.IsVeg, m.IsAvailable, m.TrackStock, m.StockOnHand,

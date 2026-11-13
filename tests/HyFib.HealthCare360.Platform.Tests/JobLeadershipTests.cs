@@ -92,22 +92,22 @@ public sealed class JobLeadershipTests
     {
         var holder = Node("A", "all", new JobNodeState(true, DateTimeOffset.UtcNow));
         var standing = Node("B", "all", new JobNodeState(false, null));
-        SystemHealthService.ServerWarnings([holder, standing]).ShouldBeEmpty();
+        SystemHealthService.ServerWarnings([holder, standing], DateTimeOffset.UtcNow).ShouldBeEmpty();
 
         // Between one holder and the next: a warning, not a critical one, while another stands by.
-        var between = SystemHealthService.ServerWarnings([Node("A", "all", new JobNodeState(false, null)), standing]);
+        var between = SystemHealthService.ServerWarnings([Node("A", "all", new JobNodeState(false, null)), standing], DateTimeOffset.UtcNow);
         between.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             w => w.Code.ShouldBe("server.jobs_taking_over"),
             w => w.Severity.ShouldBe("warning"));
 
         // The holder went silent: still critical, but it says who takes over.
-        var silent = SystemHealthService.ServerWarnings([holder with { Reporting = false }, standing]);
+        var silent = SystemHealthService.ServerWarnings([holder with { Reporting = false }, standing], DateTimeOffset.UtcNow);
         silent.Single(w => w.Code == "server.not_reporting").ShouldSatisfyAllConditions(
             w => w.Severity.ShouldBe("critical"),
             w => w.Message.ShouldContain("B stands by to take the jobs over"));
 
         // Two holders cannot be: critical.
-        SystemHealthService.ServerWarnings([holder, Node("B", "all", new JobNodeState(true, DateTimeOffset.UtcNow))])
+        SystemHealthService.ServerWarnings([holder, Node("B", "all", new JobNodeState(true, DateTimeOffset.UtcNow))], DateTimeOffset.UtcNow)
             .Single(w => w.Code == "server.several_jobs").Severity.ShouldBe("critical");
     }
 

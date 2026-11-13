@@ -6449,7 +6449,21 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("mode");
 
-                    b.Property<Guid>("PatientId")
+                    b.Property<string>("Owner")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("owner");
+
+                    b.Property<string>("OwnerDocument")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("owner_document");
+
+                    b.Property<Guid?>("OwnerPaymentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_payment_id");
+
+                    b.Property<Guid?>("PatientId")
                         .HasColumnType("uuid")
                         .HasColumnName("patient_id");
 
@@ -6460,7 +6474,6 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnName("provider");
 
                     b.Property<string>("Purpose")
-                        .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("purpose");
@@ -6531,6 +6544,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("IsDeleted")
                         .HasDatabaseName("ix_pos_transactions_is_deleted");
+
+                    b.HasIndex("OwnerPaymentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_pos_transactions_owner_payment_id")
+                        .HasFilter("owner_payment_id IS NOT NULL");
 
                     b.HasIndex("Provider", "TransactionId")
                         .IsUnique()
@@ -31023,6 +31041,16 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("amount");
 
+                    b.Property<string>("ApprovalCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("approval_code");
+
+                    b.Property<string>("CardLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("card_last4");
+
                     b.Property<bool>("IsRefund")
                         .HasColumnType("boolean")
                         .HasColumnName("is_refund");
@@ -31054,11 +31082,20 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("refund_of_payment_id");
 
+                    b.Property<Guid?>("TerminalSaleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("terminal_sale_id");
+
                     b.HasKey("Id")
                         .HasName("pk_sale_payments");
 
                     b.HasIndex("PharmacySaleId")
                         .HasDatabaseName("ix_sale_payments_pharmacy_sale_id");
+
+                    b.HasIndex("TerminalSaleId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sale_payments_terminal_sale_id")
+                        .HasFilter("terminal_sale_id IS NOT NULL");
 
                     b.HasIndex("ReceivedAt", "Mode")
                         .HasDatabaseName("ix_sale_payments_received_at_mode");
@@ -44921,6 +44958,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ApprovalCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("approval_code");
+
                     b.Property<string>("BillNumber")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -44957,6 +44999,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("cancelled_by_name");
+
+                    b.Property<string>("CardLast4")
+                        .HasMaxLength(4)
+                        .HasColumnType("character varying(4)")
+                        .HasColumnName("card_last4");
 
                     b.Property<string>("CashierName")
                         .HasMaxLength(200)
@@ -45073,6 +45120,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("taxable_amount");
 
+                    b.Property<Guid?>("TerminalSaleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("terminal_sale_id");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -45099,6 +45150,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("IsDeleted")
                         .HasDatabaseName("ix_canteen_sales_is_deleted");
+
+                    b.HasIndex("TerminalSaleId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_canteen_sales_terminal_sale_id")
+                        .HasFilter("terminal_sale_id IS NOT NULL");
 
                     b.HasIndex("BusinessDate", "Status")
                         .HasDatabaseName("ix_canteen_sales_business_date_status");
@@ -51122,6 +51178,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("connected");
 
+                    b.Property<string>("Node")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("node");
+
                     b.Property<double?>("ReceiveRateMbps")
                         .HasColumnType("double precision")
                         .HasColumnName("receive_rate_mbps");
@@ -51153,6 +51214,9 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
 
                     b.HasIndex("At")
                         .HasDatabaseName("ix_wifi_samples_at");
+
+                    b.HasIndex("Node", "At")
+                        .HasDatabaseName("ix_wifi_samples_node_at");
 
                     b.ToTable("wifi_samples", "platform");
                 });

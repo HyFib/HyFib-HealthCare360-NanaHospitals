@@ -50,6 +50,16 @@ public sealed class CanteenSale : AuditableEntity, IFacilityScoped
     public decimal NetAmount { get; set; }
     public CanteenPaymentMode PaymentMode { get; set; }
     public string? PaymentReference { get; set; }
+
+    /// <summary>The terminal sale a card or UPI payment was taken on (Billing's record of it); null for a payment keyed in from a slip.</summary>
+    public Guid? TerminalSaleId { get; set; }
+
+    /// <summary>The approval code the terminal reported for the payment.</summary>
+    public string? ApprovalCode { get; set; }
+
+    /// <summary>The last four digits of the card the terminal reported; never more of the number.</summary>
+    public string? CardLast4 { get; set; }
+
     public CanteenSaleStatus Status { get; set; }
     public string? CashierName { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }

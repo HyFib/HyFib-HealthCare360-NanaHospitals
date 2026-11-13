@@ -109,16 +109,25 @@ public sealed class PharmacyReasonRequestValidator : AbstractValidator<PharmacyR
     public PharmacyReasonRequestValidator() => RuleFor(x => x.Reason).NotEmpty().SafeText(300);
 }
 
-/// <summary>One payment of a split bill; card and UPI need the slip / transaction reference for reconciliation.</summary>
+/// <summary>
+/// One payment of a split bill; card and UPI need the slip / transaction reference for reconciliation, unless the payment was
+/// taken on the hospital's terminal, which reports the reference itself.
+/// </summary>
 public sealed class SalePaymentValidator : AbstractValidator<SalePayment>
 {
     public SalePaymentValidator()
     {
         RuleFor(x => x.Amount).GreaterThan(0).PrecisionScale(18, 2, true).WithMessage("Use at most 2 decimal places.");
         RuleFor(x => x.Reference).MaximumLength(64);
-        RuleFor(x => x.Reference).NotEmpty().When(x => x.Mode is PaymentMode.Card or PaymentMode.Upi)
+        RuleFor(x => x.Reference).NotEmpty().When(x => x.Mode is PaymentMode.Card or PaymentMode.Upi && x.TerminalSaleId is null)
             .WithMessage("Enter the card slip or UPI transaction reference.");
+        RuleFor(x => x.TerminalSaleId).Null().When(x => x.Mode is not (PaymentMode.Card or PaymentMode.Upi))
+            .WithMessage("Only a card or UPI payment is taken on the terminal.");
     }
+
+    /// <summary>Whether no terminal sale is named by two payments of the request.</summary>
+    public static bool EachTerminalSaleOnce(IReadOnlyList<SalePayment> payments) =>
+        payments.Where(p => p.TerminalSaleId is not null).Select(p => p.TerminalSaleId).Distinct().Count() == payments.Count(p => p.TerminalSaleId is not null);
 }
 
 public sealed class DispenseRequestValidator : AbstractValidator<DispenseRequest>
@@ -138,6 +147,7 @@ public sealed class DispenseRequestValidator : AbstractValidator<DispenseRequest
         RuleFor(x => x.DiscountPercent).InclusiveBetween(0, 100);
         RuleFor(x => x.Payments).Must(p => p.Count <= 6).WithMessage("Split the bill into at most 6 payments.");
         RuleForEach(x => x.Payments).SetValidator(new SalePaymentValidator());
+        RuleFor(x => x.Payments).Must(SalePaymentValidator.EachTerminalSaleOnce).WithMessage("Each terminal payment can be recorded once.");
     }
 }
 

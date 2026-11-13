@@ -125,7 +125,9 @@ public sealed class GatewayOrder : AuditableEntity, IFacilityScoped
 
 /// <summary>
 /// A card/UPI sale pushed to a POS terminal (INT-POS). The counter polls its status; the receipt is recorded exactly
-/// once when the terminal approves, keyed on the terminal transaction id.
+/// once when the terminal approves, keyed on the terminal transaction id. A counter that bills its own sales (the
+/// pharmacy, the canteen) takes its payments the same way (<see cref="Owner"/>): it records the approved sale as one of
+/// its own payments, once (<see cref="OwnerPaymentId"/>).
 /// </summary>
 public sealed class PosTransaction : AuditableEntity, IFacilityScoped
 {
@@ -136,10 +138,28 @@ public sealed class PosTransaction : AuditableEntity, IFacilityScoped
     public string Reference { get; set; } = string.Empty;
     public decimal Amount { get; set; }
     public PaymentMode Mode { get; set; }
-    public ReceiptPurpose Purpose { get; set; }
+
+    /// <summary>What Billing's receipt is for; null for a counter's own sale (<see cref="Owner"/>), which has no receipt.</summary>
+    public ReceiptPurpose? Purpose { get; set; }
+
     public Guid? BillId { get; set; }
     public Guid? IpAccountId { get; set; }
-    public Guid PatientId { get; set; }
+
+    /// <summary>Who paid; null for a walk-in customer at a counter that bills its own sales.</summary>
+    public Guid? PatientId { get; set; }
+
+    /// <summary>
+    /// The counter that bills its own sales and took this payment (its <c>ICounterSalesSource.Counter</c> key: the pharmacy
+    /// or the canteen); null for Billing's own sale, whose receipt is recorded for a bill or an admission's advance.
+    /// </summary>
+    public string? Owner { get; set; }
+
+    /// <summary>The counter's payment that recorded this approved sale (<see cref="Owner"/>); null while none does.</summary>
+    public Guid? OwnerPaymentId { get; set; }
+
+    /// <summary>The counter's invoice or bill the payment is on, as the counter numbers it.</summary>
+    public string? OwnerDocument { get; set; }
+
     public PosTransactionStatus Status { get; set; }
     public string? ApprovalCode { get; set; }
     public string? CardLast4 { get; set; }
@@ -153,6 +173,9 @@ public sealed class PosTransaction : AuditableEntity, IFacilityScoped
 
     public bool IsComplete => Status is PosTransactionStatus.Approved or PosTransactionStatus.Declined
         or PosTransactionStatus.Cancelled or PosTransactionStatus.TimedOut;
+
+    /// <summary>Approved, and recorded: by Billing's receipt, or by the payment of the counter that took it.</summary>
+    public bool IsRecorded => Status == PosTransactionStatus.Approved && (Owner is null ? ReceiptId is not null : OwnerPaymentId is not null);
 
     /// <summary>Applies a terminal status. An approval is final: later polls can never downgrade it.</summary>
     public void Apply(PosTransactionResult result, DateTimeOffset now)

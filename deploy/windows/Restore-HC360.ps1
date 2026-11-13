@@ -20,6 +20,9 @@
        creates a fresh one and runs pg_restore into it. Where the installer made the two database accounts (hc360_owner
        owns the schema, hc360_app is the account the server works as), the restored tables are hc360_owner's and
        hc360_app gets its rights again (hc360-database-roles.sql); otherwise hc360_app owns them, as before the split.
+       Then clears, and names, the rows of the servers the backup knew (System health's part of each server): a backup
+       made before HC360 left them out holds those of the machines that made it, which on new hardware would show as
+       servers that stopped reporting, told to IT every day. Each server here writes its own as it starts.
     4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
        key already here is kept under a new name, never deleted. On new hardware, later backups open with the recovery
        key entered here.
@@ -75,6 +78,16 @@ function Invoke-Sql([string] $Database, [string[]] $Statements) {
     return ($LASTEXITCODE -eq 0)
 }
 
+# Clears the rows of the servers the backup knew, System health's part of each (platform.server_nodes), and returns the
+# servers they were of. Backups leave them out: a backup made before they did holds those of the machines that made it.
+$ClearServerRows = "WITH cleared AS (DELETE FROM platform.server_nodes RETURNING report->'server'->>'machineName' AS machine) SELECT machine FROM cleared ORDER BY machine"
+function Clear-ServerRows([string] $Database) {
+    if ((& $psql @pgArgs -d $Database -tAc "SELECT to_regclass('platform.server_nodes') IS NOT NULL") -ne 't') { return }
+    $cleared = @(& $psql @pgArgs -d $Database -tAc $ClearServerRows | Where-Object { $_ })
+    if ($LASTEXITCODE -ne 0) { throw "psql could not clear platform.server_nodes in $Database." }
+    return $cleared
+}
+
 # Runs a server CLI command and returns its exit code. The recovery key is in the environment only during the call.
 function Invoke-ServerCli([string[]] $Arguments) {
     $env:HC360_RECOVERY_KEY = [System.Net.NetworkCredential]::new('', $RecoveryKey).Password
@@ -124,6 +137,18 @@ try {
         # hc360_app reads and writes rows, and nothing else, as on the server the backup came from.
         & $psql @pgArgs -d $DatabaseName -v ON_ERROR_STOP=1 -q -c "SELECT set_config('hc360.owner_role', 'hc360_owner', false), set_config('hc360.app_role', 'hc360_app', false)" -f (Join-Path $PSScriptRoot 'hc360-database-roles.sql')
         if ($LASTEXITCODE -ne 0) { throw 'Giving hc360_app its rights on the restored database (hc360-database-roles.sql) failed.' }
+    }
+
+    # Not worth undoing the restore for: a server left over shows as not reporting, and is removed in System health.
+    Write-Step 'Clearing the servers the backup knew'
+    try {
+        $cleared = @(Clear-ServerRows $DatabaseName)
+        if ($cleared.Count -gt 0) {
+            Write-Host "Cleared the rows of the servers the backup knew, written before it was made: $($cleared -join ', '). Each server here shows in System health as it starts."
+        }
+    }
+    catch {
+        Write-Warning "The rows of the servers the backup knew were not cleared ($($_.Exception.Message)). Remove any that does not run here with Remove on its card in Administration > System health."
     }
 
     # Only now that the backup's database is in place does this server switch to the backup's encryption key.

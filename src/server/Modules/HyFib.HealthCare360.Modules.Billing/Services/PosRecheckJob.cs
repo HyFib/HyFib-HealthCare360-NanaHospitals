@@ -36,7 +36,8 @@ public sealed record PosRecheckSettings
 /// Terminal sales the counter stopped polling (INT-POS): the screen was closed, the browser crashed or the cashier
 /// moved on while the customer was still paying. Each sale still open, or approved without its receipt, is asked about
 /// again; an approval is recorded once, and a sale nobody paid within the facility's timeout is cancelled on the terminal
-/// and marked timed out. Background work has no signed-in facility, so every sale is read across facilities and asked
+/// and marked timed out. A counter that bills its own sales (the pharmacy, the canteen) records its approved sales
+/// itself: one it has not recorded within the same timeout is kept as an exception for the accountants. Background work has no signed-in facility, so every sale is read across facilities and asked
 /// about with its own facility's terminal settings.
 /// </summary>
 public sealed class PosRecheckRunner(
@@ -64,7 +65,7 @@ public sealed class PosRecheckRunner(
         {
             // Loaded one at a time: a sale that fails clears the unit of work, and must not take the others with it.
             var sale = await db.Set<PosTransaction>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).FirstOrDefaultAsync(s => s.Id == id, ct);
-            if (sale is null || (sale.IsComplete && (sale.Status != PosTransactionStatus.Approved || sale.ReceiptId is not null)))
+            if (sale is null || (sale.IsComplete && (sale.Status != PosTransactionStatus.Approved || sale.IsRecorded)))
             {
                 continue;
             }
@@ -91,15 +92,22 @@ public sealed class PosRecheckRunner(
         return checkedCount;
     }
 
-    /// <summary>Open sales started between <see cref="Window"/> and <see cref="Grace"/> ago, and approved ones without a receipt, oldest first.</summary>
+    /// <summary>
+    /// Sales started between <see cref="Window"/> and <see cref="Grace"/> ago that are still open, approved without
+    /// Billing's receipt, or (a counter's) approved without the counter's payment and not yet kept as an exception,
+    /// oldest first.
+    /// </summary>
     internal async Task<IReadOnlyList<Guid>> DueSalesAsync(DateTimeOffset now, CancellationToken ct)
     {
         var after = now - Window;
         var before = now - Grace;
+        var exceptions = db.Set<GatewayDiscrepancy>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
         return await db.Set<PosTransaction>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(s => s.CreatedAt > after && s.CreatedAt <= before)
             .Where(s => s.Status == PosTransactionStatus.Initiated || s.Status == PosTransactionStatus.AwaitingCustomer
-                        || (s.Status == PosTransactionStatus.Approved && s.ReceiptId == null))
+                        || (s.Status == PosTransactionStatus.Approved && s.Owner == null && s.ReceiptId == null)
+                        || (s.Status == PosTransactionStatus.Approved && s.Owner != null && s.OwnerPaymentId == null
+                            && !exceptions.Any(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Key == s.TransactionId)))
             .OrderBy(s => s.CreatedAt)
             .Select(s => s.Id)
             .Take(Batch)

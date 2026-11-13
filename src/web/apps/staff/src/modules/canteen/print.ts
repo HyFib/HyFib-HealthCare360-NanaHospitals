@@ -9,6 +9,7 @@ import {
   templateFor,
   type Letterhead,
 } from '@hc360/core';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
 import { formatPercent } from '@/modules/inventory/format';
 import { gstSummaryByRate } from '@/modules/pharmacy/print';
 import {
@@ -81,6 +82,7 @@ export function buildCanteenReceiptHtml(
       ? `Staff ${escapeHtml(sale.employeeCode)}${sale.employeeName ? ` · ${escapeHtml(sale.employeeName)}` : ''}`
       : `${escapeHtml(CUSTOMER_LABEL[sale.customerType])}${sale.customerName ? ` · ${escapeHtml(sale.customerName)}` : ''}`;
   const template = templateFor(letterhead, 'sales-invoice');
+  const terminal = terminalDetailsLine({ cardLast4: sale.cardLast4, approvalCode: sale.approvalCode });
   const body = `
     ${letterheadHtml(letterhead, template, { compact: true, taxIds: true })}
     <div class="center">
@@ -106,6 +108,7 @@ export function buildCanteenReceiptHtml(
     ${byRate ? `<table class="gst"><tr><th>GST</th><th>Taxable</th><th>CGST</th><th>SGST</th></tr>${byRate}</table>` : ''}
     <div class="rule"></div>
     <div>Paid by ${escapeHtml(PAYMENT_LABEL[sale.paymentMode])}${sale.paymentReference ? ` · ${escapeHtml(sale.paymentReference)}` : ''}</div>
+    ${terminal ? `<div class="muted">${escapeHtml(terminal)}</div>` : ''}
     ${sale.paymentMode === 'StaffCredit' ? '<div class="muted">Deducted from salary at month end.</div>' : ''}
     <div class="muted">Cashier: ${escapeHtml(sale.cashierName ?? '')}</div>
     <div class="center thanks">Thank you</div>`;
