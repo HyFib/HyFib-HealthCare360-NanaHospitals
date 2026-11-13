@@ -107,6 +107,7 @@ public sealed class BillingModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IPayerDirectory, PayerDirectory>());
 
         services.AddHostedService<TallyDayBookScheduler>();
+        services.AddHostedService<EInvoiceReminderJob>();
         services.AddHostedService<GatewayReconciliationJob>();
         services.AddHostedService<PosRecheckJob>();
     }

@@ -24,6 +24,7 @@ using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -350,6 +351,59 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{refused.Id}/irn/generate");
         var debit = await billing.EInvoiceWhenAsync("debitnote", note.Id, d => d.State == EInvoiceState.Registered, "the debit note's IRN", Ct, TimeSpan.FromMinutes(3));
         (debit.Type, debit.Against, debit.Registration!.RecordedByName).ShouldBe(("DBN", refused.BillNumber, EInvoiceAutomation.RecordedBy));
+    }
+
+    [Fact]
+    public async Task Each_morning_holders_of_the_register_hear_once_of_documents_waiting_too_long_for_an_irn()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await TaxedServiceAsync(admin);
+        var company = await CompanyAsync(admin);
+        await using var einvoicing = await EInvoicingAsync(from: Today().AddDays(-40));
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // Bills waiting for their IRNs to be recorded by hand (the portal is not connected): one of 35 days ago, past the
+        // portal's 30; one of 26, due on it within the week; one of yesterday, within the two days the hospital allows.
+        var pastDue = await BillOfDaysAgoAsync(company, service, 35);
+        var dueSoon = await BillOfDaysAgoAsync(company, service, 26);
+        var recent = await BillOfDaysAgoAsync(company, service, 1);
+        (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{dueSoon.Id}")).State.ShouldBe(EInvoiceState.Pending);
+
+        EInvoiceReminder reminder;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            reminder = (await scope.ServiceProvider.GetRequiredService<EInvoiceService>().RemindAsync(pastDue.FacilityId, Today(), Ct)).ShouldNotBeNull();
+        }
+
+        reminder.Severity.ShouldBe("critical", "one can still reach the portal within the week");
+        reminder.Count.ShouldBeGreaterThanOrEqualTo(2);
+        reminder.Body.ShouldContain("past the portal's 30 days");
+        reminder.Body.ShouldNotContain(recent.BillNumber!);
+        var told = await EventuallyAsync(async () => (await billing.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=100"))
+            .Items.FirstOrDefault(n => n.Title == reminder.Title && n.Body == reminder.Body), "the reminder to the billing desk");
+        (told.Severity, told.Link).ShouldBe(("critical", "/billing/einvoices"));
+
+        // The morning job queues it once a day for each facility that e-invoices: asked again the same day (a second
+        // server, a restart), it queues nothing more.
+        var job = server.Services.GetServices<IHostedService>().OfType<EInvoiceReminderJob>().Single();
+        await job.QueueAsync(Today(), Ct);
+        (await job.QueueAsync(Today(), Ct)).ShouldBe(0);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var dayStarted = BillingTime.StartOfDay(Today());
+            (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>()
+                .CountAsync(m => m.Type == EInvoiceReminderHandler.MessageType && m.FacilityId == pastDue.FacilityId && m.CreatedAt >= dayStarted, Ct)).ShouldBe(1);
+        }
+    }
+
+    /// <summary>A bill finalized <paramref name="days"/> ago, as if it had been (its date is the day it was finalized).</summary>
+    private async Task<BillDetail> BillOfDaysAgoAsync(PayerDetail company, ServiceItemDto service, int days)
+    {
+        var bill = await BillAsync(company, service);
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Bill>().Where(b => b.Id == bill.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.FinalizedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddDays(-days)), Ct);
+        return bill;
     }
 
     private static CancelIrnRequest Cancel(uint version) => new(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", version);

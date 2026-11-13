@@ -39,10 +39,17 @@ public sealed class EInvoiceService(
     /// <summary>The portal takes an invoice up to 30 days after its date from a large taxpayer; reporting it later is refused.</summary>
     public const int ReportWithinDays = 30;
 
+    /// <summary>
+    /// How many days a document may wait for its IRN before the morning reminder names it (<see cref="RemindAsync"/>); an
+    /// IRN is due when the document is issued, and asked for automatically then when the facility is connected to the portal.
+    /// </summary>
+    public const string AlertAfterDaysSetting = "gst.einvoice.alert_after_days";
+
+    public const int DefaultAlertAfterDays = 2;
+
     public async Task<EInvoiceRegister> RegisterAsync(DateOnly? from, DateOnly? to, CancellationToken ct)
     {
-        var today = BillingTime.Today(time);
-        var end = to ?? today;
+        var end = to ?? BillingTime.Today(time);
         var start = from ?? end.AddDays(-30);
         if (currentUser.FacilityId is not { } facility || await ApplicableFromAsync(facility, ct) is not { } applicable)
         {
@@ -54,6 +61,39 @@ public sealed class EInvoiceService(
             start = applicable;
         }
 
+        return new EInvoiceRegister(true, applicable, start, end, await RowsAsync(facility, start, end, ct));
+    }
+
+    /// <summary>
+    /// Tells holders of <see cref="BillingPermissions.EInvoice"/> at the facility which documents have waited longer than
+    /// it allows (<see cref="AlertAfterDaysSetting"/>) for an IRN, as of <paramref name="today"/> (<see cref="EInvoiceReminders"/>):
+    /// the register's own pending rows, since e-invoicing applied. Nothing when none has waited that long.
+    /// </summary>
+    internal async Task<EInvoiceReminder?> RemindAsync(Guid facilityId, DateOnly today, CancellationToken ct)
+    {
+        if (await ApplicableFromAsync(facilityId, ct) is not { } applicable)
+        {
+            return null;
+        }
+
+        var afterDays = await settings.GetAsync<int?>(AlertAfterDaysSetting, facilityId, ct) is { } days and > 0 ? days : DefaultAlertAfterDays;
+        var reminder = EInvoiceReminders.Of(await RowsAsync(facilityId, applicable, today.AddDays(-afterDays - 1), ct), today, afterDays);
+        if (reminder is not null)
+        {
+            await notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.EInvoice, facilityId, reminder.Title, reminder.Body, "/billing/einvoices", "billing", reminder.Severity, ct);
+        }
+
+        return reminder;
+    }
+
+    /// <summary>
+    /// The register's rows: the facility's B2B documents of the days given (the hospital's), each with its state and its
+    /// latest IRN, those waiting for one first. What the register lists, and what the daily reminder reads.
+    /// </summary>
+    internal async Task<IReadOnlyList<EInvoiceRow>> RowsAsync(Guid facility, DateOnly start, DateOnly end, CancellationToken ct)
+    {
+        var today = BillingTime.Today(time);
         var candidates = new List<EInvoiceCandidate>();
         if (start <= end)
         {
@@ -81,7 +121,7 @@ public sealed class EInvoiceService(
             .ThenByDescending(r => r.Date)
             .ThenBy(r => r.Number, StringComparer.Ordinal)
             .ToList();
-        return new EInvoiceRegister(true, applicable, start, end, rows);
+        return rows;
     }
 
     public async Task<Result<EInvoiceDetail>> DetailAsync(string source, Guid id, CancellationToken ct)
