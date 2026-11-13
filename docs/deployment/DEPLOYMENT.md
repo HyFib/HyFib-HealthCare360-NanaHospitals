@@ -93,9 +93,12 @@ On a **cabled LAN**, where the server and the workstations are on network cables
   **Last cable drop** in System health keeps coming back, change the cable, then the switch port. If it still drops,
   turn off **Energy-Efficient Ethernet** in the network card's Advanced settings (Device Manager): some switches drop
   the link with it. The installer leaves the card's driver settings alone.
-- A server with two network cards on cables (one on an imaging network, say) is told when no cable is up. One of them
-  lost while the other is up is not told: on such a server, the cable-pull drill below is done on each cable, watching
-  its card's lights and Administration › System health.
+- A server with two network cards on cables (the hospital LAN and an imaging network, say) has each cable watched on its
+  own. The server reads which one the workstations reach it over from its own traffic: the address their requests
+  arrive on. That cable lost is critical even while the other is up; the other cable lost is a warning. With no
+  workstation's request in the last 15 minutes it cannot tell, and a cable lost while the other is up is a warning.
+  Each alert names the cable, the address it had and what is still up; its return is told in the app. Do the
+  cable-pull drill of section 4, step 10 on each cable.
 - Before go-live, from each workstation: `Test-NetConnection HC360-SRV -Port 7360` must end with
   `TcpTestSucceeded : True`.
 
@@ -597,9 +600,13 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health and the on-call phone must
    say the cable is lost, and System health and the administrators' notifications that it is back once it is in again;
    its return sends no SMS. Where the server reaches the internet over that cable alone, the SMS comes once it is back
-   in, within a few minutes. System health also shows each integration set up in step 7 as Administration ›
-   Integrations does, and when the hospital CA and the server certificate expire. Run an alert drill there, and keep
-   its timings with the go-live record ("Alerts that reach someone").
+   in, within a few minutes. On a server with two cabled cards, do it on each cable in turn while HC360 Desktop is open
+   on a workstation: its requests tell the server which cable the workstations use. System health must show the
+   hospital LAN's cable red, and its SMS must name that cable, with its address, and say the workstations cannot reach
+   HC360 until it is back. System health must show the other cable amber, and its SMS must name it and say the
+   workstations reach the server over the hospital LAN's cable, which is up. System health also shows each integration
+   set up in step 7 as Administration › Integrations does, and when the hospital CA and the server certificate expire.
+   Run an alert drill there, and keep its timings with the go-live record ("Alerts that reach someone").
 
 ### Alerts that reach someone
 
@@ -1659,7 +1666,7 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | "Cannot reach the HealthCare360 server" on workstations | Server switched on? Its network cable in and its switch on, or its WiFi connected? System health on the server; client isolation on the AP. A workstation on a cable that is in says the server or the hospital network may be down: from it, `Test-NetConnection HC360-SRV -Port 7360`. After three tries the details line says HC360 is looking for the server at its other addresses; if the server's address changed and HC360 does not find it, use Change server… |
 | "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal (a workstation on a cable shows —); Administration › System health shows the server's link: on a cable, its speed (1 Gbps), else its WiFi signal. On a cabled ward, the ward's switch and its uplink |
-| "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Is the server's cable in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
+| "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Which cable: the alert and System health name it, with the address it had. Is it in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
