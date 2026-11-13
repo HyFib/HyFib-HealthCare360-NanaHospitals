@@ -6,6 +6,13 @@ using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Clinical.Documents;
 
+/// <summary>The documents of Clinical that other modules' messages can name (<see cref="NotificationDocument"/>).</summary>
+public static class ClinicalDocumentKinds
+{
+    /// <summary>The signed (or amended) discharge summary of a stay, by the summary's id.</summary>
+    public const string DischargeSummary = "clinical.discharge-summary";
+}
+
 /// <summary>
 /// The signed prescription as a PDF, for the "prescription shared" message: WhatsApp sends it in the template's document
 /// header when the template has one, e-mail attaches it. It is made when the message goes out, with the DSC signature as
@@ -47,15 +54,15 @@ internal sealed class PrescriptionDocumentSource(
 }
 
 /// <summary>
-/// The signed (or amended) discharge summary as a PDF, for a message about the patient's discharge. A draft is never
-/// sent. Its headings are in the language the patient prefers (PP-06). Nothing in this module queues such a message
-/// yet; the kind is here for the modules that tell patients about their discharge.
+/// The signed (or amended) discharge summary as a PDF, for the message about the patient's discharge (Inpatient's
+/// <c>discharge.completed</c>, sent in the WhatsApp template's document header when it has one). A draft is never sent.
+/// Its headings are in the language the patient prefers (PP-06).
 /// </summary>
 internal sealed class DischargeSummaryDocumentSource(
     DischargeSummaryService summaries, DocumentAssets assets, IPdfRenderer renderer, IPatientLanguageSource languages)
     : INotificationDocumentSource
 {
-    public const string DocumentKind = "clinical.discharge-summary";
+    public const string DocumentKind = ClinicalDocumentKinds.DischargeSummary;
 
     public string Kind => DocumentKind;
 

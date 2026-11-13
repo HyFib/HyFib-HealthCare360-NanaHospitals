@@ -1,5 +1,6 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.VirtualCare.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -17,7 +18,7 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
 {
     public const string Template = "telehealth.link";
 
-    private static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+    internal static readonly NotificationChannel[] Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     public async Task<string> JoinUrlAsync(TelehealthSession session, string token, CancellationToken ct) =>
         JoinUrl(await PortalAddress.BaseUrlAsync(settings, session.FacilityId, ct), session.Id, token);
@@ -26,14 +27,24 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
     public static string JoinUrl(string? baseUrl, Guid sessionId, string token) =>
         PortalAddress.Page(baseUrl ?? string.Empty, $"telehealth/{sessionId}?t={Uri.EscapeDataString(token)}");
 
-    /// <summary>Queues the link in the current unit of work. Returns false when the patient has no mobile or e-mail.</summary>
+    /// <summary>
+    /// Queues the link in the current unit of work. Returns false when the patient has no mobile or e-mail, or the record
+    /// is hidden from the number (a protected category on a shared mobile number).
+    /// </summary>
     public async Task<bool> SendAsync(TelehealthSession session, string joinUrl, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.Id == session.PatientId)
-            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+            .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient is null || (patient.Phone is null && patient.Email is null))
+        {
+            return false;
+        }
+
+        // The message names the doctor, whose speciality can reveal the care (a psychiatrist, say), so a record in a
+        // protected category gets no link on a number another patient shares (SharedNumbers): the patient joins from the portal.
+        if (await SharedNumbers.HiddenFromNumberAsync(db, patient.Id, ct))
         {
             return false;
         }
@@ -46,7 +57,7 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
 
         notifications.Queue(
             Template,
-            new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["name"] = patient.FullName,

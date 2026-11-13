@@ -62,11 +62,13 @@ public sealed class CrmAutomationTests(HospitalServer server)
         detail.VisitId.ShouldBeNull("This consultation had no visit.");
         detail.Notes.ShouldNotBeNull().ShouldNotContain("diabetes", Case.Insensitive, "The CRM team does not see the chart.");
 
-        // The reminder job texts the patient about tomorrow's review, once; the chronic review is months away.
+        // The reminder job tells the patient about tomorrow's review, once on each channel (the WhatsApp one is not sent
+        // while its template is not in use); the chronic review is months away.
         await RunUntilAsync((monitor, ct) => monitor.SendFollowUpRemindersAsync(ct),
             async () => (await crm.GetAsync<FollowUpDetail>($"/api/v1/crm/follow-ups/{review.Id}")).ReminderSentAt is not null);
         await RunAsync((monitor, ct) => monitor.SendFollowUpRemindersAsync(ct));
-        (await NotificationsAsync(patient.Id, FollowUpReminders.Template)).ShouldBe([NotificationChannel.Sms]);
+        (await NotificationsAsync(patient.Id, FollowUpReminders.Template))
+            .ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
         (await FollowUpsAsync(crm, patient.Uhid)).Where(t => t.Type == FollowUpType.ChronicReview).ShouldHaveSingleItem().ReminderSentAt.ShouldBeNull();
 
         // The patient comes back today: the review is done, and the chronic review moves to three months from now.
@@ -188,18 +190,22 @@ public sealed class CrmAutomationTests(HospitalServer server)
         var path = $"/api/v1/crm/patients/{patient.Id}/communications";
         (await crm.GetAsync<PagedResult<CommunicationEntry>>(path)).Items.ShouldBeEmpty();
 
-        // The CRM team texts the patient about a review, then calls and cannot get through.
+        // The CRM team sends the patient a reminder of a review (by SMS and on WhatsApp), then calls and cannot get through.
         var task = await crm.PostAsync<Guid>("/api/v1/crm/follow-ups", new CreateFollowUpRequest(
             patient.Id, VisitId: null, FollowUpType.ChronicReview, Today.AddDays(1), AssigneeUserId: null, FollowUpPriority.Normal, Notes: null));
         await crm.PostAsync($"/api/v1/crm/follow-ups/{task}/remind");
         await crm.PostAsync($"/api/v1/crm/follow-ups/{task}/attempts", new FollowUpAttemptRequest(FollowUpOutcome.NotReachable, Notes: null, NextDueDate: null));
 
         var history = await crm.GetAsync<PagedResult<CommunicationEntry>>(path);
-        history.TotalCount.ShouldBe(2);
-        var sms = history.Items.Where(e => e.Kind == CommunicationKind.Message).ShouldHaveSingleItem();
-        sms.TemplateKey.ShouldBe(FollowUpReminders.Template);
-        sms.Channel.ShouldBe(NotificationChannel.Sms);
-        sms.Recipient.ShouldNotBeNull().ShouldMatch(@"^\+91\*{6}\d{4}$", "Only the last four digits of the number show.");
+        history.TotalCount.ShouldBe(3);
+        var messages = history.Items.Where(e => e.Kind == CommunicationKind.Message).ToList();
+        messages.Select(e => e.Channel).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+        foreach (var message in messages)
+        {
+            message.TemplateKey.ShouldBe(FollowUpReminders.Template);
+            message.Recipient.ShouldNotBeNull().ShouldMatch(@"^\+91\*{6}\d{4}$", "Only the last four digits of the number show.");
+        }
+
         var call = history.Items.Where(e => e.Kind == CommunicationKind.FollowUpCall).ShouldHaveSingleItem();
         call.FollowUpId.ShouldBe(task);
         call.CallOutcome.ShouldBe(FollowUpOutcome.NotReachable);
@@ -210,7 +216,7 @@ public sealed class CrmAutomationTests(HospitalServer server)
         (await crm.GetAsync<PagedResult<CommunicationEntry>>($"{path}?kind=Campaign")).Items.ShouldBeEmpty();
         var first = await crm.GetAsync<PagedResult<CommunicationEntry>>($"{path}?pageSize=1");
         first.Items.ShouldHaveSingleItem();
-        first.TotalCount.ShouldBe(2);
+        first.TotalCount.ShouldBe(3);
 
         // Reading it is recorded as access to the patient's record.
         await using var scope = server.Services.CreateAsyncScope();

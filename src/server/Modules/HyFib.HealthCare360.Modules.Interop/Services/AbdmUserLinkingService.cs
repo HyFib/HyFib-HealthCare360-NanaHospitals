@@ -247,7 +247,7 @@ internal sealed class AbdmUserLinkingService(
         discovery.Status = AbdmDiscoveryStatus.CodeSent;
         notifications.Queue(
             CodeTemplate,
-            new NotificationRecipient(patient.Phone, null, patient.Id, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, null, patient.Id, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["code"] = code,

@@ -1567,8 +1567,9 @@ the bill's day again, never to delete it.
   another provider than the one that started the sale (POS switched off or changed since) is not applied. The counter
   hears of the outcome through `billing.pos.changed`. Each run is idempotent, so a second worker or the counter polling
   at the same moment does no harm.
-* SMS/WhatsApp templates used: `bill.receipt` (SMS, every counter/POS/gateway receipt), `bill.shared` (WhatsApp, the
-  bill's PDF; see below), `payment.link`.
+* SMS/WhatsApp templates used: `bill.receipt` (SMS, every counter/POS/gateway receipt; on WhatsApp too once its
+  WhatsApp template is switched on, except with the payment that settles a bill sent there), `bill.shared` (WhatsApp,
+  the bill's PDF; see below), `payment.link`. All in the patient's language.
 * In-app alerts: discount approval needed, refund awaiting approval, discharge initiated (final bill drafted), patient
   discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
   `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
@@ -1584,7 +1585,10 @@ estimate) or a cancelled bill gives no document and is never sent.
 
 * **When a payment settles the bill** (counter, POS terminal, payment link or portal checkout; not an advance
   adjustment, which sends no receipt either), alongside the `bill.receipt` SMS, unless `billing.bills.sendOnWhatsApp`
-  is off.
+  is off, and while a version of its WhatsApp template is in use. The receipt of that payment then goes by SMS alone; a
+  payment that leaves something due, or whose bill can't go on WhatsApp, sends its receipt on WhatsApp as well
+  (`ReceiptService.ReceiptChannels`). The desk's send answers 422 `billing.whatsapp_template_off` while the template is
+  not in use.
 * **When the billing desk sends it** from the bill (`POST /bills/{id}/send-whatsapp`), for any finalised, part-paid or
   paid bill.
 * **Consent.** A bill is a service message about the patient's own care, so, like a report, it needs no WhatsApp
@@ -1592,8 +1596,10 @@ estimate) or a cancelled bill gives no document and is never sent.
   that number replied STOP, which the delivery handler checks when it goes out. The desk is told about a STOP up
   front instead of queueing a message that would be suppressed. Deceased patients' numbers are not messaged.
 * **Template.** Seeded (always) as WhatsApp template name `bill_shared` with "Document header" on. Register it with
-  Meta as a utility template with a document header and one body parameter; without a header there is nothing to
-  send, so do not untick it. There is no receipt PDF: the 80 mm receipt prints in the browser.
+  Meta as a utility template with a document header, and its body as the hospital registers all its WhatsApp templates
+  (one parameter, or the HC360 text's placeholders numbered or by name: see
+  [integrations.md](integrations.md#template-parameters)); without a header there is nothing to send, so do not untick
+  it. There is no receipt PDF: the 80 mm receipt prints in the browser.
 
 ## Number series
 | Key | Format | Reset |

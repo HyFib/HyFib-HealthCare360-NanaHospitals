@@ -55,7 +55,7 @@ are stored as text, so lists never sort by an enum in SQL; priorities and status
 | PUT | `/{id}` | `UpdateFollowUpRequest {dueDate, assigneeUserId, priority, notes, version}` → 204 |
 | POST | `/{id}/attempts` | `FollowUpAttemptRequest {outcome, notes, nextDueDate}` → 204 |
 | POST | `/{id}/cancel` | `{reason}` → 204 |
-| POST | `/{id}/remind` | sends the `followup.reminder` SMS now (again, if the job already sent it) and records `reminderSentAt`. It needs an open task, a living patient, an active SMS-updates consent and a mobile number |
+| POST | `/{id}/remind` | sends the `followup.reminder` message now (SMS, and WhatsApp to a number that opted in once its WhatsApp template is switched on; again, if the job already sent it) and records `reminderSentAt`. It needs an open task, a living patient, an active SMS-updates consent and a mobile number |
 
 Types: `PostConsultation, PostDischarge, Vaccination, ChronicReview, HealthCheckupDue, PaymentDue, Feedback`. Sources:
 `Manual` (staff), `Discharge` and `System` (see "Automatic follow-ups" below). The call rules:
@@ -284,7 +284,8 @@ mobile number or portal address only skips the survey, and the reason is logged.
   * The call is idempotent per admission (`discharge:{admissionId}`).
   * The priority is High for LAMA, DAMA and absconded patients.
   * No call is made for Expired discharges or deceased patients.
-* **Feedback link.** It sends a personal IP feedback link by SMS (`feedback.request`). The link is single use, valid
+* **Feedback link.** It sends a personal IP feedback link by SMS, and on WhatsApp to a number that opted in once that
+  template is switched on (`feedback.request`). The link is single use, valid
   for 14 days, and at most one is sent per form and stay. It is sent only when all of these hold:
   * the patient has an active SMS-updates consent and a mobile number;
   * the discharge is not Expired or Absconded;
@@ -312,7 +313,8 @@ a lead to assign. Nothing is started for a deceased, inactive or merged patient.
 * **A visit settles reviews.** A signed encounter completes open PostConsultation and ChronicReview tasks falling due
   within 30 days as `Visited`. A vaccination needs its dose and a check-up the check-up, so a visit leaves those open.
 
-**Reminders.** Once a day, in the campaign window (10:00–21:00 IST), the job sends the `followup.reminder` SMS for open
+**Reminders.** Once a day, in the campaign window (10:00–21:00 IST), the job sends the `followup.reminder` message (SMS,
+and WhatsApp as the feedback link) for open
 PostConsultation, Vaccination, ChronicReview and HealthCheckupDue tasks due within `crm.followUpReminderDays` (2) days,
 whoever created them. It is sent once per task (`reminderSentAt`, also set by the staff "remind" action), as one
 message per patient when several tasks fall due together, naming the earliest date. Moving a task to a new date, by
@@ -331,9 +333,12 @@ Both return immediately on API-only nodes.
 | Template key | Channel | When |
 |---|---|---|
 | `campaign.message` | SMS, WhatsApp | campaign messages: `{{message}}` plus the mandatory `{{optout}}` link. Seeded here |
-| `complaint.acknowledged` | SMS | a low-score complaint when the patient asked for a call-back: `{{reference}}`. Seeded here |
-| `feedback.request` | SMS | personal feedback link: `{{link}}` = `{base}/portal/feedback/{token}`. Platform default |
-| `followup.reminder` | SMS | follow-up due, from staff or the reminder job: `{{doctor}}, {{date}}, {{link}}` (`{base}/portal/`, the portal home). Platform default |
+| `complaint.acknowledged` | SMS, WhatsApp | a low-score complaint when the patient asked for a call-back: `{{reference}}`. Seeded here; the WhatsApp template not in use until Meta approves it |
+| `feedback.request` | SMS, WhatsApp | personal feedback link: `{{link}}` = `{base}/portal/feedback/{token}`. Platform default; the WhatsApp template not in use until Meta approves it, and then sent only to numbers that opted in |
+| `followup.reminder` | SMS, WhatsApp | follow-up due, from staff or the reminder job: `{{doctor}}, {{date}}, {{link}}` (`{base}/portal/`, the portal home). Platform default; on WhatsApp as `feedback.request` |
+
+All of them are written in the patient's language (Hindi or Tamil, with that language's template when the hospital has
+one), English otherwise. The complaint acknowledgement names no one: it goes to the number the person typed.
 
 Campaign opt-out links are `{base}/portal/unsubscribe/{token}` and form QR codes `{base}/portal/feedback/form/{token}`.
 
@@ -371,7 +376,8 @@ Telehealth and the QR codes of printed prescriptions and reports: a bare host na
   * `IPD`: in-patient; Doctor, Nursing, Food, Cleanliness, Billing, Overall.
   * `PORTAL`: Doctor, Front desk, Billing, Overall.
   * `QR-GEN`: general QR posters; Cleanliness, Front desk, Overall.
-* All-facility English templates `campaign.message` (SMS and WhatsApp) and `complaint.acknowledged` (SMS).
+* All-facility English templates `campaign.message` (SMS and WhatsApp) and `complaint.acknowledged` (SMS, and
+  WhatsApp stored "Not in use" until the hospital switches it on).
 * **Before go-live**, set each SMS template's DLT template id and each WhatsApp template name.
 
 ## Tables (`engagement` schema)

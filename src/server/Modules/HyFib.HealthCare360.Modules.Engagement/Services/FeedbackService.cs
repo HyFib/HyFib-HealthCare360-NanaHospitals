@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Engagement.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Notifications;
 
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
@@ -19,6 +21,9 @@ public sealed class FeedbackService(HospitalDbContext db, ComplaintService compl
 {
     public const string DefaultThankYou = "Thank you for your feedback. It helps us care for you better.";
     public const string ComplaintAcknowledgedTemplate = "complaint.acknowledged";
+
+    /// <summary>By SMS, and on WhatsApp once its template is switched on (it is seeded "Not in use" until Meta approves it).</summary>
+    internal static readonly IReadOnlyList<NotificationChannel> ComplaintAcknowledgedChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     /// <summary>Answers must fit the form: rated aspects only, NPS and comment only when asked, and at least one answer.</summary>
     public static Result ValidateAgainstForm(FeedbackForm form, FeedbackSubmission submission)
@@ -114,8 +119,14 @@ public sealed class FeedbackService(HospitalDbContext db, ComplaintService compl
 
             if (contactPhone is not null)
             {
-                notifications.Queue(ComplaintAcknowledgedTemplate, new NotificationRecipient(contactPhone, null, context.PatientId, "Patient"),
-                    new Dictionary<string, string> { ["reference"] = complaint.ComplaintNumber, ["name"] = "Patient" }, [NotificationChannel.Sms], TimeSpan.FromDays(1));
+                // In the patient's language when the feedback came from their own invitation; the number is the one they
+                // typed, so the message still names no one.
+                var language = context.PatientId is { } patientId
+                    ? await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => p.PreferredLanguage).FirstOrDefaultAsync(ct)
+                    : null;
+                notifications.Queue(ComplaintAcknowledgedTemplate,
+                    new NotificationRecipient(contactPhone, null, context.PatientId, "Patient", PatientLanguages.FromPreference(language) ?? PatientLanguages.Default),
+                    new Dictionary<string, string> { ["reference"] = complaint.ComplaintNumber, ["name"] = "Patient" }, ComplaintAcknowledgedChannels, TimeSpan.FromDays(1));
             }
         }
 

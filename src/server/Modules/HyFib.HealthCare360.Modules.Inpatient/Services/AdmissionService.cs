@@ -32,6 +32,12 @@ public sealed class AdmissionService(
     MlcApprovals mlc,
     TimeProvider time)
 {
+    /// <summary>
+    /// The admission's message: by SMS, and on WhatsApp once the hospital switches its WhatsApp template on (it is seeded
+    /// "Not in use" until Meta approves it).
+    /// </summary>
+    internal static readonly IReadOnlyList<NotificationChannel> AdmittedChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+
     public async Task<Result<AdmissionCreated>> AdmitAsync(AdmitPatientRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -220,10 +226,12 @@ public sealed class AdmissionService(
             sourceToken = closed.Value;
         }
 
-        if (request.NotifyPatient && patient.Phone is not null)
+        // The message names the ward and the doctor, so a record in a protected category gets none on a number another
+        // patient shares (SharedNumbers).
+        if (request.NotifyPatient && patient.Phone is not null && !await SharedNumbers.HiddenFromNumberAsync(db, patient.Id, ct))
         {
             notifications.Queue("admission.admitted",
-                new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["name"] = patient.FullName,
@@ -231,7 +239,7 @@ public sealed class AdmissionService(
                     ["bed"] = bed.Label,
                     ["doctor"] = consultant.Value.DisplayName,
                 },
-                [NotificationChannel.Sms],
+                AdmittedChannels,
                 TimeSpan.FromHours(6));
         }
 

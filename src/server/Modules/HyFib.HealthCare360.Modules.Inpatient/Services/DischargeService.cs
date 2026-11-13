@@ -1,9 +1,11 @@
 using HyFib.HealthCare360.Modules.Clinical;
+using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
@@ -44,12 +46,26 @@ public sealed class DischargeService(
     AgainstAdviceDeclarations againstAdvice,
     IApprovals approvals,
     INotificationService notifications,
+    NotificationTemplateRenderer templates,
     IRealtimePublisher realtime,
     IAuditLogger audit,
     ICurrentUser currentUser,
     TimeProvider time)
 {
     public const string AbscondedKind = "inpatient.absconded";
+
+    /// <summary>The discharge's SMS (<c>discharge.completed</c>): it only says the summary is on the portal.</summary>
+    internal static readonly IReadOnlyList<NotificationChannel> DischargedSmsChannels = [NotificationChannel.Sms];
+
+    /// <summary>
+    /// The discharge's WhatsApp message: <c>discharge.completed</c> (text only) for every discharge, or
+    /// <c>discharge.summary</c> (a document header) instead when the stay has a signed summary and the hospital has switched
+    /// that template on (it is seeded "Not in use" until Meta approves it).
+    /// </summary>
+    internal static readonly IReadOnlyList<NotificationChannel> DischargedWhatsAppChannels = [NotificationChannel.WhatsApp];
+
+    internal const string DischargedTemplate = "discharge.completed";
+    internal const string DischargeSummaryTemplate = "discharge.summary";
     public const string PendingPostMortemKind = "inpatient.expired_pending_postmortem";
 
     /// <summary>A witness to a patient leaving the ward against medical advice: a nurse or doctor of the ward team.</summary>
@@ -448,15 +464,33 @@ public sealed class DischargeService(
         {
             var patient = await db.Set<Patient>().AsNoTracking()
                 .Where(p => p.Id == admission.PatientId)
-                .Select(p => new { p.Id, p.FullName, p.Phone, p.Email })
+                .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
                 .FirstOrDefaultAsync(ct);
-            if (patient?.Phone is not null)
+            if (patient?.Phone is not null && !await SharedNumbers.HiddenFromNumberAsync(db, patient.Id, ct))
             {
-                notifications.Queue("discharge.completed",
-                    new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
-                    new Dictionary<string, string> { ["name"] = patient.FullName },
-                    [NotificationChannel.Sms],
-                    TimeSpan.FromHours(12));
+                var values = new Dictionary<string, string> { ["name"] = patient.FullName };
+                var recipient = NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage);
+                notifications.Queue(DischargedTemplate, recipient, values, DischargedSmsChannels, TimeSpan.FromHours(12));
+
+                // The signed discharge summary goes in the document header of the WhatsApp template made for it, where the
+                // hospital has switched that template on. Every other discharge gets the text-only message, because a
+                // template with a document header can't go without its document. A summary amended later is sent as it
+                // stands then.
+                var summaryId = await db.Set<DischargeSummary>().AsNoTracking()
+                    .Where(s => s.AdmissionId == admission.Id && s.Status != DischargeSummaryStatus.Draft && s.SignedAt != null)
+                    .OrderByDescending(s => s.SignedAt)
+                    .Select(s => (Guid?)s.Id)
+                    .FirstOrDefaultAsync(ct);
+                if (summaryId is { } id
+                    && await templates.InUseAsync(DischargeSummaryTemplate, NotificationChannel.WhatsApp, admission.FacilityId, recipient.Language, ct))
+                {
+                    notifications.Queue(DischargeSummaryTemplate, recipient, values, DischargedWhatsAppChannels, TimeSpan.FromHours(12),
+                        document: new NotificationDocument(ClinicalDocumentKinds.DischargeSummary, id));
+                }
+                else
+                {
+                    notifications.Queue(DischargedTemplate, recipient, values, DischargedWhatsAppChannels, TimeSpan.FromHours(12));
+                }
             }
         }
 

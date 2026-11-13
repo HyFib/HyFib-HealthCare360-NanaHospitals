@@ -131,7 +131,7 @@ public sealed class RefillService(
         if (patient?.Phone is not null)
         {
             notifications.Queue(ReadyTemplate,
-                new NotificationRecipient(patient.Phone, patient.Email, patient.Id, patient.FullName),
+                NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["reference"] = entry.PrescriptionNumber,

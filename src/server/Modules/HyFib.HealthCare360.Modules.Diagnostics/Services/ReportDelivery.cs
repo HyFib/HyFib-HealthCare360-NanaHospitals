@@ -52,7 +52,7 @@ internal sealed class ReportDelivery(DiagnosticsLookups lookups, HospitalDbConte
         var sendPdf = document is not null && (await settings.GetAsync<bool?>(SendPdfSetting, facilityId, ct) ?? true);
         notifications.Queue(
             ReportReadyTemplate,
-            new NotificationRecipient(phone, patient.Email, patient.Id, patient.FullName),
+            NotificationRecipient.Patient(phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string> { ["name"] = patient.FullName, ["reference"] = reference },
             channels,
             TimeSpan.FromDays(3),

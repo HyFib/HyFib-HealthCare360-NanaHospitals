@@ -635,7 +635,7 @@ public sealed class PrescriptionService(
 
         var doctor = (await PrintQueries.PractitionerNamesAsync(db, [prescription.PractitionerId], ct)).GetValueOrDefault(prescription.PractitionerId) ?? "your doctor";
         notifications.Queue("prescription.shared",
-            new NotificationRecipient(patient.Phone, patient.Email, prescription.PatientId, patient.FullName),
+            NotificationRecipient.Patient(patient.Phone, patient.Email, prescription.PatientId, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["name"] = patient.FullName,

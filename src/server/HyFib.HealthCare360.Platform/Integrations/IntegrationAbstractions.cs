@@ -23,9 +23,20 @@ public interface ISmsSender
 }
 
 // ---------- WhatsApp ----------
+/// <param name="BodyParameters">
+/// The template's body parameters, in order. A message rendered from an HC360 template sends its whole text as the one
+/// parameter, unless the hospital registered its templates with the placeholders as parameters
+/// (<paramref name="Placeholders"/>).
+/// </param>
 /// <param name="HeaderDocument">
 /// For a template approved with a document header (a report's PDF, say): the file sent at the top of the message.
 /// Unlike a free-form document, it reaches the person outside the 24-hour customer-service window.
+/// </param>
+/// <param name="Placeholders">
+/// For a message rendered from an HC360 template: each placeholder of the template's body with the value it was filled
+/// with, in the order they occur (a placeholder used twice is listed twice). They are the body parameters instead of
+/// <paramref name="BodyParameters"/> where the hospital registered its templates with them as parameters
+/// (<c>integrations.whatsapp</c> <c>parameters</c>, positional or named). Null for any other message.
 /// </param>
 public sealed record WhatsAppTemplateMessage(
     string To,
@@ -34,7 +45,14 @@ public sealed record WhatsAppTemplateMessage(
     IReadOnlyList<string> BodyParameters,
     string? Reference = null,
     Guid? FacilityId = null,
-    WhatsAppHeaderDocument? HeaderDocument = null);
+    WhatsAppHeaderDocument? HeaderDocument = null,
+    IReadOnlyList<TemplatePlaceholder>? Placeholders = null);
+
+/// <summary>
+/// A placeholder of an HC360 notification template (<c>{{billNumber}}</c> is named <c>billNumber</c>) and the value a
+/// message filled it with.
+/// </summary>
+public sealed record TemplatePlaceholder(string Name, string Value);
 
 public sealed record WhatsAppHeaderDocument(string FileName, byte[] Content, string ContentType);
 

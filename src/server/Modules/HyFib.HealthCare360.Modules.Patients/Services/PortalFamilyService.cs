@@ -130,7 +130,7 @@ public sealed class PortalFamilyService(
         db.Add(code);
         notifications.Queue(
             DeskCodeTemplate,
-            new NotificationRecipient(patientPhone, null, patientId, null),
+            NotificationRecipient.Patient(patientPhone, null, patientId, null, patient.PreferredLanguage),
             new Dictionary<string, string>
             {
                 ["code"] = secret,
@@ -323,7 +323,7 @@ public sealed class PortalFamilyService(
         var uhid = request.Uhid.Trim().ToUpperInvariant();
         var patient = await db.Set<Patient>()
             .Where(p => p.Uhid == uhid && p.Phone == target && p.IsActive && p.MergedIntoPatientId == null)
-            .Select(p => new { p.Id })
+            .Select(p => new { p.Id, p.PreferredLanguage })
             .FirstOrDefaultAsync(ct);
         if (patient is not null
             && await db.Set<PortalFamilyLink>().AnyAsync(l => l.AccountPhone == accountPhone && l.PatientId == patient.Id && l.RevokedAt == null, ct))
@@ -347,7 +347,7 @@ public sealed class PortalFamilyService(
             code.CodeHash = HashOf(code.Id, secret);
             notifications.Queue(
                 "portal.family_code",
-                new NotificationRecipient(target, null, patient.Id, null),
+                NotificationRecipient.Patient(target, null, patient.Id, null, patient.PreferredLanguage),
                 new Dictionary<string, string>
                 {
                     ["code"] = secret,
