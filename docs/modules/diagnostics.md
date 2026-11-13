@@ -408,7 +408,11 @@ diagnostics screen.
 * **Critical values**: verifying a critical result (or signing a critical imaging/cardiology finding) requires a
   documented call with read-back (`CriticalCallLog`). The ordering doctor gets the `lab.critical` /
   `diagnostics.critical_finding` SMS in the same transaction, plus in-app alerts to the doctor's user and to holders of
-  `diagnostics.critical.alerts` after commit. Critical results are never auto-validated.
+  `diagnostics.critical.alerts` after commit. Critical results are never auto-validated. An analyser result the analyser
+  flagged critical (`HH`, `LL` or `AA`, HL7 OBX-8 or ASTM R.7) that is kept among the unmatched results is on no test,
+  so no pathologist hears of it: holders of `lab.results.enter` are told to match it now, with the analyser, sample id
+  and channel, through the outbox in the transaction that keeps it (once, as a resend keeps nothing more). A failed
+  look-up of the patient for an alert after commit sends the alert without the name; it never fails the caller.
 * **Release**: tests are released as soon as they are verified (a CBC is not held back by a culture); the report is
   "Released" and `isPartial` while other tests are pending. Each released test raises `DiagnosticReportReleased` with
   the clinical `OrderItemId`. The QR code is assigned at first release. Corrections after release are numbered

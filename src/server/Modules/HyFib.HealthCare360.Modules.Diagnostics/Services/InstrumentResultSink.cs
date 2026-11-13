@@ -16,7 +16,9 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// lab, a tube none of whose tests maps any channel sent, a value the test cannot hold, another value or another
 /// reading of it for a verified test or for a test the message gave already) is stored among the unmatched results
 /// (<see cref="UnmatchedLabResult"/>) for a lab user to assign or discard, and the message is acknowledged: the analyser
-/// neither sends it for ever nor loses it. The same reading sent again (after a lost acknowledgement) changes nothing.
+/// neither sends it for ever nor loses it. One the analyser flagged critical alerts whoever assigns them, once
+/// (<see cref="CriticalValueNotifier.AlertUnmatchedAfterCommit"/>). The same reading sent again (after a lost
+/// acknowledgement) changes nothing.
 /// Verified results are never overwritten; a rerun needs the result to be reopened first.</item>
 /// <item>A result the analyser withdraws (posted in error, deleted) stops counting: its value on a test not yet verified
 /// is cleared, the test pending again with why; a verified value of its own stands, released or not, and the withdrawal
@@ -463,6 +465,9 @@ internal sealed class InstrumentResultSink(
         var discarded = DiscardWithdrawn(keptBefore, withdrawals, instrument.Code, time.GetUtcNow());
         var added = NotKeptYet(rows, keptBefore);
         db.AddRange(added);
+
+        // A critical value on no test reaches no pathologist: whoever matches results is told, in this transaction.
+        critical.AlertUnmatchedAfterCommit(instrument, added);
         return new KeptAside(added.Count, discarded);
     }
 
