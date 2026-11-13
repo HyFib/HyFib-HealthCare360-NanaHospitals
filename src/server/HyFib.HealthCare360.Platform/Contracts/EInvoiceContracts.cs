@@ -103,6 +103,19 @@ public interface IEInvoiceSource
     Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Asks the e-invoice register (kept by Billing) to get a document's IRN on its own once the document is final (GST rule
+/// 48(4)): the request goes out through the outbox when the caller's transaction commits, and the portal is asked when the
+/// facility is connected to it. A module calls it in the transaction that makes one of its B2B documents final; a document
+/// dated before e-invoicing applies is let go.
+/// </summary>
+public interface IEInvoiceQueue
+{
+    /// <param name="source">The document's <see cref="IEInvoiceSource.Source"/>.</param>
+    /// <param name="date">The document's date, the hospital's (IST) day.</param>
+    Task QueueAsync(string source, Guid id, Guid facilityId, DateOnly date, CancellationToken cancellationToken);
+}
+
 /// <summary>The IRN the portal gave an invoice, for its print. <paramref name="QrCodeSvg"/>: the signed QR code as an SVG data URI.</summary>
 public sealed record EInvoiceStamp(string Irn, string AckNo, DateTimeOffset AckDate, string SignedQrCode, string QrCodeSvg);
 

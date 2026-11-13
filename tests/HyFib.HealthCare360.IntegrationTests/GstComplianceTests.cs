@@ -49,8 +49,10 @@ public sealed class GstComplianceTests(HospitalServer server)
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
 
-        // Not connected: the IRN is asked for nowhere, and the hospital is told to upload the JSON by hand.
+        // Not connected: the IRN is asked for nowhere (the request queued as the bill was finalized ends there), and the
+        // hospital is told to upload the JSON by hand.
         var first = await BillAsync(company, service);
+        await server.EInvoiceQueueSettledAsync(first.Id, Ct);
         await using (await server.IrpPortalAsync(enabled: false))
         {
             using var off = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{first.Id}/irn/generate");
@@ -89,7 +91,7 @@ public sealed class GstComplianceTests(HospitalServer server)
 
         // Within the day, the IRN is cancelled on the portal and here.
         var second = await BillAsync(company, service);
-        var live = (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{second.Id}/irn/generate")).Registration!;
+        var live = (await billing.IrnFromThePortalAsync("bill", second.Id, Ct)).Registration!;
         var cancelled = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{second.Id}/irn/cancel",
             new CancelIrnRequest(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", live.Version));
         cancelled.State.ShouldBe(EInvoiceState.IrnCancelled);
@@ -107,7 +109,9 @@ public sealed class GstComplianceTests(HospitalServer server)
             new CounterSaleRequest(medicine.StoreId, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
                 [new SalePayment(PharmacyPaymentMode.Cash, Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero), null)], false,
                 new B2bBuyer(EInvoicing.KeralaCompany, "Sree Clinic", "32", "Sree Clinic, 22 Beach Road, Kozhikode 673001")));
-        await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{sold.Id}/irn/generate");
+        // The sale gets its IRN on its own once it is saved: the outbox asks the portal.
+        var registered = await pharmacist.EInvoiceWhenAsync("pharmacy", sold.Id, d => d.State == EInvoiceState.Registered, "the sale's IRN", Ct);
+        registered.Registration!.RecordedByName.ShouldBe(EInvoiceAutomation.RecordedBy);
         var request = new GenerateEwayBillRequest(450, TransportMode.Road, "KL11AB1234", null, null, null, null);
 
         // One strip is far below ₹50,000: it moves without an e-way bill.
@@ -159,11 +163,11 @@ public sealed class GstComplianceTests(HospitalServer server)
         note.Number.Length.ShouldBeLessThanOrEqualTo(16, "GST rule 46");
         after.PayerDebitAmount.ShouldBe(236m);
 
-        // The debit note goes after its invoice: the bill's IRN first, then the note's, as a DBN naming the bill.
-        (await billing.GetAsync<EInvoiceDetail>($"{Register}/debitnote/{note.Id}")).Problems.ShouldContain(p => p.Contains("has no IRN yet", StringComparison.Ordinal));
-        await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}/irn/generate");
-        var dbn = await billing.PostAsync<EInvoiceDetail>($"{Register}/debitnote/{note.Id}/irn/generate");
-        (dbn.Type, dbn.Against, dbn.State).ShouldBe(("DBN", bill.BillNumber, EInvoiceState.Registered));
+        // Both go to the portal on their own, the bill's IRN first and then the note's, as a DBN naming the bill (a note
+        // waiting for its invoice's IRN: EInvoiceRegisterTests).
+        await billing.EInvoiceWhenAsync("bill", bill.Id, d => d.State == EInvoiceState.Registered, "the bill's IRN", Ct);
+        var dbn = await billing.EInvoiceWhenAsync("debitnote", note.Id, d => d.State == EInvoiceState.Registered, "the debit note's IRN", Ct);
+        (dbn.Type, dbn.Against).ShouldBe(("DBN", bill.BillNumber));
 
         // GSTR-1 of the month: the bill in B2B and the debit note in CDNR, and both in the offline tool's JSON.
         var month = $"{EInvoicing.Today():yyyy-MM}";

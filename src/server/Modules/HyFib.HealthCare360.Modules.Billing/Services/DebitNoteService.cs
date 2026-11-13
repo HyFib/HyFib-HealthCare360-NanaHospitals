@@ -22,6 +22,7 @@ public sealed class DebitNoteService(
     INumberSeries numbers,
     IAuditLogger audit,
     IApprovals approvals,
+    IEInvoiceQueue einvoices,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -122,6 +123,12 @@ public sealed class DebitNoteService(
         // The bill's version moves with the note, so a payment or credit approved against the bill as it was is stale.
         db.Entry(bill).State = EntityState.Modified;
         db.Add(note);
+        if (note.Party == DebitNoteParty.Payer && bill.TaxAmount != 0 && bill.PayerId is not null)
+        {
+            // A debit note to a payer on a B2B bill is an e-invoice too (GST rule 48(4)): its IRN is asked for once it is issued.
+            await einvoices.QueueAsync(DebitNoteEInvoiceSource.Key, note.Id, note.FacilityId, BillingTime.LocalDate(note.IssuedAt), ct);
+        }
+
         audit.Add(new AuditEntry(AuditCategories.Data, "billing.debit_note.issued",
             $"{note.Number}: ₹{Money.FormatInr(note.Amount)} (GST ₹{Money.FormatInr(note.GstAmount)}) on bill {bill.BillNumber}, charged to the {(note.Party == DebitNoteParty.Payer ? "payer" : "patient")} — {note.Reason} (asked for by {note.RequestedByName}, approved by {note.IssuedByName})")
         {

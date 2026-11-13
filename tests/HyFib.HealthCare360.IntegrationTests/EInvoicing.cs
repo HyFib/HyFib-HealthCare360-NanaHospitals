@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Integrations.Irp;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
+using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
@@ -102,6 +103,36 @@ internal static class EInvoicing
         await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = enabled, ["provider"] = "simulator" }, null, false, null));
         return new Restore(async () =>
             await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
+    }
+
+    /// <summary>
+    /// Waits, for up to a minute, until the outbox has dealt with the request for the document's IRN queued as it became
+    /// final: a test that connects the portal afterwards knows nothing will then ask for that IRN on its own.
+    /// </summary>
+    public static async Task EInvoiceQueueSettledAsync(this HospitalServer server, Guid documentId, CancellationToken ct)
+    {
+        for (var waited = TimeSpan.Zero; ; waited += TimeSpan.FromSeconds(1))
+        {
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+                var pending = await db.Database.SqlQuery<int>($"""
+                    SELECT count(*)::int AS "Value" FROM platform.outbox_messages
+                     WHERE type = {EInvoiceGenerateHandler.MessageType} AND status = 'Pending' AND payload->>'id' = {documentId.ToString()}
+                    """).SingleAsync(ct);
+                if (pending == 0)
+                {
+                    return;
+                }
+            }
+
+            if (waited >= TimeSpan.FromMinutes(1))
+            {
+                throw new ShouldAssertException($"The outbox did not deal with the IRN request of {documentId} within a minute.");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+        }
     }
 
     /// <summary>Moves an IRN's generation back by <paramref name="age"/>, here and on the simulated portal.</summary>

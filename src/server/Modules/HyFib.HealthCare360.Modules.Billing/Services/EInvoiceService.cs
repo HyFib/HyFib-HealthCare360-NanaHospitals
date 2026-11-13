@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
@@ -22,6 +23,7 @@ public sealed class EInvoiceService(
     ICurrentUser currentUser,
     IInvoiceRegistrationPortal portal,
     IAuditLogger audit,
+    INotificationService notifications,
     TimeProvider time)
 {
     public const string ApplicableFromSetting = "gst.einvoice.from";
@@ -242,12 +244,14 @@ public sealed class EInvoiceService(
     public async Task<Result<EInvoiceDetail>> GenerateAsync(string source, Guid id, CancellationToken ct)
     {
         var found = await DocumentAsync(source, id, ct);
-        if (found.IsFailure)
-        {
-            return found.Error!;
-        }
+        return found.IsFailure
+            ? found.Error!
+            : await GenerateAsync(found.Value.Document, found.Value.Seller, found.Value.Applicable, currentUser.DisplayName ?? currentUser.UserName ?? "Staff", ct);
+    }
 
-        var (document, seller, applicable) = found.Value;
+    private async Task<Result<EInvoiceDetail>> GenerateAsync(
+        EInvoiceDocument document, EInvoiceSeller seller, DateOnly applicable, string recordedBy, CancellationToken ct)
+    {
         var noun = InvoiceRegistrationPayload.Noun(document);
         if (document.IsCancelled)
         {
@@ -319,7 +323,7 @@ public sealed class EInvoiceService(
             SignedQrCode = irn.SignedQrCode,
             SignedInvoice = string.IsNullOrEmpty(irn.SignedInvoice) ? null : irn.SignedInvoice,
             Provider = connection.Provider ?? EInvoice.ManualProvider,
-            RecordedByName = currentUser.DisplayName ?? currentUser.UserName ?? "Staff",
+            RecordedByName = recordedBy,
             PrecedingSource = document.Preceding?.Source,
             PrecedingId = document.Preceding?.Id,
         };
@@ -331,6 +335,60 @@ public sealed class EInvoiceService(
         db.Add(registration);
         await db.SaveChangesAsync(ct);
         return await DetailAsync(document, [], ct);
+    }
+
+    /// <summary>
+    /// Gets a document's IRN on HC360's own, when the outbox delivers the request queued as the document became final
+    /// (<see cref="EInvoiceQueue"/>), and says what the outbox does next (<see cref="EInvoiceAutomation"/>). Nothing more
+    /// when the document needs no IRN now: it is no longer a B2B e-invoice of e-invoicing's days, it is cancelled, it has an
+    /// IRN (live, or cancelled on the portal), or the facility is not connected to the portal (its IRN is recorded by hand).
+    /// Tried again later when the portal did not answer, or the invoice a credit or debit note names still waits for its
+    /// own IRN. Given up on, with holders of <see cref="BillingPermissions.EInvoice"/> told at once, when the document's
+    /// problems or the portal stop it.
+    /// </summary>
+    internal async Task<(EInvoiceAutoOutcome Outcome, string Reason)> GenerateQueuedAsync(string source, Guid id, CancellationToken ct)
+    {
+        var found = await DocumentAsync(source, id, ct);
+        if (found.IsFailure)
+        {
+            return (EInvoiceAutoOutcome.Done, found.Error!.Message);
+        }
+
+        var (document, seller, applicable) = found.Value;
+        if (document.IsCancelled || await db.Set<EInvoice>().AsNoTracking().AnyAsync(e => e.Source == document.Source && e.SourceId == document.Id, ct))
+        {
+            return (EInvoiceAutoOutcome.Done, "It is cancelled, or has an IRN already.");
+        }
+
+        if (await portal.ConnectionAsync(document.FacilityId, ct) is { Connected: false } connection)
+        {
+            return (EInvoiceAutoOutcome.Done, $"{connection.Problem} Its IRN is recorded by hand.");
+        }
+
+        if (await PrecedingAsync(document, applicable, ct) is { Waiting: true, Problem: { } waiting })
+        {
+            return (EInvoiceAutoOutcome.Retry, waiting);
+        }
+
+        var generated = await GenerateAsync(document, seller, applicable, EInvoiceAutomation.RecordedBy, ct);
+        if (generated.IsSuccess || await LiveAsync(document.Source, document.Id, ct) is not null)
+        {
+            // Registered now, here or by a request that got there first.
+            return (EInvoiceAutoOutcome.Done, "Registered.");
+        }
+
+        var error = generated.Error!;
+        var outcome = EInvoiceAutomation.After(error.Code);
+        if (outcome == EInvoiceAutoOutcome.GiveUp)
+        {
+            var noun = InvoiceRegistrationPayload.Noun(document);
+            await notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.EInvoice, document.FacilityId, $"{char.ToUpperInvariant(noun[0])}{noun[1..]} {document.Number} did not get its IRN",
+                $"HC360 asked the e-invoice portal for it on its own: {error.Message} It waits in the e-invoice register.",
+                "/billing/einvoices", "billing", "warning", ct);
+        }
+
+        return (outcome, error.Message);
     }
 
     /// <summary>
@@ -533,18 +591,25 @@ public sealed class EInvoiceService(
     /// first, or the portal, the buyer's GSTR-2B and the hospital's GSTR-1 would hold a credit note against an invoice
     /// they never had. An invoice from before e-invoicing applied has no IRN, and its credit note goes without one.
     /// </summary>
-    private async Task<IReadOnlyList<string>> PrecedingProblemsAsync(EInvoiceDocument document, DateOnly applicable, CancellationToken ct)
+    private async Task<IReadOnlyList<string>> PrecedingProblemsAsync(EInvoiceDocument document, DateOnly applicable, CancellationToken ct) =>
+        (await PrecedingAsync(document, applicable, ct)).Problem is { } problem ? [problem] : [];
+
+    /// <summary>
+    /// What stops a credit or debit note from going to the portal before the invoice it names (<see cref="PrecedingProblemsAsync"/>):
+    /// the invoice has no IRN yet. <c>Waiting</c>: the invoice can still get its IRN, after which the note goes.
+    /// </summary>
+    private async Task<(string? Problem, bool Waiting)> PrecedingAsync(EInvoiceDocument document, DateOnly applicable, CancellationToken ct)
     {
         if (document.Preceding is not { } preceding || preceding.Date < applicable || await LiveAsync(preceding.Source, preceding.Id, ct) is not null)
         {
-            return [];
+            return (null, false);
         }
 
         var reportBy = preceding.Date.AddDays(ReportWithinDays);
         var by = reportBy.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
         return BillingTime.Today(time) <= reportBy
-            ? [$"Invoice {preceding.Number} has no IRN yet: record its IRN first (the portal takes it until {by}); this credit note names it."]
-            : [$"Invoice {preceding.Number} was due on the portal by {by} and has no IRN. Settle it with the hospital's GST adviser before reporting a credit note against it."];
+            ? ($"Invoice {preceding.Number} has no IRN yet: record its IRN first (the portal takes it until {by}); this credit note names it.", true)
+            : ($"Invoice {preceding.Number} was due on the portal by {by} and has no IRN. Settle it with the hospital's GST adviser before reporting a credit note against it.", false);
     }
 
     private async Task<Result<(EInvoiceDocument Document, EInvoiceSeller Seller, DateOnly Applicable)>> DocumentAsync(string source, Guid id, CancellationToken ct)
@@ -597,7 +662,10 @@ public sealed class EInvoiceService(
                 && document.Total > await EwayBillThresholdAsync(document.FacilityId, ct));
     }
 
-    private async Task<DateOnly?> ApplicableFromAsync(Guid facilityId, CancellationToken ct) =>
+    private Task<DateOnly?> ApplicableFromAsync(Guid facilityId, CancellationToken ct) => ApplicableFromAsync(settings, facilityId, ct);
+
+    /// <summary>The first document date e-invoicing applies to at the facility (<see cref="ApplicableFromSetting"/>); null when it does not e-invoice.</summary>
+    internal static async Task<DateOnly?> ApplicableFromAsync(ISettingsService settings, Guid facilityId, CancellationToken ct) =>
         DateOnly.TryParseExact(await settings.GetAsync<string?>(ApplicableFromSetting, facilityId, ct), "yyyy-MM-dd", CultureInfo.InvariantCulture,
             DateTimeStyles.None, out var date)
             ? date
