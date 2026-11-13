@@ -23,6 +23,7 @@ import {
   CartRegular,
   DeleteRegular,
   OpenRegular,
+  PaymentRegular,
   PrintRegular,
   ReceiptRegular,
   SubtractRegular,
@@ -47,8 +48,12 @@ import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
+import { TerminalSaleDialog } from '@/lib/terminal/TerminalSaleDialog';
+import { toTerminalPaid, type TerminalPaid } from '@/lib/terminal/types';
 import {
   canteenApi,
+  canteenTerminalApi,
   canteenKeys,
   canteenQueries,
   CUSTOMER_LABEL,
@@ -62,6 +67,7 @@ import {
 } from '@/modules/canteen/api';
 import { calculateBill, changeDue, type BillLineInput } from '@/modules/canteen/billCalculator';
 import { printCanteenReceipt } from '@/modules/canteen/print';
+import { canTakeOnTerminal, paymentFields } from '@/modules/canteen/terminal';
 import { isValidEmployeeCode } from '@/modules/canteen/rules';
 import { SaleDrawer } from '@/modules/canteen/SaleDrawer';
 import { useStoredState } from '@/modules/inpatient/hooks';
@@ -170,6 +176,7 @@ const useStyles = makeStyles({
   segment: { minWidth: 0, paddingLeft: '4px', paddingRight: '4px' },
   charge: { minHeight: '52px', fontSize: tokens.fontSizeBase500 },
   muted: { color: tokens.colorNeutralForeground3 },
+  terminalPaid: { display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' },
   last: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' },
 });
 
@@ -235,6 +242,10 @@ function CanteenPosPage() {
   const [term, setTerm] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [tendered, setTendered] = useState('');
+  // A card/UPI payment taken on the terminal for this bill: the cart is locked while it is attached.
+  const [terminal, setTerminal] = useState<TerminalPaid | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const locked = terminal !== null;
   const [lastSale, setLastSale] = useState<CanteenSaleDto | null>(null);
   const [openSale, setOpenSale] = useState<string | null>(null);
   const [autoPrint, setAutoPrint] = useStoredState('hc360:canteen:autoprint', '1');
@@ -277,6 +288,9 @@ function CanteenPosPage() {
   const focusSearch = () => document.getElementById(SEARCH_ID)?.focus();
 
   const add = (item: MenuItemDto) => {
+    if (locked) {
+      return;
+    }
     const current = quantityOf(item.id);
     if (item.trackStock && current >= item.stockOnHand) {
       notify.warning(`Only ${item.stockOnHand} ${item.name} left`);
@@ -296,13 +310,14 @@ function CanteenPosPage() {
     );
   };
   const decrease = (id: string) =>
+    !locked &&
     setCart((lines) =>
       lines.flatMap((l) => (l.menuItemId !== id ? [l] : l.quantity > 1 ? [{ ...l, quantity: l.quantity - 1 }] : [])),
     );
-  const remove = (id: string) => setCart((lines) => lines.filter((l) => l.menuItemId !== id));
+  const remove = (id: string) => !locked && setCart((lines) => lines.filter((l) => l.menuItemId !== id));
 
   const sale = useMutation({
-    mutationFn: (v: CheckoutValues) =>
+    mutationFn: ({ values: v, paid }: { values: CheckoutValues; paid: TerminalPaid | null }) =>
       canteenApi.createSale({
         customerType: v.customerType,
         customerName: v.customerType === 'Visitor' || v.customerType === 'Attendant' ? v.customerName || null : null,
@@ -310,13 +325,13 @@ function CanteenPosPage() {
         // For staff credit the server prints the name from HR; a typed name is sent only for cash staff bills.
         employeeName: v.customerType === 'Staff' && v.paymentMode !== 'StaffCredit' ? v.employeeName || null : null,
         patientId: v.customerType === 'Patient' ? (v.patient?.id ?? null) : null,
-        paymentMode: v.paymentMode,
-        paymentReference: v.paymentMode === 'Upi' || v.paymentMode === 'Card' ? v.paymentReference || null : null,
+        ...paymentFields(v.paymentMode, v.paymentReference, paid),
         lines: priced.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
       }),
     onSuccess: (result) => {
       setLastSale(result);
       setCart([]);
+      setTerminal(null);
       setTendered('');
       form.reset({ ...form.getValues(), ...RESET_FIELDS });
       void queryClient.invalidateQueries({ queryKey: canteenKeys.all });
@@ -344,9 +359,21 @@ function CanteenPosPage() {
 
   const charge = form.handleSubmit((values) => {
     if (priced.length > 0 && !sale.isPending) {
-      sale.mutate(values);
+      sale.mutate({ values, paid: terminal });
     }
   });
+  /** The terminal approved (or an earlier payment was chosen): attach it and finish the bill in one go. */
+  const finishWithTerminal = (paid: TerminalPaid) => {
+    setTerminal(paid);
+    setTerminalOpen(false);
+    form.setValue('paymentMode', paid.mode);
+    void form.handleSubmit((values) => {
+      if (priced.length > 0 && !sale.isPending) {
+        sale.mutate({ values: { ...values, paymentMode: paid.mode }, paid });
+      }
+    })();
+  };
+  const takeOnTerminal = () => void form.trigger().then((ok) => ok && setTerminalOpen(true));
   useHotkey('f9', () => void charge(), { allowInInputs: true, enabled: canSell });
   useHotkey('f2', focusSearch, { allowInInputs: true, enabled: canSell });
 
@@ -450,7 +477,7 @@ function CanteenPosPage() {
                     key={item.id}
                     type="button"
                     className={mergeClasses(styles.tile, inCart > 0 && styles.inCart)}
-                    disabled={soldOut}
+                    disabled={soldOut || locked}
                     onClick={() => add(item)}
                     aria-label={`${item.name}, ${formatInr(item.price)}, ${item.isVeg ? 'vegetarian' : 'non-vegetarian'}${soldOut ? ', sold out' : ''}${inCart ? `, ${inCart} in the bill` : ''}`}
                   >
@@ -487,7 +514,7 @@ function CanteenPosPage() {
             title={`Bill${itemCount ? ` · ${itemCount} items` : ''}`}
             actions={
               cart.length > 0 ? (
-                <Button size="small" appearance="subtle" onClick={() => setCart([])}>
+                <Button size="small" appearance="subtle" disabled={locked} onClick={() => setCart([])}>
                   Clear
                 </Button>
               ) : undefined
@@ -511,6 +538,7 @@ function CanteenPosPage() {
                           size="small"
                           appearance="subtle"
                           icon={<SubtractRegular />}
+                          disabled={locked}
                           aria-label={`One less ${l.itemName}`}
                           onClick={() => decrease(l.menuItemId)}
                         />
@@ -521,6 +549,7 @@ function CanteenPosPage() {
                           size="small"
                           appearance="subtle"
                           icon={<AddRegular />}
+                          disabled={locked}
                           aria-label={`One more ${l.itemName}`}
                           onClick={() => byId.get(l.menuItemId) && add(byId.get(l.menuItemId)!)}
                         />
@@ -531,6 +560,7 @@ function CanteenPosPage() {
                           size="small"
                           appearance="subtle"
                           icon={<DeleteRegular />}
+                          disabled={locked}
                           aria-label={`Remove ${l.itemName}`}
                           onClick={() => remove(l.menuItemId)}
                         />
@@ -604,7 +634,7 @@ function CanteenPosPage() {
                           aria-checked={field.value === m}
                           className={styles.segment}
                           checked={field.value === m}
-                          disabled={m === 'StaffCredit' && customerType !== 'Staff'}
+                          disabled={locked || (m === 'StaffCredit' && customerType !== 'Staff')}
                           title={
                             m === 'StaffCredit' && customerType !== 'Staff' ? 'Only staff can buy on credit' : undefined
                           }
@@ -654,7 +684,30 @@ function CanteenPosPage() {
                   )}
                 />
               )}
-              {(paymentMode === 'Upi' || paymentMode === 'Card') && (
+              {terminal && (
+                <Field
+                  label="Paid on the terminal"
+                  hint="The cart is locked while this is attached. Removing it does not return the money: it stays on the terminal and can be used again from “Already paid on the terminal”."
+                >
+                  <div className={styles.terminalPaid}>
+                    <Text>{terminalDetailsLine(terminal) || 'Approved'}</Text>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      onClick={() => setTerminal(null)}
+                      disabled={sale.isPending}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </Field>
+              )}
+              {!terminal && canTakeOnTerminal(paymentMode, bill.netAmount) && (
+                <Button icon={<PaymentRegular />} onClick={takeOnTerminal} disabled={sale.isPending}>
+                  Take on terminal
+                </Button>
+              )}
+              {!terminal && (paymentMode === 'Upi' || paymentMode === 'Card') && (
                 <TextField
                   control={form.control}
                   name="paymentReference"
@@ -745,6 +798,21 @@ function CanteenPosPage() {
           )}
         </div>
       </div>
+      {terminalOpen && (
+        <TerminalSaleDialog
+          open
+          api={canteenTerminalApi}
+          counter="canteen"
+          amount={bill.netAmount}
+          initialMode={paymentMode === 'Upi' ? 'Upi' : 'Card'}
+          patientId={customerType === 'Patient' ? (form.getValues('patient')?.id ?? null) : null}
+          maxAmount={bill.netAmount}
+          exact
+          approveLabel="Finish the bill"
+          onClose={() => setTerminalOpen(false)}
+          onApproved={(paid) => finishWithTerminal(toTerminalPaid(paid))}
+        />
+      )}
       {openSale && <SaleDrawer saleId={openSale} onClose={() => setOpenSale(null)} />}
     </Page>
   );

@@ -371,6 +371,7 @@ public static class PlatformServiceCollectionExtensions
 
         // Fallbacks replaced by the Billing, Patients, Clinical, Inpatient and Quality modules / Integrations project when present.
         services.TryAddScoped<IChargePoster, NullChargePoster>();
+        services.TryAddScoped<ICounterTerminal, NullCounterTerminal>();
         services.TryAddScoped<IRoomClassDirectory, NullRoomClassDirectory>();
         services.TryAddScoped<IAdmissionDirectory, NullAdmissionDirectory>();
         services.TryAddScoped<IIncidentRegister, NullIncidentRegister>();

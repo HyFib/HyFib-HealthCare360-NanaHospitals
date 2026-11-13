@@ -31,6 +31,7 @@ import {
   DismissCircleRegular,
   DismissRegular,
   MoneyRegular,
+  PaymentRegular,
   PrintRegular,
 } from '@fluentui/react-icons';
 import { formatDateTime, formatInr, isApiError, todayIso } from '@hc360/core';
@@ -46,6 +47,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
+import { TerminalSaleDialog } from '@/lib/terminal/TerminalSaleDialog';
+import { toTerminalPaid, type TerminalPaid } from '@/lib/terminal/types';
 import { approvalKeys } from '@/modules/approvals/api';
 import { usePermission } from '@/lib/permissions';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
@@ -56,6 +60,7 @@ import { Detail, DetailGrid, ExpiryText, ScheduleBadge } from '@/modules/invento
 import {
   isApprovalRequest,
   pharmacyApi,
+  pharmacyTerminalApi,
   pharmacyKeys,
   pharmacyQueries,
   paymentModeLabel,
@@ -289,7 +294,14 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
                     header: 'Mode',
                     render: (p) => `${p.isRefund ? 'Refund · ' : ''}${paymentModeLabel[p.mode]}`,
                   },
-                  { key: 'ref', header: 'Reference', render: (p) => p.reference ?? '—' },
+                  {
+                    key: 'ref',
+                    header: 'Reference',
+                    render: (p) =>
+                      [p.reference, terminalDetailsLine({ cardLast4: p.cardLast4, approvalCode: p.approvalCode })]
+                        .filter(Boolean)
+                        .join(' · ') || '—',
+                  },
                   {
                     key: 'amount',
                     header: 'Amount',
@@ -429,11 +441,19 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
   const [mode, setMode] = useState<Exclude<PaymentMode, 'Credit'>>('Cash');
   const [amount, setAmount] = useState(String(sale.dueAmount));
   const [reference, setReference] = useState('');
-  const value = parseNumber(amount) ?? 0;
-  const needsReference = mode !== 'Cash';
+  const [terminal, setTerminal] = useState<TerminalPaid | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const value = terminal ? terminal.amount : (parseNumber(amount) ?? 0);
+  const needsReference = mode !== 'Cash' && !terminal;
   const valid = value > 0 && value <= sale.dueAmount && (!needsReference || reference.trim().length > 0);
   const collect = useMutation({
-    mutationFn: () => pharmacyApi.collectPayment(sale.id, { mode, amount: value, reference: reference.trim() || null }),
+    mutationFn: () =>
+      pharmacyApi.collectPayment(sale.id, {
+        mode,
+        amount: value,
+        reference: terminal ? null : reference.trim() || null,
+        terminalSaleId: terminal?.id ?? null,
+      }),
     onSuccess: () => {
       notify.success(`${formatInr(value)} collected`, `Invoice ${sale.invoiceNumber}`);
       refresh();
@@ -441,7 +461,7 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
     },
   });
   const guard = useUnsavedChanges({
-    dirty: useValuesChanged({ mode, amount, reference }),
+    dirty: useValuesChanged({ mode, amount, reference, terminal }),
     busy: collect.isPending,
     onClose,
   });
@@ -464,7 +484,7 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                 {sale.customerName ?? 'Customer'} owes {formatInr(sale.dueAmount)} on invoice {sale.invoiceNumber}.
               </Text>
               <Field label="Paid by">
-                <Select value={mode} onChange={(_, d) => setMode(d.value as typeof mode)}>
+                <Select value={mode} disabled={terminal !== null} onChange={(_, d) => setMode(d.value as typeof mode)}>
                   <option value="Cash">Cash</option>
                   <option value="Card">Card</option>
                   <option value="Upi">UPI</option>
@@ -478,7 +498,8 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                 <Input
                   type="number"
                   contentBefore="₹"
-                  value={amount}
+                  value={terminal ? String(terminal.amount) : amount}
+                  disabled={terminal !== null}
                   onChange={(_, d) => setAmount(d.value)}
                   autoFocus
                 />
@@ -491,6 +512,46 @@ function CollectDialog({ sale, onClose }: { sale: PharmacySaleDetail; onClose: (
                 >
                   <Input value={reference} maxLength={64} onChange={(_, d) => setReference(d.value)} />
                 </Field>
+              )}
+              {mode !== 'Cash' && !terminal && (
+                <Button
+                  icon={<PaymentRegular />}
+                  disabled={!(value > 0) || value > sale.dueAmount}
+                  onClick={() => setTerminalOpen(true)}
+                >
+                  Take on terminal
+                </Button>
+              )}
+              {terminal && (
+                <Field
+                  label="Paid on the terminal"
+                  hint="Removing it does not return the money: it stays on the terminal and can be used again from “Already paid on the terminal”."
+                >
+                  <Text>{terminalDetailsLine(terminal) || 'Approved'}</Text>
+                  <Button size="small" appearance="subtle" onClick={() => setTerminal(null)}>
+                    Remove
+                  </Button>
+                </Field>
+              )}
+              {terminalOpen && (
+                <TerminalSaleDialog
+                  open
+                  api={pharmacyTerminalApi}
+                  counter="pharmacy"
+                  amount={value}
+                  initialMode={mode === 'Upi' ? 'Upi' : 'Card'}
+                  patientId={sale.patientId}
+                  maxAmount={sale.dueAmount}
+                  exact={false}
+                  approveLabel="Use this payment"
+                  onClose={() => setTerminalOpen(false)}
+                  onApproved={(paid) => {
+                    setTerminal(toTerminalPaid(paid));
+                    setMode(paid.mode);
+                    setAmount(String(paid.amount));
+                    setTerminalOpen(false);
+                  }}
+                />
               )}
               {collect.error && (
                 <MessageBar intent="error">

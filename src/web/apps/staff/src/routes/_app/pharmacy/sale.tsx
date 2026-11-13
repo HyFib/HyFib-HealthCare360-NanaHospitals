@@ -68,7 +68,13 @@ import { controlledItems, itemsFromErrorData, planBatchIssue } from '@/modules/p
 import { MedicineSearch } from '@/modules/pharmacy/MedicineSearch';
 import { scannedBatchProblem } from '@/modules/pharmacy/tags';
 import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
-import { checkPayments, defaultPayments, resolvePayments, type PaymentDraft } from '@/modules/pharmacy/payments';
+import {
+  checkPayments,
+  defaultPayments,
+  paymentsRequest,
+  resolvePayments,
+  type PaymentDraft,
+} from '@/modules/pharmacy/payments';
 import { PHARMACY_PERMISSIONS as P } from '@/modules/pharmacy/permissions';
 import { priceSaleLine, saleTotals } from '@/modules/pharmacy/pricing';
 import { useFacilityGstin } from '@/modules/purchase/hooks';
@@ -318,9 +324,7 @@ function CounterSalePage() {
           })),
         ),
         discountPercent,
-        payments: resolved
-          .filter((p) => p.amount > 0)
-          .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference })),
+        payments: paymentsRequest(resolved),
         confirmControlledDrugs: registerItems.length > 0 && confirmControlled,
         buyer: b2bShown
           ? {
@@ -726,6 +730,7 @@ function CounterSalePage() {
                 check={paymentCheck}
                 creditAllowed={creditAllowed}
                 disabled={!canSell}
+                patientId={customerKind === 'patient' ? (patient?.id ?? null) : null}
               />
             </div>
           </Section>

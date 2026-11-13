@@ -82,6 +82,7 @@ public sealed class DispensingService(
     IAntimicrobialStewardship stewardship,
     CashLimit cashLimit,
     IEInvoiceQueue einvoices,
+    ICounterTerminal terminal,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -267,6 +268,12 @@ public sealed class DispensingService(
             return completed.Error!;
         }
 
+        var terminalPaid = await PharmacyTerminalPayments.UseAsync(terminal, sale, sale.Payments, ct);
+        if (terminalPaid.IsFailure)
+        {
+            return terminalPaid.Error!;
+        }
+
         sale.MarkDispensed(null);
         db.Add(sale);
         register.Record(sale.FacilityId, issued.Value.Movements, StockMovementType.Dispense, inward: false, reference,
@@ -404,6 +411,12 @@ public sealed class DispensingService(
         if (completed.IsFailure)
         {
             return completed.Error!;
+        }
+
+        var terminalPaid = await PharmacyTerminalPayments.UseAsync(terminal, sale, sale.Payments, ct);
+        if (terminalPaid.IsFailure)
+        {
+            return terminalPaid.Error!;
         }
 
         sale.MarkDispensed(null);

@@ -740,7 +740,7 @@ the record it is corrected on:
 |---|---|---|
 | Online payments the payment simulator took (bill payments, IP deposits, appointment prepayments, payments kept as an advance) | All of the receipt line's money is recorded as not received | Billing › Receipts › Money not received; a second person approves |
 | Refunds the payment simulator said it paid back | The refund is recorded as not paid out | The refund › Not paid out; a second person approves |
-| Card and UPI sales the terminal simulator approved | All of the money of the receipt line the sale made is recorded as not received | As a payment |
+| Card and UPI sales the terminal simulator approved | Billing's: all of the money of the receipt line the sale made is recorded as not received. The pharmacy's: the invoice is cancelled the same day or taken back in a return, so its card or UPI money is paid back. The canteen's: the bill is cancelled, which only its own day allows | As a payment; the pharmacy's invoice or the canteen's bill › Cancel (the pharmacy's return: Returns). A canteen bill of an earlier day is corrected in that day's canteen accounts in Tally, and the sign-off note says so |
 | Aadhaar numbers the Aadhaar simulator linked | The number is removed from the patient's record or replaced, or a real fingerprint check of it, not with a virtual ID, matches | The patient › Edit |
 | Imaging studies linked to the PACS simulator | The study is linked to its real images, cancelled as not done, or its report has an addendum written after the images were linked | Radiology › the study |
 | Results typed into the training analyser | Each result it gave on the sample is entered again from a real measurement (a verified one is reopened first) or amended on the released report; one still waiting unmatched is discarded | The lab order; Lab › Unmatched analyser results |
@@ -1016,8 +1016,10 @@ whose Accession Number and Patient ID are a study's accession number and the pat
 
 HC360 pushes the amount to the counter's Pine Labs terminal (Plutus Smart, cloud integration), the patient pays on
 the terminal, and the receipt is recorded with the terminal's RRN, approval code and the card's last four digits
-(`docs/modules/integrations.md`, "Card/UPI POS"). Billing's counters push bills and IP advances to the terminal; the
-pharmacy and canteen counters do not yet, and type the RRN or UPI reference from the slip instead.
+(`docs/modules/integrations.md`, "Card/UPI POS"). Billing's counters push bills and IP advances to the terminal, and the
+pharmacy and canteen counters push their invoices and bills the same way (**Take on terminal**); the payment then
+carries the terminal's RRN, approval code and card digits, and nothing is typed. A counter can still type the RRN or UPI
+reference from the slip instead.
 
 1. **From Pine Labs** (the hospital's relationship manager, or Pine Labs' integration team): the UAT and production
    addresses of the cloud integration service, the merchant id, the security token, the user id, and for each terminal
@@ -1027,8 +1029,8 @@ pharmacy and canteen counters do not yet, and type the RRN or UPI reference from
 2. **Set it up in UAT first**: Administration › Integrations › Card/UPI POS: provider Pine Labs, the UAT address,
    merchant id, user id, security token and the terminals, one entry per counter with an id such as `OPD-1`. When Pine
    Labs' codes differ from HC360's defaults, set *Payment mode codes* (card `1`, upi `10`) and *Codes that mean "still
-   waiting"* (`1001`). At each billing counter, the first card or UPI payment asks for the terminal id (on the
-   terminal's label), and the computer remembers it.
+   waiting"* (`1001`). At each billing, pharmacy and canteen counter, the first card or UPI payment asks for the
+   terminal id (on the terminal's label), and the computer remembers it for that counter.
 3. **Run the UAT test pack** with a UAT terminal and Pine Labs' test cards, and keep each result for Pine Labs' sign-off:
 
    | # | At the counter | On the terminal | HC360 shows |
@@ -1046,19 +1048,29 @@ pharmacy and canteen counters do not yet, and type the RRN or UPI reference from
    | 11 | A card Pine Labs declines (their decline test card) | try again or cancel | The sale stays waiting while the terminal lets the customer retry, or ends declined (note which) |
    | 12 | A sale while the terminal is offline | nothing | Waiting; Cancel in HC360 ends it |
    | 13 | A void on the terminal, then a refund in HC360 with the void's RRN | void | The refund is recorded |
+   | 14 | A pharmacy walk-in counter sale by card, **Take on terminal** | pay with a test card | "Paid on the terminal · Card ending …"; the invoice's payment has the RRN, approval code and card digits |
+   | 15 | A pharmacy dispense paid part by UPI on the terminal, the rest in cash | pay by UPI | Two payments on the invoice; the UPI one has the terminal's reference |
+   | 16 | A canteen bill by UPI, **Take on terminal**, then **Finish the bill** | pay by UPI | The bill is saved with the terminal's reference |
+   | 17 | A pharmacy payment taken, the screen closed, then the invoice made from **Already paid on the terminal** | pay, then nothing | The payment is listed, **Use this payment** records it, and the same payment cannot be used on a second invoice |
+   | 18 | A pharmacy payment approved and never put on an invoice, then wait past the re-check time (15 minutes) | pay | Billing › Gateway reconciliation shows "Paid on the terminal, but no invoice records it yet", and the accountants get one alert; recording it on an invoice clears it |
 
    Administration › Integrations › Integration log shows each call's `code=… message=…`. Note the code and message
    for a waiting, approved, cancelled, declined and timed-out sale: HC360 relies on them. If a sale that is still
    waiting shows any code other than `1001`, add it to *Codes that mean "still waiting"* before going live, or HC360
    takes the sale as declined while the customer may still pay.
 4. **Settlement**: import the UAT day's settlement report on Billing › Card and UPI settlements. Every approved test
-   sale should match its receipt.
+   sale should match its receipt. The pharmacy's and the canteen's terminal payments match their invoices and bills,
+   not Billing's receipts, even when one terminal serves Billing and a counter.
 5. **Go live** once Pine Labs signs off UAT: switch the address, merchant id, user id, security token and terminals to
    the production ones, then run one small live sale and void it.
 
 Money a terminal took that HC360 could not record (an advance for a stay whose account was closed meanwhile, say) is
 shown on the counter screen ("Paid, but no receipt yet"), raised in Billing › Gateway reconciliation as a payment
-without a receipt, and the accountants are alerted. Record it or refund it on the terminal there.
+without a receipt, and the accountants are alerted. Record it or refund it on the terminal there. A pharmacy or canteen
+payment that no invoice or bill records within the re-check time (15 minutes by default) is raised there the same way,
+as "Paid on the terminal, but no invoice records it yet", with one alert "Card/UPI payment not recorded at the
+pharmacy/canteen"; recording it on an invoice later clears it. When the customer has gone, refund it on the terminal
+and resolve the exception with a note: the counter is then no longer offered the payment, and cannot record it.
 
 ### BI tools: Power BI and the extract folder
 

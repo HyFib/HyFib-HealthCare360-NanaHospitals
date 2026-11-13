@@ -1,4 +1,5 @@
 import { formatInr } from '@hc360/core';
+import type { TerminalPaid } from '@/lib/terminal/types';
 import { dec, sum, toNumber, ZERO } from '@/modules/inventory/decimal';
 import type { PaymentMode, SalePayment, SaleStatus } from './api';
 
@@ -13,11 +14,17 @@ export interface PaymentDraft {
   /** null = the balance of the bill (on the last such row), otherwise "amount not entered yet". */
   amount: number | null;
   reference: string;
+  /**
+   * Taken on the card terminal: the row is then fixed to the terminal payment's mode and amount, and needs no typed
+   * reference (the server takes the slip details from the terminal payment).
+   */
+  terminal?: TerminalPaid | null;
 }
 
 export interface ResolvedPayment extends SalePayment {
   key: string;
   auto: boolean;
+  terminal?: TerminalPaid | null;
 }
 
 export interface PaymentCheck {
@@ -32,8 +39,14 @@ export interface PaymentCheck {
 
 export const MAX_PAYMENTS = 6;
 
+/** A row paid on the terminal is what the terminal took: its mode and amount are not the draft's. */
+function effective(draft: PaymentDraft): PaymentDraft {
+  return draft.terminal ? { ...draft, mode: draft.terminal.mode, amount: draft.terminal.amount } : draft;
+}
+
 /** Fills the balance row, keeps rows still waiting for an amount (as zero) and drops a balance row that comes to nothing. */
-export function resolvePayments(bill: number, drafts: readonly PaymentDraft[]): ResolvedPayment[] {
+export function resolvePayments(bill: number, rows: readonly PaymentDraft[]): ResolvedPayment[] {
+  const drafts = rows.map(effective);
   let balanceRow = -1;
   drafts.forEach((draft, index) => {
     if (draft.amount === null) {
@@ -44,16 +57,31 @@ export function resolvePayments(bill: number, drafts: readonly PaymentDraft[]): 
   const balance = dec(bill) - fixed;
   const resolved: ResolvedPayment[] = [];
   drafts.forEach((draft, index) => {
-    const reference = draft.reference.trim() || null;
+    const reference = draft.terminal ? null : draft.reference.trim() || null;
+    const terminal = draft.terminal ? { terminal: draft.terminal, terminalSaleId: draft.terminal.id } : {};
     if (draft.amount !== null) {
-      resolved.push({ key: draft.key, mode: draft.mode, amount: draft.amount, reference, auto: false });
+      resolved.push({ key: draft.key, mode: draft.mode, amount: draft.amount, reference, auto: false, ...terminal });
     } else if (index !== balanceRow) {
-      resolved.push({ key: draft.key, mode: draft.mode, amount: 0, reference, auto: false });
+      resolved.push({ key: draft.key, mode: draft.mode, amount: 0, reference, auto: false, ...terminal });
     } else if (balance > ZERO) {
-      resolved.push({ key: draft.key, mode: draft.mode, amount: toNumber(balance), reference, auto: true });
+      resolved.push({
+        key: draft.key,
+        mode: draft.mode,
+        amount: toNumber(balance),
+        reference,
+        auto: true,
+        ...terminal,
+      });
     }
   });
   return resolved;
+}
+
+/** What is left of the bill for one row once the other rows are counted (the most a terminal payment there may be). */
+export function roomForRow(bill: number, resolved: readonly ResolvedPayment[], key: string): number {
+  const others = sum(resolved.filter((p) => p.key !== key).map((p) => dec(p.amount)));
+  const room = dec(bill) - others;
+  return room > ZERO ? toNumber(room) : 0;
 }
 
 export function paymentsTotal(payments: readonly { amount: number }[]): number {
@@ -66,7 +94,7 @@ export function statusFor(paid: number, due: number): SaleStatus {
 }
 
 /**
- * Mirrors SalePricing.Settle and the request validator: every amount positive, card and UPI with a reference,
+ * Mirrors SalePricing.Settle and the request validator: every amount positive, card and UPI with a reference (unless taken on the terminal),
  * at most six payments, credit only for registered patients, and the split adding up exactly to the bill (the
  * counter gives change outside the system).
  */
@@ -91,7 +119,7 @@ export function checkPayments(payable: number, payments: readonly SalePayment[],
   if (payments.some((p) => !(p.amount > 0))) {
     return fail('Enter the amount of each payment (the last one takes the balance).', 'amount');
   }
-  if (payments.some((p) => (p.mode === 'Card' || p.mode === 'Upi') && !p.reference?.trim())) {
+  if (payments.some((p) => (p.mode === 'Card' || p.mode === 'Upi') && !p.terminalSaleId && !p.reference?.trim())) {
     return fail('Enter the card slip or UPI transaction reference.', 'reference');
   }
   if (!creditAllowed && payments.some((p) => p.mode === 'Credit')) {
@@ -139,4 +167,11 @@ export function newPaymentKey(): string {
 /** One "balance" row in cash: the fastest default at the counter. */
 export function defaultPayments(mode: PaymentMode = 'Cash'): PaymentDraft[] {
   return [{ key: 'payment-default', mode, amount: null, reference: '' }];
+}
+
+/** The wire form of resolved payments: a terminal payment goes by its id and needs no reference. */
+export function paymentsRequest(resolved: readonly ResolvedPayment[]): SalePayment[] {
+  return resolved
+    .filter((p) => p.amount > 0)
+    .map((p) => ({ mode: p.mode, amount: p.amount, reference: p.reference, terminalSaleId: p.terminalSaleId ?? null }));
 }

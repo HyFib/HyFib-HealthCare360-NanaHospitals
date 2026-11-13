@@ -71,7 +71,10 @@ internal static class PaymentTargets
 /// Card/UPI terminal sales (INT-POS): push the amount to the terminal, poll its status, and record the receipt once when
 /// the terminal approves — keyed on the terminal transaction id, so concurrent polls cannot record it twice. When the
 /// bill or admission refuses an approved sale's receipt, the money taken is kept on the sale and in the reconciliation
-/// exceptions, and the accountants are alerted, as for an online payment.
+/// exceptions, and the accountants are alerted, as for an online payment. The counters that bill their own sales (the
+/// pharmacy, the canteen) take their payments through the same lifecycle (<see cref="CounterTerminalService"/>): their
+/// approved sale is recorded by the counter's own payment instead (<see cref="UseAsync"/>), and one that no payment
+/// records is kept in the exceptions the same way.
 /// </summary>
 public sealed class PosService(
     HospitalDbContext db,
@@ -85,12 +88,21 @@ public sealed class PosService(
     TimeProvider time,
     ILogger<PosService> logger)
 {
+    /// <summary>The start of the message an approved sale carries while its receipt could not be recorded.</summary>
+    internal const string NotRecordedPrefix = "Paid on the terminal, but no receipt could be recorded";
+
+    /// <summary>The start of the message a counter's approved sale carries while no payment of the counter records it.</summary>
+    internal const string NotUsedPrefix = "Paid on the terminal, but no invoice records it yet";
+
+    private static readonly Error NotConfigured =
+        Error.Rule("billing.pos_not_configured", "No card/UPI terminal integration is configured. Record the payment with the slip details instead.");
+
     public async Task<Result<PosSaleDto>> StartAsync(StartPosSaleRequest request, CancellationToken ct)
     {
         var terminal = services.GetService<IPosTerminal>();
         if (terminal is null)
         {
-            return Error.Rule("billing.pos_not_configured", "No card/UPI terminal integration is configured. Record the payment with the slip details instead.");
+            return NotConfigured;
         }
 
         var target = await PaymentTargets.ResolveAsync(db, request.BillId, request.IpAccountId, request.Amount, ct);
@@ -105,40 +117,21 @@ public sealed class PosService(
             return shift.Error!;
         }
 
-        var reference = Guid.CreateVersion7().ToString("N");
-        PosTransactionResult result;
-        try
-        {
-            result = await terminal.StartSaleAsync(
-                new PosSaleRequest(request.TerminalId.Trim(), Money.Round(request.Amount), reference, request.Mode.ToString()), target.Value.FacilityId, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogWarning(ex, "Could not start a sale on terminal {TerminalId}", request.TerminalId);
-            return Error.Rule("billing.pos_unavailable", "The terminal could not be reached. Check it is online and try again.");
-        }
-
         var sale = new PosTransaction
         {
             FacilityId = target.Value.FacilityId,
-            Provider = terminal.Provider,
-            TerminalId = request.TerminalId.Trim(),
-            TransactionId = result.TransactionId,
-            Reference = reference,
-            Amount = Money.Round(request.Amount),
-            Mode = request.Mode,
             Purpose = target.Value.Purpose,
             BillId = target.Value.BillId,
             IpAccountId = target.Value.IpAccountId,
             PatientId = target.Value.PatientId,
-            Status = PosTransactionStatus.Initiated,
-            InitiatedBy = currentUser.UserId,
             ShiftId = shift.Value?.Id,
             Counter = shift.Value?.Counter,
         };
-        sale.Apply(result, time.GetUtcNow());
-        db.Add(sale);
-        await db.SaveChangesAsync(ct);
+        var pushed = await PushAsync(terminal, sale, request.TerminalId, request.Amount, request.Mode, ct);
+        if (pushed.IsFailure)
+        {
+            return pushed.Error!;
+        }
 
         if (sale.Status == PosTransactionStatus.Approved)
         {
@@ -148,18 +141,87 @@ public sealed class PosService(
         return ToDto(sale);
     }
 
+    /// <summary>
+    /// Pushes a counter's card or UPI amount to the terminal (<see cref="CounterTerminalService"/>): the counter that bills
+    /// its own sales takes no Billing shift and gets no receipt; it records the approved sale itself (<see cref="UseAsync"/>).
+    /// </summary>
+    internal async Task<Result<PosTransaction>> StartForCounterAsync(
+        string owner, decimal amount, string terminalId, PaymentMode mode, Guid? patientId, CancellationToken ct)
+    {
+        var terminal = services.GetService<IPosTerminal>();
+        if (terminal is null)
+        {
+            return NotConfigured;
+        }
+
+        if (currentUser.FacilityId is not { } facilityId)
+        {
+            return Error.Rule("facility.required", "Select a facility first.");
+        }
+
+        var sale = new PosTransaction { FacilityId = facilityId, Owner = owner, PatientId = patientId };
+        var pushed = await PushAsync(terminal, sale, terminalId, amount, mode, ct);
+        return pushed.IsFailure ? pushed.Error! : sale;
+    }
+
+    /// <summary>Asks the terminal to take the amount and keeps the sale, whatever the terminal answered.</summary>
+    private async Task<Result> PushAsync(IPosTerminal terminal, PosTransaction sale, string terminalId, decimal amount, PaymentMode mode, CancellationToken ct)
+    {
+        var reference = Guid.CreateVersion7().ToString("N");
+        PosTransactionResult result;
+        try
+        {
+            result = await terminal.StartSaleAsync(new PosSaleRequest(terminalId.Trim(), Money.Round(amount), reference, mode.ToString()), sale.FacilityId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The id was typed at the counter: no line break in it may start a log line of its own.
+            logger.LogWarning(ex, "Could not start a sale on terminal {TerminalId}", terminalId.Replace('\r', ' ').Replace('\n', ' '));
+            return Error.Rule("billing.pos_unavailable", "The terminal could not be reached. Check it is online and try again.");
+        }
+
+        sale.Provider = terminal.Provider;
+        sale.TerminalId = terminalId.Trim();
+        sale.TransactionId = result.TransactionId;
+        sale.Reference = reference;
+        sale.Amount = Money.Round(amount);
+        sale.Mode = mode;
+        sale.Status = PosTransactionStatus.Initiated;
+        sale.InitiatedBy = currentUser.UserId;
+        sale.Apply(result, time.GetUtcNow());
+        db.Add(sale);
+        await db.SaveChangesAsync(ct);
+        return Result.Success();
+    }
+
     /// <summary>Polls the terminal (the counter calls this every few seconds while the customer pays).</summary>
     public async Task<Result<PosSaleDto>> RefreshAsync(Guid id, CancellationToken ct)
     {
-        var sale = await db.Set<PosTransaction>().FirstOrDefaultAsync(s => s.Id == id, ct);
+        var sale = await RefreshSaleAsync(id, null, ct);
+        return sale.IsFailure ? sale.Error! : ToDto(sale.Value);
+    }
+
+    public async Task<Result<PosSaleDto>> CancelAsync(Guid id, CancellationToken ct)
+    {
+        var sale = await CancelSaleAsync(id, null, ct);
+        return sale.IsFailure ? sale.Error! : ToDto(sale.Value);
+    }
+
+    /// <summary>
+    /// The sale of <paramref name="owner"/> (null: Billing's own) as the terminal has it now; an approval of Billing's own
+    /// is recorded as its receipt once.
+    /// </summary>
+    internal async Task<Result<PosTransaction>> RefreshSaleAsync(Guid id, string? owner, CancellationToken ct)
+    {
+        var sale = await db.Set<PosTransaction>().FirstOrDefaultAsync(s => s.Id == id && s.Owner == owner, ct);
         if (sale is null)
         {
             return Error.NotFound(nameof(PosTransaction), id);
         }
 
-        if (sale.IsComplete && (sale.Status != PosTransactionStatus.Approved || sale.ReceiptId is not null))
+        if (sale.IsComplete && (sale.Status != PosTransactionStatus.Approved || sale.Owner is not null || sale.ReceiptId is not null))
         {
-            return ToDto(sale);
+            return sale;
         }
 
         if (!sale.IsComplete)
@@ -174,18 +236,18 @@ public sealed class PosService(
             await db.SaveChangesAsync(ct);
         }
 
-        if (sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null && !await TryRecordAsync(sale, ct))
+        if (sale.Owner is null && sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null && !await TryRecordAsync(sale, ct))
         {
-            var current = await db.Set<PosTransaction>().AsNoTracking().FirstAsync(s => s.Id == id, ct);
-            return ToDto(current);
+            return await db.Set<PosTransaction>().AsNoTracking().FirstAsync(s => s.Id == id, ct);
         }
 
-        return ToDto(sale);
+        return sale;
     }
 
-    public async Task<Result<PosSaleDto>> CancelAsync(Guid id, CancellationToken ct)
+    /// <summary>Cancels the sale of <paramref name="owner"/> (null: Billing's own) on the terminal.</summary>
+    internal async Task<Result<PosTransaction>> CancelSaleAsync(Guid id, string? owner, CancellationToken ct)
     {
-        var sale = await db.Set<PosTransaction>().FirstOrDefaultAsync(s => s.Id == id, ct);
+        var sale = await db.Set<PosTransaction>().FirstOrDefaultAsync(s => s.Id == id && s.Owner == owner, ct);
         if (sale is null)
         {
             return Error.NotFound(nameof(PosTransaction), id);
@@ -204,19 +266,103 @@ public sealed class PosService(
 
         sale.Apply(await terminal.CancelAsync(sale.TransactionId, sale.FacilityId, ct), time.GetUtcNow());
         await db.SaveChangesAsync(ct);
-        if (sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null)
+        if (sale.Owner is null && sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null)
         {
             // The customer completed the payment before the cancel reached the terminal: the money is ours to record.
             await TryRecordAsync(sale, ct);
         }
 
-        return ToDto(sale);
+        return sale;
+    }
+
+    /// <summary>
+    /// A counter's approved sales that no payment of the counter records yet, newest first, within the re-check's window:
+    /// money taken on the terminal for a sale the counter did not finish (the screen was closed, the invoice refused).
+    /// One the accountants closed in the reconciliation (refunded on the terminal, say) is no longer the counter's to use.
+    /// </summary>
+    internal async Task<IReadOnlyList<PosTransaction>> UnusedAsync(string owner, CancellationToken ct)
+    {
+        var since = time.GetUtcNow() - PosRecheckRunner.Window;
+        var closed = ClosedExceptions();
+        return await db.Set<PosTransaction>().AsNoTracking()
+            .Where(s => s.Owner == owner && s.Status == PosTransactionStatus.Approved && s.OwnerPaymentId == null && s.CreatedAt > since)
+            .Where(s => !closed.Any(d => d.Key == s.TransactionId))
+            .OrderByDescending(s => s.CreatedAt)
+            .Take(MaxUnused)
+            .ToListAsync(ct);
+    }
+
+    /// <summary>More approved sales than this left off invoices within two days is a counter to look at, not a list to scroll.</summary>
+    internal const int MaxUnused = 200;
+
+    /// <summary>
+    /// The signed-in facility's unrecorded-payment exceptions a person resolved: the money was dealt with outside HC360.
+    /// Read with the facility filter, as the counter's own sales are: a query that ignored it for the exceptions would
+    /// ignore it for the sales too.
+    /// </summary>
+    private IQueryable<GatewayDiscrepancy> ClosedExceptions() =>
+        db.Set<GatewayDiscrepancy>()
+            .Where(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Status == DiscrepancyStatus.Resolved && !d.ResolvedAutomatically);
+
+    /// <summary>
+    /// Marks a counter's approved sale as recorded by the counter's payment <paramref name="paymentId"/>, on its invoice or
+    /// bill <paramref name="document"/>, and clears its exception. Staged in the caller's unit of work: the counter saves
+    /// it with its invoice, and the sale's version refuses a second invoice saved at the same time. The same payment may
+    /// use its sale again (a retried save).
+    /// </summary>
+    internal async Task<Result<PosTransaction>> UseAsync(
+        string owner, Guid id, Guid paymentId, string document, PaymentMode mode, decimal amount, CancellationToken ct)
+    {
+        var sale = await db.Set<PosTransaction>().FirstOrDefaultAsync(s => s.Id == id && s.Owner == owner, ct);
+        if (sale is null)
+        {
+            return Error.Rule("pos.sale_unknown", "This terminal payment was not taken at this counter.");
+        }
+
+        if (sale.Status != PosTransactionStatus.Approved)
+        {
+            return sale.IsComplete
+                ? Error.Rule("pos.sale_not_paid", $"The terminal did not take this payment ({StatusWords(sale.Status)}). Take the payment again.")
+                : Error.Rule("pos.sale_pending", "The customer has not paid on the terminal yet. Wait for the terminal to approve the payment.");
+        }
+
+        if (sale.OwnerPaymentId is { } used)
+        {
+            return used == paymentId
+                ? sale
+                : Error.Conflict("pos.sale_used", $"This terminal payment is already recorded on {sale.OwnerDocument}. Take a new payment for this one.");
+        }
+
+        if (sale.Mode != mode)
+        {
+            return Error.Rule("pos.sale_mode", $"The terminal took this payment by {ModeWords(sale.Mode)}: record it as a {ModeWords(sale.Mode)} payment.");
+        }
+
+        if (await ClosedExceptions().AsNoTracking().FirstOrDefaultAsync(d => d.Key == sale.TransactionId, ct) is { } closed)
+        {
+            // Refunded on the terminal, or otherwise settled by the accountants: recording it now would count money twice.
+            return Error.Rule("pos.sale_closed",
+                $"The accountants closed this payment in Gateway reconciliation ({closed.Resolution}), so it cannot be put on an invoice. Take a new payment.");
+        }
+
+        if (sale.Amount != Money.Round(amount))
+        {
+            return Error.Rule("pos.sale_amount",
+                $"The terminal took ₹{Money.FormatInr(sale.Amount)}, but this payment is ₹{Money.FormatInr(amount)}. Record ₹{Money.FormatInr(sale.Amount)} on the terminal payment and take the rest another way.");
+        }
+
+        sale.OwnerPaymentId = paymentId;
+        sale.OwnerDocument = document.Length > 64 ? document[..64] : document;
+        sale.Message = sale.Message?.StartsWith(NotUsedPrefix, StringComparison.Ordinal) == true ? null : sale.Message;
+        await discrepancies.ClearAsync(DiscrepancyKind.UnrecordedPayment, sale.TransactionId, $"Recorded on {sale.OwnerDocument}.", ct);
+        return sale;
     }
 
     /// <summary>
     /// The background re-check of a sale the counter left open (<see cref="PosRecheckRunner"/>): the terminal is asked
     /// with the sale's facility's settings, an approval is recorded once, and a sale still waiting for the customer after
-    /// <paramref name="timeout"/> is cancelled on the terminal and marked timed out. An answer from a provider other than
+    /// <paramref name="timeout"/> is cancelled on the terminal and marked timed out. A counter's approved sale that no
+    /// payment of the counter records within <paramref name="timeout"/> of its approval is kept in the exceptions. An answer from a provider other than
     /// the one that started the sale (POS switched off, or another provider chosen since) is not applied: it would decline
     /// a sale the customer may yet pay. A cancel the terminal does not confirm leaves the sale open, to be tried again.
     /// </summary>
@@ -251,15 +397,27 @@ public sealed class PosService(
             }
 
             await db.SaveChangesAsync(ct);
-            if (sale.IsComplete && sale.Status != PosTransactionStatus.Approved)
+            if (sale.Owner is null && sale.IsComplete && sale.Status != PosTransactionStatus.Approved)
             {
                 await realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct);
             }
         }
 
-        if (sale.Status == PosTransactionStatus.Approved && sale.ReceiptId is null)
+        if (sale.Status != PosTransactionStatus.Approved)
         {
-            await TryRecordAsync(sale, ct);
+            return;
+        }
+
+        if (sale.Owner is null)
+        {
+            if (sale.ReceiptId is null)
+            {
+                await TryRecordAsync(sale, ct);
+            }
+        }
+        else if (sale.OwnerPaymentId is null && time.GetUtcNow() - (sale.CompletedAt ?? sale.CreatedAt) >= timeout)
+        {
+            await KeepUnusedAsync(sale, timeout, ct);
         }
     }
 
@@ -275,6 +433,12 @@ public sealed class PosService(
     /// </summary>
     private async Task<bool> TryRecordAsync(PosTransaction sale, CancellationToken ct)
     {
+        if (sale.Purpose is not { } purpose || sale.PatientId is not { } patientId)
+        {
+            // Only a counter's own sale has neither, and the counter records it as its payment (UseAsync).
+            return false;
+        }
+
         string? refused = null;
         await using (var transaction = await db.BeginOwnedTransactionAsync(ct))
         {
@@ -282,7 +446,7 @@ public sealed class PosService(
             {
                 var shift = sale.ShiftId is { } shiftId ? await db.Set<CashierShift>().FirstOrDefaultAsync(s => s.Id == shiftId, ct) : null;
                 var receipt = await receipts.RecordExternalAsync(new ExternalPayment(
-                    sale.FacilityId, sale.Purpose, sale.PatientId, sale.BillId, sale.IpAccountId, sale.Mode, sale.Amount, sale.TransactionId, sale.Rrn,
+                    sale.FacilityId, purpose, patientId, sale.BillId, sale.IpAccountId, sale.Mode, sale.Amount, sale.TransactionId, sale.Rrn,
                     sale.CardLast4, ReceiptSource.PosTerminal, shift), ct);
                 if (receipt.Error is { } error)
                 {
@@ -316,9 +480,6 @@ public sealed class PosService(
             () => realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct));
         return true;
     }
-
-    /// <summary>The start of the message an approved sale carries while its receipt could not be recorded.</summary>
-    internal const string NotRecordedPrefix = "Paid on the terminal, but no receipt could be recorded";
 
     /// <summary>The terminal took money that HC360 could not record yet: kept on the sale and in the exceptions.</summary>
     private async Task KeepRecordFailureAsync(PosTransaction sale, string reason, CancellationToken ct)
@@ -361,6 +522,63 @@ public sealed class PosService(
                 "/billing/reconciliation", "billing", "warning", ct));
         }
     }
+
+    /// <summary>
+    /// A counter's approved sale that no payment of the counter recorded within <paramref name="timeout"/>: the customer
+    /// paid, but no invoice says so. Kept on the sale, for the counter, and as an exception for the accountants, who are
+    /// alerted once; the counter can still record it on the sale, which clears the exception.
+    /// </summary>
+    private async Task KeepUnusedAsync(PosTransaction sale, TimeSpan timeout, CancellationToken ct)
+    {
+        var counter = CounterWords(sale.Owner);
+        var minutes = timeout.TotalMinutes.ToString("0", CultureInfo.InvariantCulture);
+        logger.LogWarning("Approved terminal sale {TransactionId} at the {Counter} is not recorded on an invoice", sale.TransactionId, sale.Owner);
+        var message = $"{NotUsedPrefix}: the {counter} did not record it within {minutes} minutes. Record it on the sale, or refund it on the terminal; do not take the money again.";
+        sale.Message = message.Length > 300 ? message[..300] : message;
+        var reference = sale.Rrn is { } rrn ? $", RRN {rrn}" : sale.ApprovalCode is { } approval ? $", approval {approval}" : string.Empty;
+        var exception = await discrepancies.RaiseAsync(
+            DiscrepancyKind.UnrecordedPayment, sale.TransactionId, sale.FacilityId,
+            $"₹{Money.FormatInr(sale.Amount)} was paid at the {counter} on card/UPI terminal {sale.TerminalId}{reference}, but no {counter} invoice records it within {minutes} minutes of the payment.",
+            d =>
+            {
+                d.GatewayAmount = sale.Amount;
+                d.GatewayAt = sale.CompletedAt;
+            },
+            ct);
+        var isNew = db.Entry(exception).State == EntityState.Added;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // The counter recorded it meanwhile, or a concurrent check kept it first: the next check sees which.
+            logger.LogInformation(ex, "Terminal sale {TransactionId} changed while it was kept as not recorded", sale.TransactionId);
+            db.ChangeTracker.Clear();
+            return;
+        }
+
+        if (isNew)
+        {
+            await AfterSaveAsync("alert the accountants", sale, () => notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.GatewayReconcile, sale.FacilityId, $"Card/UPI payment not recorded at the {counter}",
+                $"₹{Money.FormatInr(sale.Amount)} was paid on terminal {sale.TerminalId}, but no {counter} invoice records it. Ask the {counter} to record it on the sale, or refund it on the terminal; see Gateway reconciliation.",
+                "/billing/reconciliation", "billing", "warning", ct));
+        }
+    }
+
+    /// <summary>The counter that bills its own sales, in words: "pharmacy", "canteen".</summary>
+    private static string CounterWords(string? owner) => owner?.ToLowerInvariant() ?? "counter";
+
+    private static string ModeWords(PaymentMode mode) => mode == PaymentMode.Upi ? "UPI" : "card";
+
+    private static string StatusWords(PosTransactionStatus status) => status switch
+    {
+        PosTransactionStatus.Declined => "declined",
+        PosTransactionStatus.Cancelled => "cancelled",
+        PosTransactionStatus.TimedOut => "timed out",
+        _ => status.ToString(),
+    };
 
     /// <summary>
     /// Tells the counter or the accountants once the sale is saved. Best effort: the money and the sale are recorded by

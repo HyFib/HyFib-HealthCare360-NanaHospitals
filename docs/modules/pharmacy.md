@@ -48,7 +48,7 @@ Detail views that show a patient (`/queue/{id}`, `/sales/{id}`, `/ward-indents/{
 | GET | `/queue?page&status&inpatient&includeClosed` | any of `pharmacy.queue.read`, `pharmacy.dispense`, `pharmacy.ip.issue` | → paged `QueueListItem` (oldest first; waiting minutes, controlled flag, refill flag, `hasUnacknowledgedOverride`) |
 | GET | `/queue/{id}?storeId` | same | → `QueueEntryDetail` (lines with availability, MRP and nearest expiry in `storeId`; prescriber and registration number; refill status; `safetyOverrideReason`, and on each line its `safetyOverride` and who acknowledged it, when, and their note) |
 | POST | `/queue/{id}/lines/{lineId}/acknowledge-override` | `pharmacy.dispense` | `AcknowledgeOverrideRequest` (note?, up to 500) → 204. 422 `pharmacy.no_override`, `pharmacy.override_acknowledged`, `queue.closed`; 403 `pharmacy.override_own_prescription` for the account that signed the prescription |
-| POST | `/queue/{id}/dispense` | `pharmacy.dispense` | `DispenseRequest` (storeId, lines[queueLineId, itemId, quantity, batchId?, substitutionReason, prescriberConsent], counsellingNotes, discountPercent, payments[mode Cash/Card/Upi/Credit, amount, reference], confirmControlledDrugs) → 201 `PharmacySaleCreated` (id, invoiceNumber, netAmount, paidAmount, dueAmount, status) |
+| POST | `/queue/{id}/dispense` | `pharmacy.dispense` | `DispenseRequest` (storeId, lines[queueLineId, itemId, quantity, batchId?, substitutionReason, prescriberConsent], counsellingNotes, discountPercent, payments[mode Cash/Card/Upi/Credit, amount, reference, terminalSaleId?], confirmControlledDrugs) → 201 `PharmacySaleCreated` (id, invoiceNumber, netAmount, paidAmount, dueAmount, status) |
 | POST | `/queue/{id}/close` | `pharmacy.dispense` or `pharmacy.ip.issue` | `PharmacyReasonRequest` → 204. Partly dispensed lines count as dispensed, untouched lines are cancelled |
 | POST | `/queue/{id}/refills` | `pharmacy.refills` | `AuthorizeRefillsRequest` (refills 1–12, validUntil > today, note) → 204 |
 
@@ -108,7 +108,8 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   into B2CS), and each medicine is in the HSN summary at its HSN code and quantity (`NOS`). Sales and returns are their
   own series in the documents issued.
 * **Payments** may be split across modes and must add up to the bill (`payment.mismatch`). Credit (a due) is
-  allowed only for registered patients (`payment.credit_not_allowed`).
+  allowed only for registered patients (`payment.credit_not_allowed`). A card or UPI payment may be taken on the
+  hospital's terminal (see *Card and UPI on the terminal* below); the rest of a split bill can be cash.
 
 **Medicine labels.** After dispensing (automatically when the pharmacist's preference is on, or from the dispensed
 entry) the staff app prints one label per medicine, without a dialog, on the workstation's label printer: patient,
@@ -130,7 +131,11 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 | GET | `/sales?page&from&to&status&type&storeId&withDues` | `pharmacy.sales` or `pharmacy.returns` | → paged `PharmacySaleListItem` |
 | GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments, each refund with the payment it paid back; `pending`: a cancellation or return waiting for approval; `ownSale`: the reader sold it or took its payment) · `SaleReturnDto[]` |
 | POST | `/sales/counter` | `pharmacy.sales` | `CounterSaleRequest` (storeId, patientId? or customerName/customerPhone, prescription? {prescriberName, prescriberRegistrationNumber, prescriptionDate, reference}, lines[itemId, quantity, batchId?], discountPercent, payments, confirmControlledDrugs, buyer? {gstin, legalName, deliveryState?, address?}) → 201 `PharmacySaleCreated`. The outside prescription is kept as presented, its date with it (`PharmacySaleDetail.prescriptionDate`, printed on the invoice beside its reference), so the sale is matched to the paper it was made against; a date after today is refused (400 `prescription.prescriptionDate`). Cash is held to the Income-tax Act's limit with the billing counters' (422 `payments.cash_limit`, see `docs/modules/billing.md`): an invoice is one transaction, and a patient's cash counts with what they paid at billing that day |
-| POST | `/sales/{id}/payments` | `pharmacy.sales` | `CollectPaymentRequest` (mode, amount, reference) → 204 (`payment.exceeds_due`, `payments.cash_limit`) |
+| POST | `/sales/{id}/payments` | `pharmacy.sales` | `CollectPaymentRequest` (mode, amount, reference, terminalSaleId?) → 204 (`payment.exceeds_due`, `payments.cash_limit`) |
+| POST | `/terminal-sales` | `pharmacy.dispense` or `pharmacy.sales` | `{amount, terminalId, mode Card/Upi, patientId?}` → `CounterTerminalSale` (id, counter, provider, terminalId, transactionId, amount, mode, status, approvalCode, cardLast4, rrn, message, usedFor, createdAt, completedAt). Pushes the amount to the terminal |
+| GET | `/terminal-sales/{id}` | same | → `CounterTerminalSale` (polls the terminal; the screen asks every 2 seconds) |
+| POST | `/terminal-sales/{id}/cancel` | same | → `CounterTerminalSale`; a sale the customer paid first stays approved |
+| GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no invoice records it yet and the accountants have not closed it, within 2 days, newest first |
 | POST | `/sales/{id}/returns` | `pharmacy.returns` | `SaleReturnRequest` (lines[saleItemId, quantity, restock], reason; each sale line once) → 201 `SaleReturnCreated` (returnNumber, refundAmount, adjustedAgainstDue, cashRefund) when restocked and set wholly against the balance due; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.sale_return`). 403 `pharmacy.return_own_sale` for whoever sold it or took its payment |
 | POST | `/sales/{id}/cancel` | `pharmacy.returns` | `PharmacyReasonRequest` → 202 `ApprovalRequestDto` (kind `pharmacy.sale_cancel`). Same local day only and no returns (`sale.cancel_window`, `sale.has_returns`), no IRN (`einvoice.active`); 403 `pharmacy.cancel_own_sale` for whoever sold it or took its payment. Approved, every payment is paid back the way it was paid, the stock goes back to the original batches and the queue entry reopens |
 
@@ -141,10 +146,41 @@ pay out, the way the sale was paid. Only unexpired stock is restocked; expired o
 written off (see below).
 
 A card or UPI payment or collection needs its reference: the RRN or approval code from the charge slip, or the UPI
-reference (UTR). A refund carries the reference of the payment it pays back, under which the acquirer reports it.
-Billing's card and UPI settlement matches the acquirer's transactions with the invoice, and a refund with the refund, by
-it, and lists a payment no settlement carries (through the Platform contract `ICounterSalesSource`; see *Card and UPI
-reconciliation* in [billing.md](billing.md)).
+reference (UTR), unless it was taken on the terminal. A refund carries the reference of the payment it pays back, under
+which the acquirer reports it. Billing's card and UPI settlement matches the acquirer's transactions with the invoice,
+and a refund with the refund, by it, and lists a payment no settlement carries (through the Platform contract
+`ICounterSalesSource`; see *Card and UPI reconciliation* in [billing.md](billing.md)).
+
+**Card and UPI on the terminal.** The pharmacy takes card and UPI payments on the hospital's Pine Labs terminal through
+the Platform contract `ICounterTerminal`, which Billing implements (see
+[integrations.md](integrations.md#cardupi-pos-int-pos)). The counter starts the sale on `/terminal-sales`, follows it
+until the customer has paid, and sends its id as `terminalSaleId` on the card or UPI payment of the dispense
+(`DispenseRequest`), the counter sale (`CounterSaleRequest`) or the balance collection (`CollectPaymentRequest`). No
+reference is typed. A `terminalSaleId` on a cash or credit payment is refused, and each terminal sale can be named once
+in a request.
+* The payment keeps the terminal's RRN as its `reference` (else the approval code), and the `approvalCode`, `cardLast4`
+  and `terminalSaleId` the terminal reported (columns of `sale_payments`). `PharmacyPaymentDto` has the three, and the
+  invoice shows them in its payments.
+* The terminal sale is recorded in the same database transaction as the invoice, once. Another invoice naming it is
+  refused (409 `pos.sale_used`). The amount and mode must be the sale's, and the sale must be the pharmacy's and
+  approved: 422 `pos.sale_unknown`, `pos.sale_pending` (the customer has not paid yet), `pos.sale_not_paid` (declined,
+  cancelled or timed out), `pos.sale_amount`, `pos.sale_mode`, `pos.sale_closed` (the accountants closed it, refunded
+  on the terminal, say).
+* A sale approved on the terminal that no invoice records within the facility's `billing.pos.recheck` time (15 minutes
+  by default) is raised in Billing › Gateway reconciliation as an unrecorded payment, and the accountants are alerted
+  once. Recording it on an invoice later clears it; once an accountant resolves it instead (the money refunded on the
+  terminal), it is no longer offered to the counter or recorded.
+* Billing's settlement match finds the payment by its RRN, or by its approval code (`CounterCardPayment.ApprovalCode`),
+  so nothing typed is needed; the transaction is never matched with a Billing receipt.
+
+**Screens.** In the payment panel of the dispensing screen and the counter sale, a card or UPI row offers **Take on
+terminal**, as does the invoice's **Collect payment**. It opens a dialog with the row's amount:
+1. Choose card or UPI, and the terminal id (on the terminal's label; the computer remembers it, for the pharmacy).
+2. **Send to terminal**. The screen follows the terminal; **Cancel on the terminal** is offered while it waits.
+3. Once approved, the row shows "Paid on the terminal · Card ending 1111 · RRN …" and cannot be edited.
+
+The dialog also lists **Already paid on the terminal** (approved, not on an invoice), each with **Use this payment**,
+for a payment taken before the screen was closed.
 
 ### Refunds and write-offs wait for a second person (maker-checker)
 
@@ -365,11 +401,12 @@ exceed it.
 
 `queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`; `safety_override_reason`,
 `signed_by_user_id`), `queue_lines` (`safety_override` and who acknowledged it, when, with their note), `sales` (unique
-`invoice_number`), `sale_items`, `sale_payments` (a refund's `refund_of_payment_id`), `sale_returns` (unique `return_number`), `sale_return_items`,
+`invoice_number`), `sale_items`, `sale_payments` (a refund's `refund_of_payment_id`; `approval_code`, `card_last4` and
+`terminal_sale_id` of a payment taken on the terminal), `sale_returns` (unique `return_number`), `sale_return_items`,
 `ward_indents`, `ward_indent_lines`, `ip_issues`, `ip_issue_lines`, `ward_returns`, `ward_return_lines`,
-`controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`, `adr_reports` (unique `number`; drugs as jsonb). Queue entries and sales use `xmin`
-optimistic concurrency. Foreign keys go to the Patients `Patient` table and to the SupplyChain store, item and
-stock-batch tables.
+`controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`,
+`adr_reports` (unique `number`; drugs as jsonb). Queue entries and sales use `xmin` optimistic concurrency. Foreign keys
+go to the Patients `Patient` table and to the SupplyChain store, item and stock-batch tables.
 
 ## Open items for maintainers
 

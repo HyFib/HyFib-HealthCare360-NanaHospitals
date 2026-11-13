@@ -40,6 +40,7 @@ public sealed class SaleAdjustmentService(
     IEInvoiceRegister einvoices,
     IEInvoiceQueue einvoiceQueue,
     CashLimit cashLimit,
+    ICounterTerminal terminal,
     IApprovals approvals,
     IOutbox outbox,
     IAuditLogger audit,
@@ -75,9 +76,15 @@ public sealed class SaleAdjustmentService(
             return cash;
         }
 
-        var collected = sale.CollectPayment(request.Mode, request.Amount, request.Reference, time.GetUtcNow(), currentUser.UserId);
+        var collected = sale.CollectPayment(request.Mode, request.Amount, request.Reference, time.GetUtcNow(), currentUser.UserId, request.TerminalSaleId);
         if (collected.IsSuccess)
         {
+            var terminalPaid = await PharmacyTerminalPayments.UseAsync(terminal, sale, [sale.Payments[^1]], ct);
+            if (terminalPaid.IsFailure)
+            {
+                return terminalPaid;
+            }
+
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         }
