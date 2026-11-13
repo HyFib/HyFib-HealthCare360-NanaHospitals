@@ -156,7 +156,8 @@ public sealed class CounterTerminalTests(HospitalServer server)
         await using var terminal = await TrainingTerminal.UseAsync(server, approveAfterSeconds: 0);
         var canteen = await server.SignInAsync(HospitalServer.Users.CanteenManager);
         var item = await MenuItemAsync(canteen, 70m);
-        var paid = await PaidAsync(canteen, "canteen", 70m, CounterPaymentMode.Upi);
+        var terminalId = "CN" + Digits(8);
+        var paid = await PaidAsync(canteen, "canteen", 70m, CounterPaymentMode.Upi, terminalId);
 
         // The screen was closed after the customer paid. Within the facility's timeout nothing is raised.
         await AgeAsync(paid.Id, TimeSpan.FromMinutes(5));
@@ -167,8 +168,10 @@ public sealed class CounterTerminalTests(HospitalServer server)
         var since = DateTimeOffset.UtcNow.AddSeconds(-1);
         await AgeAsync(paid.Id, TimeSpan.FromMinutes(20));
         await RecheckAsync();
+        var alerts = await AlertsAsync(since, terminalId);
+        alerts.ShouldBeGreaterThan(0, "the accountants hear of money taken that no bill records");
         await RecheckAsync();
-        (await AlertsAsync(since)).ShouldBe(1);
+        (await AlertsAsync(since, terminalId)).ShouldBe(alerts, "a later re-check tells no one again");
         var sale = await SaleAsync(paid.Id);
         sale.Message.ShouldNotBeNull().ShouldStartWith(PosService.NotUsedPrefix);
         (await ExceptionAsync(paid.TransactionId)).ShouldNotBeNull().ShouldSatisfyAllConditions(
@@ -270,10 +273,10 @@ public sealed class CounterTerminalTests(HospitalServer server)
     }
 
     /// <summary>The counter pushes the amount and follows the terminal until the customer has paid.</summary>
-    private static async Task<CounterTerminalSale> PaidAsync(ApiClient cashier, string counter, decimal amount, CounterPaymentMode mode)
+    private static async Task<CounterTerminalSale> PaidAsync(ApiClient cashier, string counter, decimal amount, CounterPaymentMode mode, string? terminalId = null)
     {
         var started = await cashier.PostAsync<CounterTerminalSale>($"/api/v1/{counter}/terminal-sales",
-            new StartTerminalSaleRequest(amount, counter == "pharmacy" ? "PH-1" : "CN-1", mode, null));
+            new StartTerminalSaleRequest(amount, terminalId ?? (counter == "pharmacy" ? "PH-1" : "CN-1"), mode, null));
         started.Status.ShouldBe(PosTransactionStatus.AwaitingCustomer);
         var paid = await cashier.GetAsync<CounterTerminalSale>($"/api/v1/{counter}/terminal-sales/{started.Id}");
         paid.Status.ShouldBe(PosTransactionStatus.Approved, paid.Message);
@@ -322,14 +325,12 @@ public sealed class CounterTerminalTests(HospitalServer server)
             .SingleOrDefaultAsync(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Key == transactionId, Ct);
     }
 
-    private async Task<int> AlertsAsync(DateTimeOffset since)
+    /// <summary>The accountants' alerts about a canteen payment on the terminal <paramref name="terminalId"/> no bill records.</summary>
+    private async Task<int> AlertsAsync(DateTimeOffset since, string terminalId)
     {
         await using var scope = server.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserNotification>().AsNoTracking()
-            .Where(n => n.Title == "Card/UPI payment not recorded at the canteen" && n.CreatedAt >= since)
-            .Select(n => n.Body)
-            .Distinct()
-            .CountAsync(Ct);
+            .CountAsync(n => n.Title == "Card/UPI payment not recorded at the canteen" && n.CreatedAt >= since && n.Body!.Contains(terminalId), Ct);
     }
 
     private async Task<SimulatorTransactionStatus> SimulatorStatusAsync(string transactionId)
