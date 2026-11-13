@@ -38,7 +38,15 @@ public sealed class TemplateSwitchTests
         DefaultNotificationTemplates.SeededNotInUse.ShouldAllBe(t => t.Channel == NotificationChannel.WhatsApp);
         DefaultNotificationTemplates.SeededNotInUse.ShouldAllBe(t => DefaultNotificationTemplates.All.Any(d => d.Key == t.Key && d.Channel == t.Channel));
         DefaultNotificationTemplates.SeededNotInUse.Select(t => t.Key).ShouldBe(
-            ["visit.token", "bill.receipt", "admission.admitted", "discharge.completed", "feedback.request", "followup.reminder"], ignoreOrder: true);
+            ["visit.token", "bill.receipt", "admission.admitted", "discharge.completed", "discharge.summary", "feedback.request", "followup.reminder"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Only_the_discharge_summary_template_is_seeded_with_a_document_header()
+    {
+        DefaultNotificationTemplates.SeededWithDocumentHeader.ShouldAllBe(t => t.Channel == NotificationChannel.WhatsApp);
+        DefaultNotificationTemplates.SeededWithDocumentHeader.ShouldAllBe(t => DefaultNotificationTemplates.All.Any(d => d.Key == t.Key && d.Channel == t.Channel));
+        DefaultNotificationTemplates.SeededWithDocumentHeader.Select(t => t.Key).ShouldBe(["discharge.summary"]);
     }
 
     [Theory]

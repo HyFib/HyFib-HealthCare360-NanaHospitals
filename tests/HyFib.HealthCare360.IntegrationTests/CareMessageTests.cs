@@ -6,7 +6,6 @@ using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Billing.Services;
-using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Features.DischargeSummaries;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
@@ -33,8 +32,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// discharge, payment receipt), read from the outbox the real API fills, over PostgreSQL: by SMS, and on WhatsApp once the
 /// hospital switches each WhatsApp template on (they are seeded "Not in use" until Meta approves them, so the server's
 /// own outbox skips them); in the patient's language; never on a number another patient shares when the record is in a
-/// protected category; and the discharge message names the signed discharge summary, for a WhatsApp template with a
-/// document header to carry.
+/// protected category. The discharge's WhatsApp message is text only until the hospital switches on the
+/// <c>discharge.summary</c> template, which carries the signed summary (<see cref="DischargeSummaryWhatsAppTests"/>).
 /// </summary>
 public sealed class CareMessageTests(HospitalServer server)
 {
@@ -80,7 +79,7 @@ public sealed class CareMessageTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task Admission_and_discharge_go_by_sms_and_on_whatsapp_and_the_discharge_names_the_signed_summary()
+    public async Task Admission_and_discharge_go_by_sms_and_on_whatsapp_and_the_discharge_summary_template_stays_off_until_the_hospital_switches_it_on()
     {
         var frontOffice = await server.SignInAsync(Users.FrontOffice);
         var doctor = await server.SignInAsync(Users.Doctor);
@@ -102,9 +101,9 @@ public sealed class CareMessageTests(HospitalServer server)
 
         var discharged = await DeliveriesAsync("discharge.completed", phone, since);
         discharged.Select(d => d.Channel).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
-        discharged.Single(d => d.Channel == NotificationChannel.WhatsApp).Delivery.Document
-            .ShouldBe(new NotificationDocument(ClinicalDocumentKinds.DischargeSummary, signed.Id), "a WhatsApp template with a document header carries the summary");
-        discharged.Single(d => d.Channel == NotificationChannel.Sms).Delivery.Document.ShouldBeNull("an SMS carries no document");
+        discharged.ShouldAllBe(d => d.Delivery.Document == null,
+            "the signed summary goes only in the discharge.summary template, which is seeded not in use");
+        (await DeliveriesAsync("discharge.summary", phone, since)).ShouldBeEmpty("its WhatsApp template is not in use, so the discharge keeps the text-only message");
         await CleanBedAsync(nurse, stay.Id);
     }
 

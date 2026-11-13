@@ -25,7 +25,8 @@ public sealed class MessageTemplateCoverageTests(HospitalServer server)
     [
         ("visit.token", VisitService.TokenChannels),
         ("admission.admitted", AdmissionService.AdmittedChannels),
-        ("discharge.completed", DischargeService.DischargedChannels),
+        (DischargeService.DischargedTemplate, [.. DischargeService.DischargedSmsChannels, .. DischargeService.DischargedWhatsAppChannels]),
+        (DischargeService.DischargeSummaryTemplate, DischargeService.DischargedWhatsAppChannels),
         ("bill.receipt", ReceiptService.ReceiptChannels(billOnWhatsApp: false)),
         (BillSharing.Template, [NotificationChannel.WhatsApp]),
         (FollowUpReminders.Template, FollowUpReminders.Channels),
