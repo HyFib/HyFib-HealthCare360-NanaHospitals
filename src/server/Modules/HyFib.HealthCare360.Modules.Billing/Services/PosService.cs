@@ -312,7 +312,8 @@ public sealed class PosService(
             return true;
         }
 
-        await realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct);
+        await AfterSaveAsync("tell the counter", sale,
+            () => realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct));
         return true;
     }
 
@@ -350,13 +351,31 @@ public sealed class PosService(
             return;
         }
 
-        await realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct);
+        await AfterSaveAsync("tell the counter", sale,
+            () => realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct));
         if (isNew)
         {
-            await notifications.NotifyPermissionHoldersAsync(
+            await AfterSaveAsync("alert the accountants", sale, () => notifications.NotifyPermissionHoldersAsync(
                 BillingPermissions.GatewayReconcile, sale.FacilityId, "Card/UPI payment not recorded",
                 $"₹{Money.FormatInr(sale.Amount)} was paid on terminal {sale.TerminalId}, but no receipt could be recorded. Open Gateway reconciliation to see why, then record it or refund it on the terminal.",
-                "/billing/reconciliation", "billing", "warning", ct);
+                "/billing/reconciliation", "billing", "warning", ct));
+        }
+    }
+
+    /// <summary>
+    /// Tells the counter or the accountants once the sale is saved. Best effort: the money and the sale are recorded by
+    /// then, and a failure here must not turn the cashier's request into an error, which lets them start the sale again
+    /// and charge the customer twice. The exception stays in Gateway reconciliation even when its alert could not go.
+    /// </summary>
+    private async Task AfterSaveAsync(string what, PosTransaction sale, Func<Task> tell)
+    {
+        try
+        {
+            await tell();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not {What} about terminal sale {TransactionId}", what, sale.TransactionId);
         }
     }
 }
