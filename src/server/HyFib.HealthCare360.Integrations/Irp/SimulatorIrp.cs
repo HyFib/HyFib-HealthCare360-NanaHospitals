@@ -9,7 +9,7 @@ namespace HyFib.HealthCare360.Integrations.Irp;
 /// <summary>What the IRP simulator has registered since the server started (it keeps nothing across restarts).</summary>
 internal sealed class SimulatorIrpLedger
 {
-    public sealed record Entry(JsonObject Payload, IrpIrn Irn, bool Cancelled, string? Gstin);
+    public sealed record Entry(JsonObject Payload, IrpIrn Irn, bool Cancelled, string? Gstin, DateTimeOffset? CancelledAt = null);
 
     public ConcurrentDictionary<string, Entry> Entries { get; } = new(StringComparer.Ordinal);
 
@@ -23,7 +23,8 @@ internal sealed class SimulatorIrpLedger
 /// server refuses it before any call, <see cref="IntegrationSettingsReader"/>). It answers as the portal does in the cases
 /// HC360 relies on: the IRN is the portal's own hash (SHA-256 of the supplier's GSTIN, the financial year, the document
 /// type and its number), so the same document asked for twice is a duplicate (2150) that names the IRN it holds; the signed
-/// QR code carries the document's details; an IRN is cancelled only within 24 hours of its generation (2270 after); and
+/// QR code carries the document's details; an IRN is cancelled only within 24 hours of its generation (2270 after); its
+/// details say whether it is active (<c>ACT</c>) or cancelled (<c>CNL</c>, and when), to the GSTIN it belongs to only; and
 /// an e-way bill is generated from a live IRN, valid one day for each 200 km. Its signatures are not the portal's: an IRN
 /// from it is not a real one, and the simulator sweep lists any found on a live server.
 /// </summary>
@@ -60,7 +61,7 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
         }
         else
         {
-            ledger.Entries[irn] = entry with { Cancelled = true };
+            ledger.Entries[irn] = entry with { Cancelled = true, CancelledAt = now };
             result = IrpResult<IrpCancellation>.Ok(new IrpCancellation(irn, now));
         }
 
@@ -68,12 +69,28 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
         return result;
     }
 
+    /// <summary>The IRN's details as the portal gives them to the GSTIN it belongs to: active (<c>ACT</c>) or cancelled (<c>CNL</c>, with when).</summary>
     public async Task<IrpResult<IrpIrn>> GetByIrnAsync(IrpContext context, string irn, CancellationToken cancellationToken)
     {
         var started = trace.Start();
-        var result = ledger.Entries.TryGetValue(irn, out var entry)
-            ? IrpResult<IrpIrn>.Ok(entry.Irn)
-            : IrpResult<IrpIrn>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
+        IrpResult<IrpIrn> result;
+        if (!ledger.Entries.TryGetValue(irn, out var entry))
+        {
+            result = IrpResult<IrpIrn>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
+        }
+        else if (!string.Equals(entry.Gstin, context.Gstin, StringComparison.OrdinalIgnoreCase))
+        {
+            result = IrpResult<IrpIrn>.Fail("9999", "The IRN is not one of the GSTIN these credentials are for.");
+        }
+        else
+        {
+            result = IrpResult<IrpIrn>.Ok(entry.Irn with
+            {
+                Status = entry.Cancelled ? IrpIrn.CancelledStatus : IrpIrn.ActiveStatus,
+                CancelledAt = entry.CancelledAt,
+            });
+        }
+
         await LogAsync("irn.get", started, result.Error, context);
         return result;
     }
@@ -168,7 +185,7 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
         };
         var signed = new IrpIrn(irn, ack, new DateTimeOffset(now.DateTime.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond)), India),
             Jwt(new JsonObject { ["data"] = payload.ToJsonString(), ["iss"] = "HC360 IRP simulator" }),
-            Jwt(new JsonObject { ["data"] = qrData.ToJsonString(), ["iss"] = "HC360 IRP simulator" }));
+            Jwt(new JsonObject { ["data"] = qrData.ToJsonString(), ["iss"] = "HC360 IRP simulator" }), Status: IrpIrn.ActiveStatus);
         ledger.Entries[irn] = new SimulatorIrpLedger.Entry(payload.DeepClone().AsObject(), signed, false, context.Gstin);
         return IrpResult<IrpIrn>.Ok(signed);
     }

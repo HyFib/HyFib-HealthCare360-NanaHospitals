@@ -123,6 +123,10 @@ public sealed record IrpConnection(bool Connected, string? Provider, bool IsSimu
 /// <summary>
 /// The IRN the portal gave a document (NIC e-invoice API v1.03, <c>Invoice</c> and <c>Invoice/irn</c>): the acknowledgement,
 /// the signed invoice and the signed QR code (both JWTs signed by the portal), and the e-way bill generated with it, if any.
+/// <paramref name="Status"/> is how the portal holds the IRN now, as its IRN details say it: <see cref="ActiveStatus"/> or
+/// <see cref="CancelledStatus"/>; null when the answer did not say. <paramref name="CancelledAt"/>: when the portal cancelled
+/// it, where its answer gives the time. The details of a cancelled IRN may come without the acknowledgement or the QR code:
+/// then they are empty.
 /// </summary>
 public sealed record IrpIrn(
     string Irn,
@@ -132,7 +136,26 @@ public sealed record IrpIrn(
     string SignedQrCode,
     long? EwbNo = null,
     DateTimeOffset? EwbDate = null,
-    DateTimeOffset? EwbValidTill = null);
+    DateTimeOffset? EwbValidTill = null,
+    string? Status = null,
+    DateTimeOffset? CancelledAt = null)
+{
+    /// <summary>The portal's status of a live IRN.</summary>
+    public const string ActiveStatus = "ACT";
+
+    /// <summary>The portal's status of a cancelled IRN.</summary>
+    public const string CancelledStatus = "CNL";
+
+    /// <summary>The portal holds the IRN as cancelled.</summary>
+    public bool IsCancelled => string.Equals(Status, CancelledStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// How long after its generation the portal still gives an IRN's details (<c>Invoice/irn</c>). GSP documentation of the
+    /// NIC API gives three days; HC360 asks within two, so a lookup it relies on is never one the portal no longer answers.
+    /// Not yet confirmed on NIC's sandbox.
+    /// </summary>
+    public static readonly TimeSpan DetailsWindow = TimeSpan.FromDays(2);
+}
 
 /// <summary>The portal's answer to a cancellation: the IRN and when it was cancelled.</summary>
 public sealed record IrpCancellation(string Irn, DateTimeOffset CancelledAt);

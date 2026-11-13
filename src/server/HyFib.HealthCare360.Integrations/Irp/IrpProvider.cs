@@ -39,18 +39,27 @@ internal static class IrpAnswers
     public static long? Number(JsonNode? node) =>
         Text(node) is { } text && long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var number) && number > 0 ? number : null;
 
+    /// <summary>
+    /// An IRN as the portal gives it (generated, or its details), with its <c>Status</c> (<c>ACT</c> or <c>CNL</c>) and the
+    /// time it was cancelled (<c>CancelDate</c>) where the answer says. The details of a cancelled IRN are read for its state
+    /// even without the acknowledgement or the QR code; a live IRN needs both.
+    /// </summary>
     public static IrpResult<IrpIrn> Irn(JsonObject data)
     {
         var irn = Text(data["Irn"]);
         var ack = Text(data["AckNo"]);
         var ackDate = Time(data["AckDt"]);
-        if (irn is null || ack is null || ackDate is null || Text(data["SignedQRCode"]) is not { } qr)
+        var qr = Text(data["SignedQRCode"]);
+        var status = Text(data["Status"])?.Trim().ToUpperInvariant();
+        var cancelled = status == IrpIrn.CancelledStatus;
+        if (irn is null || (!cancelled && (ack is null || ackDate is null || qr is null)))
         {
             return IrpResult<IrpIrn>.Fail(IrpError.Unreachable, "The portal's answer did not hold the IRN, its acknowledgement and the signed QR code.");
         }
 
-        return IrpResult<IrpIrn>.Ok(new IrpIrn(irn.ToLowerInvariant(), ack, ackDate.Value, Text(data["SignedInvoice"]) ?? string.Empty, qr,
-            Number(data["EwbNo"]), Time(data["EwbDt"]), Time(data["EwbValidTill"])));
+        return IrpResult<IrpIrn>.Ok(new IrpIrn(irn.ToLowerInvariant(), ack ?? string.Empty, ackDate ?? DateTimeOffset.MinValue,
+            Text(data["SignedInvoice"]) ?? string.Empty, qr ?? string.Empty, Number(data["EwbNo"]), Time(data["EwbDt"]), Time(data["EwbValidTill"]),
+            string.IsNullOrEmpty(status) ? null : status, Time(data["CancelDate"])));
     }
 
     /// <summary>The first error of a refused call, and the IRN the portal already holds for a duplicate (its <c>InfoDtls</c>).</summary>

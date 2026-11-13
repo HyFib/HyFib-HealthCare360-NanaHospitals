@@ -144,6 +144,49 @@ public sealed class IrpClientTests : IDisposable
     }
 
     [Fact]
+    public async Task The_portals_irn_details_say_whether_the_irn_is_active_or_cancelled()
+    {
+        var active = new string('a', 64);
+        var cancelled = new string('b', 64);
+        _http.Respond(HttpStatusCode.OK, """{"Status":1,"Data":{"AuthToken":"gsp-token"}}""")
+            .Respond(HttpStatusCode.OK,
+                $$$"""{"Status":1,"Data":{"Irn":"{{{active.ToUpperInvariant()}}}","AckNo":"112610012345678","AckDt":"2026-10-05 11:02:00","SignedInvoice":"a.b.c","SignedQRCode":"d.e.f","Status":"ACT"}}""")
+            .Respond(HttpStatusCode.OK, $$$"""{"Status":1,"Data":{"Irn":"{{{cancelled}}}","Status":"CNL","CancelDate":"2026-10-05 12:30:00"}}""")
+            .Respond(HttpStatusCode.OK, $$$"""{"Status":1,"Data":{"Irn":"{{{active}}}","Status":"ACT"}}""");
+        var context = Context("gsp");
+
+        var live = (await Client.GetByIrnAsync(context, active, Ct)).Value.ShouldNotBeNull();
+        (live.Irn, live.Status, live.IsCancelled, live.SignedQrCode).ShouldBe((active, "ACT", false, "d.e.f"));
+        live.CancelledAt.ShouldBeNull();
+        _http.Requests[^1].Uri.AbsolutePath.ShouldBe($"/eicore/v1.03/Invoice/irn/{active}");
+
+        // A cancelled IRN's details are its state: they are read without the acknowledgement or the QR code.
+        var gone = (await Client.GetByIrnAsync(context, cancelled, Ct)).Value.ShouldNotBeNull();
+        (gone.Irn, gone.IsCancelled).ShouldBe((cancelled, true));
+        gone.CancelledAt.ShouldBe(new DateTimeOffset(2026, 10, 5, 12, 30, 0, TimeSpan.FromHours(5.5)));
+
+        // A live IRN without them is not an answer HC360 can record.
+        (await Client.GetByIrnAsync(context, active, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+    }
+
+    [Fact]
+    public async Task The_simulator_gives_an_irns_details_to_its_own_gstin_and_says_when_it_was_cancelled()
+    {
+        var clock = new TestClock(new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero));
+        var simulator = new SimulatorIrp(new SimulatorIrpLedger(), _tracing.Trace, clock);
+        var hospital = SimulatorContext(Gstin);
+        var irn = (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Value!.Irn;
+
+        (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value!.Status.ShouldBe(IrpIrn.ActiveStatus);
+        (await simulator.GetByIrnAsync(SimulatorContext("29AABCN1234F1Z5"), irn, Ct)).IsSuccess.ShouldBeFalse("another GSTIN does not see it");
+
+        clock.Advance(TimeSpan.FromHours(2));
+        (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).IsSuccess.ShouldBeTrue();
+        var details = (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value.ShouldNotBeNull();
+        (details.IsCancelled, details.CancelledAt).ShouldBe((true, (DateTimeOffset?)clock.Now));
+    }
+
+    [Fact]
     public async Task Missing_credentials_stop_the_call_before_it_is_sent()
     {
         var context = Context("nic") with { Secrets = new IrpSecrets() };
@@ -174,6 +217,9 @@ public sealed class IrpClientTests : IDisposable
         var training = await Router(live: false).GenerateAsync(facility, Gstin, Invoice(), Ct);
         training.Value!.Irn.ShouldBe(SimulatorIrp.IrnOf(Gstin, new DateOnly(2026, 10, 5), "INV", "NHOB26000001"));
     }
+
+    private static IrpContext SimulatorContext(string gstin) =>
+        new(Guid.NewGuid(), gstin, new IrpSettings { Enabled = true, Provider = "simulator" }, new IrpSecrets());
 
     private static JsonObject Invoice() => new()
     {
