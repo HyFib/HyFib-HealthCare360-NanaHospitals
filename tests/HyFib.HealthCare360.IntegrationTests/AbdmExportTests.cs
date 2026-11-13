@@ -309,8 +309,8 @@ public sealed class AbdmExportTests(HospitalServer server)
 
         // A chest X-ray of the same record, whose report is signed off but not released yet.
         var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
-        var xray = await ChestXrayAsync(facilityId, patient.Id);
-        await RadiologyAsync(xray, (report, study, now) => SignOff(report, study, null, now));
+        var xray = await ChestXrayAsync(server, facilityId, patient.Id);
+        await RadiologyAsync(server, xray, (report, study, now) => SignOff(report, study, null, now));
 
         // And an ECG, its report also signed off but not released.
         var ecg = await EcgAsync(facilityId, patient.Id);
@@ -529,7 +529,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         var reporterUser = (await reporter.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("id").GetGuid();
         var signerMe = await signer.GetAsync<JsonElement>("/api/v1/auth/me");
         var signerUser = signerMe.GetProperty("id").GetGuid();
-        var xray = await ChestXrayAsync(signerMe.GetProperty("facilityId").GetGuid(), patient.Id);
+        var xray = await ChestXrayAsync(server, signerMe.GetProperty("facilityId").GetGuid(), patient.Id);
         var path = $"/api/v1/abdm/bundles/radiology-reports/{xray}";
 
         try
@@ -538,14 +538,14 @@ public sealed class AbdmExportTests(HospitalServer server)
 
             // A draft, a report waiting for sign-off and a report signed off but not released are not exported.
             await NotExportableAsync(path);
-            await RadiologyAsync(xray, (report, study, now) => Submit(report, study, reporterUser, now));
+            await RadiologyAsync(server, xray, (report, study, now) => Submit(report, study, reporterUser, now));
             await NotExportableAsync(path);
-            await RadiologyAsync(xray, (report, study, now) => SignOff(report, study, signerUser, now));
+            await RadiologyAsync(server, xray, (report, study, now) => SignOff(report, study, signerUser, now));
             (await NotExportableAsync(path)).ShouldBe("Only a released radiology report can be exported.");
 
             // Released, it is exported, though the patient has not given the FHIR API's record-sharing consent: a staff copy
             // does not need it. The same report exports as the same document.
-            await RadiologyAsync(xray, (report, study, now) => report.Release(study, signerUser, now));
+            await RadiologyAsync(server, xray, (report, study, now) => report.Release(study, signerUser, now));
             var bundle = await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA");
             ShouldBeTheSameDocument(await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA"), bundle);
             Composition(bundle).GetProperty("section").EnumerateArray().ShouldHaveSingleItem()
@@ -577,7 +577,7 @@ public sealed class AbdmExportTests(HospitalServer server)
 
             // An addendum after the release is a new version of the document: amended, with the addendum in the report and
             // in its conclusion, and attested by the doctor who added it.
-            await RadiologyAsync(xray, (report, study, now) => report.AddAddendum(study, "Small left pleural effusion on review.", "Second read", false, reporterUser, now));
+            await RadiologyAsync(server, xray, (report, study, now) => report.AddAddendum(study, "Small left pleural effusion on review.", "Second read", false, reporterUser, now));
             var amended = await ExportAsync(path, DiagnosticReportRecord, abha, "radiology-report-NHRDA");
             amended.GetProperty("meta").GetProperty("versionId").GetString().ShouldNotBe(bundle.GetProperty("meta").GetProperty("versionId").GetString());
             Composition(amended).GetProperty("status").GetString().ShouldBe("amended");
@@ -1378,7 +1378,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     /// saved as a draft (its id). The radiology screens' steps are taken through the domain's own rules, as
     /// ChartResultTests does, so these tests do not depend on the radiology API's request shapes.
     /// </summary>
-    private async Task<Guid> ChestXrayAsync(Guid facilityId, Guid patientId)
+    internal static async Task<Guid> ChestXrayAsync(HospitalServer server, Guid facilityId, Guid patientId)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
@@ -1409,7 +1409,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     /// <summary>One step of the radiology workflow on the saved report and its study: submit, sign off, release, addendum.</summary>
-    private async Task RadiologyAsync(Guid reportId, Func<RadiologyReport, ImagingStudy, DateTimeOffset, Result> step)
+    internal static async Task RadiologyAsync(HospitalServer server, Guid reportId, Func<RadiologyReport, ImagingStudy, DateTimeOffset, Result> step)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
@@ -1428,7 +1428,7 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     /// <summary>The radiologist signs the report off, which does not release it.</summary>
-    private static Result SignOff(RadiologyReport report, ImagingStudy study, Guid? by, DateTimeOffset now)
+    internal static Result SignOff(RadiologyReport report, ImagingStudy study, Guid? by, DateTimeOffset now)
     {
         study.MarkVerified(now);
         return report.Verify(by, now);

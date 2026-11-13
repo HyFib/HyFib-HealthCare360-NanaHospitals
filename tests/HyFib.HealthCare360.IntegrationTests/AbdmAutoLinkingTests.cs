@@ -11,6 +11,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,8 +22,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// a record completed for a patient with an ABHA address is queued with the signature, and the outbox links it without
 /// staff, through the same gateway calls and callbacks as staff's links. The outbox delivers at least once, so a job run
 /// twice must send nothing the second time; records completed together share one link token; a prescription waits for
-/// the doctor's DSC where the hospital requires it; and a patient with no ABHA address, or a VIP's record, is not queued.
-/// The ABDM switch is hospital-wide, so these tests are in the feature-switch collection.
+/// the doctor's DSC where the hospital requires it; a patient with no ABHA address, or a VIP's record, is not queued; and
+/// a record of a facility that switched ABDM off for itself is not linked, whoever completes it or queues its job. The
+/// ABDM switch is hospital-wide, so these tests are in the feature-switch collection.
 /// </summary>
 [Collection(FeatureSwitchCollection.Name)]
 public sealed class AbdmAutoLinkingTests(HospitalServer server)
@@ -200,6 +202,55 @@ public sealed class AbdmAutoLinkingTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_record_of_a_facility_that_switched_abdm_off_is_not_linked_whoever_releases_it_or_queues_its_job()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var address = "kavya." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var facilityId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("facilityId").GetGuid();
+
+        // Completed before ABDM was on, so nothing was queued for them: a consultation, and a chest X-ray signed off.
+        var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
+        var xray = await AbdmExportTests.ChestXrayAsync(server, facilityId, patient.Id);
+        await AbdmExportTests.RadiologyAsync(server, xray, (report, study, now) => AbdmExportTests.SignOff(report, study, null, now));
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true, autoLink: true);
+            await SwitchFacilityAsync(facilityId, enabled: false);
+
+            // A report's release names no facility, and this one is released where no facility is signed in: the report's
+            // own facility is the one asked, and it has ABDM off.
+            await AbdmExportTests.RadiologyAsync(server, xray, (report, study, now) => report.Release(study, null, now));
+            (await JobsAsync(xray)).ShouldBeEmpty();
+
+            // A job naming no facility, as one queued before the facility switched ABDM off might, links nothing when it runs.
+            await EnqueueAsync(new AbdmAutoLinkJob(AbdmRecordType.OpConsultation, consultation, patient.Id));
+            await WaitForAsync(async () => (await JobsAsync(consultation)).SingleOrDefault(m => m.Status == OutboxStatus.Succeeded));
+            TokenCallsFor(address).ShouldBeEmpty();
+            (await RequestsAsync(patient.Id)).ShouldBeEmpty();
+
+            // Back on for the facility, a report released now is queued under its facility, and linked.
+            await SwitchFacilityAsync(facilityId, enabled: null);
+            var later = await AbdmExportTests.ChestXrayAsync(server, facilityId, patient.Id);
+            await AbdmExportTests.RadiologyAsync(server, later, (report, study, now) => AbdmExportTests.SignOff(report, study, null, now));
+            await AbdmExportTests.RadiologyAsync(server, later, (report, study, now) => report.Release(study, null, now));
+            (await JobsAsync(later)).ShouldHaveSingleItem().FacilityId.ShouldBe(facilityId);
+            await WaitForAsync(() => TokenCallsFor(address).SingleOrDefault());
+            AbdmLinkingService.Records((await RequestsAsync(patient.Id)).ShouldHaveSingleItem().CareContextsJson)
+                .ShouldHaveSingleItem().ReferenceNumber.ShouldBe($"radiology-report/{later}");
+        }
+        finally
+        {
+            await SwitchFacilityAsync(facilityId, enabled: null);
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
     private List<GatewayCall> TokenCallsFor(string address) =>
         [.. Gateway.CallsTo(TokenPath).Where(c => c.Json().GetProperty("abhaAddress").GetString() == address)];
 
@@ -277,6 +328,30 @@ public sealed class AbdmAutoLinkingTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         (await admin.SetFeatureAsync(FeatureKeys.Abdm, new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
+    }
+
+    /// <summary>The facility's own ABDM switch: off (<c>false</c>), or none, leaving it as the hospital has it (null).</summary>
+    private async Task SwitchFacilityAsync(Guid facilityId, bool? enabled)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        var key = FeatureCatalog.Get(FeatureKeys.Abdm).Key;
+        if (enabled is { } on)
+        {
+            await settings.SetAsync(key, on, facilityId, cancellationToken: Ct);
+        }
+        else
+        {
+            await settings.RemoveAsync(key, facilityId, Ct);
+        }
+    }
+
+    /// <summary>Queues an automatic-linking job that names no facility.</summary>
+    private async Task EnqueueAsync(AbdmAutoLinkJob job)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        scope.ServiceProvider.GetRequiredService<IOutbox>().Enqueue(AbdmAutoLinking.MessageType, job, facilityId: null, expiresIn: AbdmAutoLinking.Lifetime);
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
     }
 
     /// <summary>What <paramref name="probe"/> finds once it finds something, asked again until <see cref="OutboxWait"/> has passed.</summary>

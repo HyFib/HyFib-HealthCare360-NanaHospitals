@@ -76,6 +76,7 @@ internal sealed class AbdmLinkingService(
     HospitalDbContext db,
     AbdmRecordLoader records,
     PatientAccessGuard guard,
+    IFeatureFlags features,
     AbdmGatewayConfiguration configuration,
     DisabledAbdmGatewayClient refusal,
     IAbdmGatewayClient gateway,
@@ -233,6 +234,13 @@ internal sealed class AbdmLinkingService(
         if (source.NotExportable is { } reason)
         {
             return AbdmAutoLinkResult.Nothing(reason);
+        }
+
+        // The record's own facility, whatever the queued job names: a facility may switch ABDM off for itself while it is
+        // on for the hospital, or have done so since the job was queued.
+        if (!await features.IsEnabledAsync(FeatureKeys.Abdm, source.FacilityId, ct))
+        {
+            return AbdmAutoLinkResult.Nothing("ABDM health records are switched off for the record's facility.");
         }
 
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == source.PatientId)

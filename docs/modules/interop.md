@@ -860,14 +860,16 @@ sees it in their PHR app without anyone doing anything (`AbdmAutoLinking`):
 * The event's handler (`AbdmAutoLinkTriggers`) runs in the event's transaction, before the signature commits, so it
   only reads and enqueues: an outbox message `abdm.link_record` (`{ type, recordId, patientId }`, kept two days),
   committed with the signature or not at all. Nothing it does calls outside or can fail the signature. It queues only
-  while ABDM health records are on for the record's facility, the gateway is on and set up, `autoLink` is on, and the
+  while ABDM health records are on for the record's facility (a report's release names none, so it is read from the
+  report, not taken from whoever released it), the gateway is on and set up, `autoLink` is on, and the
   patient has an ABHA address and a date of birth, is not merged into another UHID, and is neither a VIP nor in a
   sensitive category (HIV, mental health, MTP). No user acts, so no one's access to the chart is checked: such records
   are left to staff, as they are not listed to readers who may not open them (`PatientSearchQuery`).
 * The outbox job (`AbdmAutoLinkHandler`) runs the staff path's linking core in a DI scope of its own: the dispatcher
   handles a batch of messages in one transaction, and inside it the request saved before the gateway call would not be
   committed when the gateway's answer, which may come back within a second, looked for it. It checks the record again
-  (exportable, the patient still eligible) and then:
+  (ABDM health records still on for the record's own facility, which may have switched them off since the job was
+  queued; exportable; the patient still eligible) and then:
   * waits while a link token for the patient's ABHA address is being asked for (queued again 30 seconds later, then
     twice as long each time up to 5 minutes), so a discharge's records share one token rather than each asking for its
     own; and while a prescription waits for the DSC the hospital requires (10 minutes, doubling up to 2 hours, until it
@@ -1173,7 +1175,8 @@ which is logged and ignored. Bodies are limited to 64 KB and requests to the par
 `HttpAbdmGatewayClientTests` checks each call against NHA's wrapper (paths, headers, bodies, the session's reuse and
 renewal, both error shapes, no retry) and what each writes to the integration log (no token, ABHA detail or name);
 `AbdmLinkingTests`, `AbdmAutoLinkingTests` (a record linked as it is signed, a job delivered twice sending nothing,
-one token for records completed together, a prescription waiting for its DSC), `AbdmUnansweredRequestTests` (requests
+one token for records completed together, a prescription waiting for its DSC, nothing linked for a facility that
+switched ABDM off, whoever released the record or queued its job), `AbdmUnansweredRequestTests` (requests
 marked failed, late answers taken, staff's retries), `AbdmUserLinkingTests`, `AbdmDataFlowTests`, `AbdmProfileShareTests` and `AbdmConsentRequestTests` run the flows against a fake gateway inside the test
 server (`FakeAbdmGateway`: sessions, 202s, a key set, and callbacks signed with its key). Neither has been run against
 NHA's sandbox, which needs the hospital's credentials.

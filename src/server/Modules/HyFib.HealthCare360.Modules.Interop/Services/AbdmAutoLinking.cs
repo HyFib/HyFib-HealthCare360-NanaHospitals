@@ -1,4 +1,6 @@
 using HyFib.HealthCare360.Modules.Clinical.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Integrations;
@@ -146,8 +148,15 @@ internal sealed class AbdmAutoLinkTriggers(
 
     private async Task QueueAsync(IDomainEvent completed, CancellationToken ct)
     {
-        if (AbdmAutoLinking.Completed(completed) is not { } record
-            || !await features.IsEnabledAsync(FeatureKeys.Abdm, record.FacilityId, ct)
+        if (AbdmAutoLinking.Completed(completed) is not { } record)
+        {
+            return;
+        }
+
+        // A report's release names no facility, and the report's is not always the releasing user's: ABDM may be switched
+        // off for one facility while it is on for the hospital.
+        var facilityId = record.FacilityId ?? await ReportFacilityAsync(record.Type, record.Id, ct);
+        if (!await features.IsEnabledAsync(FeatureKeys.Abdm, facilityId, ct)
             || await AbdmAutoLinking.OffAsync(configuration, refusal, ct) is not null)
         {
             return;
@@ -163,8 +172,35 @@ internal sealed class AbdmAutoLinkTriggers(
             return;
         }
 
-        outbox.Enqueue(AbdmAutoLinking.MessageType, new AbdmAutoLinkJob(record.Type, record.Id, record.PatientId), record.FacilityId,
+        outbox.Enqueue(AbdmAutoLinking.MessageType, new AbdmAutoLinkJob(record.Type, record.Id, record.PatientId), facilityId,
             expiresIn: AbdmAutoLinking.Lifetime);
+    }
+
+    /// <summary>
+    /// The facility of a released lab or radiology report: the report raised the event, so it is tracked; it was saved
+    /// before it was released, so failing that the database has it, whatever facility the releasing user works in.
+    /// </summary>
+    private async Task<Guid?> ReportFacilityAsync(AbdmRecordType type, Guid id, CancellationToken ct)
+    {
+        var tracked = type switch
+        {
+            AbdmRecordType.LabReport => db.ChangeTracker.Entries<LabReport>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.FacilityId,
+            AbdmRecordType.RadiologyReport => db.ChangeTracker.Entries<RadiologyReport>().FirstOrDefault(e => e.Entity.Id == id)?.Entity.FacilityId,
+            _ => null,
+        };
+        if (tracked is { } facility && facility != Guid.Empty)
+        {
+            return facility;
+        }
+
+        return type switch
+        {
+            AbdmRecordType.LabReport => await db.Set<LabReport>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(r => r.Id == id).Select(r => (Guid?)r.FacilityId).FirstOrDefaultAsync(ct),
+            AbdmRecordType.RadiologyReport => await db.Set<RadiologyReport>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(r => r.Id == id).Select(r => (Guid?)r.FacilityId).FirstOrDefaultAsync(ct),
+            _ => null,
+        };
     }
 
     /// <summary>Queued already in this transaction: a lab report releases its tests together, an event each.</summary>
