@@ -85,6 +85,28 @@ describe('irnAnswer', () => {
       'warning',
       'Not cancelled: the IRN is still active on the portal',
     ],
+    // Past the 24 hours, asking whether a cancellation made in time went through.
+    [
+      'askCancelled',
+      'einvoice.cancel_window',
+      'The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.',
+      'error',
+      'Not cancelled on the portal: the IRN stays',
+    ],
+    [
+      'askCancelled',
+      'einvoice.irp_cancel_unknown',
+      `The portal cancels an IRN only within 24 hours of its generation, and did not say whether it cancelled IRN ${IRN} in time (2283: IRN details are not found). Check the IRN on the portal: while it is active there, issue a credit note against the invoice instead.`,
+      'warning',
+      'Not known whether the portal cancelled the IRN',
+    ],
+    [
+      'askCancelled',
+      'einvoice.irp_cancel_unknown',
+      `The e-invoice portal did not answer. Whether the portal cancelled IRN ${IRN} is not known: it did not say how it holds it. Try again once the portal answers: HC360 then asks it first, and records the cancellation if it was made.`,
+      'warning',
+      'Not known whether the portal cancelled the IRN',
+    ],
   ])("%s answered %s: a heading over the server's sentence", (action, code, detail, intent, title) => {
     expect(irnAnswer(action, refusal(code, detail))).toEqual({ intent, title, detail });
   });
@@ -158,6 +180,9 @@ describe('irnAnswer', () => {
       title: 'The cancellation was not recorded',
       detail: '',
     });
+    expect(irnAnswer('askCancelled', new TypeError('Failed to read'))).toMatchObject({
+      title: 'No cancellation was recorded',
+    });
   });
 });
 
@@ -177,9 +202,12 @@ describe("the server's codes", () => {
     .map((entry) => readFileSync(join(entry.parentPath, entry.name), 'utf8'))
     .join('\n');
 
-  it.each<IrnAction>(['record', 'generate', 'cancel'])('%s: every e-invoice code it explains is sent', (action) => {
-    const codes = irnAnswerCodes(action).filter((code) => code.startsWith('einvoice.'));
-    expect(codes.length).toBeGreaterThan(0);
-    expect(codes.filter((code) => !source.includes(`"${code}"`))).toEqual([]);
-  });
+  it.each<IrnAction>(['record', 'generate', 'cancel', 'askCancelled'])(
+    '%s: every e-invoice code it explains is sent',
+    (action) => {
+      const codes = irnAnswerCodes(action).filter((code) => code.startsWith('einvoice.'));
+      expect(codes.length).toBeGreaterThan(0);
+      expect(codes.filter((code) => !source.includes(`"${code}"`))).toEqual([]);
+    },
+  );
 });
