@@ -143,6 +143,61 @@ internal sealed class AbdmLinkingService(
     }
 
     /// <summary>
+    /// The hospital's own request (<see cref="AbdmAutoLinking"/>): the record a clinical event completed, linked as staff
+    /// would link it but with no user, so with no check of anyone's access to the chart: a VIP patient's records and
+    /// those in a sensitive category are left to staff. Waits while a prescription waits for its DSC signature, and
+    /// while a link token for the patient's ABHA address is being asked for, so that one token serves every record of a
+    /// discharge rather than each asking for its own. Nothing to do when the record cannot be linked, or is linked or
+    /// awaiting the gateway's answer already.
+    /// </summary>
+    public async Task<AbdmAutoLinkResult> LinkAutomaticallyAsync(AbdmRecordType type, Guid id, CancellationToken ct)
+    {
+        if (await AbdmAutoLinking.OffAsync(configuration, refusal, ct) is { } off)
+        {
+            return AbdmAutoLinkResult.Nothing(off);
+        }
+
+        var located = await records.LocateAsync(type, id, ct);
+        if (located.IsFailure)
+        {
+            return AbdmAutoLinkResult.Nothing(located.Error!.Message);
+        }
+
+        var source = located.Value;
+        if (source.NotExportable is { } reason)
+        {
+            return AbdmAutoLinkResult.Nothing(reason);
+        }
+
+        var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == source.PatientId)
+            .Select(p => new { p.AbhaAddress, p.DateOfBirth, p.MergedIntoPatientId, p.IsVip, p.SensitiveCategories })
+            .FirstOrDefaultAsync(ct);
+        if (patient is null)
+        {
+            return AbdmAutoLinkResult.Nothing("The patient is not on record.");
+        }
+
+        if (AbdmAutoLinking.NotLinkedAutomatically(patient.AbhaAddress, patient.DateOfBirth, patient.MergedIntoPatientId, patient.IsVip, patient.SensitiveCategories)
+            is { } notLinked)
+        {
+            return AbdmAutoLinkResult.Nothing(notLinked);
+        }
+
+        if (type == AbdmRecordType.Prescription && await records.PrescriptionNotIssuedAsync(id, ct) is { } notIssued)
+        {
+            return AbdmAutoLinkResult.Wait(AbdmAutoLinking.SignatureWait, notIssued.Message);
+        }
+
+        if (await Unscoped().AnyAsync(r => r.PatientId == source.PatientId && r.Status == AbdmLinkStatus.AwaitingToken, ct))
+        {
+            return AbdmAutoLinkResult.Wait(AbdmAutoLinking.TokenWait, "A link token for the patient's ABHA address is being asked for.");
+        }
+
+        var linked = await LinkAsync(source.PatientId, source.FacilityId, [AbdmCareContexts.Describe(type, id, source.RecordedAt, source.Label)], automatic: true, ct);
+        return linked.IsSuccess ? AbdmAutoLinkResult.Requested(linked.Value) : AbdmAutoLinkResult.Nothing(linked.Error!.Message);
+    }
+
+    /// <summary>
     /// Links <paramref name="records"/>, located and exportable, all <paramref name="patientId"/>'s, to the patient's ABHA
     /// address, leaving out those already linked to it or awaiting the gateway's answer (and failing with
     /// <see cref="AlreadyLinkedCode"/> or <see cref="LinkPendingCode"/> when that leaves none). Staff's requests and the

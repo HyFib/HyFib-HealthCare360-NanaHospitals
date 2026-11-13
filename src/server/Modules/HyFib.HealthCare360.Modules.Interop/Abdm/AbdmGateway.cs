@@ -13,8 +13,9 @@ internal static class AbdmGatewaySettingKeys
     /// <summary>
     /// <c>{ "enabled": false, "baseUrl": "https://dev.abdm.gov.in/api/hiecm", "hipId": "IN27…", "cmId": "sbx", "timeoutSeconds": 30 }</c>,
     /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with,
-    /// <c>"callbackClientId"</c> and <c>"callbackIssuer"</c>, the client id and issuer its callbacks' tokens carry, and
-    /// <c>"dataPushUrl"</c>, where other providers post the records the hospital asks for.
+    /// <c>"callbackClientId"</c> and <c>"callbackIssuer"</c>, the client id and issuer its callbacks' tokens carry,
+    /// <c>"dataPushUrl"</c>, where other providers post the records the hospital asks for, and <c>"autoLink"</c>
+    /// (true), whether completed records are linked to patients' ABHAs as they are completed.
     /// </summary>
     public const string Gateway = "abdm.gateway";
 
@@ -47,6 +48,13 @@ internal sealed record AbdmGatewaySettings
     public string? CmId { get; init; }
 
     public int TimeoutSeconds { get; init; } = 30;
+
+    /// <summary>
+    /// Whether a record is linked to the patient's ABHA as the clinical event that completes it happens (a consultation
+    /// note or discharge summary signed, a lab or radiology report released, a prescription issued), without staff
+    /// (<c>AbdmAutoLinking</c>). On by default; off, staff link records themselves.
+    /// </summary>
+    public bool AutoLink { get; init; } = true;
 
     /// <summary>
     /// The gateway's key set (JWKS), which its callbacks to HC360 are checked against; by default

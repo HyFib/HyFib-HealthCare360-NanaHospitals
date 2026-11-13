@@ -1287,16 +1287,16 @@ public sealed class AbdmExportTests(HospitalServer server)
     }
 
     /// <summary>A medicine of the drug master, as the doctor's search finds it.</summary>
-    private static async Task<PrescribableDrug> DrugAsync(ApiClient doctor, string name, string code) =>
+    internal static async Task<PrescribableDrug> DrugAsync(ApiClient doctor, string name, string code) =>
         (await doctor.GetAsync<List<PrescribableDrug>>($"/api/v1/emr/drugs?search={name}")).Single(d => d.Code == code);
 
     /// <summary>One tablet by mouth, as often and for as many days as given.</summary>
-    private static PrescriptionItemRequest Tablet(PrescribableDrug drug, DoseFrequency frequency, int days, string instructions) => new(
+    internal static PrescriptionItemRequest Tablet(PrescribableDrug drug, DoseFrequency frequency, int days, string instructions) => new(
         drug.Id, drug.Name, drug.GenericName, drug.Strength, drug.DosageForm, Route: "Oral", Dose: "1 tablet", frequency, CustomFrequency: null,
         DosesPerDay: null, days, Quantity: null, instructions, drug.IsControlled, drug.ControlledSchedule);
 
     /// <summary>A prescription written in the encounter (an in-patient one when the encounter is in a stay), not signed yet.</summary>
-    private static async Task<PrescriptionDto> PrescribeAsync(ApiClient doctor, Guid patientId, Guid encounterId, params PrescriptionItemRequest[] lines)
+    internal static async Task<PrescriptionDto> PrescribeAsync(ApiClient doctor, Guid patientId, Guid encounterId, params PrescriptionItemRequest[] lines)
     {
         var prescription = await doctor.PostAsync<PrescriptionDto>("/api/v1/clinical/prescriptions", new CreatePrescriptionRequest(
             patientId, encounterId, VisitId: null, AdmissionId: null, IsInpatient: false, PractitionerId: null, Notes: PharmacistNotes,
@@ -1305,7 +1305,7 @@ public sealed class AbdmExportTests(HospitalServer server)
         return prescription;
     }
 
-    private static async Task SignAsync(ApiClient doctor, PrescriptionDto prescription) =>
+    internal static async Task SignAsync(ApiClient doctor, PrescriptionDto prescription) =>
         (await doctor.PostAsync<SignPrescriptionResult>($"/api/v1/clinical/prescriptions/{prescription.Id}/sign",
             new SignPrescriptionRequest(OverrideReason: null, AcknowledgeWarnings: false, ConfirmControlledDrugs: false, prescription.Version)))
             .Prescription.Status.ShouldBe(PrescriptionStatus.Signed);

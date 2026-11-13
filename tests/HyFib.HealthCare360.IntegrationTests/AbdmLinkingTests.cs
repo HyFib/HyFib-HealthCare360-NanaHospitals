@@ -319,11 +319,15 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     /// <summary>The hospital's data-push URL as set up: where other providers post the records it asks for.</summary>
     internal const string DataPushUrl = "https://hospital.test" + AbdmGatewayCallbackEndpoints.DataPushPath;
 
-    internal static async Task SetUpGatewayAsync(HospitalServer server, bool enabled)
+    /// <remarks>
+    /// Automatic linking (<c>autoLink</c>, on by default in a hospital) is off unless a test asks for it: the tests of other
+    /// flows sign records while the gateway is on, and a link the outbox made in the background would change what they see.
+    /// </remarks>
+    internal static async Task SetUpGatewayAsync(HospitalServer server, bool enabled, bool autoLink = false)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha", dataPushUrl = DataPushUrl }, cancellationToken: Ct);
+        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha", dataPushUrl = DataPushUrl, autoLink }, cancellationToken: Ct);
         await settings.SetAsync(AbdmGatewaySettingKeys.Secret, new { clientId = "SBX_IT", clientSecret = "it-" + Guid.NewGuid().ToString("N") }, secret: true, cancellationToken: Ct);
     }
 
