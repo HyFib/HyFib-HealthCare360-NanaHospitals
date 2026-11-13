@@ -31,6 +31,8 @@ builder.Logging.AddFilter<EventLogLoggerProvider>(level => level >= LogLevel.War
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(new AgentPaths(options.GetValueOrDefault("config") ?? AgentConfiguration.DefaultPath));
 builder.Services.AddSingleton<ISerialLineFactory, SerialPortLineFactory>();
+// While it relays an analyser, the agent keeps the PC from sleeping when idle (KeepAwake).
+builder.Services.AddSingleton<IPowerRequests, WindowsPowerRequests>();
 builder.Services.AddHostedService<AgentWorker>();
 await builder.Build().RunAsync();
 return 0;
