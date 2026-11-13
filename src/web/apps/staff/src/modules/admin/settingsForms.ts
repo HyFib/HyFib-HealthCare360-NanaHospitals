@@ -980,6 +980,21 @@ const whatsAppSpec: SettingsSpec = {
     },
     {
       key: WA,
+      path: 'parameters',
+      label: 'Template parameters',
+      kind: 'select',
+      defaultValue: 'text',
+      options: [
+        { value: 'text', label: 'One parameter: the whole message as {{1}}' },
+        { value: 'positional', label: 'Numbered: each placeholder in turn, {{1}}, {{2}}…' },
+        { value: 'named', label: 'By name: each placeholder, {{billNumber}} as {{bill_number}}' },
+      ],
+      hint:
+        'How the templates are registered in WhatsApp Manager, all alike: as the one variable {{1}}, or as the HC360 ' +
+        'template’s text with its placeholders numbered or renamed. By name is best for new templates.',
+    },
+    {
+      key: WA,
       path: 'maxDocumentMegabytes',
       label: 'Largest document (MB)',
       kind: 'number',

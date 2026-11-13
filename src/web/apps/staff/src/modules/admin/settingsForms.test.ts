@@ -317,6 +317,26 @@ describe('setting names', () => {
   });
 });
 
+describe('WhatsApp settings', () => {
+  const whatsApp = INTEGRATION_SETTINGS.whatsapp as SettingsSpec;
+  const WA = 'integrations.whatsapp';
+  const parameters = id(WA, 'parameters');
+
+  it('sends the whole message as one template parameter unless the templates take the placeholders, as the server does', () => {
+    const select = whatsApp.fields.find((item) => fieldId(item) === parameters);
+    expect(select?.options?.map((option) => option.value)).toEqual(['text', 'positional', 'named']);
+    expect(toFormValues(whatsApp, {})[parameters]).toBe('text');
+    expect(toFormValues(whatsApp, { [WA]: { parameters: 'Named' } })[parameters]).toBe('named');
+
+    expect(buildSettingChanges(whatsApp, toFormValues(whatsApp, {}), {})).toEqual([]);
+    const named = { ...toFormValues(whatsApp, {}), [parameters]: 'named' };
+    expect(buildSettingChanges(whatsApp, named, {})).toEqual([{ key: WA, value: { parameters: 'named' } }]);
+    expect(validateSettings(whatsApp, { ...named, [parameters]: 'numbered' })[parameters]).toBe(
+      'Choose one of the options.',
+    );
+  });
+});
+
 describe('payment gateway settings', () => {
   const payment = INTEGRATION_SETTINGS.payment as SettingsSpec;
   const PAY = 'integrations.payment';
