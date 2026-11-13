@@ -871,8 +871,10 @@ the HIU asks for under that consent, encrypted for the HIU alone (`AbdmDataFlowS
    hiu } } }`). A `GRANTED` consent is kept (`abdm_consents`) only when every record it names is linked here to that ABHA
    address, all the same patient's; otherwise it is answered `FAILURE` ("The consent names care contexts that are not
    linked to this ABHA address here."). Audited as `phi` / `abdm.consent_granted` with the HIU, purpose and records.
-   `REVOKED`, `EXPIRED` or `DENIED` ends a kept consent (`phi` / `abdm.consent_ended`). Either way the gateway gets
-   `on-notify` with `acknowledgement: { status: OK, consentId }`.
+   `REVOKED`, `EXPIRED` or `DENIED` ends a kept consent (`phi` / `abdm.consent_ended`). A consent that has ended stays
+   ended: a `GRANTED` notification for it, late or repeated, changes nothing and is audited as `phi` /
+   `abdm.consent_grant_ignored`. Either way the gateway gets `on-notify` with
+   `acknowledgement: { status: OK, consentId }`.
 2. **Health-information request** (`{ transactionId, hiRequest: { consent: { id }, dateRange, dataPushUrl, keyMaterial:
    { cryptoAlg, curve, dhPublicKey: { expiry, parameters, keyValue }, nonce } } }`). It is refused, with the reason in
    `on-request`'s error, when the consent is unknown, not granted (revoked, expired), past its `dataEraseAt`, or asked
@@ -985,10 +987,11 @@ records** tab (staff app, while ABDM is switched on, for `abdm.records.request`:
    value: 1, repeats: 0 } } } }`. Saved before it is sent; audited as `phi` / `abdm.consent_requested`.
 2. The consent manager answers at `on-init` with its id for the request (**Waiting for the patient**), or refuses it.
 3. The patient decides in their ABHA app; the consent manager notifies (`/api/v3/hiu/consent/request/notify`):
-   `GRANTED` with one artefact per provider, `DENIED`, and later `REVOKED` or `EXPIRED`. HC360 keeps the decision
-   (audited as `phi` / `abdm.consent_decided`), acknowledges it (`POST /consent/v3/request/hiu/on-notify`, one
-   `{ status: OK, consentId }` per artefact, naming the notification's `REQUEST-ID`), and fetches each new artefact
-   (`POST /consent/v3/fetch`).
+   `GRANTED` with one artefact per provider, `DENIED`, and later `REVOKED` or `EXPIRED`. A request that was denied,
+   revoked or expired stays so: a later `GRANTED` is acknowledged and ignored (audited as `phi` /
+   `abdm.consent_grant_ignored`). HC360 keeps the decision (audited as `phi` / `abdm.consent_decided`), acknowledges
+   it (`POST /consent/v3/request/hiu/on-notify`, one `{ status: OK, consentId }` per artefact, naming the
+   notification's `REQUEST-ID`), and fetches each new artefact (`POST /consent/v3/fetch`).
 4. Each artefact arrives at `on-fetch` with the provider (`hip: { id, name }`), the records (care contexts), the
    kinds, dates and erase date the patient agreed to; one naming an artefact other than the one fetched is ignored.
    The tab lists each request with its status and, for a granted one, each provider and how many records it covers.

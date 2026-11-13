@@ -80,6 +80,7 @@ internal sealed class AbdmConsentRequestService(
 {
     public const string Requested = "abdm.consent_requested";
     public const string Decided = "abdm.consent_decided";
+    public const string GrantIgnored = "abdm.consent_grant_ignored";
 
     /// <summary>The purposes of use a doctor may ask under, with ABDM's codes.</summary>
     public static readonly IReadOnlyDictionary<string, string> Purposes = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -244,6 +245,29 @@ internal sealed class AbdmConsentRequestService(
         var kept = await db.Set<AbdmConsentArtefact>().Where(a => a.ConsentRequestEntityId == request.Id).ToListAsync(ct);
         var toFetch = new List<AbdmConsentArtefact>();
         var ended = new List<Guid>();
+        if (status.Equals("GRANTED", StringComparison.OrdinalIgnoreCase)
+            && !AbdmConsentLifecycle.MayChange(request.Status, AbdmConsentRequestStatus.Granted))
+        {
+            // A consent that has ended stays ended: a late or repeated grant is acknowledged and changes nothing.
+            log.LogWarning("Ignored a grant for a consent request that is already {Status}", request.Status);
+            audit.Add(new AuditEntry(AuditCategories.PhiAccess, GrantIgnored, $"ABDM grant for a {request.Status.ToString().ToLowerInvariant()} consent request ignored")
+            {
+                PatientId = request.PatientId,
+                EntityType = "abdm.consent_request",
+                EntityId = request.Id.ToString("D"),
+                Details = new { api = "abdm", status = request.Status.ToString(), artefacts = artefactIds },
+            });
+            await db.SaveChangesAsync(ct);
+            var ignored = await gateway.AnswerHiuNotifyAsync(new AbdmGatewayMessages.HiuOnNotify(
+                [.. artefactIds.Select(id => new AbdmGatewayMessages.Acknowledgement("OK", id))], new AbdmGatewayMessages.RespRequest(requestId), null), ct);
+            if (ignored.IsFailure)
+            {
+                log.LogWarning("The consent decision was not acknowledged: {Reason}", ignored.Error!.Message);
+            }
+
+            return;
+        }
+
         switch (status.ToUpperInvariant())
         {
             case "GRANTED":
