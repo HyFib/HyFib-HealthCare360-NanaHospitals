@@ -114,6 +114,14 @@ describe('openText and openRecordLink', () => {
     });
     expect(openRecordLink(record('Receipt', null)).search).toEqual({ q: 'NHRC260000123' });
     expect(openRecordLink(record('Refund')).to).toBe('/billing/refunds/e-1');
+    expect(openRecordLink(record('PharmacySale'))).toMatchObject({
+      to: '/pharmacy/sales',
+      search: { id: 'e-1', search: 'NHRC260000123', from: '2026-09-02', to: '2026-09-02' },
+    });
+    expect(openRecordLink(record('CanteenSale'))).toMatchObject({
+      to: '/canteen/sales',
+      search: { q: 'NHRC260000123', date: '2026-09-02' },
+    });
     expect(openRecordLink(record('Patient')).to).toBe('/patients/e-1');
     expect(openRecordLink(record('ImagingStudy')).to).toBe('/radiology/studies/e-1');
     expect(openRecordLink(record('LabOrder')).to).toBe('/lab/orders/e-1');

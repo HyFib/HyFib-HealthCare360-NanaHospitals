@@ -30,7 +30,16 @@ export interface SimulatorOpenRecord {
   reference: string;
   at: string | null;
   amount: number | null;
-  entity: 'Receipt' | 'Refund' | 'Patient' | 'ImagingStudy' | 'LabOrder' | 'UnmatchedLabResult' | 'EInvoice';
+  entity:
+    | 'Receipt'
+    | 'Refund'
+    | 'PharmacySale'
+    | 'CanteenSale'
+    | 'Patient'
+    | 'ImagingStudy'
+    | 'LabOrder'
+    | 'UnmatchedLabResult'
+    | 'EInvoice';
   entityId: string;
   patientId: string | null;
 }
@@ -101,6 +110,25 @@ export function openRecordLink(record: SimulatorOpenRecord): {
     }
     case 'Refund':
       return { label: 'Open the refund', to: `/billing/refunds/${record.entityId}` };
+    case 'PharmacySale': {
+      // A pharmacy invoice paid on the training terminal: opened on the invoices of its own day.
+      const day = record.at ? hospitalDay(record.at) : undefined;
+      const search = { id: record.entityId, search: record.reference };
+      return {
+        label: 'Open the invoice',
+        to: '/pharmacy/sales',
+        search: day ? { ...search, from: day, to: day } : search,
+      };
+    }
+    case 'CanteenSale': {
+      // A canteen bill paid on the training terminal: the bills list shows one business day at a time.
+      const day = record.at ? hospitalDay(record.at) : undefined;
+      return {
+        label: 'Open the bill',
+        to: '/canteen/sales',
+        search: day ? { q: record.reference, date: day } : { q: record.reference },
+      };
+    }
     case 'Patient':
       return { label: "Open the patient's record", to: `/patients/${record.entityId}` };
     case 'ImagingStudy':
