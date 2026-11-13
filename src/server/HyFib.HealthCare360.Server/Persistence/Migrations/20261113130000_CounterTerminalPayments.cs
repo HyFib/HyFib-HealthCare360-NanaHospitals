@@ -128,6 +128,17 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // The previous version knows no counter's terminal sale, and reads every sale's purpose and patient: the
+            // counters' sales are kept, deleted, with values it can read (they have no receipt to record).
+            migrationBuilder.Sql("""
+                UPDATE billing.pos_transactions
+                SET purpose = coalesce(purpose, 'BillPayment'),
+                    patient_id = coalesce(patient_id, '00000000-0000-0000-0000-000000000000'),
+                    is_deleted = true,
+                    deleted_at = coalesce(deleted_at, now())
+                WHERE owner IS NOT NULL;
+                """);
+
             migrationBuilder.DropIndex(
                 name: "ix_sale_payments_terminal_sale_id",
                 schema: "pharmacy",
