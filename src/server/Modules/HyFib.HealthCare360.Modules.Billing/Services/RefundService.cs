@@ -24,6 +24,7 @@ public sealed class RefundService(
     IAuditLogger audit,
     IApprovals approvals,
     IServiceProvider services,
+    IEInvoiceQueue einvoices,
     ICurrentUser currentUser,
     TimeProvider time,
     ILogger<RefundService> logger)
@@ -387,6 +388,13 @@ public sealed class RefundService(
         }
 
         db.Add(note);
+        if (asked.Kind is CreditNoteKind.CreditNote or CreditNoteKind.PayerShare && note.Lines.Count > 0 && !timeBarred && bill.TaxAmount != 0
+            && bill.PayerId is not null)
+        {
+            // A credit note on a B2B bill is an e-invoice too (GST rule 48(4)): its IRN is asked for once it is issued.
+            await einvoices.QueueAsync(CreditNoteEInvoiceSource.Key, note.Id, note.FacilityId, BillingTime.LocalDate(note.IssuedAt), ct);
+        }
+
         var gst = note.Lines.Count == 0 ? string.Empty
             : timeBarred ? $"; GST not reduced: the time for it ended on {LastDayText(bill)} (CGST Act s.34(2))"
             : $"; GST ₹{Money.FormatInr(note.GstAmount)} on {note.Lines.Count} service{(note.Lines.Count == 1 ? string.Empty : "s")}";

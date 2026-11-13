@@ -81,6 +81,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<GstFilingService>();
         services.AddScoped<IGstReturnSource, BillingGstReturnSource>();
         services.AddScoped<IEInvoiceRegister, EInvoiceRegisterLookup>();
+        services.AddScoped<IEInvoiceQueue, EInvoiceQueue>();
         services.AddScoped<ICashReceiptSource, BillingCashReceipts>();
         services.AddScoped<TallyReconciliationService>();
 
@@ -106,6 +107,7 @@ public sealed class BillingModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IPayerDirectory, PayerDirectory>());
 
         services.AddHostedService<TallyDayBookScheduler>();
+        services.AddHostedService<EInvoiceReminderJob>();
         services.AddHostedService<GatewayReconciliationJob>();
         services.AddHostedService<PosRecheckJob>();
     }

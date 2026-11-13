@@ -81,6 +81,7 @@ public sealed class DispensingService(
     ISettingsService settings,
     IAntimicrobialStewardship stewardship,
     CashLimit cashLimit,
+    IEInvoiceQueue einvoices,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -407,6 +408,12 @@ public sealed class DispensingService(
 
         sale.MarkDispensed(null);
         db.Add(sale);
+        if (sale.BuyerGstin is not null)
+        {
+            // A sale to a buyer registered for GST is a B2B invoice: its IRN is asked for once the sale is saved (GST rule 48(4)).
+            await einvoices.QueueAsync(PharmacyEInvoiceSource.Key, sale.Id, sale.FacilityId, HospitalClock.ToLocalDate(sale.SoldAt), ct);
+        }
+
         register.Record(sale.FacilityId, issued.Value.Movements, StockMovementType.Sale, inward: false, reference,
             PharmacyLookups.Party(patient, customerName, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, now);
 
