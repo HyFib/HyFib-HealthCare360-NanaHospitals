@@ -278,7 +278,7 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
         var results = AstmMessageMapper.MapResults(records, instrument.Code, raw, time.GetUtcNow(), options.Zone);
         if (results.Count == 0)
         {
-            // Keep-alives, order echoes and results the analyser could not produce (status X) carry nothing to store.
+            // Keep-alives, order echoes and results still pending on the analyser (status I) carry nothing to store.
             await processor.LogAsync(instrument, "astm.message", true, raw, null, null, null);
             return true;
         }

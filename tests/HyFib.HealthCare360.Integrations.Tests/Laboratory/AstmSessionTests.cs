@@ -163,9 +163,10 @@ public sealed class AstmSessionTests
         await SendAsync(AstmControl.Eot);
         await FinishAsync(run);
 
+        // Two values and the urea the analyser could not measure.
         await _processor.Received(1).SubmitResultsAsync(
             Arg.Is(LabSamples.AstmInstrument),
-            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "SMP-26090042" && m[0].Results.Count == 2),
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "SMP-26090042" && m[0].Results.Count == 3),
             Arg.Is(string.Join("\r", LabSamples.AstmResultRecords)),
             Arg.Any<CancellationToken>());
     }
@@ -263,7 +264,7 @@ public sealed class AstmSessionTests
 
         await _processor.Received(1).SubmitResultsAsync(
             Arg.Any<LabInstrumentSettings>(),
-            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m[0].Results.Count == 2),
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m[0].Results.Count == 3),
             Arg.Is(string.Join("\r", LabSamples.AstmResultRecords)),
             Arg.Any<CancellationToken>());
     }

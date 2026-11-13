@@ -76,21 +76,23 @@ internal static class AstmMessageMapper
 
     /// <summary>
     /// R.3 universal test id (<c>^^^CODE</c>: the manufacturer's code is the 4th component), R.4 value, R.5 units,
-    /// R.7 abnormal flags, R.9 status (X = cannot be done and I = pending are skipped; the rest, F final, P
-    /// preliminary, C correction…, is passed on), R.13 completion time.
+    /// R.7 abnormal flags, R.9 status (I = pending on the analyser is skipped; X = cannot be done is passed on as a
+    /// result not obtained, which needs no value; the rest, F final, P preliminary, C correction…, is passed on),
+    /// R.13 completion time.
     /// </summary>
     internal static InstrumentResult? Result(AstmRecord record, TimeZoneInfo zone, DateTimeOffset? messageTime)
     {
         var status = record.Value(9).Trim().ToUpperInvariant();
-        if (status is "X" or "I")
+        if (status == "I")
         {
             return null;
         }
 
+        var kind = status == "X" ? InstrumentResultKind.NotObtained : InstrumentResultKind.Value;
         var testId = record.Components(3);
         var code = testId.Count >= 4 && testId[3].Trim().Length > 0 ? testId[3] : testId.FirstOrDefault(c => c.Trim().Length > 0);
         var value = string.Join(" ", record.Components(4).Select(c => c.Trim()).Where(c => c.Length > 0));
-        if (string.IsNullOrWhiteSpace(code) || value.Length == 0)
+        if (string.IsNullOrWhiteSpace(code) || (kind == InstrumentResultKind.Value && value.Length == 0))
         {
             return null;
         }
@@ -101,6 +103,7 @@ internal static class AstmMessageMapper
             LabTime.Parse(record.Field(13), zone) ?? messageTime)
         {
             Status = status.Length == 0 ? null : status,
+            Kind = kind,
         };
     }
 
