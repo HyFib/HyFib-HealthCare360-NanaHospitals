@@ -157,6 +157,8 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
   const [qr, setQr] = useState('');
   const [reason, setReason] = useState<EInvoiceCancelReason>('DataEntryMistake');
   const [remark, setRemark] = useState('');
+  // Read the document again after every answer, a refusal included: what the server holds is what the dialog shows
+  // (an IRN whose answer was lost on the way here and is now recorded, a cancellation the portal has settled).
   const refresh = () => void queryClient.invalidateQueries({ queryKey: einvoiceKeys.all });
 
   const download = useMutation({
@@ -179,6 +181,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       notify.success('IRN recorded', 'The invoice now prints its IRN and signed QR code.');
       refresh();
     },
+    onError: refresh,
   });
   const generate = useMutation({
     mutationFn: () => einvoiceApi.generate(row.source, row.id),
@@ -186,6 +189,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       notify.success('IRN received', 'The portal registered the document; it now prints its IRN and signed QR code.');
       refresh();
     },
+    onError: refresh,
   });
   const [distance, setDistance] = useState('');
   const [vehicle, setVehicle] = useState('');
@@ -212,6 +216,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       notify.success('IRN cancellation recorded', 'Cancel the invoice here and issue a new one with a new number.');
       refresh();
     },
+    onError: refresh,
   });
 
   const d = detail.data;
