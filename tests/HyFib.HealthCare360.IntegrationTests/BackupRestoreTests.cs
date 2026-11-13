@@ -2,11 +2,13 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Modules;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
@@ -107,6 +109,94 @@ public sealed class BackupRestoreTests(HospitalServer server)
 
             Directory.Delete(machine.Root, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// The servers the backup was made with are not those of the new hardware: a backup holds none of their rows (System
+    /// health's part of each server). Restored, those showed every old machine as a server that stopped reporting, told to
+    /// IT every day until someone removed each; each server writes its own as it starts. A backup made before they were
+    /// left out holds them: Restore-HC360.ps1 clears them after pg_restore, with its own statement, run here, and names them.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_restored_on_new_hardware_holds_none_of_the_old_servers()
+    {
+        Assert.SkipUnless(PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
+        var old = new ServerNodeBoard(server.Services.GetRequiredService<IServiceScopeFactory>(), SystemHealthServersTests.NodeFolder());
+        var name = "IT-OLD-" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        var machine = NewMachine();
+        string? backup = null;
+        try
+        {
+            await old.PublishAsync(SystemHealthServersTests.JobNode(name), Ct);
+            (backup, var recoveryKey) = await BackupAsync();
+            await using var restored = await RestoreAsync(backup, recoveryKey, machine);
+            await using var connection = new NpgsqlConnection(restored.ConnectionString);
+            await connection.OpenAsync(Ct);
+            (await ServerRowsAsync(connection)).ShouldBe(0, "a backup holds no server's row: the old servers' showed as servers that stopped reporting");
+
+            // A backup made before holds them: the script clears them, between pg_restore and putting the keys back.
+            var script = await File.ReadAllTextAsync(DeployScriptPath("Restore-HC360.ps1"), Ct);
+            var restoredAt = script.IndexOf("pg_restore.exe') @pgArgs", StringComparison.Ordinal);
+            var clearedAt = script.IndexOf("Clear-ServerRows $DatabaseName", StringComparison.Ordinal);
+            var keysAt = script.IndexOf("@('backup', 'restore'", StringComparison.Ordinal);
+            (restoredAt, clearedAt, keysAt).ShouldSatisfyAllConditions(
+                o => o.restoredAt.ShouldBeGreaterThan(0),
+                o => o.clearedAt.ShouldBeGreaterThan(o.restoredAt, "the rows are cleared once pg_restore has put them in"),
+                o => o.keysAt.ShouldBeGreaterThan(o.clearedAt, "and before the keys, so a failure later puts the previous database back"));
+            var clear = Regex.Match(script, "\\$ClearServerRows = \"(?<sql>[^\"]+)\"").Groups["sql"].Value;
+            clear.ShouldNotBeNullOrEmpty("the script's statement that clears them");
+
+            await using (var held = new NpgsqlCommand(
+                "INSERT INTO platform.server_nodes (node, report, reported_at) VALUES ('old', CAST(@report AS jsonb), now() - interval '2 days')", connection))
+            {
+                held.Parameters.AddWithValue("report", JsonSerializer.Serialize(new { server = new { machineName = name } }));
+                await held.ExecuteNonQueryAsync(Ct);
+            }
+
+            var cleared = new List<string>();
+            await using (var command = new NpgsqlCommand(clear, connection))
+            await using (var reader = await command.ExecuteReaderAsync(Ct))
+            {
+                while (await reader.ReadAsync(Ct))
+                {
+                    cleared.Add(reader.GetString(0));
+                }
+            }
+
+            cleared.ShouldBe([name], "the script names the servers it clears");
+            (await ServerRowsAsync(connection)).ShouldBe(0);
+        }
+        finally
+        {
+            await old.WithdrawAsync(CancellationToken.None);
+            if (backup is not null)
+            {
+                File.Delete(backup);
+            }
+
+            Directory.Delete(machine.Root, recursive: true);
+        }
+    }
+
+    private static async Task<long> ServerRowsAsync(NpgsqlConnection connection)
+    {
+        await using var count = new NpgsqlCommand("SELECT count(*) FROM platform.server_nodes", connection);
+        return (long)(await count.ExecuteScalarAsync(Ct))!;
+    }
+
+    /// <summary>A script of deploy/windows, found above the test's folder.</summary>
+    private static string DeployScriptPath(string file)
+    {
+        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
+        {
+            var path = Path.Combine(folder.FullName, "deploy", "windows", file);
+            if (File.Exists(path))
+            {
+                return path;
+            }
+        }
+
+        throw new FileNotFoundException($"deploy/windows/{file} was not found above the test's folder.");
     }
 
     /// <summary>
