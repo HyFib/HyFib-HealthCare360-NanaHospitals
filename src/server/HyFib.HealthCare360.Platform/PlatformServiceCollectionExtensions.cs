@@ -359,6 +359,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<RecoveryKeyService>();
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
+        services.AddSingleton<ServedAddresses>();
 
         // HC360 Desktop's self-update (SRS DED-18): packages are checked against the release keys built in.
         services.TryAddSingleton(ReleaseTrust.BuiltIn);
@@ -464,6 +465,9 @@ public static class PlatformServiceCollectionExtensions
     /// </summary>
     public static WebApplication UseHospitalPlatform(this WebApplication app)
     {
+        // Which of the server's addresses each request arrived on, so the link monitor knows the cable the workstations use
+        // on a server with two network cards (DED-06).
+        app.UseMiddleware<ServedAddressesMiddleware>();
         // The correlation id first, so the exception handler's log entries carry it (OBS-04).
         app.UseCorrelationId();
         app.UseExceptionHandler();

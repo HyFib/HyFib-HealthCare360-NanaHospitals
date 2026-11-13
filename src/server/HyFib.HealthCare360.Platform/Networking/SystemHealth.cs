@@ -37,11 +37,13 @@ public sealed record ServerInfo(string MachineName, string OsDescription, string
 
 /// <summary>The Server Node's links: its WiFi and, on a cabled LAN, its network cables (DED-06, DED-17).</summary>
 /// <param name="Cables">The network cables up, empty when none is; null when the link monitor has not read them (it is off).</param>
-/// <param name="CableLost">The cable the server was on during this run is lost, and none is up again.</param>
-/// <param name="LastCableDropAt">When the cable was last lost, during this run.</param>
+/// <param name="CableLost">A cable the server was on during this run is lost and not back (<paramref name="LostCables"/>).</param>
+/// <param name="LastCableDropAt">When a cable was last lost, during this run.</param>
+/// <param name="LostCables">Each cable lost and not back, with its last addresses; null when the cables are not read.</param>
 public sealed record NetworkInfo(bool WifiSupported, WifiConnectionInfo? Wifi, DateTimeOffset? ConnectedSince, DateTimeOffset? LastDisconnectAt,
     IReadOnlyList<WifiEvent> RecentEvents, IReadOnlyList<string> IpAddresses, int HttpsPort, int PortalHttpsPort, bool MdnsEnabled,
-    IReadOnlyList<NetworkLink>? Cables = null, bool CableLost = false, DateTimeOffset? LastCableDropAt = null);
+    IReadOnlyList<NetworkLink>? Cables = null, bool CableLost = false, DateTimeOffset? LastCableDropAt = null,
+    IReadOnlyList<LostCable>? LostCables = null);
 
 public sealed record DatabaseInfo(bool Reachable, string? Version, long? SizeBytes, int? Connections, string? LastMigration, string? Error);
 
@@ -465,7 +467,7 @@ public sealed class SystemHealthService(
             wifi.Supported, wifi.Current, wifi.ConnectedSince, wifi.LastDisconnectAt, wifi.RecentEvents,
             LanCertificateManager.CurrentAddresses().Select(a => a.ToString()).ToList(),
             options.Value.HttpsPort, options.Value.PortalHttpsPort, options.Value.Network.EnableMdns,
-            wifi.Cables, wifi.CableLost, wifi.LastCableDropAt);
+            wifi.Cables, wifi.CableLost, wifi.LastCableDropAt, wifi.Cables is null ? null : wifi.LostCables);
 
         var encryption = OperatingSystem.IsWindows() ? DiskEncryption.Load(DiskEncryption.PathIn(directories)) : null;
         var storage = ReadStorage() with { Encryption = encryption };
@@ -497,7 +499,7 @@ public sealed class SystemHealthService(
 
         // Its link: its certificate, and its network cable and WiFi.
         var link = new List<HealthWarning>(CertificateWarnings(certificate, now));
-        link.AddRange(LinkWarnings(network.Cables, network.CableLost, network.WifiSupported, network.Wifi, wifi.AdapterMissing, wifi.WifiLinkLost,
+        link.AddRange(LinkWarnings(network.Cables, network.LostCables ?? [], network.WifiSupported, network.Wifi, wifi.AdapterMissing, wifi.WifiLinkLost,
             options.Value.Network.WifiWeakSignalThreshold));
 
         // What runs on it: the modules' own set-up here (such as the DSC trust folder), the PDF browser, and its UPS.
@@ -695,14 +697,16 @@ public sealed class SystemHealthService(
     /// <summary>
     /// The warnings about the Server Node's link to the network (DED-06), cable or WiFi. Until the link monitor has read the
     /// cables (it is off), the WiFi's alone (<see cref="WifiWarnings"/>), as before cables were read. On a cable, the WiFi is
-    /// not the server's link: only an insecure or shared-password network it joins is said. With the cable it was on lost:
-    /// <c>network.cable_down</c>, critical unless it is still on WiFi. Off a cable all this run, on WiFi or with a WiFi
-    /// loss the monitor told: the WiFi's warnings. And with no cable up, no WiFi connected, and no loss told, as when the
-    /// server started with its cable out: <c>network.down</c>, which no monitor tells, so System health's alerts do.
+    /// not the server's link: only an insecure or shared-password network it joins is said; and a cable lost beside the one
+    /// still up is <c>network.cable_down</c>, critical if the workstations' requests came over it, a warning otherwise. With
+    /// every cable it was on lost: <c>network.cable_down</c>, critical unless it is still on WiFi. Off a cable all this run,
+    /// on WiFi or with a WiFi loss the monitor told: the WiFi's warnings. And with no cable up, no WiFi connected, and no loss
+    /// told, as when the server started with its cable out: <c>network.down</c>, which no monitor tells, so System health's
+    /// alerts do.
     /// </summary>
     internal static IEnumerable<HealthWarning> LinkWarnings(
-        IReadOnlyList<NetworkLink>? cables, bool cableLost, bool wifiSupported, WifiConnectionInfo? wifi, string? adapterMissing, bool wifiLinkLost,
-        int weakThreshold)
+        IReadOnlyList<NetworkLink>? cables, IReadOnlyList<LostCable> lostCables, bool wifiSupported, WifiConnectionInfo? wifi, string? adapterMissing,
+        bool wifiLinkLost, int weakThreshold)
     {
         var wifiWarnings = WifiWarnings(wifiSupported, wifi, adapterMissing, weakThreshold).ToList();
         if (cables is null)
@@ -712,11 +716,12 @@ public sealed class SystemHealthService(
 
         if (cables.Count > 0)
         {
-            return wifiWarnings.Where(w => w.Code is "wifi.insecure" or "wifi.shared_password");
+            var network = wifiWarnings.Where(w => w.Code is "wifi.insecure" or "wifi.shared_password");
+            return lostCables.Count == 0 ? network : [LostBesideAnother(cables, lostCables), .. network];
         }
 
         var onWifi = wifi is { IsConnected: true };
-        if (cableLost)
+        if (lostCables.Count > 0)
         {
             HealthWarning cable = onWifi
                 ? new("network.cable_down", "warning", "The Server Node's network cable is disconnected: it is on WiFi only.")
@@ -736,6 +741,27 @@ public sealed class SystemHealthService(
                 ? "The Server Node has no network connection: no network cable is connected, and its WiFi is not connected. Workstations cannot reach HC360."
                 : "The Server Node has no network connection: no network cable is connected, and it has no WiFi. Workstations cannot reach HC360."),
         ];
+    }
+
+    /// <summary>
+    /// The cables lost while the server is still on another (two cards: the hospital LAN and an imaging network, say), named
+    /// with their last addresses: critical when the workstations' requests came over one of them, a warning otherwise.
+    /// </summary>
+    private static HealthWarning LostBesideAnother(IReadOnlyList<NetworkLink> up, IReadOnlyList<LostCable> lost)
+    {
+        static string Named(string name, IReadOnlyList<string> addresses) =>
+            addresses.Count == 0 ? $"'{name}'" : $"'{name}' ({string.Join(", ", addresses)})";
+
+        var cables = lost.Count == 1
+            ? $"network cable {Named(lost[0].Name, lost[0].Addresses)} is"
+            : $"network cables {string.Join(", ", lost.Select(l => Named(l.Name, l.Addresses)))} are";
+        var stillOn = $"It is still on {string.Join(", ", up.Select(c => Named(c.Name, c.Addresses)))}.";
+        var used = lost.Where(l => l.ServedWorkstations).Select(l => $"'{l.Name}'").ToList();
+        return used.Count == 0
+            ? new("network.cable_down", "warning", $"The Server Node's {cables} disconnected. {stillOn}")
+            : new("network.cable_down", "critical",
+                $"The Server Node's {cables} disconnected. Workstations reached HC360 over {(lost.Count == 1 ? "it" : string.Join(", ", used))}, "
+                + $"so they cannot until it is back. {stillOn}");
     }
 
     /// <summary>

@@ -63,14 +63,23 @@ public enum WifiEventKind
     /// <summary>Windows shows no WiFi adapter while the link was in use: see <see cref="WifiAdapterAbsence"/>.</summary>
     AdapterLost,
 
-    /// <summary>Every network cable the Server Node was on during this run is out, or its switch is off: see <see cref="CableEventDetector"/>.</summary>
+    /// <summary>
+    /// A network cable the Server Node was on during this run is out, or its switch is off, and the workstations cannot reach
+    /// it: no other cable is up, or theirs is the one lost (see <see cref="CableEventDetector"/>). Critical.
+    /// </summary>
     CableDisconnected,
 
     /// <summary>
-    /// A network cable is up after <see cref="CableDisconnected"/>, or after a WiFi loss that was told: the server is back on
-    /// the network.
+    /// A network cable is up after <see cref="CableDisconnected"/> or <see cref="OtherCableDisconnected"/>, or after a WiFi loss
+    /// that was told: the server is back on the network.
     /// </summary>
     CableReconnected,
+
+    /// <summary>
+    /// A network cable is lost while the server is still on another, and the workstations' requests did not come over it (an
+    /// imaging network's cable, say): see <see cref="CableEventDetector"/>. A warning.
+    /// </summary>
+    OtherCableDisconnected,
 }
 
 /// <summary>Why Windows shows no WiFi adapter, as far as the server can tell (<see cref="WlanService"/>).</summary>
@@ -87,6 +96,13 @@ public enum WifiAdapterAbsence
 }
 
 public sealed record WifiEvent(DateTimeOffset At, WifiEventKind Kind, string Message);
+
+/// <summary>
+/// A network cable up during this run that is lost and not back (DED-06): its adapter's name, the addresses it had when it
+/// was last up (a card that is down has none), when it was lost, and whether the workstations' requests came over it then
+/// (<see cref="ServedAddresses"/>).
+/// </summary>
+public sealed record LostCable(string Name, IReadOnlyList<string> Addresses, DateTimeOffset LostAt, bool ServedWorkstations);
 
 /// <summary>Latest known state of the Server Node's links, its WiFi and its network cables (singleton, read by the health dashboard).</summary>
 public sealed class WifiLinkState
@@ -112,10 +128,16 @@ public sealed class WifiLinkState
     /// </summary>
     public IReadOnlyList<NetworkLink>? Cables { get; private set; }
 
-    /// <summary>The monitor told the cable the Server Node was on lost, and none is up again.</summary>
-    public bool CableLost { get; private set; }
+    /// <summary>
+    /// The network cables up during this run that the monitor told lost and that are not back, each with its last addresses
+    /// (<see cref="CableEventDetector.Lost"/>).
+    /// </summary>
+    public IReadOnlyList<LostCable> LostCables { get; private set; } = [];
 
-    /// <summary>When the cable was last lost, during this run.</summary>
+    /// <summary>A cable up during this run is lost and not back (<see cref="LostCables"/>).</summary>
+    public bool CableLost => LostCables.Count > 0;
+
+    /// <summary>When a cable was last lost, during this run.</summary>
     public DateTimeOffset? LastCableDropAt { get; private set; }
 
     public IReadOnlyList<WifiEvent> RecentEvents
@@ -134,10 +156,10 @@ public sealed class WifiLinkState
     /// <param name="adapterMissing">Why the adapter of a WiFi link in use is missing (<see cref="WifiEventDetector.AdapterMissing"/>).</param>
     /// <param name="wifiLinkLost">The WiFi link was told lost and is not back (<see cref="WifiEventDetector.LinkLost"/>).</param>
     /// <param name="cables">The cables up now; null leaves those of the last sample (none read, before the first).</param>
-    /// <param name="cableLost">The cable was told lost and none is back (<see cref="CableEventDetector.CableLost"/>).</param>
+    /// <param name="lostCables">The cables told lost and not back (<see cref="CableEventDetector.Lost"/>), with <paramref name="cables"/>.</param>
     internal void Update(
         WifiConnectionInfo? info, DateTimeOffset at, string? adapterMissing = null, bool wifiLinkLost = false,
-        IReadOnlyList<NetworkLink>? cables = null, bool cableLost = false)
+        IReadOnlyList<NetworkLink>? cables = null, IReadOnlyList<LostCable>? lostCables = null)
     {
         lock (_gate)
         {
@@ -146,13 +168,15 @@ public sealed class WifiLinkState
             WifiLinkLost = wifiLinkLost;
             if (cables is not null)
             {
-                if (cableLost && !CableLost)
+                // A copy: the detector keeps changing its own list, and System health reads this one from another thread.
+                LostCable[] lost = [.. lostCables ?? []];
+                if (lost.Any(l => l.LostAt > (LastCableDropAt ?? DateTimeOffset.MinValue)))
                 {
-                    LastCableDropAt = at;
+                    LastCableDropAt = lost.Max(l => l.LostAt);
                 }
 
                 Cables = cables;
-                CableLost = cableLost;
+                LostCables = lost;
             }
 
             if (info is { IsConnected: true } && Current is not { IsConnected: true })
@@ -187,14 +211,16 @@ public sealed class WifiLinkState
 /// Monitors the dedicated machine's own links (DED-06/12). Its WiFi: drops, weak signal, access-point changes, a WiFi
 /// adapter that disappears (disabled, removed, or the WLAN AutoConfig service stopped), a link that is down when the
 /// server starts though it was on WiFi when it last ran, and insecure (open, WEP), shared-password (WPA-Personal) or
-/// unapproved networks. And its network cables, for a hospital whose machines are cabled to its LAN: the cable it was on
-/// lost, and back (<see cref="CableEventDetector"/>). While a cable is up, the WiFi is not what the workstations reach it
+/// unapproved networks. And its network cables, for a hospital whose machines are cabled to its LAN: each cable it was on
+/// lost, and back, judged by whether the workstations reach it over that one (<see cref="CableEventDetector"/>,
+/// <see cref="ServedAddresses"/>). While a cable is up, the WiFi is not what the workstations reach it
 /// over, so the WiFi's drops and signal raise nothing then; what network it joins still does. Events are audited, pushed
 /// to administrators in-app and, when an on-call number is configured (<c>alerts.oncallPhone</c>), sent by SMS, and by
 /// WhatsApp too when <c>alerts.oncallWhatsApp</c> is on, through the outbox (delivered as soon as connectivity returns).
 /// </summary>
 internal sealed class WifiMonitor(
     WifiLinkState state,
+    ServedAddresses served,
     IServiceScopeFactory scopeFactory,
     IOptions<PlatformOptions> options,
     TimeProvider time,
@@ -213,15 +239,17 @@ internal sealed class WifiMonitor(
     /// now, <paramref name="current"/> the WiFi (null when Windows shows no WiFi adapter), and <paramref name="diagnose"/>
     /// says why there is no adapter, asked only when there is neither an adapter nor a cable. A WiFi loss told before this
     /// sample that a cable up now ends is told over by the cable: the WiFi detector ends it without a word on a cable.
+    /// <paramref name="servedRecently"/> says whether the workstations' requests came lately to given addresses of the server.
     /// </summary>
     internal static List<WifiEvent> SampleLinks(
         WifiEventDetector detector, CableEventDetector cableDetector, WifiConnectionInfo? previous, WifiConnectionInfo? current,
-        IReadOnlyList<NetworkLink> cables, DateTimeOffset now, NetworkOptions network, Func<WifiAdapterAbsence> diagnose)
+        IReadOnlyList<NetworkLink> cables, DateTimeOffset now, NetworkOptions network, Func<WifiAdapterAbsence> diagnose,
+        Func<IReadOnlyList<string>, bool>? servedRecently = null)
     {
         var onCable = cables.Count > 0;
         var wifiLossTold = detector.LinkLost;
         var events = detector.Evaluate(previous, current, now, network, current is null && !onCable ? diagnose() : WifiAdapterAbsence.Unknown, onCable);
-        events.AddRange(cableDetector.Evaluate(cables, current, now, wifiLossTold));
+        events.AddRange(cableDetector.Evaluate(cables, current, now, wifiLossTold, servedRecently));
         return events;
     }
 
@@ -249,8 +277,9 @@ internal sealed class WifiMonitor(
             {
                 var cables = NetworkLinks.Cables(NetworkLinks.Read());
                 var current = WlanClient.GetPrimaryConnection();
-                var events = SampleLinks(detector, cableDetector, previous, current, cables, now, network, WlanService.Diagnose);
-                state.Update(current, now, detector.AdapterMissing, detector.LinkLost, cables, cableDetector.CableLost);
+                var events = SampleLinks(detector, cableDetector, previous, current, cables, now, network, WlanService.Diagnose,
+                    addresses => served.Recently(addresses, now));
+                state.Update(current, now, detector.AdapterMissing, detector.LinkLost, cables, cableDetector.Lost);
                 foreach (var linkEvent in events)
                 {
                     state.Add(linkEvent);
@@ -380,7 +409,7 @@ internal sealed class WifiMonitor(
             {
                 WifiEventKind.Disconnected or WifiEventKind.AdapterLost or WifiEventKind.InsecureNetwork or WifiEventKind.UnapprovedNetwork
                     or WifiEventKind.CableDisconnected => AuditSeverity.Critical,
-                WifiEventKind.WeakSignal or WifiEventKind.SharedPasswordNetwork => AuditSeverity.Warning,
+                WifiEventKind.WeakSignal or WifiEventKind.SharedPasswordNetwork or WifiEventKind.OtherCableDisconnected => AuditSeverity.Warning,
                 _ => AuditSeverity.Info,
             };
             var category = wifiEvent.Kind is WifiEventKind.InsecureNetwork or WifiEventKind.SharedPasswordNetwork or WifiEventKind.UnapprovedNetwork
@@ -388,7 +417,7 @@ internal sealed class WifiMonitor(
                 : AuditCategories.Admin;
             var (action, title) = wifiEvent.Kind switch
             {
-                WifiEventKind.CableDisconnected => ("network.cable_disconnected", "Server network cable: Disconnected"),
+                WifiEventKind.CableDisconnected or WifiEventKind.OtherCableDisconnected => ("network.cable_disconnected", "Server network cable: Disconnected"),
                 WifiEventKind.CableReconnected => ("network.cable_reconnected", "Server network cable: Connected"),
                 _ => ($"network.wifi_{wifiEvent.Kind.ToString().ToLowerInvariant()}", "Server WiFi: " + wifiEvent.Kind),
             };
@@ -627,21 +656,30 @@ internal sealed class WifiEventDetector(bool onWifiWhenLastRun = false, string? 
 
 /// <summary>
 /// Decides which events a new sample of the Server Node's network cables raises (DED-06, where the hospital's machines are
-/// cabled to its LAN): the cable lost, once, when every cable that was up during this run is down, because the cable is
-/// out or its switch is off; and back, once. Its message says whether the server is still on WiFi. A server that starts
-/// with no cable up raises nothing here: it may simply have started before its switch, and System health tells a server
-/// with no link at all (<c>network.down</c>) once that has lasted.
+/// cabled to its LAN). Each cable up during this run is followed on its own, so that on a server with two cards (the hospital
+/// LAN and an imaging network, say) each is told. A cable lost while no other is up is critical: it is out or its switch is
+/// off, and the message says whether the server is still on WiFi. A cable lost while another is up is critical when the
+/// workstations' requests came over it lately (<see cref="ServedAddresses"/>), and a warning otherwise, named with its last
+/// address and what is still up. Each is told back once. A server that starts with no cable up raises nothing here: it may
+/// simply have started before its switch, and System health tells a server with no link at all (<c>network.down</c>) once
+/// that has lasted.
 /// </summary>
 internal sealed class CableEventDetector
 {
-    /// <summary>The cable the server was last on during this run; null until one is up.</summary>
-    private string? _lastCable;
+    /// <summary>Each cable up during this run, as it last was up: its addresses go when it goes down.</summary>
+    private readonly Dictionary<string, NetworkLink> _known = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The cable was told lost, and none is up again.</summary>
-    public bool CableLost { get; private set; }
+    private readonly List<LostCable> _lost = [];
+
+    /// <summary>The cables up during this run that were told lost and are not back, in the order they were lost.</summary>
+    public IReadOnlyList<LostCable> Lost => _lost;
+
+    /// <summary>A cable up during this run was told lost and is not back.</summary>
+    public bool CableLost => _lost.Count > 0;
 
     /// <summary>Whether <paramref name="kind"/> is a cable's event rather than the WiFi's.</summary>
-    public static bool IsCable(WifiEventKind kind) => kind is WifiEventKind.CableDisconnected or WifiEventKind.CableReconnected;
+    public static bool IsCable(WifiEventKind kind) =>
+        kind is WifiEventKind.CableDisconnected or WifiEventKind.OtherCableDisconnected or WifiEventKind.CableReconnected;
 
     /// <summary>A link's speed as people say it: 100 Mbps, 1 Gbps, 2.5 Gbps.</summary>
     public static string Speed(long mbps) =>
@@ -653,34 +691,103 @@ internal sealed class CableEventDetector
     /// <param name="wifiLossTold">
     /// A loss of the WiFi was told before this sample and has not ended: a cable up now ends it, and says so.
     /// </param>
-    public List<WifiEvent> Evaluate(IReadOnlyList<NetworkLink> cables, WifiConnectionInfo? wifi, DateTimeOffset now, bool wifiLossTold = false)
+    /// <param name="servedRecently">
+    /// Whether the workstations' requests came lately to any of the given addresses of the server
+    /// (<see cref="ServedAddresses.Recently"/>); null when there is nothing to go by.
+    /// </param>
+    public List<WifiEvent> Evaluate(
+        IReadOnlyList<NetworkLink> cables, WifiConnectionInfo? wifi, DateTimeOffset now, bool wifiLossTold = false,
+        Func<IReadOnlyList<string>, bool>? servedRecently = null)
     {
         var events = new List<WifiEvent>();
-        if (cables.Count > 0)
+        var up = cables.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var noneWasUp = _known.Count > 0 && _known.Keys.All(IsLost);
+
+        var back = cables.Where(c => IsLost(c.Name)).ToList();
+        if (back.Count > 0)
         {
-            var cable = cables[0];
-            if (CableLost || wifiLossTold)
+            _lost.RemoveAll(l => up.Contains(l.Name));
+            events.Add(new WifiEvent(now, WifiEventKind.CableReconnected, back.Count == 1
+                ? $"Server Node's network cable is connected again ({Described(back[0])})."
+                : $"Server Node's network cables are connected again ({string.Join("; ", back.Select(Described))})."));
+        }
+        else if (cables.Count > 0 && (noneWasUp || wifiLossTold))
+        {
+            // Back on the network over a cable that was not up before (moved to the card's other port, say): the ports it
+            // left are not waited for.
+            if (noneWasUp)
             {
-                var speed = cable.SpeedMbps is { } mbps ? $", {Speed(mbps)}" : string.Empty;
-                events.Add(new WifiEvent(now, WifiEventKind.CableReconnected, CableLost
-                    ? $"Server Node's network cable is connected again ('{cable.Name}'{speed})."
-                    : $"Server Node is back on the network, on a network cable ('{cable.Name}'{speed}): workstations can reach HC360 again."));
-                CableLost = false;
+                foreach (var left in _lost)
+                {
+                    _known.Remove(left.Name);
+                }
+
+                _lost.Clear();
             }
 
-            _lastCable = cable.Name;
+            events.Add(new WifiEvent(now, WifiEventKind.CableReconnected,
+                $"Server Node is back on the network, on a network cable ({Described(cables[0])}): workstations can reach HC360 again."));
+        }
+
+        var newlyLost = _known.Values.Where(k => !up.Contains(k.Name) && !IsLost(k.Name)).OrderBy(k => k.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var cable in cables)
+        {
+            _known[cable.Name] = cable;
+        }
+
+        if (newlyLost.Count == 0)
+        {
             return events;
         }
 
-        if (_lastCable is not null && !CableLost)
+        var lost = newlyLost.Select(k => new LostCable(k.Name, k.Addresses, now, servedRecently?.Invoke(k.Addresses) ?? false)).ToList();
+        _lost.AddRange(lost);
+        if (cables.Count == 0)
         {
-            CableLost = true;
-            var lost = $"Server Node lost its network cable ('{_lastCable}'): the cable is out or its switch is off.";
-            events.Add(new WifiEvent(now, WifiEventKind.CableDisconnected, wifi is { IsConnected: true }
-                ? $"{lost} It is on WiFi{(wifi.Ssid is null ? string.Empty : $" '{wifi.Ssid}'")} only."
-                : $"{lost} Workstations cannot reach HC360 until it is back."));
+            events.Add(new WifiEvent(now, WifiEventKind.CableDisconnected, NoCableLeft(lost, wifi)));
+            return events;
+        }
+
+        var used = servedRecently is null ? [] : cables.Where(c => servedRecently(c.Addresses)).ToList();
+        foreach (var cable in lost)
+        {
+            var named = Named(cable.Name, cable.Addresses);
+            var stillOn = string.Join(", ", cables.Select(c => Named(c.Name, c.Addresses)));
+            events.Add(cable.ServedWorkstations
+                ? new WifiEvent(now, WifiEventKind.CableDisconnected,
+                    $"Server Node lost its network cable {named}, which workstations reach it over: they cannot reach HC360 until it is back. It is still on {stillOn}.")
+                : new WifiEvent(now, WifiEventKind.OtherCableDisconnected, used.Count > 0
+                    ? $"Server Node lost its network cable {named}. Workstations reach it over {string.Join(", ", used.Select(c => $"'{c.Name}'"))}, "
+                      + $"which {(used.Count == 1 ? "is" : "are")} up; what used '{cable.Name}' cannot reach it until it is back."
+                    : $"Server Node lost its network cable {named}. It is still on {stillOn}."));
         }
 
         return events;
     }
+
+    /// <summary>What it means that no cable is up now: the cables just lost, and whether the server is on WiFi.</summary>
+    private string NoCableLeft(List<LostCable> lost, WifiConnectionInfo? wifi)
+    {
+        var onWifi = wifi is { IsConnected: true } ? $"WiFi{(wifi.Ssid is null ? string.Empty : $" '{wifi.Ssid}'")} only" : null;
+        if (_lost.Count == 1)
+        {
+            var only = $"Server Node lost its network cable ('{lost[0].Name}'): the cable is out or its switch is off.";
+            return onWifi is null ? $"{only} Workstations cannot reach HC360 until it is back." : $"{only} It is on {onWifi}.";
+        }
+
+        var said = lost.Count == 1
+            ? $"Server Node lost its network cable ('{lost[0].Name}'): the cable is out or its switch is off."
+            : $"Server Node lost its network cables ({string.Join(", ", lost.Select(l => $"'{l.Name}'"))}): the cables are out or their switch is off.";
+        return onWifi is null
+            ? $"{said} No cable is up now: workstations cannot reach HC360 until one is back."
+            : $"{said} No cable is up now: it is on {onWifi}.";
+    }
+
+    private bool IsLost(string name) => _lost.Exists(l => string.Equals(l.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private static string Described(NetworkLink cable) =>
+        $"'{cable.Name}'{(cable.SpeedMbps is { } mbps ? $", {Speed(mbps)}" : string.Empty)}";
+
+    private static string Named(string name, IReadOnlyList<string> addresses) =>
+        addresses.Count == 0 ? $"'{name}'" : $"'{name}' ({string.Join(", ", addresses)})";
 }

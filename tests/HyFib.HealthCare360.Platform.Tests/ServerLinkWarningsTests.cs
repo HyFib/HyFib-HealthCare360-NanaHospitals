@@ -15,6 +15,12 @@ public sealed class ServerLinkWarningsTests
     private static readonly NetworkLink Cable =
         new("Ethernet", "Intel(R) Ethernet Connection (17) I219-V", LinkMedium.Cable, true, 1000, ["192.168.1.10"]);
 
+    /// <summary>A second card, on an imaging network.</summary>
+    private static readonly NetworkLink Imaging =
+        new("Ethernet 2", "Realtek PCIe GbE Family Controller", LinkMedium.Cable, true, 1000, ["10.20.0.5"]);
+
+    private static readonly DateTimeOffset LostAt = new(2026, 11, 13, 6, 0, 0, TimeSpan.Zero);
+
     [Fact]
     public void A_cabled_server_with_an_idle_WiFi_card_has_no_link_warning()
     {
@@ -77,10 +83,29 @@ public sealed class ServerLinkWarningsTests
         Warnings(cables: null, wifiSupported: false, wifi: null).ShouldBeEmpty("a monitor that is off judges no link");
     }
 
+    /// <summary>
+    /// A server with two cards: the cable the workstations reached HC360 over, lost while the other is up, is critical and
+    /// named with its last address; another cable lost while theirs is up is a warning. Before, nothing was said while any
+    /// cable was up.
+    /// </summary>
+    [Fact]
+    public void A_cable_lost_beside_another_is_critical_when_the_workstations_used_it_and_a_warning_otherwise()
+    {
+        Warnings(cables: [Imaging], wifi: Down(), lost: [new LostCable("Ethernet", ["192.168.1.10"], LostAt, ServedWorkstations: true)])
+            .Select(w => (w.Code, w.Severity, w.Message)).ShouldBe([
+                ("network.cable_down", "critical", "The Server Node's network cable 'Ethernet' (192.168.1.10) is disconnected. Workstations reached HC360 "
+                    + "over it, so they cannot until it is back. It is still on 'Ethernet 2' (10.20.0.5).")]);
+
+        Warnings(cables: [Cable], wifi: Down(), lost: [new LostCable("Ethernet 2", ["10.20.0.5"], LostAt, ServedWorkstations: false)])
+            .Select(w => (w.Code, w.Severity, w.Message)).ShouldBe([
+                ("network.cable_down", "warning", "The Server Node's network cable 'Ethernet 2' (10.20.0.5) is disconnected. It is still on 'Ethernet' (192.168.1.10).")]);
+    }
+
     private static List<HealthWarning> Warnings(
         IReadOnlyList<NetworkLink>? cables, WifiConnectionInfo? wifi, bool cableLost = false, bool wifiSupported = true, string? adapterMissing = null,
-        bool wifiLinkLost = false) =>
-        [.. SystemHealthService.LinkWarnings(cables, cableLost, wifiSupported, wifi, adapterMissing, wifiLinkLost, WeakThreshold)];
+        bool wifiLinkLost = false, IReadOnlyList<LostCable>? lost = null) =>
+        [.. SystemHealthService.LinkWarnings(cables, lost ?? (cableLost ? [new LostCable("Ethernet", ["192.168.1.10"], LostAt, true)] : []),
+            wifiSupported, wifi, adapterMissing, wifiLinkLost, WeakThreshold)];
 
     /// <summary>Connected to the staff network (WPA2-Enterprise) at <paramref name="quality"/> % signal.</summary>
     private static WifiConnectionInfo Link(int quality) =>

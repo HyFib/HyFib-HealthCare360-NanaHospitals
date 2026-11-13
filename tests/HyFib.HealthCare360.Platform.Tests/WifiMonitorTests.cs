@@ -399,6 +399,99 @@ public sealed class WifiMonitorTests
             "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
     }
 
+    /// <summary>
+    /// A Server Node with two network cards, the hospital LAN on one and an imaging network on the other, has each cable told
+    /// on its own. The one the workstations' requests came over, lost while the other is up, is critical and named with its
+    /// address: they cannot reach HC360. Before, nothing was told while any cable was up.
+    /// </summary>
+    [Fact]
+    public void The_cable_the_workstations_use_lost_while_another_is_up_is_critical_and_named()
+    {
+        var detector = new CableEventDetector();
+        var events = TwoCards(detector, ["192.168.1.10"], [Lan, Imaging], [Imaging], [Imaging], [Lan, Imaging]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(3))]);
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10), which workstations reach it over: "
+            + "they cannot reach HC360 until it is back. It is still on 'Ethernet 2' (10.20.0.5).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
+        detector.CableLost.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Another_cable_lost_while_the_workstations_one_is_up_is_a_warning_and_named()
+    {
+        var events = TwoCards(new CableEventDetector(), ["192.168.1.10"], [Lan, Imaging], [Lan], [Lan], [Lan, Imaging]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(OtherCableDisconnected, At(1)), (CableReconnected, At(3))]);
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet 2' (10.20.0.5). Workstations reach it over 'Ethernet', "
+            + "which is up; what used 'Ethernet 2' cannot reach it until it is back.");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps).");
+    }
+
+    [Fact]
+    public void With_no_requests_to_go_by_a_cable_lost_while_another_is_up_is_a_warning()
+    {
+        var events = TwoCards(new CableEventDetector(), null, [Lan, Imaging], [Imaging]);
+
+        events.ShouldHaveSingleItem().Kind.ShouldBe(OtherCableDisconnected);
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10). It is still on 'Ethernet 2' (10.20.0.5).");
+    }
+
+    /// <summary>The switch both cards are on goes off: one event for both, and each is told back on its own.</summary>
+    [Fact]
+    public void Both_cables_lost_at_once_are_one_critical_event_and_each_is_told_back()
+    {
+        var events = TwoCards(new CableEventDetector(), ["192.168.1.10"], [Lan, Imaging], [], [], [Lan], [Lan, Imaging]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(3)), (CableReconnected, At(4))]);
+        events[0].Message.ShouldBe("Server Node lost its network cables ('Ethernet', 'Ethernet 2'): the cables are out or their switch is off. "
+            + "No cable is up now: workstations cannot reach HC360 until one is back.");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
+        events[2].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps).");
+    }
+
+    [Fact]
+    public void Each_lost_cable_is_kept_with_its_last_address_when_it_was_lost_and_whether_workstations_used_it()
+    {
+        var detector = new CableEventDetector();
+
+        TwoCards(detector, ["192.168.1.10"], [Lan, Imaging], [Imaging], []);
+
+        detector.Lost.Select(l => (l.Name, string.Join(",", l.Addresses), l.LostAt, l.ServedWorkstations)).ShouldBe([
+            ("Ethernet", "192.168.1.10", At(1), true), ("Ethernet 2", "10.20.0.5", At(2), false)],
+            "a cable that is down has no address any more: the one it had is kept");
+    }
+
+    /// <summary>
+    /// The cable moved to the card's other port, one not up before: the server is back on the network, and the port it left
+    /// is not waited for.
+    /// </summary>
+    [Fact]
+    public void A_cable_moved_to_another_port_is_told_back_and_the_port_it_left_is_not_waited_for()
+    {
+        var detector = new CableEventDetector();
+        var other = Lan with { Name = "Ethernet 3" };
+
+        var events = TwoCards(detector, ["192.168.1.10"], [Lan], [], [other], [other]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(2))]);
+        events[1].Message.ShouldBe("Server Node is back on the network, on a network cable ('Ethernet 3', 1 Gbps): workstations can reach HC360 again.");
+        detector.Lost.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Another_cable_lost_is_a_warning_in_app_and_still_goes_to_the_on_call_number()
+    {
+        var events = TwoCards(new CableEventDetector(), ["192.168.1.10"], [Lan, Imaging], [Lan]);
+        var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
+
+        await WifiMonitor.AlertAsync(events, audit, notifications, BySms, Server, Ct);
+
+        audit.Entries.Select(e => (e.Action, e.Severity)).ShouldBe([("network.cable_disconnected", AuditSeverity.Warning)]);
+        notifications.InApp.Select(n => (n.Title, n.Severity)).ShouldBe([("Server network cable: Disconnected", "warning")]);
+        notifications.Queued.ShouldHaveSingleItem();
+    }
+
     [Theory]
     [InlineData(10, "10 Mbps")]
     [InlineData(100, "100 Mbps")]
@@ -459,6 +552,28 @@ public sealed class WifiMonitorTests
         for (var i = 0; i < samples.Length; i++)
         {
             events.AddRange(detector.Evaluate(samples[i], wifi, At(i)));
+        }
+
+        return events;
+    }
+
+    /// <summary>A Server Node's first card, on the hospital LAN.</summary>
+    private static readonly NetworkLink Lan = new("Ethernet", "Intel(R) Ethernet Connection (17) I219-V", LinkMedium.Cable, true, 1000, ["192.168.1.10"]);
+
+    /// <summary>Its second card, on an imaging network.</summary>
+    private static readonly NetworkLink Imaging = new("Ethernet 2", "Realtek PCIe GbE Family Controller", LinkMedium.Cable, true, 1000, ["10.20.0.5"]);
+
+    /// <summary>
+    /// Feeds the samples to one detector, 30 seconds apart, with the workstations' requests lately arriving on
+    /// <paramref name="served"/> (null: none to go by), and returns the events raised.
+    /// </summary>
+    private static List<WifiEvent> TwoCards(CableEventDetector detector, string[]? served, params NetworkLink[][] samples)
+    {
+        Func<IReadOnlyList<string>, bool>? recently = served is null ? null : addresses => addresses.Any(served.Contains);
+        var events = new List<WifiEvent>();
+        for (var i = 0; i < samples.Length; i++)
+        {
+            events.AddRange(detector.Evaluate(samples[i], null, At(i), servedRecently: recently));
         }
 
         return events;
