@@ -256,7 +256,8 @@ Each step ends with a check, and the next step starts only once it passes.
    shows `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Restart the server once:
    HC360 starts with Windows, and the network card is from then on never powered down (DEPLOYMENT.md section 3).
    Then pull the server's network cable for a minute: System health shows "Cable disconnected" and IT's phone gets the
-   SMS; plug it back in, and both say it is back.
+   SMS, a few minutes after it is back in at the latest (the server reaches the SMS gateway over that cable). Once it is
+   in, System health and the administrators' notifications say it is back; its return sends no SMS.
 8. **Run a restore drill before go-live.** Let the first night's backup run, check it with `backup verify`, and restore
    it on a spare PC with `Restore-HC360.ps1` (DEPLOYMENT.md section 8).
    *Check:* the restored copy opens and holds what the original holds.
@@ -278,7 +279,7 @@ None of these depends on HyFib's word:
 |---|---|
 | The machine is fit | The preflight's report, read from the machine itself; then the installer's own checks and Administration › System health |
 | Windows is licensed | Settings › System › Activation, and the preflight's *Activation* |
-| The server's cable is right, and its loss is noticed | The preflight's *Network connection* at 1 Gbps; the cable pulled at step 7: System health and an SMS on IT's phone, then its return |
+| The server's cable is right, and its loss is noticed | The preflight's *Network connection* at 1 Gbps; the cable pulled at step 7: System health and an SMS on IT's phone, then its return in System health |
 | Every workstation reaches the server | `Test-NetConnection HC360-SRV -Port 7360` from each, and its connection pill showing the cable |
 | It is fast enough | The load test on this machine (PERF-01), and pg_test_fsync's figures for its disk |
 | The data survives a failure | A backup verified, then restored on another PC |
@@ -317,8 +318,8 @@ Still open:
 
 HC360 was written for a server on WiFi (SRS assumption A-09). On a cabled LAN that left gaps, closed in this release:
 - **The server watches its network cable.** A cable pulled or a switch turned off is told at once, in the app to the
-  administrators and by SMS to IT's phone, and so is its return. Before, only the server's WiFi was watched: a cabled
-  server could lose its cable and nobody would be told.
+  administrators and by SMS to IT's phone, and its return in the app. Before, only the server's WiFi was watched: a
+  cabled server could lose its cable and nobody would be told.
 - **A WiFi card beside the cable raises nothing.** A cabled server's idle WiFi card was a critical "WiFi is
   disconnected" in System health for as long as it ran, and a WiFi that dropped beside the cable sent critical SMS.
 - **System health shows the cable and its speed** ("Cable · 1 Gbps"), and says "Not connected" for a server with no
@@ -336,7 +337,7 @@ HC360 was written for a server on WiFi (SRS assumption A-09). On a cabled LAN th
 |---|---|---|
 | The server's cable | The preflight's *Network connection* | Pass: 1 Gbps. At 100 Mbps, change the cable (Cat5e or Cat6) or the switch port |
 | The switches stay up in a power cut | The switch the server is on, and those between it and the wards, on a UPS; then switch the mains off for five minutes | Workstations on UPS keep working, and HC360 Desktop shows no offline banner |
-| The server's cable loss is noticed | Section 4, step 7: pull the cable for a minute | System health shows "Cable disconnected" and IT's phone gets the SMS, and both say it is back once it is in |
+| The server's cable loss is noticed | Section 4, step 7: pull the cable for a minute | System health shows "Cable disconnected" and IT's phone gets the SMS; once it is in, System health and the administrators' notifications say it is back |
 | Each workstation reaches the server | `Test-NetConnection HC360-SRV -Port 7360` on each | `TcpTestSucceeded : True` |
 | HC360 Desktop finds the server by itself | Setup on each workstation without `-ServerUrl` | It lists HC360-SRV. If not, multicast (mDNS) does not cross the switches: use `-ServerUrl` (DEPLOYMENT.md section 1) |
 

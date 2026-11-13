@@ -89,10 +89,10 @@ On a **cabled LAN**, where the server and the workstations are on network cables
   UPS reaches nobody once its switch is off.
 - A managed switch with IGMP snooping on and no IGMP querier can drop mDNS: turn on the querier, or let mDNS through.
 - System health watches the server's cable: a cable pulled or its switch turned off is told at once to the
-  administrators and the on-call number (`alerts.oncallPhone`), and so is its return. If **Last cable drop** in System
-  health keeps coming back, change the cable, then the switch port. If it still drops, turn off **Energy-Efficient
-  Ethernet** in the network card's Advanced settings (Device Manager): some switches drop the link with it. The
-  installer leaves the card's driver settings alone.
+  administrators and the on-call number (`alerts.oncallPhone`), and its return to the administrators in the app. If
+  **Last cable drop** in System health keeps coming back, change the cable, then the switch port. If it still drops,
+  turn off **Energy-Efficient Ethernet** in the network card's Advanced settings (Device Manager): some switches drop
+  the link with it. The installer leaves the card's driver settings alone.
 - A server with two network cards on cables (one on an imaging network, say) is told when no cable is up. One of them
   lost while the other is up is not told: on such a server, the cable-pull drill below is done on each cable, watching
   its card's lights and Administration › System health.
@@ -488,8 +488,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    active: System health warns when fewer remain.
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
-   network cable is pulled or its switch goes off and when it is back, its WiFi drops, its WiFi adapter disappears, it
-   starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure),
+   network cable is pulled or its switch goes off, its WiFi drops, its WiFi adapter disappears, it starts without the
+   WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure),
    and who a critical alert nobody acknowledges goes to next:
    `alerts.escalationPhone` (a second contact, such as the IT head) and `alerts.supportPhone` (HyFib support's number).
    Set up the heartbeat outside the hospital as "Alerts that reach someone" below says.
@@ -595,10 +595,11 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
 10. **Administration › System health**: everything should be green: the server on its cable at 1 Gbps, or on WiFi with
    its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health and the on-call phone must
-   say the cable is lost, and that it is back once it is in again. It also shows each
-   integration set up in step 7 as Administration › Integrations does, and when the hospital CA and the server
-   certificate expire. Run an alert drill there, and keep its timings with the go-live record ("Alerts that reach
-   someone").
+   say the cable is lost, and System health and the administrators' notifications that it is back once it is in again;
+   its return sends no SMS. Where the server reaches the internet over that cable alone, the SMS comes once it is back
+   in, within a few minutes. System health also shows each integration set up in step 7 as Administration ›
+   Integrations does, and when the hospital CA and the server certificate expire. Run an alert drill there, and keep
+   its timings with the go-live record ("Alerts that reach someone").
 
 ### Alerts that reach someone
 
