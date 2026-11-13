@@ -643,7 +643,8 @@ Platform contract `IInvoiceRegistrationPortal`, through `IrpRouter` and the prov
   or through a GST suvidha provider passing it on (plain JSON unless `encrypt`). The token and session key are kept per
   facility, GSTIN and credential; 1005 (token not valid) signs in again, once.
 * **`simulator`** (`SimulatorIrp`), on training and test servers only: the portal's IRN hash, 2150 with the IRN it
-  holds, 2270 after 24 hours, an IRN's details as `ACT` or `CNL` (with when) to its own GSTIN only, and e-way bills.
+  holds, 2270 after 24 hours, an IRN's details as `ACT` or `CNL` (with when) to its own GSTIN only, and e-way bills:
+  one per IRN (4002 after), given back by the IRN to its own GSTIN (4005 while there is none).
 
 What HC360 relies on from the portal, and where it comes from:
 
@@ -654,22 +655,40 @@ What HC360 relies on from the portal, and where it comes from:
 | An IRN's details (`Invoice/irn/{irn}`) carry its `Status`: `ACT` or `CNL` (`IrpIrn.IsActive`, `IrpIrn.IsCancelled`; an answer without it confirms neither), and a cancelled one's `CancelDate` | Reading back a cancellation whose answer was lost; checking an IRN recorded by hand | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
 | The details are given for about three days after the IRN's generation (`IrpIrn.DetailsWindow`: HC360 asks within two) | Whether an IRN recorded by hand is checked with the portal | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
 | Documents more than 30 days old are refused from taxpayers with an aggregate turnover of ₹10 crore or more (from 1 April 2025) | The register's due dates and the morning reminder | GSTN advisory of 5 November 2024 |
+| A second e-way bill asked for from an IRN is refused with 4002 ("EwayBill is already generated for this IRN") | Asking again after a lost answer never makes a second e-way bill | GSP documentation of the NIC API (Logitax, *Generate E-way bill by IRN*, a 4002 sample); to be confirmed on NIC's sandbox |
+| An IRN's e-way bill (GET `/eiewb/v1.03/ewaybill/irn/{irn}`, `NicIrpClient.GetEwayBillAsync`) answers `EwbNo`, `Status` (`ACT` or `CNL`, `IrpEwayBill.IsCancelled`), `GenGstin`, `EwbDt` and `EwbValidTill` (null on a sample cancelled one), or 4005 ("Eway Bill details are not found") when there is none | Reading back an e-way bill request that failed (`EwayBillRequests`) | GSP documentation of the NIC API (Vayana's and Logitax's *Get EWB details by IRN*, with samples; `EwbNo` comes as a number in one and a string in the other); to be confirmed on NIC's sandbox |
 
 `IrpAnswers.Irn` reads an IRN's details whoever passed them on: a live IRN needs its acknowledgement and signed QR code,
 while a cancelled one is read for its state alone, since the portal may give it without them.
 
 **What a failed call means.** `IrpError.Unreachable` is a call that got no usable answer (a timeout, a broken
 connection, an answer that could not be read or decrypted): the portal may have done what was asked. Billing asks again
-where the portal makes that safe (generation, through 2150) and reads the IRN back where it does not (cancellation); it
-never takes an unanswered call for nothing done. `IrpError.NotConnected` is a connection that cannot be used (switched
-off, credentials missing). Anything else is the portal's refusal, in its own code and words; Billing does not repeat
-a refused request (a refused cancellation is still read back, since the portal refuses an IRN it already cancelled).
+where the portal makes that safe (generation, through 2150) and reads back what the portal holds where it does not: the
+IRN after a cancellation, and the IRN's e-way bill after an e-way bill request, whose second asking the portal refuses
+(4002); it never takes an unanswered call for nothing done. `IrpError.NotConnected` is a connection that cannot be used
+(switched off, credentials missing). Anything else is the portal's refusal, in its own code and words; Billing does not
+repeat a refused request, but still reads back a refused cancellation or e-way bill request, since the portal refuses
+to cancel an IRN it already cancelled and to make a second e-way bill.
 
 **Practising the failures.** The simulator's ledger takes faults (`SimulatorIrpLedger.Fail`) on the next calls of an
-operation (`SimulatorIrpOperations`: `irn.generate`, `irn.cancel`, `irn.get`, `ewaybill.generate`), for one IRN or for
-any: the portal does what was asked and loses its answer (`LoseAnswer`), or is not reached and does nothing (`Down`).
-Each failed call is in the integration log as the real portal's would be. The integration tests drive the lost answers
-end to end with them (`EInvoiceRegisterTests`).
+operation (`SimulatorIrpOperations`: `irn.generate`, `irn.cancel`, `irn.get`, `ewaybill.generate`, `ewaybill.get`), for
+one IRN or for any: the portal does what was asked and loses its answer (`LoseAnswer`), or is not reached and does
+nothing (`Down`). Each failed call is in the integration log as the real portal's would be. The integration tests drive
+the lost answers end to end with them (`EInvoiceRegisterTests`; e-way bills in `GstComplianceTests`).
+
+**Not yet confirmed on NIC's sandbox.** The rows sourced to GSP documentation are GSPs' accounts of NIC's API, not NIC's
+own: its pages and sandbox (`einv-apisandbox.nic.in`) could not be reached when they were written, and the sandbox needs
+the hospital's credentials. For the e-way bill read-back, run these against the sandbox with an invoice of goods, and
+move each row's source to NIC once it holds:
+1. Generate the e-way bill from the IRN, then GET `…/ewaybill/irn/{irn}`: the fields above, `Status` `ACT`, the dates as
+   `yyyy-MM-dd HH:mm:ss` India time, and whether `Data` comes under the session key like the other answers.
+2. Generate again: 4002, and whether that refusal itself names the e-way bill (HC360 reads it back either way).
+3. GET for an IRN without an e-way bill: 4005.
+4. Cancel the e-way bill on the e-way bill portal, then GET: `CNL`; then whether the IRN gives a second e-way bill, and
+   which of the two GET answers with afterwards (HC360 records only an `ACT` one).
+5. Generate an e-way bill on the e-way bill portal for the same document, not from the IRN: whether GET by IRN finds it,
+   and what generating from the IRN then answers.
+6. How long after its generation GET still answers (an IRN's own details are given for about three days).
 
 ### PACS (INT-PACS)
 
