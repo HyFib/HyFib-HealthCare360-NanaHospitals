@@ -30,18 +30,22 @@ public sealed class BillSharing(HospitalDbContext db, INotificationService notif
     public static bool CanShare(BillStatus status) => status is BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid;
 
     /// <summary>Queues the bill when a payment has just settled it. Adds to the caller's unit of work.</summary>
-    internal async Task QueueOnPaymentAsync(Bill bill, CancellationToken ct)
+    /// <returns>Whether the bill was queued, so the receipt need not go on WhatsApp as well.</returns>
+    internal async Task<bool> QueueOnPaymentAsync(Bill bill, CancellationToken ct)
     {
         if (bill.Status != BillStatus.Paid || bill.BillNumber is null
             || !(await settings.GetAsync<bool?>(SendOnPaymentSetting, bill.FacilityId, ct) ?? true))
         {
-            return;
+            return false;
         }
 
         if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct))
         {
             Queue(bill, patient);
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>The billing desk sends the bill on WhatsApp. Saves.</summary>

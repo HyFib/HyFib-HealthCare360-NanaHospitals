@@ -6,8 +6,9 @@ using HyFib.HealthCare360.Platform.Notifications;
 namespace HyFib.HealthCare360.Modules.Engagement.Services;
 
 /// <summary>
-/// The "follow-up due" SMS (CRM-02), sent by staff from the worklist or by the reminder job. It goes only to a living
-/// patient with a mobile number who accepted SMS updates. One message covers the tasks given (a patient's tasks falling
+/// The "follow-up due" message (CRM-02), sent by staff from the worklist or by the reminder job, by SMS and on WhatsApp
+/// (to numbers that opted in, once the WhatsApp template is switched on). It goes only to a living patient with a mobile
+/// number who accepted SMS and WhatsApp updates. One message covers the tasks given (a patient's tasks falling
 /// due together, such as several vaccines), names the earliest due date, and marks every task reminded. The caller saves.
 /// </summary>
 public sealed class FollowUpReminders(
@@ -18,6 +19,8 @@ public sealed class FollowUpReminders(
     TimeProvider time)
 {
     public const string Template = "followup.reminder";
+
+    internal static readonly IReadOnlyList<NotificationChannel> Channels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     public async Task<Result> QueueAsync(IReadOnlyList<FollowUpTask> tasks, CancellationToken ct)
     {
@@ -57,7 +60,7 @@ public sealed class FollowUpReminders(
                 ["date"] = first.DueDate.ToString("dd MMM yyyy", CultureInfo.InvariantCulture),
                 ["link"] = baseUrl is null ? "the hospital front desk" : PublicLinks.PortalHome(baseUrl),
             },
-            [NotificationChannel.Sms],
+            Channels,
             TimeSpan.FromDays(1),
             first.FacilityId);
 

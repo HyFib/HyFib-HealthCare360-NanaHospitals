@@ -24,6 +24,12 @@ public sealed class VisitService(
     TimeProvider time,
     DowntimeNumberService downtimeNumbers)
 {
+    /// <summary>
+    /// The queue token's message: by SMS, and on WhatsApp once the hospital switches its WhatsApp template on (it is
+    /// seeded "Not in use" until Meta approves it).
+    /// </summary>
+    internal static readonly IReadOnlyList<NotificationChannel> TokenChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
+
     public async Task<Result<VisitDetail>> CreateAsync(CreateVisitRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -170,12 +176,14 @@ public sealed class VisitService(
             };
             db.Add(token);
 
-            if (request.NotifyPatient && patient.Phone is not null)
+            // The token names the department, so a record in a protected category gets none on a number another patient
+            // shares (SharedNumbers): the desk hands the patient the printed token.
+            if (request.NotifyPatient && patient.Phone is not null && !await SharedNumbers.HiddenFromNumberAsync(db, patient.Id, ct))
             {
                 notifications.Queue("visit.token",
                     NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                     new Dictionary<string, string> { ["department"] = department.Name, ["token"] = token.Label },
-                    [NotificationChannel.Sms],
+                    TokenChannels,
                     TimeSpan.FromHours(2));
             }
         }

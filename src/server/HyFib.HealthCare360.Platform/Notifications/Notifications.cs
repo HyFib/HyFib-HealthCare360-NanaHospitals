@@ -348,7 +348,9 @@ public static class DefaultNotificationTemplates
         ("appointment.reminder", NotificationChannel.WhatsApp, null, "Reminder: your appointment with {{doctor}} is on {{date}} at {{time}}.", "Appointment reminder (WhatsApp)"),
         ("appointment.cancelled", NotificationChannel.Sms, null, "Dear {{name}}, your appointment with {{doctor}} on {{date}} at {{time}} has been cancelled. - {{hospital}}", "Appointment cancelled"),
         ("visit.token", NotificationChannel.Sms, null, "Your token for {{department}} is {{token}}. Please wait for your turn. - {{hospital}}", "Queue token issued"),
+        ("visit.token", NotificationChannel.WhatsApp, null, "Your token for {{department}} is {{token}}. Please wait for your turn; the display board calls it.", "Queue token issued (WhatsApp)"),
         ("bill.receipt", NotificationChannel.Sms, null, "Payment of Rs.{{amount}} received for {{billNumber}}. Thank you. - {{hospital}}", "Payment receipt"),
+        ("bill.receipt", NotificationChannel.WhatsApp, null, "Dear {{name}}, we have received your payment of Rs.{{amount}} for {{billNumber}} (receipt {{receiptNumber}}). Thank you.", "Payment receipt (WhatsApp; not sent when the paid bill itself goes on WhatsApp)"),
         ("payment.link", NotificationChannel.Sms, null, "Dear {{name}}, pay Rs.{{amount}} for {{purpose}} securely: {{link}} - {{hospital}}", "Payment link"),
         ("payment.link", NotificationChannel.WhatsApp, null, "Dear {{name}}, please pay Rs.{{amount}} for {{purpose}} using this secure link: {{link}}", "Payment link (WhatsApp)"),
         ("lab.report_ready", NotificationChannel.Sms, null, "Dear {{name}}, your report {{reference}} is ready. View it on the patient portal. - {{hospital}}", "Report ready"),
@@ -356,10 +358,14 @@ public static class DefaultNotificationTemplates
         ("telehealth.link", NotificationChannel.Sms, null, "Dear {{name}}, join your video consultation with {{doctor}} at {{time}}: {{link}} - {{hospital}}", "Telehealth join link"),
         ("telehealth.link", NotificationChannel.WhatsApp, null, "Dear {{name}}, join your video consultation with {{doctor}} at {{time}} using this link: {{link}}", "Telehealth join link (WhatsApp)"),
         ("admission.admitted", NotificationChannel.Sms, null, "{{name}} has been admitted to {{ward}} bed {{bed}} under {{doctor}}. - {{hospital}}", "Admission confirmation"),
+        ("admission.admitted", NotificationChannel.WhatsApp, null, "{{name}} has been admitted to {{ward}}, bed {{bed}}, under {{doctor}}. Visiting hours and the ward's rules are at the nursing station.", "Admission confirmation (WhatsApp)"),
         ("discharge.completed", NotificationChannel.Sms, null, "{{name}} has been discharged. Your discharge summary is on the patient portal. Get well soon. - {{hospital}}", "Discharge completed"),
+        ("discharge.completed", NotificationChannel.WhatsApp, null, "{{name}} has been discharged. The discharge summary is on the patient portal. We wish you a speedy recovery.", "Discharge completed (WhatsApp; with \"Document header\" ticked, the signed discharge summary goes in it)"),
         ("prescription.shared", NotificationChannel.WhatsApp, null, "Dear {{name}}, your prescription from {{doctor}} dated {{date}} is available on the patient portal.", "Prescription shared"),
         ("feedback.request", NotificationChannel.Sms, null, "Dear {{name}}, how was your visit? Please share feedback: {{link}} - {{hospital}}", "Feedback request"),
+        ("feedback.request", NotificationChannel.WhatsApp, null, "Dear {{name}}, how was your visit? It takes a minute to tell us: {{link}}", "Feedback request (WhatsApp; numbers that opted in only)"),
         ("followup.reminder", NotificationChannel.Sms, null, "Dear {{name}}, your follow-up with {{doctor}} is due on {{date}}. Book at {{link}} - {{hospital}}", "Follow-up reminder"),
+        ("followup.reminder", NotificationChannel.WhatsApp, null, "Dear {{name}}, your follow-up with {{doctor}} is due on {{date}}. You can book it at {{link}}", "Follow-up reminder (WhatsApp; numbers that opted in only)"),
         ("rpm.alert", NotificationChannel.Sms, null, "HC360 RPM alert: {{patient}} reported {{reading}} (outside set range) at {{time}}.", "Remote monitoring alert to care team"),
         ("lab.critical", NotificationChannel.Sms, null, "HC360 CRITICAL LAB: {{patient}} ({{uhid}}) {{test}} = {{value}}. Please review immediately.", "Critical lab value to doctor"),
         ("system.alert", NotificationChannel.Sms, null, "HC360 server alert ({{server}}): {{message}}", "Server Node alert to IT on-call (WiFi down, backup failed…)"),
@@ -380,6 +386,21 @@ public static class DefaultNotificationTemplates
             "{{change}} This happened to your account {{user}} on {{time}}. If you did not ask for this, tell your IT administrator at once.",
             "Tells staff at their old e-mail address that the address or mobile number on their account changed"),
     ];
+
+    /// <summary>
+    /// Built-in templates stored "Not in use" when they are first seeded: WhatsApp messages Meta must approve before they
+    /// can go. Until an administrator switches one on in Notification templates (once its template is approved in
+    /// WhatsApp Manager), the message is skipped on WhatsApp and its other channels go as before.
+    /// </summary>
+    public static IReadOnlySet<(string Key, NotificationChannel Channel)> SeededNotInUse { get; } = new HashSet<(string, NotificationChannel)>
+    {
+        ("visit.token", NotificationChannel.WhatsApp),
+        ("bill.receipt", NotificationChannel.WhatsApp),
+        ("admission.admitted", NotificationChannel.WhatsApp),
+        ("discharge.completed", NotificationChannel.WhatsApp),
+        ("feedback.request", NotificationChannel.WhatsApp),
+        ("followup.reminder", NotificationChannel.WhatsApp),
+    };
 }
 
 internal sealed class NotificationTemplateSeeder : ISeeder
@@ -402,6 +423,7 @@ internal sealed class NotificationTemplateSeeder : ISeeder
                 Subject = template.Subject,
                 Body = template.Body,
                 Description = template.Description,
+                IsActive = !DefaultNotificationTemplates.SeededNotInUse.Contains((template.Key, template.Channel)),
             });
         }
 
@@ -424,7 +446,7 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
     public async Task<string?> NotInUseAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
     {
         var versionsInUse = await Versions(delivery).Select(t => t.IsActive).ToListAsync(cancellationToken);
-        return TemplateSwitch.IsOff(delivery.TemplateKey, versionsInUse) ? TemplateSwitch.NotInUseReason(delivery.Channel) : null;
+        return TemplateSwitch.IsOff(delivery.TemplateKey, delivery.Channel, versionsInUse) ? TemplateSwitch.NotInUseReason(delivery.Channel) : null;
     }
 
     public async Task<(NotificationTemplate? Template, string? Subject, string Body)> RenderAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
@@ -498,9 +520,14 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
 /// </summary>
 internal static class TemplateSwitch
 {
-    /// <param name="versionsInUse">Whether each stored version that could apply to the message is in use.</param>
-    public static bool IsOff(string templateKey, IReadOnlyCollection<bool> versionsInUse) =>
-        !WhatsAppOptOutPolicy.IsEssential(templateKey) && versionsInUse.Count > 0 && !versionsInUse.Contains(true);
+    /// <param name="versionsInUse">
+    /// Whether each stored version that could apply to the message is in use. None stored: the built-in text goes, unless
+    /// the built-in template starts "Not in use" (<see cref="DefaultNotificationTemplates.SeededNotInUse"/>), as it is
+    /// stored when it is seeded.
+    /// </param>
+    public static bool IsOff(string templateKey, NotificationChannel channel, IReadOnlyCollection<bool> versionsInUse) =>
+        !WhatsAppOptOutPolicy.IsEssential(templateKey)
+        && (versionsInUse.Count > 0 ? !versionsInUse.Contains(true) : DefaultNotificationTemplates.SeededNotInUse.Contains((templateKey, channel)));
 
     public static string NotInUseReason(NotificationChannel channel) =>
         $"Not sent: this message's {ChannelName(channel)} template is set to \"Not in use\" (Administration › Notification templates). Switch it on there to send it.";

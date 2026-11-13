@@ -1,9 +1,11 @@
 using HyFib.HealthCare360.Modules.Clinical;
+using HyFib.HealthCare360.Modules.Clinical.Documents;
 using HyFib.HealthCare360.Modules.Clinical.Domain;
 using HyFib.HealthCare360.Modules.Clinical.Services;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Discharge;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
@@ -50,6 +52,12 @@ public sealed class DischargeService(
     TimeProvider time)
 {
     public const string AbscondedKind = "inpatient.absconded";
+
+    /// <summary>
+    /// The discharge's message: by SMS, and on WhatsApp once the hospital switches its WhatsApp template on (it is seeded
+    /// "Not in use" until Meta approves it), with the signed discharge summary when that template has a document header.
+    /// </summary>
+    internal static readonly IReadOnlyList<NotificationChannel> DischargedChannels = [NotificationChannel.Sms, NotificationChannel.WhatsApp];
     public const string PendingPostMortemKind = "inpatient.expired_pending_postmortem";
 
     /// <summary>A witness to a patient leaving the ward against medical advice: a nurse or doctor of the ward team.</summary>
@@ -450,13 +458,21 @@ public sealed class DischargeService(
                 .Where(p => p.Id == admission.PatientId)
                 .Select(p => new { p.Id, p.FullName, p.Phone, p.Email, p.PreferredLanguage })
                 .FirstOrDefaultAsync(ct);
-            if (patient?.Phone is not null)
+            if (patient?.Phone is not null && !await SharedNumbers.HiddenFromNumberAsync(db, patient.Id, ct))
             {
+                // The signed discharge summary goes with the WhatsApp message when its template has a document header;
+                // the SMS only says it is on the portal. A summary amended later is sent as it stands then.
+                var summaryId = await db.Set<DischargeSummary>().AsNoTracking()
+                    .Where(s => s.AdmissionId == admission.Id && s.Status != DischargeSummaryStatus.Draft && s.SignedAt != null)
+                    .OrderByDescending(s => s.SignedAt)
+                    .Select(s => (Guid?)s.Id)
+                    .FirstOrDefaultAsync(ct);
                 notifications.Queue("discharge.completed",
                     NotificationRecipient.Patient(patient.Phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
                     new Dictionary<string, string> { ["name"] = patient.FullName },
-                    [NotificationChannel.Sms],
-                    TimeSpan.FromHours(12));
+                    DischargedChannels,
+                    TimeSpan.FromHours(12),
+                    document: summaryId is { } id ? new NotificationDocument(ClinicalDocumentKinds.DischargeSummary, id) : null);
             }
         }
 

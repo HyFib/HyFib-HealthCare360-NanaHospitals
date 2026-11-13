@@ -10,19 +10,36 @@ public sealed class TemplateSwitchTests
 {
     [Fact]
     public void A_message_with_no_version_in_use_is_off() =>
-        TemplateSwitch.IsOff("lab.report_ready", [false, false]).ShouldBeTrue();
+        TemplateSwitch.IsOff("lab.report_ready", NotificationChannel.WhatsApp, [false, false]).ShouldBeTrue();
 
     [Fact]
     public void One_version_in_use_is_enough() =>
-        TemplateSwitch.IsOff("lab.report_ready", [false, true]).ShouldBeFalse();
+        TemplateSwitch.IsOff("lab.report_ready", NotificationChannel.WhatsApp, [false, true]).ShouldBeFalse();
 
     [Fact]
     public void A_message_with_no_stored_version_uses_the_built_in_text() =>
-        TemplateSwitch.IsOff("lab.report_ready", []).ShouldBeFalse();
+        TemplateSwitch.IsOff("lab.report_ready", NotificationChannel.WhatsApp, []).ShouldBeFalse();
 
     [Fact]
     public void Sign_in_codes_always_go_so_that_patients_can_sign_in() =>
-        TemplateSwitch.IsOff("auth.otp", [false]).ShouldBeFalse();
+        TemplateSwitch.IsOff("auth.otp", NotificationChannel.Sms, [false]).ShouldBeFalse();
+
+    [Fact]
+    public void A_built_in_whatsapp_template_seeded_not_in_use_is_off_until_it_is_stored_and_switched_on()
+    {
+        TemplateSwitch.IsOff("visit.token", NotificationChannel.WhatsApp, []).ShouldBeTrue("not stored yet, and it starts not in use");
+        TemplateSwitch.IsOff("visit.token", NotificationChannel.WhatsApp, [true]).ShouldBeFalse("switched on once Meta approved it");
+        TemplateSwitch.IsOff("visit.token", NotificationChannel.Sms, []).ShouldBeFalse("its SMS is in use from the start");
+    }
+
+    [Fact]
+    public void Only_built_in_whatsapp_templates_start_not_in_use()
+    {
+        DefaultNotificationTemplates.SeededNotInUse.ShouldAllBe(t => t.Channel == NotificationChannel.WhatsApp);
+        DefaultNotificationTemplates.SeededNotInUse.ShouldAllBe(t => DefaultNotificationTemplates.All.Any(d => d.Key == t.Key && d.Channel == t.Channel));
+        DefaultNotificationTemplates.SeededNotInUse.Select(t => t.Key).ShouldBe(
+            ["visit.token", "bill.receipt", "admission.admitted", "discharge.completed", "feedback.request", "followup.reminder"], ignoreOrder: true);
+    }
 
     [Theory]
     [InlineData(NotificationChannel.Sms, "SMS")]

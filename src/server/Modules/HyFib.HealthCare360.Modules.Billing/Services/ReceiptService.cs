@@ -429,6 +429,9 @@ public sealed class ReceiptService(
             return;
         }
 
+        // A payment that settles the bill sends the bill itself on WhatsApp (BillSharing): the receipt then goes by SMS
+        // alone, so the patient does not get two WhatsApp messages for one payment.
+        var billOnWhatsApp = bill is not null && await bills.QueueOnPaymentAsync(bill, ct);
         notifications.Queue(
             "bill.receipt",
             NotificationRecipient.Patient(patient.Phone, patient.Email, receipt.PatientId, patient.FullName, patient.PreferredLanguage),
@@ -438,14 +441,15 @@ public sealed class ReceiptService(
                 ["billNumber"] = documentNumber ?? receipt.ReceiptNumber,
                 ["receiptNumber"] = receipt.ReceiptNumber,
             },
-            [NotificationChannel.Sms],
+            ReceiptChannels(billOnWhatsApp),
             TimeSpan.FromDays(1));
-
-        if (bill is not null)
-        {
-            await bills.QueueOnPaymentAsync(bill, ct);
-        }
     }
+
+    /// <summary>
+    /// The receipt's message: by SMS, and on WhatsApp (once its template is switched on) unless the paid bill goes there.
+    /// </summary>
+    internal static IReadOnlyList<NotificationChannel> ReceiptChannels(bool billOnWhatsApp) =>
+        billOnWhatsApp ? [NotificationChannel.Sms] : [NotificationChannel.Sms, NotificationChannel.WhatsApp];
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
