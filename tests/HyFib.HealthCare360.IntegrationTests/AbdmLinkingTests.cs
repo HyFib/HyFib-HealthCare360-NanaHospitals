@@ -9,7 +9,9 @@ using HyFib.HealthCare360.Modules.Interop.Services;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Features;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,7 +23,10 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// records officer links a signed consultation to the patient's ABHA address; the server starts a gateway session, asks
 /// for a link token, and sends the care contexts when the gateway's signed <c>on-generate-token</c> brings it; the
 /// gateway's <c>on_carecontext</c> marks them linked. A second request reuses the kept token, a refused link drops it,
-/// a callback the gateway did not sign is refused, and a token for another ABHA address is ignored. The ABDM switch is hospital-wide, so these tests are in the
+/// a callback the gateway did not sign is refused, and a token for another ABHA address is ignored. A record already
+/// linked, or awaiting the gateway's answer, is not sent again, even by requests made at once, and a token older than six
+/// months is not sent at all. Each call and callback
+/// is a row of the integration log, the two sides of an exchange under the call's REQUEST-ID. The ABDM switch is hospital-wide, so these tests are in the
 /// feature-switch collection and turn it off again, and remove the gateway set-up, in a <c>finally</c> block.
 /// </summary>
 [Collection(FeatureSwitchCollection.Name)]
@@ -47,6 +52,7 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
         var later = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
         var draft = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: false);
+        var started = DateTimeOffset.UtcNow;
 
         try
         {
@@ -119,6 +125,24 @@ public sealed class AbdmLinkingTests(HospitalServer server)
                 answered.StatusCode.ShouldBe(HttpStatusCode.Accepted);
             }
 
+            // Both sides of the exchange are in the integration log under the call's REQUEST-ID, and the refused callbacks
+            // too; none of them holds the token, the ABHA address or number, or the patient's name.
+            var exchange = await LogRowsAsync(tokenCall.Header("REQUEST-ID"));
+            exchange.ShouldContain(l => l.Direction == IntegrationDirection.Outbound && l.Operation == TokenPath && l.Success && l.Response == "HTTP 202");
+            exchange.ShouldContain(l => l.Direction == IntegrationDirection.Inbound && l.Operation == AbdmGatewayCallbackEndpoints.OnGenerateTokenPath
+                && l.Success && l.Response == "HTTP 202");
+            exchange.ShouldAllBe(l => l.Integration == "abdm" && l.Provider == "abdm-sandbox");
+            var refusedCallbacks = await LogRowsSinceAsync(started, AbdmGatewayCallbackEndpoints.OnGenerateTokenPath);
+            refusedCallbacks.Count(l => !l.Success && l.Response == "HTTP 401").ShouldBeGreaterThanOrEqualTo(2);
+            foreach (var row in exchange.Concat(refusedCallbacks))
+            {
+                var text = $"{row.Reference}|{row.Request}|{row.Response}|{row.Error}";
+                text.ShouldNotContain(linkToken);
+                text.ShouldNotContain(address);
+                text.ShouldNotContain(registration.AbhaNumber!);
+                text.ShouldNotContain(registration.LastName!);
+            }
+
             var linkCall = CareContextCallsWith(linkToken).ShouldHaveSingleItem();
             var sent = linkCall.Json();
             sent.GetProperty("abhaAddress").GetString().ShouldBe(address);
@@ -143,11 +167,30 @@ public sealed class AbdmLinkingTests(HospitalServer server)
             done.AnsweredAt.ShouldNotBeNull();
             (await AuditAsync(patient.Id, AbdmLinkingService.LinkRequested)).ShouldNotBeNull().EntityId.ShouldBe(first.Id.ToString("D"));
 
+            // A record linked already is not sent again: nothing goes to the gateway.
+            var callsBefore = CareContextCallsWith(linkToken).Count + TokenCallsFor(address).Count;
+            using (var again = await medicalRecords.SendRawAsync(HttpMethod.Post, "/api/v1/abdm/links", Link(consultation)))
+            {
+                again.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                (await Code(again)).ShouldBe(AbdmLinkingService.AlreadyLinkedCode);
+            }
+
+            (CareContextCallsWith(linkToken).Count + TokenCallsFor(address).Count).ShouldBe(callsBefore);
+
             // A second request reuses the kept token: the care contexts go at once, without asking for another.
             var second = await medicalRecords.PostAsync<AbdmLinkView>("/api/v1/abdm/links", Link(later));
             second.Status.ShouldBe(AbdmLinkStatus.Sent);
             TokenCallsFor(address).Count.ShouldBe(1);
             var secondCall = CareContextCallsWith(linkToken).Last();
+
+            // Nor is a record awaiting the gateway's answer.
+            using (var waiting = await medicalRecords.SendRawAsync(HttpMethod.Post, "/api/v1/abdm/links", Link(later)))
+            {
+                waiting.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                (await Code(waiting)).ShouldBe(AbdmLinkingService.LinkPendingCode);
+            }
+
+            CareContextCallsWith(linkToken).Count.ShouldBe(2);
 
             // The gateway refuses it (the token expired): the request fails with the gateway's reason and the token is dropped.
             using (var refused = await CallBackAsync(gatewayCaller, AbdmGatewayCallbackEndpoints.OnAddCareContextsPath,
@@ -164,6 +207,88 @@ public sealed class AbdmLinkingTests(HospitalServer server)
             // So the next request asks for a new token.
             (await medicalRecords.PostAsync<AbdmLinkView>("/api/v1/abdm/links", Link(later))).Status.ShouldBe(AbdmLinkStatus.AwaitingToken);
             TokenCallsFor(address).Count.ShouldBe(2);
+        }
+        finally
+        {
+            await RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task A_link_token_older_than_six_months_is_not_sent_and_a_new_one_is_asked_for()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var address = "kavya." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var recent = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
+        var later = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await SetUpGatewayAsync(server, enabled: true);
+
+            // Five months old: still sent, at once.
+            var fresh = "it-fresh-token-" + AbdmExportTests.Letters(10);
+            await KeepTokenAsync(address, fresh, DateTimeOffset.UtcNow.AddMonths(-5));
+            (await medicalRecords.PostAsync<AbdmLinkView>("/api/v1/abdm/links", Link(recent))).Status.ShouldBe(AbdmLinkStatus.Sent);
+            CareContextCallsWith(fresh).ShouldHaveSingleItem();
+
+            // Seven months old: not sent; a new token is asked for.
+            var stale = "it-stale-token-" + AbdmExportTests.Letters(10);
+            await KeepTokenAsync(address, stale, DateTimeOffset.UtcNow.AddMonths(-7));
+            (await medicalRecords.PostAsync<AbdmLinkView>("/api/v1/abdm/links", Link(later))).Status.ShouldBe(AbdmLinkStatus.AwaitingToken);
+            CareContextCallsWith(stale).ShouldBeEmpty();
+            TokenCallsFor(address).ShouldHaveSingleItem();
+        }
+        finally
+        {
+            await RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task Requests_to_link_the_same_record_made_at_once_send_it_once()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var address = "neha." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await SetUpGatewayAsync(server, enabled: true);
+
+            // Each would read the record as neither linked nor awaiting an answer, but the first to read holds the others
+            // back until its request is saved: they then find the record awaiting the gateway's answer to it.
+            var answers = await Task.WhenAll(Enumerable.Range(0, 4)
+                .Select(_ => medicalRecords.SendRawAsync(HttpMethod.Post, "/api/v1/abdm/links", Link(consultation))));
+            try
+            {
+                answers.Count(a => a.StatusCode == HttpStatusCode.Accepted).ShouldBe(1);
+                foreach (var refused in answers.Where(a => a.StatusCode != HttpStatusCode.Accepted))
+                {
+                    refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                    (await Code(refused)).ShouldBe(AbdmLinkingService.LinkPendingCode);
+                }
+            }
+            finally
+            {
+                foreach (var answer in answers)
+                {
+                    answer.Dispose();
+                }
+            }
+
+            TokenCallsFor(address).Count.ShouldBe(1);
+            (await medicalRecords.GetAsync<List<AbdmLinkView>>($"/api/v1/abdm/patients/{patient.Id}/links")).ShouldHaveSingleItem();
         }
         finally
         {
@@ -241,11 +366,15 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     /// <summary>The hospital's data-push URL as set up: where other providers post the records it asks for.</summary>
     internal const string DataPushUrl = "https://hospital.test" + AbdmGatewayCallbackEndpoints.DataPushPath;
 
-    internal static async Task SetUpGatewayAsync(HospitalServer server, bool enabled)
+    /// <remarks>
+    /// Automatic linking (<c>autoLink</c>, on by default in a hospital) is off unless a test asks for it: the tests of other
+    /// flows sign records while the gateway is on, and a link the outbox made in the background would change what they see.
+    /// </remarks>
+    internal static async Task SetUpGatewayAsync(HospitalServer server, bool enabled, bool autoLink = false, int answerTimeoutMinutes = 15)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
-        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha", dataPushUrl = DataPushUrl }, cancellationToken: Ct);
+        await settings.SetAsync(AbdmGatewaySettingKeys.Gateway, new { enabled, baseUrl = FakeAbdmGateway.BaseUrl, hipId = HipId, cmId = "sbx", timeoutSeconds = 10, abhaBaseUrl = FakeAbdmGateway.BaseUrl + "/abha", dataPushUrl = DataPushUrl, autoLink, answerTimeoutMinutes }, cancellationToken: Ct);
         await settings.SetAsync(AbdmGatewaySettingKeys.Secret, new { clientId = "SBX_IT", clientSecret = "it-" + Guid.NewGuid().ToString("N") }, secret: true, cancellationToken: Ct);
     }
 
@@ -255,6 +384,26 @@ public sealed class AbdmLinkingTests(HospitalServer server)
         var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
         await settings.RemoveAsync(AbdmGatewaySettingKeys.Gateway, null, Ct);
         await settings.RemoveAsync(AbdmGatewaySettingKeys.Secret, null, Ct);
+    }
+
+    /// <summary>Keeps <paramref name="token"/> for the address as if the gateway had issued it at <paramref name="issuedAt"/>.</summary>
+    private async Task KeepTokenAsync(string address, string token, DateTimeOffset issuedAt)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var cipher = scope.ServiceProvider.GetRequiredService<IFieldProtector>().Protect(token);
+        var kept = await db.Set<AbdmLinkToken>().FirstOrDefaultAsync(t => t.HipId == HipId && t.AbhaAddress == address, Ct);
+        if (kept is null)
+        {
+            db.Add(new AbdmLinkToken { HipId = HipId, AbhaAddress = address, TokenCipher = cipher, IssuedAt = issuedAt });
+        }
+        else
+        {
+            kept.TokenCipher = cipher;
+            kept.IssuedAt = issuedAt;
+        }
+
+        await db.SaveChangesAsync(Ct);
     }
 
     private async Task<string?> KeptTokenAsync(string address)
@@ -269,6 +418,24 @@ public sealed class AbdmLinkingTests(HospitalServer server)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         (await admin.SetFeatureAsync(FeatureKeys.Abdm, new SetFeatureRequest(enabled))).Enabled.ShouldBe(enabled);
+    }
+
+    /// <summary>The integration log's ABDM rows under <paramref name="reference"/>, oldest first.</summary>
+    internal async Task<List<IntegrationLog>> LogRowsAsync(string reference)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<IntegrationLog>().AsNoTracking()
+            .Where(l => l.Integration == "abdm" && l.Reference == reference)
+            .OrderBy(l => l.CreatedAt)
+            .ToListAsync(Ct);
+    }
+
+    private async Task<List<IntegrationLog>> LogRowsSinceAsync(DateTimeOffset since, string operation)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<IntegrationLog>().AsNoTracking()
+            .Where(l => l.Integration == "abdm" && l.Operation == operation && l.CreatedAt >= since)
+            .ToListAsync(Ct);
     }
 
     private async Task<AuditEvent?> AuditAsync(Guid patientId, string action)

@@ -57,6 +57,8 @@ public sealed class InteropModule : IModule
         services.AddHttpClient<AbdmGatewayKeys>().ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.AddScoped<IAbdmGatewayClient>(sp => sp.GetRequiredService<HttpAbdmGatewayClient>());
         services.AddScoped<AbdmLinkingService>();
+        services.AddScoped<AbdmUnansweredRequests>();
+        services.AddHostedService<AbdmUnansweredRequestSweeper>();
         services.AddScoped<AbdmUserLinkingService>();
         services.AddHttpClient<AbdmDataPush>().ConfigurePrimaryHttpMessageHandler(AbdmDataPush.CreateHandler);
         services.AddScoped<AbdmDataFlowService>();

@@ -1,5 +1,6 @@
 using System.Net;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
+using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
@@ -8,7 +9,8 @@ namespace HyFib.HealthCare360.Modules.Interop.Tests;
 /// The live gateway client against a fake gateway, checked against NHA's ABDM wrapper (the v3 request classes and
 /// <c>application-v3.properties</c>): the session request and its reuse, the headers every call carries, the
 /// generate-token and add-care-contexts bodies, both shapes of the gateway's errors, a session the gateway ended, and a
-/// gateway that cannot be reached. Nothing is sent while the gateway is switched off.
+/// gateway that cannot be reached. Nothing is sent while the gateway is switched off. Every exchange is a row of the
+/// integration log under its REQUEST-ID, with no patient details, tokens or credentials in it.
 /// </summary>
 public sealed class HttpAbdmGatewayClientTests
 {
@@ -25,6 +27,7 @@ public sealed class HttpAbdmGatewayClientTests
 
     private readonly FakeAbdmSettings _settings = new();
     private readonly FakeGatewayHandler _gateway = new();
+    private readonly RecordingIntegrationLogger _log = new();
     private readonly AbdmGatewaySessions _sessions = new();
     private readonly ManualTime _time = new(new DateTimeOffset(2026, 10, 26, 9, 30, 15, 123, TimeSpan.Zero));
 
@@ -38,7 +41,8 @@ public sealed class HttpAbdmGatewayClientTests
     {
         var configuration = new AbdmGatewayConfiguration(_settings);
         return new HttpAbdmGatewayClient(
-            _gateway.Client(), configuration, new DisabledAbdmGatewayClient(configuration), _sessions, _time, NullLogger<HttpAbdmGatewayClient>.Instance);
+            _gateway.Client(), configuration, new DisabledAbdmGatewayClient(configuration), _sessions, _log.Trace(_time), _time,
+            NullLogger<HttpAbdmGatewayClient>.Instance);
     }
 
     private static AbdmCareContextLink Link() => new(
@@ -239,6 +243,115 @@ public sealed class HttpAbdmGatewayClientTests
 
         refused.Error!.Code.ShouldBe(DisabledAbdmGatewayClient.Code);
         _gateway.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Each_exchange_is_logged_under_its_request_id_without_the_patients_details_or_any_token()
+    {
+        _gateway.Respond(HttpStatusCode.OK, Session).Respond(HttpStatusCode.Accepted);
+
+        (await Client().LinkCareContextsAsync(Link(), "link-token-1", RequestId, Ct)).IsSuccess.ShouldBeTrue();
+
+        _log.Entries.Count.ShouldBe(2);
+        var session = _log.Entries[0];
+        (session.Integration, session.Provider, session.Operation, session.Direction, session.Success, session.Response)
+            .ShouldBe(("abdm", "abdm-sandbox", HttpAbdmGatewayClient.SessionPath, IntegrationDirection.Outbound, true, "HTTP 200"));
+        session.Reference.ShouldBe(_gateway.Requests[0].Header("REQUEST-ID"));
+
+        var link = _log.Entries[1];
+        (link.Operation, link.Reference, link.Success, link.Response, link.Error)
+            .ShouldBe((HttpAbdmGatewayClient.AddCareContextsPath, RequestId.ToString("D"), true, "HTTP 202", (string?)null));
+        link.Request.ShouldBe("link the records to the patient's ABHA: 3 care context(s): Prescription 1, DiagnosticReport 2");
+        link.Duration.ShouldNotBeNull();
+
+        foreach (var secret in new[] { "meera", "Meera", AbdmTestData.AbhaNumber, "link-token-1", "session-1", "s3cr3t-value", "SBX_000123", "lab-report/2" })
+        {
+            _log.AllText.ShouldNotContain(secret);
+        }
+    }
+
+    [Fact]
+    public async Task A_refusal_is_logged_with_the_gateways_code_and_reason()
+    {
+        _gateway.Respond(HttpStatusCode.OK, Session)
+            .Respond(HttpStatusCode.BadRequest, """{"error":{"code":"ABDM-1006","message":"Invalid link token"}}""");
+
+        await Client().LinkCareContextsAsync(Link(), "link-token-1", RequestId, Ct);
+
+        var refused = _log.Entries[1];
+        (refused.Success, refused.Response, refused.Reference).ShouldBe((false, "HTTP 400 ABDM-1006", RequestId.ToString("D")));
+        refused.Error.ShouldNotBeNull().ShouldContain("ABDM-1006 Invalid link token");
+    }
+
+    [Fact]
+    public async Task A_session_the_gateway_ended_shows_as_a_refused_try_and_a_second_one_under_the_same_request_id()
+    {
+        _gateway.Respond(HttpStatusCode.OK, Session).Respond(HttpStatusCode.Unauthorized)
+            .Respond(HttpStatusCode.OK, """{"accessToken":"session-2"}""").Respond(HttpStatusCode.Accepted);
+
+        await Client().LinkCareContextsAsync(Link(), "link-token-1", RequestId, Ct);
+
+        _log.Entries.Select(e => (e.Operation, e.Success, e.Response)).ShouldBe(
+        [
+            (HttpAbdmGatewayClient.SessionPath, true, "HTTP 200"),
+            (HttpAbdmGatewayClient.AddCareContextsPath, false, "HTTP 401"),
+            (HttpAbdmGatewayClient.SessionPath, true, "HTTP 200"),
+            (HttpAbdmGatewayClient.AddCareContextsPath, true, "HTTP 202"),
+        ]);
+        _log.Entries.Where(e => e.Operation == HttpAbdmGatewayClient.AddCareContextsPath).ShouldAllBe(e => e.Reference == RequestId.ToString("D"));
+        _log.AllText.ShouldNotContain("session-2");
+    }
+
+    [Fact]
+    public async Task A_gateway_that_cannot_be_reached_is_logged_as_such()
+    {
+        _gateway.Respond(HttpStatusCode.OK, Session).Throw(new HttpRequestException("connection refused"));
+
+        await Client().RequestLinkTokenAsync(new AbdmLinkTokenRequest("meera.k@sbx", "Meera K", "F", 1984), RequestId, Ct);
+
+        var unreachable = _log.Entries[1];
+        (unreachable.Operation, unreachable.Success, unreachable.Response).ShouldBe((HttpAbdmGatewayClient.GenerateTokenPath, false, (string?)null));
+        unreachable.Error.ShouldNotBeNull().ShouldContain("could not be reached");
+        _log.AllText.ShouldNotContain("meera");
+    }
+
+    [Fact]
+    public async Task A_call_given_up_before_the_gateway_answered_is_logged_as_possibly_received()
+    {
+        using var giveUp = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        _gateway.Respond(HttpStatusCode.OK, Session).Respond(() =>
+        {
+            giveUp.Cancel();
+            throw new OperationCanceledException(giveUp.Token);
+        });
+
+        await Should.ThrowAsync<OperationCanceledException>(() =>
+            Client().RequestLinkTokenAsync(new AbdmLinkTokenRequest("meera.k@sbx", "Meera K", "F", 1984), RequestId, giveUp.Token));
+
+        var given = _log.Entries.Last();
+        (given.Operation, given.Reference, given.Success).ShouldBe((HttpAbdmGatewayClient.GenerateTokenPath, RequestId.ToString("D"), false));
+        given.Error.ShouldNotBeNull().ShouldContain("may have reached it");
+    }
+
+    [Fact]
+    public async Task The_production_gateway_is_named_apart_from_the_sandbox()
+    {
+        _settings.Set(AbdmGatewaySettingKeys.Gateway, Gateway.Replace("\"cmId\":\"sbx\"", "\"cmId\":\"abdm\",\"callbackClientId\":\"x\"", StringComparison.Ordinal));
+        _gateway.Respond(HttpStatusCode.OK, Session);
+
+        await Client().CreateSessionAsync(Ct);
+
+        _log.Entries.ShouldHaveSingleItem().Provider.ShouldBe("abdm-gateway");
+    }
+
+    [Fact]
+    public async Task Nothing_is_logged_while_the_gateway_is_switched_off()
+    {
+        _settings.Set(AbdmGatewaySettingKeys.Gateway, Gateway.Replace("\"enabled\":true", "\"enabled\":false", StringComparison.Ordinal));
+
+        await Client().LinkCareContextsAsync(Link(), "link-token-1", RequestId, Ct);
+
+        _log.Entries.ShouldBeEmpty();
     }
 
     [Fact]

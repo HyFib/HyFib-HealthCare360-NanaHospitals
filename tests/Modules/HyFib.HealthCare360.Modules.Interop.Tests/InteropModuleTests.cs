@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Features;
 using HyFib.HealthCare360.Modules.Interop.Services;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.AspNetCore.Authorization;
@@ -121,6 +122,10 @@ public sealed class InteropModuleTests
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Substitute.For<ISettingsService>());
+
+        // What Platform registers for every module: the gateway client logs its calls through it.
+        services.AddSingleton(Substitute.For<IIntegrationLogger>());
+        services.AddScoped<IntegrationTrace>();
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
 

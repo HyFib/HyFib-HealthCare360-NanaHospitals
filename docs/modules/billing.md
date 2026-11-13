@@ -1049,7 +1049,8 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   above. Answering otherwise (refusing to give the IRN's details, which it keeps for about three days, or giving no
   status), whether it cancelled the IRN in time is not known and asking again may not tell: staff are told to look on
   the portal and to issue a credit note while the IRN is active there (422 `einvoice.irp_cancel_unknown`), never a
-  credit note outright.
+  credit note outright. Past the 24 hours, the staff app's dialog puts that question for a connected facility under
+  *Ask the portal whether it was cancelled*, with the reason and remark the cancellation was made with.
 * **A duplicate's IRN is checked.** The IRN fetched for a duplicate (2150) is not recorded when the portal holds it as
   cancelled (422 `einvoice.irp_cancelled`): the portal registers a number once, so the document is cancelled here and
   issued again under a new number.
@@ -1057,12 +1058,18 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   days (`IrnVerification`; the portal gives an IRN's details for about three days after its generation,
   `IrpIrn.DetailsWindow`). It is recorded only when the portal holds it, active (its answer says `ACT`: one that does
   not say confirms nothing), under the acknowledgement given, with a signed QR code naming the document (422
-  `einvoice.irp_unconfirmed` with what differs), and the portal's signed invoice is kept with it. When the portal
-  cannot be asked, nothing is recorded: 422 `einvoice.irp_unreachable` when it does not answer,
+  `einvoice.irp_unconfirmed` with what differs). What is kept and printed is then the portal's own: its signed QR code,
+  its signed invoice and the time it generated the IRN, whatever was pasted, since HC360 does not hold the portal's key
+  and never checks a pasted code's signature (`IrnVerification.Recorded`). When the portal cannot be asked, nothing is
+  recorded: 422 `einvoice.irp_unreachable` when it does not answer,
   `einvoice.irp_not_connected` when the connection is switched on but cannot be used (its credentials are incomplete).
   Meanwhile an administrator can switch the connection off to record IRNs without the check. An older IRN is recorded
   on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was checked. The staff
-  app offers recording by hand only to a facility that is not connected; the check guards the API.
+  app's e-invoice dialog offers recording by hand to a connected facility too, for an IRN generated on the portal's own
+  screens: *Get IRN from the portal* stays its main action, and *Record an IRN generated on the portal* opens the same
+  form as for a facility that is not connected. Each refusal shows in plain words over the server's sentence, one whose
+  outcome is still open (`einvoice.irp_unreachable`, `einvoice.irp_cancel_unknown`, the server not reached) as a
+  warning, and the dialog reads the document again after every answer.
 
 ### The morning reminder
 Each morning from 09:00 (the hospital's time), `EInvoiceReminderJob` queues one `billing.einvoice.reminder` for each

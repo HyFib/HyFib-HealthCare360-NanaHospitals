@@ -45,7 +45,8 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   every router refuses it as it does a disabled integration; labels go to the workstations' printers, and the
   training analyser takes no results. `TrainingSimulators` (Platform) holds the rule.
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
-  `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
+  `IIntegrationLogger`, via the `IntegrationTrace` helper (Platform, so a module calling an outside service of its own
+  logs it the same way: Interop's ABDM gateway client). Rows record integration, provider, operation,
   direction, success, duration, reference and summaries. Adapters build their own summaries: masked recipient,
   template name, counts and status codes. They never log message bodies, patient names or credentials, nor the
   provider's answer: SMS gateways echo the recipient and the text, so their row's response is the HTTP status and the
@@ -1340,8 +1341,9 @@ Permissions:
 
 ## DI registrations (`IntegrationsServiceCollectionExtensions.AddIntegrations`)
 
-* **Scoped helpers**: `IntegrationSettingsReader`, `IntegrationTrace`, `SimulatorInbox`, `NotificationLogUpdater`,
-  `WhatsAppInboundStore`, `IntegrationStatusService`, `IntegrationTestService`.
+* **Scoped helpers**: `IntegrationSettingsReader`, `SimulatorInbox`, `NotificationLogUpdater`,
+  `WhatsAppInboundStore`, `IntegrationStatusService`, `IntegrationTestService`. `IntegrationTrace` is registered by
+  Platform, with the `IIntegrationLogger` it writes through.
 * **Typed HTTP clients** with the standard resilience handler: `Msg91SmsProvider`, `TwilioSmsProvider`,
   `GenericHttpSmsProvider`, `MetaWhatsAppProvider`, `RazorpayGateway`, `PineLabsPosTerminal`, `DicomWebPacsProvider`
   and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both.

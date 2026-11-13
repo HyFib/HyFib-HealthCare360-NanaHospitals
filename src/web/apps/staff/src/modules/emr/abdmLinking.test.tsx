@@ -28,6 +28,8 @@ const link = (status: AbdmLinkStatus, answer: Partial<AbdmLinkView> = {}): AbdmL
   answeredAt: null,
   errorCode: null,
   error: null,
+  automatic: false,
+  retryable: false,
   ...answer,
 });
 
@@ -124,7 +126,7 @@ describe('useAbdmLink', () => {
     expect(api.get).not.toHaveBeenCalled();
   });
 
-  it('says ABDM has not answered when it has not within two minutes, and stops asking', async () => {
+  it('says ABDM has not answered when it has not within two minutes, where it can be linked again, and stops asking', async () => {
     vi.mocked(api.post).mockResolvedValue(link('Sent'));
     vi.mocked(api.get).mockResolvedValue(link('Sent'));
 
@@ -137,7 +139,7 @@ describe('useAbdmLink', () => {
     expect(api.get).toHaveBeenCalledTimes(FOLLOW_TIMES);
     expect(notify.info).toHaveBeenLastCalledWith(
       'ABDM has not answered yet',
-      'The patient sees the record in their PHR app once ABDM links it to meera.iyer@sbx.',
+      "The patient sees the record in their PHR app once ABDM links it to meera.iyer@sbx. If ABDM does not answer, it can be linked again from the patient's ABDM records.",
     );
 
     await waitFor(FOLLOW_TIMES);

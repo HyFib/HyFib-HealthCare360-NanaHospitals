@@ -123,7 +123,9 @@ const typeLabel = (value: string) => HI_TYPES.find((t) => t.value === value)?.la
 /**
  * Asking the patient, through ABDM, to let the hospital see their records at other providers (the hospital as HIU,
  * ABDM M3). The doctor chooses why, which kinds of records and from when; the patient decides in their ABHA app; a
- * granted request lists each provider whose records it covers. Shown while ABDM is switched on, to doctors.
+ * granted request lists each provider whose records it covers. A request that was not sent, or that the consent
+ * manager never took (the server marks it failed after a while), is asked again on the same terms. Shown while ABDM is
+ * switched on, to doctors.
  */
 export function AbdmConsentRequestsPanel({ patient }: { patient: PatientDetail }) {
   const styles = useStyles();
@@ -144,6 +146,20 @@ export function AbdmConsentRequestsPanel({ patient }: { patient: PatientDetail }
       notify.success('Records asked for', 'They appear here when the provider sends them.');
     },
     onError: (error) => notify.error(error, 'Could not ask for the records'),
+  });
+
+  const askPatientAgain = useMutation({
+    mutationFn: (requestId: string) =>
+      api.post<AbdmConsentRequest>(`/api/v1/abdm/patients/${patient.id}/consent-requests/${requestId}/retry`),
+    onSuccess: (sent) => {
+      void queryClient.invalidateQueries({ queryKey: ['abdm', 'consent-requests', patient.id] });
+      if (sent.status === 'Failed') {
+        notify.warning('The request was not sent', sent.error ?? 'Ask again later.');
+      } else {
+        notify.success('Request sent again', 'The patient decides in their ABHA app.');
+      }
+    },
+    onError: (error) => notify.error(error, 'Could not ask the patient again'),
   });
 
   if (!switchedOn || !canRequest) {
@@ -200,6 +216,18 @@ export function AbdmConsentRequestsPanel({ patient }: { patient: PatientDetail }
               <div className={styles.cell}>
                 <StatusBadge status={STATUS_TEXT[r.status]} />
                 {r.error && <Caption1 className={styles.muted}>{r.error}</Caption1>}
+                {r.status === 'Failed' && (
+                  <div>
+                    <Button
+                      size="small"
+                      appearance="subtle"
+                      disabled={askPatientAgain.isPending}
+                      onClick={() => askPatientAgain.mutate(r.id)}
+                    >
+                      Ask the patient again
+                    </Button>
+                  </div>
+                )}
                 {r.artefacts.map((a) => (
                   <div key={a.artefactId}>
                     <Caption1>

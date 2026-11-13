@@ -317,15 +317,19 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         await using var portal = await server.IrpPortalAsync(enabled: true);
         var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
 
-        // Generated on the portal and recorded here: the portal holds it, active, for this bill; its signed invoice is kept.
+        // Generated on the portal and recorded here: the portal holds it, active, for this bill. Pasted with its signature
+        // damaged, which HC360 cannot check, the code kept and printed is still the portal's own, with its signed invoice and
+        // its time.
         var confirmed = bills[0];
         var onThePortal = await OnThePortalAsync(billing, confirmed);
-        var recorded = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{confirmed.Id}/irn", new RecordIrnRequest(onThePortal.AckNo, onThePortal.SignedQrCode));
+        var parts = onThePortal.SignedQrCode.Split('.');
+        var damaged = $"{parts[0]}.{parts[1]}.ZGFtYWdlZA";
+        var recorded = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{confirmed.Id}/irn", new RecordIrnRequest(onThePortal.AckNo, damaged));
         (recorded.State, recorded.Registration!.Irn, recorded.Registration.Provider).ShouldBe((EInvoiceState.Registered, onThePortal.Irn, EInvoice.ManualProvider));
         await using (var scope = server.Services.CreateAsyncScope())
         {
-            (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<EInvoice>().SingleAsync(e => e.Irn == onThePortal.Irn, Ct))
-                .SignedInvoice.ShouldBe(onThePortal.SignedInvoice);
+            var kept = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<EInvoice>().SingleAsync(e => e.Irn == onThePortal.Irn, Ct);
+            (kept.SignedQrCode, kept.SignedInvoice, kept.AckDate).ShouldBe((onThePortal.SignedQrCode, onThePortal.SignedInvoice, onThePortal.AckDate.ToUniversalTime()));
         }
 
         // Cancelled on the portal since: it is not recorded as live.

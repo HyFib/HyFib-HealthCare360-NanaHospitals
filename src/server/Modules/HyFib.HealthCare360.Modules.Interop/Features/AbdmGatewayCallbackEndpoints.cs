@@ -1,6 +1,7 @@
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Services;
+using HyFib.HealthCare360.Platform.Integrations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
@@ -23,7 +24,9 @@ namespace HyFib.HealthCare360.Modules.Interop.Features;
 /// HTTP level and rate-limited as a partner's calls (<see cref="RateLimitPolicies.Partner"/>); the gateway proves the call is its own with a bearer token signed by a key it publishes
 /// (<see cref="AbdmGatewayKeys"/>), and anything else is refused with 401. While ABDM is switched off they answer 503, as
 /// every ABDM endpoint does, and while the gateway is off or not set up, 404. A call the gateway makes is accepted (202) as the gateway expects, also when it
-/// answers no request of this hospital's, which is logged and ignored.
+/// answers no request of this hospital's, which is logged and ignored. Each call the gateway makes is a row of the integration log
+/// (<see cref="AbdmTrace"/>), under the REQUEST-ID of the call it answers, so it sits beside the row of that call: refused,
+/// ignored, unreadable and handled calls alike, and an answer carrying the gateway's error as a failure.
 /// </summary>
 internal static class AbdmGatewayCallbackEndpoints
 {
@@ -148,11 +151,24 @@ internal static class AbdmGatewayCallbackEndpoints
             return TypedResults.NotFound();
         }
 
+        var trace = request.HttpContext.RequestServices.GetRequiredService<IntegrationTrace>();
+        var started = trace.Start();
+        var header = request.Headers[RequestIdHeader].ToString();
+        var callId = header.Length is > 0 and <= 64 ? header : null;
+        Task TraceAsync(string? answered, bool success, int status, string? error) =>
+            trace.LogAsync(AbdmTrace.Integration, AbdmTrace.Provider(settings.CmId), request.Path.Value ?? string.Empty, success, started,
+                reference: answered ?? callId,
+                request: callId is null ? null : $"REQUEST-ID {callId}",
+                response: AbdmTrace.Status(status),
+                error: error,
+                direction: IntegrationDirection.Inbound);
+
         var log = loggers.CreateLogger(typeof(AbdmGatewayCallbackEndpoints));
         var verified = await keys.VerifyAsync(settings, request.Headers.Authorization.ToString(), ct);
         if (verified.IsFailure)
         {
             log.LogWarning("Refused a call to the ABDM gateway callback {Path}: {Reason}", request.Path.Value, verified.Error!.Message);
+            await TraceAsync(null, false, StatusCodes.Status401Unauthorized, "Refused: " + verified.Error.Message);
             return TypedResults.Unauthorized();
         }
 
@@ -160,13 +176,18 @@ internal static class AbdmGatewayCallbackEndpoints
         if (request.Headers[idHeader].ToString() is { Length: > 0 } calledId && !string.Equals(calledId, ownId, StringComparison.Ordinal))
         {
             log.LogWarning("Ignored a call to the ABDM gateway callback {Path} for another HIP or HIU", request.Path.Value);
+            await TraceAsync(null, false, StatusCodes.Status202Accepted, $"Ignored: the call names another {(asHiu ? "HIU" : "HIP")} in {idHeader}.");
             return TypedResults.Accepted((string?)null);
         }
 
+        // Read whole (bodies are limited to MaxBodyBytes) to find the request it answers and any error it carries for the log.
+        JsonElement body = default;
         T? answer;
         try
         {
-            answer = await JsonSerializer.DeserializeAsync<T>(request.Body, AbdmGatewayMessages.Json, ct);
+            using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+            body = document.RootElement.Clone();
+            answer = body.Deserialize<T>(AbdmGatewayMessages.Json);
         }
         catch (JsonException)
         {
@@ -175,11 +196,23 @@ internal static class AbdmGatewayCallbackEndpoints
 
         if (answer is null)
         {
+            await TraceAsync(null, false, StatusCodes.Status422UnprocessableEntity, "The body is not valid JSON of the expected shape.");
             return Error.Validation("abdm.callback_body", "The gateway's callback body is not valid JSON of the expected shape.").ToProblem();
         }
 
-        var requestId = request.Headers[RequestIdHeader].ToString();
-        await handle(answer, requestId.Length is > 0 and <= 64 ? requestId : null, ct);
+        var answered = AbdmTrace.AnsweredRequestId(body);
+        try
+        {
+            await handle(answer, callId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await TraceAsync(answered, false, StatusCodes.Status500InternalServerError, $"HC360 could not handle the call ({ex.GetType().Name}).");
+            throw;
+        }
+
+        var carried = AbdmTrace.CarriedError(body);
+        await TraceAsync(answered, carried is null, StatusCodes.Status202Accepted, carried);
         return TypedResults.Accepted((string?)null);
     }
 }
