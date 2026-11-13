@@ -586,7 +586,9 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
 
     public async Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken)
     {
-        var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        // The bill and its payer first, its lines only for a B2B tax invoice: the register is asked of every bill a screen
+        // or print opens (IEInvoiceRegister.PrintAsync), and most are to patients, some with hundreds of lines.
+        var bill = await db.Set<Bill>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (bill is not { Status: not BillStatus.Draft, PayerId: { } payerId, FinalizedAt: { } finalizedAt } || bill.TaxAmount == 0)
         {
             return null;
@@ -598,8 +600,8 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
             return null;
         }
 
-        var items = bill.Lines
-            .OrderBy(l => l.SortOrder)
+        var lines = await db.Set<BillLine>().AsNoTracking().Where(l => l.BillId == bill.Id).OrderBy(l => l.SortOrder).ToListAsync(cancellationToken);
+        var items = lines
             .Select(l => new EInvoiceItem(
                 l.Description, IsService: true, l.SacCode, l.Quantity, l.UnitPrice, l.GrossAmount, l.GrossAmount - l.TaxableAmount, l.TaxableAmount,
                 l.TaxRate, l.IgstAmount, l.CgstAmount, l.SgstAmount, l.TaxableAmount + l.IgstAmount + l.CgstAmount + l.SgstAmount))
@@ -608,7 +610,7 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
             Source, bill.Id, bill.FacilityId, bill.BillNumber ?? string.Empty, BillingTime.LocalDate(finalizedAt),
             new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), bill.PlaceOfSupply ?? Gstin.StateCode(gstin) ?? string.Empty,
             items, bill.RoundOffAmount, bill.NetAmount, bill.Status == BillStatus.Cancelled,
-            bill.Lines.Any(l => l.Quantity < 0) ? "The bill has returned services; report it to the portal with a credit note for them." : null);
+            lines.Any(l => l.Quantity < 0) ? "The bill has returned services; report it to the portal with a credit note for them." : null);
     }
 }
 
