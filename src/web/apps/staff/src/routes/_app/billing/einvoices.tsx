@@ -27,7 +27,7 @@ import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import {
   CANCEL_REASONS,
   documentLabel,
@@ -170,6 +170,66 @@ function IrnAnswerBar({ action, error }: { action: IrnAction; error: unknown }) 
   );
 }
 
+/** A way round the dialog's main action, folded away under its button until asked for. */
+function Disclosure({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <>
+      <Button
+        appearance="subtle"
+        icon={open ? <ChevronDownRegular /> : <ChevronRightRegular />}
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((shown) => !shown)}
+        style={{ alignSelf: 'flex-start' }}
+      >
+        {label}
+      </Button>
+      <div
+        id={id}
+        role="group"
+        aria-label={label}
+        hidden={!open}
+        // Indented under the button's words, past its chevron.
+        style={{ display: open ? 'flex' : 'none', flexDirection: 'column', gap: 12, paddingLeft: 38 }}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
+/** Why the IRN is cancelled, in the portal's own reasons, and the remark the portal takes with it. */
+function CancelFields({
+  reason,
+  onReason,
+  remark,
+  onRemark,
+}: {
+  reason: EInvoiceCancelReason;
+  onReason: (value: EInvoiceCancelReason) => void;
+  remark: string;
+  onRemark: (value: string) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+      <Field label="Reason">
+        <Select value={reason} onChange={(_, v) => onReason(v.value as EInvoiceCancelReason)}>
+          {CANCEL_REASONS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Remark" required>
+        <Input value={remark} maxLength={100} onChange={(_, v) => onRemark(v.value)} />
+      </Field>
+    </div>
+  );
+}
+
 /** The JSON to upload on the portal's own screens, and what the portal gives back for it. */
 function HandRecordFields({
   canDownload,
@@ -218,9 +278,6 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
   const [qr, setQr] = useState('');
   const [reason, setReason] = useState<EInvoiceCancelReason>('DataEntryMistake');
   const [remark, setRemark] = useState('');
-  // Connected to the portal, recording by hand is the way round its API: folded away under the portal's own button.
-  const [byHand, setByHand] = useState(false);
-  const byHandId = useId();
   // Read the document again after every answer, a refusal included: what the server holds is what the dialog shows
   // (an IRN whose answer was lost on the way here and is now recorded, a cancellation the portal has settled).
   const refresh = () => void queryClient.invalidateQueries({ queryKey: einvoiceKeys.all });
@@ -278,6 +335,18 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
     mutationFn: (version: number) => einvoiceApi.cancel(row.source, row.id, reason, remark.trim(), version),
     onSuccess: () => {
       notify.success('IRN cancellation recorded', 'Cancel the invoice here and issue a new one with a new number.');
+      refresh();
+    },
+    onError: refresh,
+  });
+  // Past the 24 hours the same request only asks the portal whether a cancellation made in time went through.
+  const askCancelled = useMutation({
+    mutationFn: (version: number) => einvoiceApi.cancel(row.source, row.id, reason, remark.trim(), version),
+    onSuccess: () => {
+      notify.success(
+        'IRN cancellation recorded',
+        'The portal had cancelled it within the 24 hours. Cancel the invoice here and issue a new one with a new number.',
+      );
       refresh();
     },
     onError: refresh,
@@ -359,24 +428,8 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                   <>
                     <Text>This facility is connected to the e-invoice portal: HC360 asks it for the IRN.</Text>
                     {generate.error && <IrnAnswerBar action="generate" error={generate.error} />}
-                    <Button
-                      appearance="subtle"
-                      icon={byHand ? <ChevronDownRegular /> : <ChevronRightRegular />}
-                      aria-expanded={byHand}
-                      aria-controls={byHandId}
-                      onClick={() => setByHand((open) => !open)}
-                      style={{ alignSelf: 'flex-start' }}
-                    >
-                      Record an IRN generated on the portal
-                    </Button>
-                    <div
-                      id={byHandId}
-                      role="group"
-                      aria-label="Record an IRN generated on the portal"
-                      hidden={!byHand}
-                      // Indented under the button's words, past its chevron.
-                      style={{ display: byHand ? 'flex' : 'none', flexDirection: 'column', gap: 12, paddingLeft: 38 }}
-                    >
+                    {/* Recording by hand is the way round the portal's API: folded away under the portal's own button. */}
+                    <Disclosure label="Record an IRN generated on the portal">
                       <Caption1>
                         When the IRN was generated on the portal&apos;s own screens: upload this JSON there, then enter
                         what the portal gives back. HC360 checks a recent IRN with the portal before recording it.
@@ -399,7 +452,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                       >
                         Record IRN
                       </Button>
-                    </div>
+                    </Disclosure>
                   </>
                 )}
                 {live && d.ewayBillNeeded && !registration.ewbNo && (
@@ -453,27 +506,34 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                         ? 'HC360 cancels it on the portal and records it.'
                         : 'Cancel it there first, then record it here.'}
                     </Caption1>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
-                      <Field label="Reason">
-                        <Select value={reason} onChange={(_, v) => setReason(v.value as EInvoiceCancelReason)}>
-                          {CANCEL_REASONS.map((r) => (
-                            <option key={r.value} value={r.value}>
-                              {r.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </Field>
-                      <Field label="Remark" required>
-                        <Input value={remark} maxLength={100} onChange={(_, v) => setRemark(v.value)} />
-                      </Field>
-                    </div>
+                    <CancelFields reason={reason} onReason={setReason} remark={remark} onRemark={setRemark} />
                     {cancel.error && <IrnAnswerBar action="cancel" error={cancel.error} />}
                   </>
                 )}
                 {live && !registration.canCancel && (
-                  <Caption1>
-                    More than 24 hours have passed: the IRN stays, and a credit note undoes the invoice.
-                  </Caption1>
+                  <>
+                    <Caption1>
+                      More than 24 hours have passed: the IRN stays, and a credit note undoes the invoice.
+                    </Caption1>
+                    {/* A cancellation made in time whose answer was lost: the portal still says whether it went through. */}
+                    {d.portalConnected && (
+                      <Disclosure label="Ask the portal whether it was cancelled">
+                        <Caption1>
+                          A cancellation made on the portal within the 24 hours, whose answer was lost, is recorded here
+                          once the portal confirms it. Give the reason and remark it was made with.
+                        </Caption1>
+                        <CancelFields reason={reason} onReason={setReason} remark={remark} onRemark={setRemark} />
+                        {askCancelled.error && <IrnAnswerBar action="askCancelled" error={askCancelled.error} />}
+                        <Button
+                          disabled={!remark.trim() || askCancelled.isPending}
+                          onClick={() => askCancelled.mutate(registration.version)}
+                          style={{ alignSelf: 'flex-start' }}
+                        >
+                          Ask the portal
+                        </Button>
+                      </Disclosure>
+                    )}
+                  </>
                 )}
               </>
             )}
