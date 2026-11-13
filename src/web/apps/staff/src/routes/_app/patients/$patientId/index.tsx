@@ -43,6 +43,7 @@ import { useVisitActions } from '@/modules/front-office/VisitActions';
 import { HistoryButton } from '@/modules/history/RecordHistory';
 import { guardianRelationLabel, patientApi, patientQueries, type PatientDetail } from '@/modules/patients/api';
 import { AbdmConsentRequestsPanel } from '@/modules/patients/AbdmConsentRequestsPanel';
+import { AbdmLinkRequestsPanel } from '@/modules/patients/AbdmLinkRequestsPanel';
 import { AbhaChecksPanel } from '@/modules/patients/AbhaChecksPanel';
 import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
@@ -97,10 +98,12 @@ function PatientProfilePage() {
   const canCheckIn = usePermission('visits.manage');
   const canOpenChart = usePermission('clinical.emr.read');
   const canBook = usePermission('scheduling.appointments.book');
-  // The hospital asking the patient, through ABDM, for their records at other providers (doctors, while ABDM is on).
+  // ABDM, while it is on: the records sent to the patient's ABHA (staff who link them), and the hospital asking the
+  // patient for their records at other providers (doctors).
   const abdmOn = useFeatureOn('abdm');
   const canAskAbdm = usePermission('abdm.records.request');
-  const showAbdm = abdmOn && canAskAbdm;
+  const canLinkAbdm = usePermission('abdm.export');
+  const showAbdm = abdmOn && (canAskAbdm || canLinkAbdm);
   const canAdmit = usePermission('inpatient.admissions.admit');
   // HospitalAdmin and the MRD officer merge a duplicate registration into the record that stays.
   const canMerge = usePermission('patients.merge');
@@ -272,7 +275,12 @@ function PatientProfilePage() {
           )}
           {tab === 'portal' && <PortalAccessPanel patientId={patientId} />}
           {tab === 'documents' && <DocumentsPanel patientId={patientId} />}
-          {tab === 'abdm' && <AbdmConsentRequestsPanel patient={p} />}
+          {tab === 'abdm' && (
+            <>
+              <AbdmLinkRequestsPanel patient={p} />
+              <AbdmConsentRequestsPanel patient={p} />
+            </>
+          )}
         </div>
       </Section>
 
