@@ -44,7 +44,8 @@ public sealed record SimulatorSweep(DateTimeOffset SweptAt, string? SweptBy, IRe
 
 /// <summary>
 /// A record a simulator made that its current state does not show corrected yet, with the record to correct it on:
-/// <paramref name="Entity"/> is Receipt, Refund, Patient, ImagingStudy, LabOrder or UnmatchedLabResult.
+/// <paramref name="Entity"/> is Receipt, Refund, PharmacySale, CanteenSale, Patient, ImagingStudy, LabOrder,
+/// UnmatchedLabResult or EInvoice.
 /// </summary>
 public sealed record SimulatorOpenRecord(string Reference, DateTimeOffset? At, decimal? Amount, string Entity, Guid EntityId, Guid? PatientId);
 
@@ -134,7 +135,9 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             WHERE r.gateway_refund_id LIKE 'rfnd\_sim%' AND NOT r.is_deleted AND r.status = 'Paid' AND r.payout_reversed_at IS NULL
             """),
         new("card-sales", "Card and UPI sales the terminal simulator approved", "critical",
-            "No card or UPI payment was taken: record the money of each receipt the approved sales made as not received (Billing › Receipts › Money not received; a second person approves). The day-end of that day shows it.",
+            "No card or UPI payment was taken: record the money of each receipt the approved sales made as not received (Billing › Receipts › Money not received; a second person approves). The day-end of that day shows it. "
+            + "At the pharmacy, cancel the invoice the same day or take it back in a return, so its card or UPI money is paid back in the books; at the canteen, cancel the bill on its own day. "
+            + "A canteen bill of an earlier day can no longer be cancelled: correct that day's canteen accounts in Tally and say so in the sign-off note.",
             // Only the approved sales: a declined, cancelled or timed-out one made no receipt.
             """
             SELECT count(*) AS count, sum(t.amount) AS amount, min(t.created_at) AS first, max(t.created_at) AS last,
@@ -143,6 +146,8 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             WHERE lower(trim(t.provider)) = 'simulator' AND t.status = 'Approved' AND NOT t.is_deleted
             """,
             // Open until reversals take all of the receipt line's money back; a sale whose receipt was never made recorded no money.
+            // A pharmacy payment the sale made is open until refunds (a cancellation or a return) pay all of it back; a canteen
+            // bill until it is cancelled, which only its own day allows: after that, its accounts are corrected outside HC360.
             """
             SELECT r.receipt_number AS reference, r.received_at AS at,
                    p.amount - coalesce((SELECT sum(x.amount) FROM billing.receipt_reversal_lines x WHERE x.receipt_payment_id = p.id), 0) AS amount,
@@ -152,6 +157,21 @@ public sealed class SimulatorRecordSweep(HospitalDbContext db, IAuditLogger audi
             JOIN billing.receipt_payments p ON p.receipt_id = r.id AND p.external_id = t.transaction_id
             WHERE lower(trim(t.provider)) = 'simulator' AND t.status = 'Approved' AND NOT t.is_deleted
               AND coalesce((SELECT sum(x.amount) FROM billing.receipt_reversal_lines x WHERE x.receipt_payment_id = p.id), 0) < p.amount
+            UNION ALL
+            SELECT s.invoice_number AS reference, p.received_at AS at,
+                   p.amount - coalesce((SELECT sum(x.amount) FROM pharmacy.sale_payments x WHERE x.refund_of_payment_id = p.id AND x.is_refund), 0) AS amount,
+                   'PharmacySale' AS entity, s.id AS entity_id, s.patient_id
+            FROM billing.pos_transactions t
+            JOIN pharmacy.sale_payments p ON p.terminal_sale_id = t.id AND NOT p.is_refund
+            JOIN pharmacy.sales s ON s.id = p.pharmacy_sale_id AND NOT s.is_deleted
+            WHERE lower(trim(t.provider)) = 'simulator' AND t.status = 'Approved' AND NOT t.is_deleted
+              AND coalesce((SELECT sum(x.amount) FROM pharmacy.sale_payments x WHERE x.refund_of_payment_id = p.id AND x.is_refund), 0) < p.amount
+            UNION ALL
+            SELECT c.bill_number AS reference, c.sold_at AS at, c.net_amount AS amount, 'CanteenSale' AS entity, c.id AS entity_id, c.patient_id
+            FROM billing.pos_transactions t
+            JOIN supportservices.canteen_sales c ON c.terminal_sale_id = t.id AND NOT c.is_deleted
+            WHERE lower(trim(t.provider)) = 'simulator' AND t.status = 'Approved' AND NOT t.is_deleted
+              AND c.status <> 'Cancelled' AND c.business_date = (now() AT TIME ZONE 'Asia/Kolkata')::date
             """),
         new("aadhaar-links", "Patients linked to an Aadhaar number by the Aadhaar simulator", "critical",
             "Nobody's fingerprint was checked: remove each patient's Aadhaar number (the patient › Edit › remove the Aadhaar number), or confirm it with a real check. A wrong link blocks the number's holder from being registered with it.",
