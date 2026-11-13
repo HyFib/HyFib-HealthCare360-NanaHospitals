@@ -14,8 +14,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// Requests the gateway does not answer (<see cref="AbdmUnansweredRequests"/>): a link request whose callbacks are lost
 /// is marked failed once <c>answerTimeoutMinutes</c> has passed, with a reason staff read, and the answers that come
 /// late are still taken, a token sending the records and the linking answer linking them, as the gateway has acted on
-/// them. A consent request the consent manager never took is marked failed; one the patient is deciding is not. The
-/// ABDM switch is hospital-wide, so these tests are in the feature-switch collection.
+/// them. Staff see the failed request among the patient's and send it again, as a new request. A consent request the
+/// consent manager never took is marked failed and asked again; one the patient is deciding is not touched. The ABDM
+/// switch is hospital-wide, so these tests are in the feature-switch collection.
 /// </summary>
 [Collection(FeatureSwitchCollection.Name)]
 public sealed class AbdmUnansweredRequestTests(HospitalServer server)
@@ -84,6 +85,62 @@ public sealed class AbdmUnansweredRequestTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Staff_send_a_request_abdm_never_answered_again_as_a_new_request_once_it_is_marked_failed()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var address = "omkar." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
+        var links = $"/api/v1/abdm/patients/{patient.Id}/links";
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true, answerTimeoutMinutes: TimeoutMinutes);
+            var first = await medicalRecords.PostAsync<AbdmLinkView>("/api/v1/abdm/links",
+                new AbdmLinkInput([new AbdmLinkRecordInput(AbdmRecordType.OpConsultation, consultation)]));
+
+            // Not while ABDM may still answer it.
+            using (var waiting = await medicalRecords.SendRawAsync(HttpMethod.Post, $"/api/v1/abdm/links/{first.Id}/retry"))
+            {
+                waiting.StatusCode.ShouldBe(System.Net.HttpStatusCode.UnprocessableEntity);
+                (await CodeAsync(waiting)).ShouldBe(AbdmLinkingService.NotFailedCode);
+            }
+
+            // Marked failed, it is offered again among the patient's requests, made by staff.
+            await AgeLinkAsync(first.Id);
+            await SweepAsync();
+            var listed = (await medicalRecords.GetAsync<List<AbdmLinkView>>(links)).ShouldHaveSingleItem();
+            (listed.Id, listed.Status, listed.Retryable, listed.Automatic).ShouldBe((first.Id, AbdmLinkStatus.Failed, true, false));
+
+            // Sent again: a new request for the same record, which asks the gateway for a token as the first did.
+            using (var again = await medicalRecords.SendRawAsync(HttpMethod.Post, $"/api/v1/abdm/links/{first.Id}/retry"))
+            {
+                again.StatusCode.ShouldBe(System.Net.HttpStatusCode.Accepted);
+            }
+
+            Gateway.CallsTo(TokenPath).Count(c => c.Json().GetProperty("abhaAddress").GetString() == address).ShouldBe(2);
+            var both = await medicalRecords.GetAsync<List<AbdmLinkView>>(links);
+            both.Count.ShouldBe(2);
+            var second = both[0];
+            (second.Status, second.Records.ShouldHaveSingleItem().Id).ShouldBe((AbdmLinkStatus.AwaitingToken, consultation));
+            (both[1].Id, both[1].Retryable).ShouldBe((first.Id, false));
+
+            // Once more is not a third request: the record is awaiting ABDM's answer in the second.
+            using var twice = await medicalRecords.SendRawAsync(HttpMethod.Post, $"/api/v1/abdm/links/{first.Id}/retry");
+            twice.StatusCode.ShouldBe(System.Net.HttpStatusCode.UnprocessableEntity);
+            (await CodeAsync(twice)).ShouldBe(AbdmLinkingService.LinkPendingCode);
+        }
+        finally
+        {
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
     public async Task A_consent_request_the_consent_manager_never_took_is_marked_failed_but_one_the_patient_is_deciding_waits()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
@@ -110,7 +167,22 @@ public sealed class AbdmUnansweredRequestTests(HospitalServer server)
             failed.Error.ShouldNotBeNull().ShouldContain($"did not say within {TimeoutMinutes} minutes");
             listed.Single(r => r.Id == deciding.Id).Status.ShouldBe(AbdmConsentRequestStatus.Requested);
 
-            // The consent manager takes it after all: the request goes ahead.
+            // The doctor asks again on the same terms: a new request goes to the consent manager. One the patient is
+            // deciding is not asked again.
+            var initsBefore = Gateway.CallsTo(HttpAbdmGatewayClient.ConsentInitPath).Count;
+            var askedAgain = await doctor.PostAsync<AbdmConsentRequestView>($"{requests}/{neverTaken.Id}/retry");
+            (askedAgain.Status, askedAgain.Purpose, askedAgain.DateFrom, askedAgain.DateTo, askedAgain.DataEraseAt).ShouldBe(
+                (AbdmConsentRequestStatus.Sent, failed.Purpose, failed.DateFrom, failed.DateTo, failed.DataEraseAt));
+            askedAgain.HiTypes.ShouldBe(failed.HiTypes);
+            askedAgain.Id.ShouldNotBe(neverTaken.Id);
+            Gateway.CallsTo(HttpAbdmGatewayClient.ConsentInitPath).Count.ShouldBe(initsBefore + 1);
+            using (var notFailed = await doctor.SendRawAsync(HttpMethod.Post, $"{requests}/{deciding.Id}/retry"))
+            {
+                notFailed.StatusCode.ShouldBe(System.Net.HttpStatusCode.UnprocessableEntity);
+                (await CodeAsync(notFailed)).ShouldBe(AbdmConsentRequestService.NotFailedCode);
+            }
+
+            // The consent manager takes the first after all: it goes ahead too.
             await CallBackAsync(AbdmGatewayCallbackEndpoints.ConsentOnInitPath,
                 new { consentRequest = new { id = Guid.NewGuid().ToString() }, response = new { requestId = await GatewayRequestIdAsync(neverTaken.Id) } });
             (await doctor.GetAsync<List<AbdmConsentRequestView>>(requests)).Single(r => r.Id == neverTaken.Id).Status.ShouldBe(AbdmConsentRequestStatus.Requested);
@@ -123,6 +195,10 @@ public sealed class AbdmUnansweredRequestTests(HospitalServer server)
     }
 
     private static Task<AbdmLinkView> ViewAsync(ApiClient caller, Guid id) => caller.GetAsync<AbdmLinkView>($"/api/v1/abdm/links/{id}");
+
+    private static async Task<string?> CodeAsync(HttpResponseMessage response) =>
+        (await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<System.Text.Json.JsonElement>(response.Content, ApiClient.Json, Ct))
+            .GetProperty("code").GetString();
 
     private async Task CallBackAsync(string path, object body)
     {

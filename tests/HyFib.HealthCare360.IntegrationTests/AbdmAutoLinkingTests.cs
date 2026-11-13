@@ -73,7 +73,9 @@ public sealed class AbdmAutoLinkingTests(HospitalServer server)
                 .ShouldBe($"op-consultation/{consultation}");
             await CallBackAsync(AbdmGatewayCallbackEndpoints.OnAddCareContextsPath,
                 new { abhaAddress = address, status = "SUCCESS", response = new { requestId = linkCall.Header("REQUEST-ID") } });
-            (await medicalRecords.GetAsync<AbdmLinkView>($"/api/v1/abdm/links/{request.Id}")).Status.ShouldBe(AbdmLinkStatus.Linked);
+            var seen = await medicalRecords.GetAsync<AbdmLinkView>($"/api/v1/abdm/links/{request.Id}");
+            (seen.Status, seen.Automatic, seen.Retryable).ShouldBe((AbdmLinkStatus.Linked, true, false));
+            (await medicalRecords.GetAsync<List<AbdmLinkView>>($"/api/v1/abdm/patients/{patient.Id}/links")).ShouldHaveSingleItem().Id.ShouldBe(request.Id);
 
             // The outbox delivers at least once: the same job run again finds the record linked, and sends nothing.
             await DeliverAgainAsync(queued.Id);

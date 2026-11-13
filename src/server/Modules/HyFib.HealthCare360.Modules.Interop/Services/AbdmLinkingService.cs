@@ -16,6 +16,11 @@ public sealed record AbdmLinkInput(IReadOnlyList<AbdmLinkRecordInput> Records);
 public sealed record AbdmLinkedRecordView(AbdmRecordType Type, Guid Id, string ReferenceNumber, string Display);
 
 /// <summary>A request to link records to a patient's ABHA and where it has got to.</summary>
+/// <param name="Automatic">The hospital made it as the record was completed, not staff (<see cref="AbdmAutoLinking"/>).</param>
+/// <param name="Retryable">
+/// It failed, and some of its records are neither linked to the patient's ABHA address nor awaiting an answer in another
+/// request: <c>POST /api/v1/abdm/links/{id}/retry</c> sends them again.
+/// </param>
 public sealed record AbdmLinkView(
     Guid Id,
     Guid PatientId,
@@ -26,7 +31,9 @@ public sealed record AbdmLinkView(
     DateTimeOffset? SentAt,
     DateTimeOffset? AnsweredAt,
     string? ErrorCode,
-    string? Error);
+    string? Error,
+    bool Automatic = false,
+    bool Retryable = false);
 
 internal sealed class AbdmLinkInputValidator : AbstractValidator<AbdmLinkInput>
 {
@@ -91,6 +98,12 @@ internal sealed class AbdmLinkingService(
     /// </summary>
     public const string NoAnswerCode = "abdm.no_answer";
 
+    /// <summary>A request sent again must have failed: one linked or awaiting the gateway's answer is not.</summary>
+    public const string NotFailedCode = "abdm.link_not_failed";
+
+    /// <summary>The most of a patient's requests listed, newest first.</summary>
+    public const int ListLimit = 20;
+
     /// <summary>
     /// How long a link token is used after the gateway issued it: six months, as NHA's wrapper keeps it
     /// (<c>Utils.setLinkTokenExpiry</c>). An older one is not sent: a new one is asked for, rather than a refusal that
@@ -101,7 +114,54 @@ internal sealed class AbdmLinkingService(
     /// <summary>Whether a token issued at <paramref name="issuedAt"/> is still sent at <paramref name="now"/>.</summary>
     public static bool IsLinkTokenUsable(DateTimeOffset issuedAt, DateTimeOffset now) => now < issuedAt.AddMonths(LinkTokenLifetimeMonths);
 
-    public async Task<Result<AbdmLinkView>> StartAsync(AbdmLinkInput input, CancellationToken ct)
+    public Task<Result<AbdmLinkView>> StartAsync(AbdmLinkInput input, CancellationToken ct) => StartAsync(input, retryOf: null, ct);
+
+    /// <summary>
+    /// Sends a failed request's records again, as a new request made by the caller (staff's request, with the same checks:
+    /// they may open the chart, each record is still one the export sends). Those linked or awaiting an answer since are
+    /// left out; with none left it fails as <see cref="StartAsync(AbdmLinkInput, CancellationToken)"/> does.
+    /// </summary>
+    public async Task<Result<AbdmLinkView>> RetryAsync(Guid id, CancellationToken ct)
+    {
+        var failed = await db.Set<AbdmLinkRequest>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (failed is null)
+        {
+            return Error.NotFound("ABDM link request", id);
+        }
+
+        if ((await guard.EnsureCanOpenChartAsync(failed.PatientId, ct)).Error is { } denied)
+        {
+            return denied.Type == ErrorType.Forbidden ? denied : Error.NotFound("ABDM link request", id);
+        }
+
+        if (failed.Status != AbdmLinkStatus.Failed)
+        {
+            return Error.Rule(NotFailedCode, failed.Status == AbdmLinkStatus.Linked
+                ? "This request is linked: there is nothing to send again."
+                : "This request is still awaiting ABDM's answer. It is marked failed if ABDM does not answer, and can be sent again then.");
+        }
+
+        var records = Records(failed.CareContextsJson).Select(r => new AbdmLinkRecordInput(r.Type, r.RecordId)).ToList();
+        return await StartAsync(new AbdmLinkInput(records), retryOf: failed.Id, ct);
+    }
+
+    /// <summary>The patient's link requests made in the caller's facility, newest first, as staff see them.</summary>
+    public async Task<Result<IReadOnlyList<AbdmLinkView>>> ListAsync(Guid patientId, CancellationToken ct)
+    {
+        if ((await guard.EnsureCanOpenChartAsync(patientId, ct)).Error is { } denied)
+        {
+            return denied;
+        }
+
+        var requests = await db.Set<AbdmLinkRequest>().AsNoTracking()
+            .Where(r => r.PatientId == patientId)
+            .OrderByDescending(r => r.CreatedAt)
+            .Take(ListLimit)
+            .ToListAsync(ct);
+        return Result<IReadOnlyList<AbdmLinkView>>.Ok(await ViewsAsync(requests, ct));
+    }
+
+    private async Task<Result<AbdmLinkView>> StartAsync(AbdmLinkInput input, Guid? retryOf, CancellationToken ct)
     {
         if (await refusal.WhyNotAsync(ct) is { } off)
         {
@@ -145,7 +205,7 @@ internal sealed class AbdmLinkingService(
             linked.Add(AbdmCareContexts.Describe(record.Type, record.Id, source.RecordedAt, source.Label));
         }
 
-        return await LinkAsync(patientId!.Value, facilityId, linked, automatic: false, ct);
+        return await LinkAsync(patientId!.Value, facilityId, linked, automatic: false, retryOf, ct);
     }
 
     /// <summary>
@@ -199,7 +259,7 @@ internal sealed class AbdmLinkingService(
             return AbdmAutoLinkResult.Wait(AbdmAutoLinking.TokenWait, "A link token for the patient's ABHA address is being asked for.");
         }
 
-        var linked = await LinkAsync(source.PatientId, source.FacilityId, [AbdmCareContexts.Describe(type, id, source.RecordedAt, source.Label)], automatic: true, ct);
+        var linked = await LinkAsync(source.PatientId, source.FacilityId, [AbdmCareContexts.Describe(type, id, source.RecordedAt, source.Label)], automatic: true, retryOf: null, ct);
         return linked.IsSuccess ? AbdmAutoLinkResult.Requested(linked.Value) : AbdmAutoLinkResult.Nothing(linked.Error!.Message);
     }
 
@@ -209,7 +269,8 @@ internal sealed class AbdmLinkingService(
     /// <see cref="AlreadyLinkedCode"/> or <see cref="LinkPendingCode"/> when that leaves none). Staff's requests and the
     /// hospital's own (<paramref name="automatic"/>, after a clinical event) go the same way; the audit tells them apart.
     /// </summary>
-    private async Task<Result<AbdmLinkView>> LinkAsync(Guid patientId, Guid facilityId, IReadOnlyList<AbdmLinkedRecord> records, bool automatic, CancellationToken ct)
+    private async Task<Result<AbdmLinkView>> LinkAsync(
+        Guid patientId, Guid facilityId, IReadOnlyList<AbdmLinkedRecord> records, bool automatic, Guid? retryOf, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().AsNoTracking().FirstOrDefaultAsync(p => p.Id == patientId, ct);
         if (patient is null || patient.MergedIntoPatientId is not null)
@@ -258,7 +319,7 @@ internal sealed class AbdmLinkingService(
             PatientId = patient.Id,
             EntityType = "abdm.link",
             EntityId = request.Id.ToString("D"),
-            Details = new { api = "abdm", records = toSend.Select(r => r.ReferenceNumber).ToArray(), automatic },
+            Details = new { api = "abdm", records = toSend.Select(r => r.ReferenceNumber).ToArray(), automatic, retryOf },
         }, ct);
 
         var token = await TokenAsync(settings.HipId!, request.AbhaAddress, now, ct);
@@ -284,7 +345,7 @@ internal sealed class AbdmLinkingService(
             }
         }
 
-        return View(request);
+        return (await ViewsAsync([request], ct))[0];
     }
 
     public async Task<Result<AbdmLinkView>> GetAsync(Guid id, CancellationToken ct)
@@ -297,7 +358,7 @@ internal sealed class AbdmLinkingService(
 
         return (await guard.EnsureCanOpenChartAsync(request.PatientId, ct)).Error is { } denied
             ? denied.Type == ErrorType.Forbidden ? denied : Error.NotFound("ABDM link request", id)
-            : View(request);
+            : (await ViewsAsync([request], ct))[0];
     }
 
     /// <summary>
@@ -544,7 +605,33 @@ internal sealed class AbdmLinkingService(
     // The gateway's callbacks come with no user and no facility: the request is found by the id it was sent under.
     private IQueryable<AbdmLinkRequest> Unscoped() => db.Set<AbdmLinkRequest>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]);
 
-    private static AbdmLinkView View(AbdmLinkRequest request)
+    /// <summary>
+    /// The requests as staff see them: whether the hospital made them itself (no one created them) and, for a failed one,
+    /// whether any of its records is still neither linked to the patient's ABHA address nor awaiting an answer, which a
+    /// retry would send.
+    /// </summary>
+    private async Task<List<AbdmLinkView>> ViewsAsync(IReadOnlyList<AbdmLinkRequest> requests, CancellationToken ct)
+    {
+        var retryable = new HashSet<Guid>();
+        var failed = requests.Where(r => r.Status == AbdmLinkStatus.Failed).ToList();
+        if (failed.Count > 0)
+        {
+            var (settings, _, _) = await configuration.ReadAsync(ct);
+            foreach (var request in failed)
+            {
+                var address = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == request.PatientId).Select(p => p.AbhaAddress).FirstOrDefaultAsync(ct);
+                var (toSend, _, _) = await SortAsync(settings.HipId ?? string.Empty, request.PatientId, address ?? request.AbhaAddress, Records(request.CareContextsJson), ct);
+                if (toSend.Count > 0)
+                {
+                    retryable.Add(request.Id);
+                }
+            }
+        }
+
+        return [.. requests.Select(r => View(r, retryable.Contains(r.Id)))];
+    }
+
+    private static AbdmLinkView View(AbdmLinkRequest request, bool retryable)
     {
         var linked = Records(request.CareContextsJson);
         return new AbdmLinkView(
@@ -557,6 +644,8 @@ internal sealed class AbdmLinkingService(
             request.SentAt,
             request.AnsweredAt,
             request.ErrorCode,
-            request.Error);
+            request.Error,
+            Automatic: request.CreatedBy is null,
+            Retryable: retryable);
     }
 }
