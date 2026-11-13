@@ -209,7 +209,8 @@ The delivery handler renders the message once (`NotificationTemplateRenderer.Ren
 also uses) and passes both the whole text (`BodyParameters`) and the template body's placeholders with the values it
 filled them with (`WhatsAppTemplateMessage.Placeholders`): the hospital's and the recipient's names where the message
 gives none, and an empty value for a placeholder the message has no value for, as in the text. The adapter sends one or
-the other as the setting says, each value sanitised. A template without placeholders sends no body with `positional` or
+the other as the setting says, each value sanitised; with `positional` or `named` an empty value goes as `-`, because
+WhatsApp refuses an empty parameter. A template without placeholders sends no body with `positional` or
 `named`, and a message without them (the administrator's "Send test") goes with its own parameters whatever the
 setting. The header document is the same in every mode.
 

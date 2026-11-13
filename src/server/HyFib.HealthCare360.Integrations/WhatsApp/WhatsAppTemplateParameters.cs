@@ -12,6 +12,7 @@ namespace HyFib.HealthCare360.Integrations.WhatsApp;
 /// snake case, dots as underscores (<c>{{billNumber}}</c> is <c>{{bill_number}}</c>).</item>
 /// </list>
 /// A message without placeholders (the administrator's test) goes with its own body parameters whatever the setting.
+/// With <c>positional</c> or <c>named</c>, a placeholder without a value goes as <see cref="EmptyValue"/>.
 /// </summary>
 internal static class WhatsAppTemplateParameters
 {
@@ -21,6 +22,12 @@ internal static class WhatsAppTemplateParameters
 
     public const string Named = "named";
 
+    /// <summary>
+    /// What a placeholder without a value goes as, with <c>positional</c> or <c>named</c>: WhatsApp refuses a template
+    /// parameter whose text is empty, so the message would fail and be tried again until it expired.
+    /// </summary>
+    public const string EmptyValue = "-";
+
     /// <summary>Why the setting can't be used, or null. Letter case and surrounding spaces don't matter; empty means text.</summary>
     public static string? Problem(WhatsAppSettings settings) =>
         Mode(settings) is null ? "The WhatsApp template parameters must be text, positional or named." : null;
@@ -29,15 +36,18 @@ internal static class WhatsAppTemplateParameters
     public static IReadOnlyList<WhatsAppBodyParameter> For(WhatsAppTemplateMessage message, WhatsAppSettings settings) =>
         (Mode(settings), message.Placeholders) switch
         {
-            (Positional, { } placeholders) => [.. placeholders.Select(p => new WhatsAppBodyParameter(null, p.Value))],
+            (Positional, { } placeholders) => [.. placeholders.Select(p => new WhatsAppBodyParameter(null, ValueOf(p)))],
             (Named, { } placeholders) =>
-                [.. placeholders.Select(p => new WhatsAppBodyParameter(ParameterName(p.Name), p.Value)).DistinctBy(p => p.Name)],
+                [.. placeholders.Select(p => new WhatsAppBodyParameter(ParameterName(p.Name), ValueOf(p))).DistinctBy(p => p.Name)],
             _ => [.. message.BodyParameters.Select(text => new WhatsAppBodyParameter(null, text))],
         };
 
     /// <summary>A placeholder's named parameter: lower snake case, dots as underscores (<c>billNumber</c> is <c>bill_number</c>).</summary>
     public static string ParameterName(string placeholder) =>
         JsonNamingPolicy.SnakeCaseLower.ConvertName(placeholder).Replace('.', '_');
+
+    private static string ValueOf(TemplatePlaceholder placeholder) =>
+        string.IsNullOrWhiteSpace(placeholder.Value) ? EmptyValue : placeholder.Value;
 
     private static string? Mode(WhatsAppSettings settings) =>
         string.IsNullOrWhiteSpace(settings.Parameters)

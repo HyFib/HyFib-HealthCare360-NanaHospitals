@@ -117,6 +117,22 @@ public sealed class MetaWhatsAppProviderTests
         _tracing.AllText.ShouldNotContain("NHOB26000042");
     }
 
+    [Theory]
+    [InlineData("positional")]
+    [InlineData("named")]
+    public async Task A_placeholder_without_a_value_goes_as_a_dash_because_whatsapp_refuses_an_empty_parameter(string mode)
+    {
+        _http.Respond(HttpStatusCode.OK, """{"messages":[{"id":"wamid.EMPTY"}]}""");
+        var message = Receipt with
+        {
+            Placeholders = [new TemplatePlaceholder("name", "Asha Rao"), new TemplatePlaceholder("ward", " \n "), new TemplatePlaceholder("bed", "")],
+        };
+
+        (await Provider.SendTemplateAsync(message, Settings with { Parameters = mode }, Secrets, Ct)).Success.ShouldBeTrue();
+
+        SentBodyParameters().Select(p => p.GetProperty("text").GetString()).ShouldBe(["Asha Rao", "-", "-"]);
+    }
+
     [Fact]
     public async Task Named_parameters_are_each_placeholder_once_in_lower_snake_case()
     {
