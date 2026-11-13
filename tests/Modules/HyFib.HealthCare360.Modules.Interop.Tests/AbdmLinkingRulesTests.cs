@@ -6,7 +6,8 @@ namespace HyFib.HealthCare360.Modules.Interop.Tests;
 
 /// <summary>
 /// The rules of HIP-initiated linking that need no database: how long a kept link token is sent (six months, as NHA's
-/// wrapper keeps it), and how long a request waits for the gateway's answer before it is marked failed.
+/// wrapper keeps it), how long a request waits for the gateway's answer before it is marked failed, and the key of a
+/// patient's linking lock.
 /// </summary>
 public sealed class AbdmLinkingRulesTests
 {
@@ -51,5 +52,16 @@ public sealed class AbdmLinkingRulesTests
 
         // Each fits the request's error column (500 characters).
         new[] { AbdmUnansweredRequests.LinkMessage(AbdmLinkStatus.Sent, 1440), AbdmUnansweredRequests.ConsentMessage(1440) }.ShouldAllBe(m => m.Length <= 500);
+    }
+
+    [Fact]
+    public void A_patients_linking_lock_has_one_key_on_every_server_and_version_and_another_patient_another()
+    {
+        var patient = Guid.Parse("01933a4b-0000-7000-8000-0000000000b2");
+
+        // The first eight bytes of SHA-256("abdm.link:{id:N}"), big-endian: servers of two versions, mid-upgrade, take the
+        // same lock for the same patient.
+        AbdmLinkingService.LinkingLockKey(patient).ShouldBe(87880660739014757L);
+        AbdmLinkingService.LinkingLockKey(patient).ShouldNotBe(AbdmLinkingService.LinkingLockKey(Guid.CreateVersion7()));
     }
 }

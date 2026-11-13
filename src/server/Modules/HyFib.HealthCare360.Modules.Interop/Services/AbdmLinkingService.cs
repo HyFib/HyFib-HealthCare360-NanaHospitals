@@ -1,8 +1,12 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Interop.Domain;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
@@ -66,7 +70,9 @@ internal sealed class AbdmLinkInputValidator : AbstractValidator<AbdmLinkInput>
 /// <para>
 /// Linking is idempotent before anything is sent, not only once the gateway has linked: a record already linked to the
 /// ABHA address, or in a request still awaiting the gateway's answer, is left out of a new request
-/// (<see cref="SortAsync"/>). The gateway is never asked twice for one record, which matters as it may refuse care
+/// (<see cref="SortAsync"/>), read under the patient's linking lock with the saving of the request that sends them, so
+/// that two requests made at once (staff's and the hospital's own, say) cannot both send a record. The gateway is never
+/// asked twice for one record, which matters as it may refuse care
 /// contexts already linked (NHA's mock gateway answers 208), and a refusal drops the kept link token. A kept token is
 /// used for <see cref="LinkTokenLifetimeMonths"/> months after it was issued, as NHA's wrapper uses it; then a new one is
 /// asked for.
@@ -298,26 +304,45 @@ internal sealed class AbdmLinkingService(
 
         var (settings, _, _) = await configuration.ReadAsync(ct);
         var address = patient.AbhaAddress.Trim();
-        var (toSend, alreadyLinked, waiting) = await SortAsync(settings.HipId!, patient.Id, address, records, ct);
-        if (toSend.Count == 0)
-        {
-            return waiting.Count > 0
-                ? Error.Rule(LinkPendingCode,
-                    $"ABDM has not answered an earlier request to link {(waiting.Count == 1 ? "this record" : "these records")} to {address} yet. "
-                    + "If it does not answer, that request is marked failed and the record can be linked again.")
-                : Error.Rule(AlreadyLinkedCode,
-                    $"{(alreadyLinked.Count == 1 ? "This record is" : "These records are")} already linked to the patient's ABHA ({address}).");
-        }
-
         var now = time.GetUtcNow();
-        var request = new AbdmLinkRequest
+        var token = await TokenAsync(settings.HipId!, address, now, ct);
+
+        // Which records are linked or awaiting an answer is read, and the request that sends the rest saved with the id its
+        // gateway call goes under, in one transaction under the patient's linking lock: a second request made at once
+        // waits, then finds them awaiting this one's answer. The call itself is made once that is committed, so that the
+        // gateway's answer, however quick, finds the request.
+        var request = new AbdmLinkRequest { FacilityId = facilityId, PatientId = patient.Id, AbhaAddress = address };
+        List<AbdmLinkedRecord> toSend;
+        await using (var transaction = await LockLinkingAsync(patient.Id, ct))
         {
-            FacilityId = facilityId,
-            PatientId = patient.Id,
-            AbhaAddress = address,
-            CareContextsJson = JsonSerializer.Serialize(toSend, AbdmGatewayMessages.Json),
-        };
-        db.Add(request);
+            (toSend, var alreadyLinked, var waiting) = await SortAsync(settings.HipId!, patient.Id, address, records, ct);
+            if (toSend.Count == 0)
+            {
+                return waiting.Count > 0
+                    ? Error.Rule(LinkPendingCode,
+                        $"ABDM has not answered an earlier request to link {(waiting.Count == 1 ? "this record" : "these records")} to {address} yet. "
+                        + "If it does not answer, that request is marked failed and the record can be linked again.")
+                    : Error.Rule(AlreadyLinkedCode,
+                        $"{(alreadyLinked.Count == 1 ? "This record is" : "These records are")} already linked to the patient's ABHA ({address}).");
+            }
+
+            request.CareContextsJson = JsonSerializer.Serialize(toSend, AbdmGatewayMessages.Json);
+            if (token is not null)
+            {
+                request.Status = AbdmLinkStatus.Sent;
+                request.LinkRequestId = Guid.CreateVersion7();
+            }
+            else
+            {
+                request.Status = AbdmLinkStatus.AwaitingToken;
+                request.TokenRequestId = Guid.CreateVersion7();
+            }
+
+            request.SentAt = now;
+            db.Add(request);
+            await db.SaveChangesAsync(ct);
+            await CommitAsync(transaction, ct);
+        }
 
         var summary = automatic
             ? $"Records linked to the patient's ABHA automatically: {toSend.Count}"
@@ -330,21 +355,15 @@ internal sealed class AbdmLinkingService(
             Details = new { api = "abdm", records = toSend.Select(r => r.ReferenceNumber).ToArray(), automatic, retryOf },
         }, ct);
 
-        var token = await TokenAsync(settings.HipId!, request.AbhaAddress, now, ct);
         if (token is not null)
         {
-            await SendCareContextsAsync(request, patient, settings.HipId!, token, now, ct);
+            await CallLinkCareContextsAsync(request, patient, settings.HipId!, token, ct);
         }
         else
         {
-            request.Status = AbdmLinkStatus.AwaitingToken;
-            request.TokenRequestId = Guid.CreateVersion7();
-            request.SentAt = now;
-            await db.SaveChangesAsync(ct);
-
             var asked = await gateway.RequestLinkTokenAsync(
                 new AbdmLinkTokenRequest(request.AbhaAddress, patient.FullName, AbdmGatewayMessages.Gender(patient.Gender), patient.DateOfBirth.Value.Year),
-                request.TokenRequestId.Value,
+                request.TokenRequestId!.Value,
                 ct);
             if (asked.IsFailure)
             {
@@ -355,6 +374,39 @@ internal sealed class AbdmLinkingService(
 
         return (await ViewsAsync([request], ct))[0];
     }
+
+    /// <summary>
+    /// Takes the patient's linking lock, held until the transaction ends: whoever reads which of the patient's records are
+    /// linked or awaiting an answer, to save a request that sends others, holds it, as <see cref="EncounterLocks"/> does
+    /// for an encounter. Returns the transaction it opened for the lock, or null when the caller's was open already (the
+    /// lock then lasts until the caller's ends).
+    /// </summary>
+    private async Task<IDbContextTransaction?> LockLinkingAsync(Guid patientId, CancellationToken ct)
+    {
+        var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        try
+        {
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LinkingLockKey(patientId)})", ct);
+            return transaction;
+        }
+        catch
+        {
+            if (transaction is not null)
+            {
+                await transaction.DisposeAsync();
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>Commits the transaction <see cref="LockLinkingAsync"/> opened, if it opened one.</summary>
+    private static Task CommitAsync(IDbContextTransaction? transaction, CancellationToken ct) =>
+        transaction is null ? Task.CompletedTask : transaction.CommitAsync(ct);
+
+    /// <summary>The patient's linking lock key, the same on every server node.</summary>
+    internal static long LinkingLockKey(Guid patientId) =>
+        BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"abdm.link:{patientId:N}")));
 
     public async Task<Result<AbdmLinkView>> GetAsync(Guid id, CancellationToken ct)
     {
@@ -414,13 +466,23 @@ internal sealed class AbdmLinkingService(
         var (settings, _, _) = await configuration.ReadAsync(ct);
         await KeepTokenAsync(settings.HipId!, request.AbhaAddress, answer.LinkToken, now, ct);
 
-        if (late)
+        var patient = await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .FirstAsync(p => p.Id == request.PatientId, ct);
+        if (!late)
         {
-            // Marked unanswered before the token came: the records linked since, or sent again in another request, stay out.
+            await SendCareContextsAsync(request, patient, settings.HipId!, answer.LinkToken, now, ct);
+            return;
+        }
+
+        // Marked unanswered before the token came: the records linked since, or sent again in another request, stay out,
+        // read under the patient's linking lock as a new request reads them.
+        await using (var transaction = await LockLinkingAsync(request.PatientId, ct))
+        {
             var (toSend, _, _) = await SortAsync(settings.HipId!, request.PatientId, request.AbhaAddress, Records(request.CareContextsJson), ct);
             if (toSend.Count == 0)
             {
                 await db.SaveChangesAsync(ct);
+                await CommitAsync(transaction, ct);
                 log.LogInformation("A late ABDM link token was kept; the records of request {RequestId} were linked or sent again meanwhile", request.Id);
                 return;
             }
@@ -429,11 +491,14 @@ internal sealed class AbdmLinkingService(
             request.ErrorCode = null;
             request.Error = null;
             request.AnsweredAt = null;
+            request.Status = AbdmLinkStatus.Sent;
+            request.LinkRequestId = Guid.CreateVersion7();
+            request.SentAt = now;
+            await db.SaveChangesAsync(ct);
+            await CommitAsync(transaction, ct);
         }
 
-        var patient = await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
-            .FirstAsync(p => p.Id == request.PatientId, ct);
-        await SendCareContextsAsync(request, patient, settings.HipId!, answer.LinkToken, now, ct);
+        await CallLinkCareContextsAsync(request, patient, settings.HipId!, answer.LinkToken, ct);
     }
 
     /// <summary>
@@ -554,7 +619,12 @@ internal sealed class AbdmLinkingService(
         request.LinkRequestId = Guid.CreateVersion7();
         request.SentAt = now;
         await db.SaveChangesAsync(ct);
+        await CallLinkCareContextsAsync(request, patient, hipId, token, ct);
+    }
 
+    /// <summary>The gateway call of a request saved as <see cref="AbdmLinkStatus.Sent"/> under its <see cref="AbdmLinkRequest.LinkRequestId"/>.</summary>
+    private async Task CallLinkCareContextsAsync(AbdmLinkRequest request, Patient patient, string hipId, string token, CancellationToken ct)
+    {
         var careContexts = Records(request.CareContextsJson);
         var sent = await gateway.LinkCareContextsAsync(
             new AbdmCareContextLink(
@@ -564,7 +634,7 @@ internal sealed class AbdmLinkingService(
                 protector.Unprotect(patient.AbhaNumberCipher),
                 [.. careContexts.Select(c => new AbdmCareContext(c.ReferenceNumber, c.Display, c.Type))]),
             token,
-            request.LinkRequestId.Value,
+            request.LinkRequestId!.Value,
             ct);
         if (sent.IsFailure)
         {

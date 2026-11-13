@@ -24,7 +24,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// for a link token, and sends the care contexts when the gateway's signed <c>on-generate-token</c> brings it; the
 /// gateway's <c>on_carecontext</c> marks them linked. A second request reuses the kept token, a refused link drops it,
 /// a callback the gateway did not sign is refused, and a token for another ABHA address is ignored. A record already
-/// linked, or awaiting the gateway's answer, is not sent again, and a token older than six months is not sent at all. Each call and callback
+/// linked, or awaiting the gateway's answer, is not sent again, even by requests made at once, and a token older than six
+/// months is not sent at all. Each call and callback
 /// is a row of the integration log, the two sides of an exchange under the call's REQUEST-ID. The ABDM switch is hospital-wide, so these tests are in the
 /// feature-switch collection and turn it off again, and remove the gateway set-up, in a <c>finally</c> block.
 /// </summary>
@@ -242,6 +243,52 @@ public sealed class AbdmLinkingTests(HospitalServer server)
             (await medicalRecords.PostAsync<AbdmLinkView>("/api/v1/abdm/links", Link(later))).Status.ShouldBe(AbdmLinkStatus.AwaitingToken);
             CareContextCallsWith(stale).ShouldBeEmpty();
             TokenCallsFor(address).ShouldHaveSingleItem();
+        }
+        finally
+        {
+            await RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
+    public async Task Requests_to_link_the_same_record_made_at_once_send_it_once()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var medicalRecords = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var address = "neha." + AbdmExportTests.Letters(8) + "@sbx";
+        var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", AbdmExportTests.Registration(AbdmExportTests.NewAbha(), address));
+        var consultation = await AbdmExportTests.ConsultAsync(doctor, patient.Id, sign: true);
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await SetUpGatewayAsync(server, enabled: true);
+
+            // Each would read the record as neither linked nor awaiting an answer, but the first to read holds the others
+            // back until its request is saved: they then find the record awaiting the gateway's answer to it.
+            var answers = await Task.WhenAll(Enumerable.Range(0, 4)
+                .Select(_ => medicalRecords.SendRawAsync(HttpMethod.Post, "/api/v1/abdm/links", Link(consultation))));
+            try
+            {
+                answers.Count(a => a.StatusCode == HttpStatusCode.Accepted).ShouldBe(1);
+                foreach (var refused in answers.Where(a => a.StatusCode != HttpStatusCode.Accepted))
+                {
+                    refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+                    (await Code(refused)).ShouldBe(AbdmLinkingService.LinkPendingCode);
+                }
+            }
+            finally
+            {
+                foreach (var answer in answers)
+                {
+                    answer.Dispose();
+                }
+            }
+
+            TokenCallsFor(address).Count.ShouldBe(1);
+            (await medicalRecords.GetAsync<List<AbdmLinkView>>($"/api/v1/abdm/patients/{patient.Id}/links")).ShouldHaveSingleItem();
         }
         finally
         {
