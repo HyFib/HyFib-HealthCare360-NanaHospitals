@@ -115,7 +115,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | Key | Non-secret settings (defaults) | Secret settings |
 |---|---|---|
 | `integrations.sms` | `enabled`, `provider` (`msg91` \| `twilio` \| `generic` \| `simulator`), `senderId`, `dltEntityId`, `msg91 { baseUrl, templateIds{dlt→msg91}, textVariable, shortUrl }`, `twilio { baseUrl, accountSid, from, messagingServiceSid, statusCallbackUrl }`, `generic { url, method, contentType, bodyTemplate, headers, apiKeyHeader, apiKeyPrefix, messageIdPath, successContains }`, `webhookAllowedIps[]` | `msg91AuthKey`, `twilioAuthToken`, `genericApiKey`, `webhookToken` |
-| `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
+| `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `parameters` (`text` \| `positional` \| `named`; `text`: how the templates are registered, see [Template parameters](#template-parameters)), `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
 | `integrations.payment` | `enabled`, `provider` (`razorpay` \| `cashfree` \| `simulator`: the gateway new payments go through), `baseUrl`, `keyId` (Razorpay), `cashfreeBaseUrl` (`https://api.cashfree.com/pg`; `https://sandbox.cashfree.com/pg` for its test mode), `cashfreeClientId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false; Razorpay's and Cashfree's own SMS/e-mail), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret`; Cashfree's `clientSecret` in its own row, `integrations.payment.cashfree.secret`, so replacing one gateway's credentials never wipes the other's |
 | `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
@@ -155,7 +155,9 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 ### WhatsApp (INT-WA)
 
 * Meta Cloud API template messages go to `POST /{version}/{phoneNumberId}/messages`. Parameters are sanitised
-  (newlines, tabs and long runs of spaces are rejected by Meta) and the language is mapped through `languageCodes`.
+  (newlines, tabs and long runs of spaces are rejected by Meta) and the language is mapped through `languageCodes`. The
+  body parameters are the whole text, or the HC360 template's placeholders, as `parameters` says
+  ([Template parameters](#template-parameters)).
 * Documents (reports, bills) are uploaded to `/media` first, then sent by media id. Only PDF, JPEG, PNG, text,
   DOCX and XLSX are accepted, within `maxDocumentMegabytes`, and file names are sanitised.
 * **Template document headers.** A free-form document reaches the person only within 24 hours of their last message,
@@ -174,6 +176,47 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 * Free-form **text** messages (`IWhatsAppSender.SendTextAsync`, `type: "text"`, 1–4096 characters, no link preview)
   are accepted by Meta only within 24 hours of the person's last message, so they are used only for replies. The
   simulator records them like templates. Only the masked recipient and the text length are logged.
+
+#### Template parameters
+
+`integrations.whatsapp` `parameters` (Administration › Integrations › WhatsApp, "Template parameters") says how the
+hospital registered its templates in WhatsApp Manager, and so what a template message's body carries
+(`WhatsAppTemplateParameters`). It applies to every template message sent with those settings, so register every
+template in use the new way before changing it.
+
+| `parameters` | The body carries | Register each template as |
+|---|---|---|
+| `text` (the default, as before) | The whole rendered text, as the one parameter | The single variable `{{1}}`. Meta no longer approves a template that is only a variable, or that starts or ends with one, and may re-categorise such a generic template as Marketing (dearer, and only for numbers that opted in) |
+| `positional` | The value of each placeholder of the HC360 template's body, in the order they occur, as `{{1}}`, `{{2}}`, …; a placeholder used twice is two parameters | HC360's text with each placeholder replaced by its number, counting from 1 |
+| `named` (recommended for new registrations) | Each placeholder once, in the order it first occurs, as a named parameter (`parameter_name`): the placeholder in lower case with underscores between words, a dot as an underscore (`{{billNumber}}` is `{{bill_number}}`) | A template with named parameters: HC360's text with each placeholder renamed so |
+
+The payment receipt's WhatsApp template (`bill_receipt`), whose HC360 text is `Dear {{name}}, we have received your
+payment of Rs.{{amount}} for {{billNumber}} (receipt {{receiptNumber}}). Thank you.`, is registered:
+
+* with `text`: `{{1}}`;
+* with `positional`: `Dear {{1}}, we have received your payment of Rs.{{2}} for {{3}} (receipt {{4}}). Thank you.`;
+* with `named`: `Dear {{name}}, we have received your payment of Rs.{{amount}} for {{bill_number}} (receipt
+  {{receipt_number}}). Thank you.`
+
+With `positional` or `named` the patient reads the text registered with Meta, filled with HC360's values: the wording
+of the HC360 WhatsApp template is not sent. A registration may word it differently (Meta refuses a template that starts
+or ends with a parameter, as `{{name}} has been admitted to …` does) as long as it has every placeholder: with `named`
+by name, in any order; with `positional` each time it is used, in HC360's order. Register a template again when the
+placeholders of its HC360 version change, and, with `positional`, when their order does. Each language's template
+follows its own HC360 version, whose word order may differ; with `named` the order does not matter.
+
+The delivery handler renders the message once (`NotificationTemplateRenderer.RenderMessageAsync`, which `RenderAsync`
+also uses) and passes both the whole text (`BodyParameters`) and the template body's placeholders with the values it
+filled them with (`WhatsAppTemplateMessage.Placeholders`): the hospital's and the recipient's names where the message
+gives none, and an empty value for a placeholder the message has no value for, as in the text. The adapter sends one or
+the other as the setting says, each value sanitised. A template without placeholders sends no body with `positional` or
+`named`, and a message without them (the administrator's "Send test") goes with its own parameters whatever the
+setting. The header document is the same in every mode.
+
+Letter case and spaces in the setting don't matter. Any other value is a configuration problem: template messages fail
+with "The WhatsApp template parameters must be text, positional or named." and nothing is sent; documents and text
+replies are not affected. The integration log records how many parameters a message had, never their values. The
+simulator records the parameters it would send, one per line, a named one as `name: value`.
 
 #### STOP and START replies
 

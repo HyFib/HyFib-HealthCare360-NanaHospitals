@@ -590,6 +590,15 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - Patients get their messages in the language their record prefers when the hospital adds that language's version of
      the template (Hindi `hi`, Tamil `ta`), English otherwise. Register each language's WhatsApp template under the same
      name in WhatsApp Manager, and map it in `integrations.whatsapp` `languageCodes` (for example `{"en":"en_US","ta":"ta"}`).
+   - A WhatsApp template takes the message's text as `integrations.whatsapp` `parameters` says (Administration ›
+     Integrations › WhatsApp, *Template parameters*). By default (*One parameter*, `text`) the whole text is the
+     template's one parameter, so each template is registered as the single variable `{{1}}`, which Meta no longer
+     approves for a new template. For new registrations choose *By name* (`named`): register each template with its
+     HC360 text (Administration › Notification templates; each language's with its own), each placeholder in lower case
+     with underscores (`{{billNumber}}` as `{{bill_number}}`), as a template with named parameters. *Numbered*
+     (`positional`) takes the HC360 text with each placeholder replaced by its number, counting from 1 (a placeholder
+     used twice takes two numbers). The setting applies to every WhatsApp template, so register all those in use the new
+     way before changing it (docs/modules/integrations.md, "Template parameters").
 9. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
    `clinical.prescriptions.signature` to `"optional"` or `"required"`, docs/modules/clinical.md): HC360 accepts a
    doctor's DSC only from a certificate that chains to a CCA India root in the server's **DSC trust folder**, and HC360
