@@ -1596,8 +1596,10 @@ estimate) or a cancelled bill gives no document and is never sent.
   that number replied STOP, which the delivery handler checks when it goes out. The desk is told about a STOP up
   front instead of queueing a message that would be suppressed. Deceased patients' numbers are not messaged.
 * **Template.** Seeded (always) as WhatsApp template name `bill_shared` with "Document header" on. Register it with
-  Meta as a utility template with a document header and one body parameter; without a header there is nothing to
-  send, so do not untick it. There is no receipt PDF: the 80 mm receipt prints in the browser.
+  Meta as a utility template with a document header, and its body as the hospital registers all its WhatsApp templates
+  (one parameter, or the HC360 text's placeholders numbered or by name: see
+  [integrations.md](integrations.md#template-parameters)); without a header there is nothing to send, so do not untick
+  it. There is no receipt PDF: the 80 mm receipt prints in the browser.
 
 ## Number series
 | Key | Format | Reset |
