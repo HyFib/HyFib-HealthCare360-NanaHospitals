@@ -476,8 +476,14 @@ Pine Labs Plutus Cloud-style push-to-terminal:
   A receipt recorded later clears it.
 
 A status code that is neither 0 nor in `pendingResponseCodes` ends the sale (declined, or cancelled or timed out when the
-message says so). Pine Labs' codes are therefore checked in UAT before going live (DEPLOYMENT.md, "Card and UPI
-terminals (Pine Labs)"): a waiting sale reported with another code would otherwise end while the customer can still pay.
+message says so). Pine Labs' Cloud Integration document (v1.36) confirms the payment-mode codes HC360 sends (`0` all
+modes, `1` card, `10` UPI sale; several joined with `|`), the cancel request, and the `RRN`, `ApprovalCode` and
+`Card Number` tags it reads; it says only that a non-zero status code is not a success (it shows `1008` "TXN VOIDED"
+and `1077` "PAYLATER_TXN_INITIATED") and lists no code for a sale still waiting. That code is therefore checked in UAT
+before going live (DEPLOYMENT.md, "Card and UPI terminals (Pine Labs)"): a waiting sale reported with a code not in
+`pendingResponseCodes` would otherwise end while the customer can still pay. The same API can send a linked refund of a
+card sale to the terminal (`TxnType` 3 with the sale's transaction id); HC360 does not use it yet, so a card refund is
+made on the terminal and recorded with its RRN.
 
 Transaction ids encode what status and cancel need (`OPD-1:987654:125075`, meaning terminal, provider reference and
 paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id. A lost

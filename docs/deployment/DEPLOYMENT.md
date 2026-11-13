@@ -992,8 +992,9 @@ pharmacy and canteen counters do not yet, and type the RRN or UPI reference from
 
 1. **From Pine Labs** (the hospital's relationship manager, or Pine Labs' integration team): the UAT and production
    addresses of the cloud integration service, the merchant id, the security token, the user id, and for each terminal
-   its store/POS code and its IMEI or serial number. Ask also for their Cloud Integration document, and for the
-   `AllowedPaymentMode` codes and status `ResponseCode`s these terminals use.
+   its store/POS code and its IMEI or serial number. Ask also for their Cloud Integration document. Its version 1.36
+   matches HC360's payment-mode codes (card `1`, UPI `10`) but lists no status code for a sale still waiting on the
+   terminal: ask Pine Labs for it, and confirm it in step 3.
 2. **Set it up in UAT first**: Administration › Integrations › Card/UPI POS: provider Pine Labs, the UAT address,
    merchant id, user id, security token and the terminals, one entry per counter with an id such as `OPD-1`. When Pine
    Labs' codes differ from HC360's defaults, set *Payment mode codes* (card `1`, upi `10`) and *Codes that mean "still
