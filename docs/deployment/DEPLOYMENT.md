@@ -573,6 +573,17 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - To stop sending report PDFs by e-mail and WhatsApp, set `diagnostics.reports.sendPdf` to `false`, and use a
      WhatsApp template without a document header (untick "Document header"). A template with a header can't go
      without its PDF, so those WhatsApp messages would be skipped; the SMS and e-mail still go.
+   - WhatsApp templates seeded **Not in use** in Administration › Notification templates wait for Meta: the queue token
+     (`visit_token`), the payment receipt (`bill_receipt`), the admission (`admission_admitted`), the discharge
+     (`discharge_completed`; register it with a document header and tick "Document header" to send the signed discharge
+     summary), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`) and the complaint
+     acknowledgement (`complaint_acknowledged`). Register each in WhatsApp Manager as a utility template (the feedback
+     request and the follow-up reminder go only to numbers that opted in), then switch it on; until then those messages
+     go by SMS only. Any template can be switched off the same way: when no version of a message is in use, it is not
+     sent on that channel (sign-in codes always go).
+   - Patients get their messages in the language their record prefers when the hospital adds that language's version of
+     the template (Hindi `hi`, Tamil `ta`), English otherwise. Register each language's WhatsApp template under the same
+     name in WhatsApp Manager, and map it in `integrations.whatsapp` `languageCodes` (for example `{"en":"en_US","ta":"ta"}`).
 9. **Doctors' DSC signatures on prescriptions** (ERX-04; only where the hospital sets
    `clinical.prescriptions.signature` to `"optional"` or `"required"`, docs/modules/clinical.md): HC360 accepts a
    doctor's DSC only from a certificate that chains to a CCA India root in the server's **DSC trust folder**, and HC360

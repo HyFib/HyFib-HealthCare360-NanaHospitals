@@ -248,6 +248,33 @@ The opt-in is new with this table, so existing numbers have none: after upgradin
 requests and campaigns stop until each number opts in (SMS is unaffected); bills, reports and the other service
 messages carry on.
 
+#### Templates in use, and WhatsApp templates waiting for Meta
+
+Each message has a template per channel and language (Administration › Notification templates), and "In use" decides
+what goes out (`TemplateSwitch`):
+
+* A version not in use gives way to the next one that fits: this facility's to all facilities', the patient's language
+  to English.
+* When no version that fits the message is in use, the message is **not sent on that channel**. Its log is marked
+  `Skipped` ("this message's WhatsApp template is set to "Not in use""), it is not tried again, and nothing it would
+  carry is made (a report's PDF). Its other channels go as before. Sign-in codes (`auth.otp`) always go, with their
+  stored version: patients would otherwise be locked out of the portal.
+* WhatsApp templates that Meta must approve first are seeded **not in use** (`DefaultNotificationTemplates.SeededNotInUse`,
+  and Engagement's own): the queue token (`visit_token`), the payment receipt (`bill_receipt`), the admission
+  (`admission_admitted`), the discharge (`discharge_completed`), the feedback request (`feedback_request`), the follow-up
+  reminder (`followup_reminder`) and the complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp
+  Manager, then switch it on; until then those messages go by SMS alone. The WhatsApp templates seeded before them
+  (appointments, reports, bills, payment links, prescriptions, video consultations, refills, portal links, alerts) are in
+  use, as they were.
+* The discharge message names the stay's signed discharge summary (`clinical.discharge-summary`): with "Document header"
+  ticked on its WhatsApp template (registered with a document header), the summary's PDF goes in it.
+* A receipt goes on WhatsApp only when the payment does not settle the bill: a payment that settles it sends the bill
+  itself there (`bill.shared`), so the patient gets one WhatsApp message for it, not two.
+
+Messages to a patient are written in the language their record prefers (Hindi or Tamil, read from the free-text
+preferred language by `NotificationRecipient.Patient`), with the template of that language when the hospital has added
+one and English otherwise. Portal sign-in codes, staff messages and answers to privacy requests are in English.
+
 ### E-mail
 
 SMTP over STARTTLS, normally on port 587. Implicit TLS on 465 is rejected with an explanation, because
