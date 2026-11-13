@@ -251,7 +251,7 @@ export function TemplateFields({
         control={control}
         name="isActive"
         label="In use"
-        hint="When it is not in use, messages use the next version that fits (all facilities, English) or the built-in text."
+        hint="When it is not in use, messages use the next version that fits (all facilities, English). When no version that fits is in use, the message is not sent on this channel. Sign-in codes always go."
       />
     </div>
   );

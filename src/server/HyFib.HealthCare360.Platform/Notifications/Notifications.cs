@@ -31,8 +31,9 @@ public enum NotificationStatus
     Failed,
 
     /// <summary>
-    /// Not attempted, and never retried: there are no contact details for the channel, or the WhatsApp template needs a
-    /// document the message does not carry (the log's error says which).
+    /// Not attempted, and never retried: there are no contact details for the channel, the WhatsApp template needs a
+    /// document the message does not carry, or every version of the channel's template is "Not in use" (the log's
+    /// error says which).
     /// </summary>
     Skipped,
 
@@ -399,16 +400,34 @@ internal sealed class NotificationTemplateSeeder : ISeeder
     }
 }
 
-/// <summary>Resolves the best template (facility → global, language → English) and renders placeholders.</summary>
+/// <summary>
+/// Resolves the best template (facility → global, language → English) and renders placeholders. A version that is
+/// "Not in use" is passed over for the next one that fits; when every version that fits is not in use, the message is
+/// not sent on that channel at all (<see cref="NotInUseAsync"/>).
+/// </summary>
 public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, IMemoryCache cache)
 {
+    /// <summary>
+    /// Why the message must not go on its channel: an administrator set every version of its template that could apply
+    /// to it (this facility's or all facilities', in the patient's language or English) to "Not in use". Null when one of
+    /// them is in use, and when none is stored (the built-in text is used then).
+    /// </summary>
+    public async Task<string?> NotInUseAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
+    {
+        var versionsInUse = await Versions(delivery).Select(t => t.IsActive).ToListAsync(cancellationToken);
+        return TemplateSwitch.IsOff(delivery.TemplateKey, versionsInUse) ? TemplateSwitch.NotInUseReason(delivery.Channel) : null;
+    }
+
     public async Task<(NotificationTemplate? Template, string? Subject, string Body)> RenderAsync(NotificationDelivery delivery, CancellationToken cancellationToken)
     {
-        var candidates = await db.Set<NotificationTemplate>().AsNoTracking()
-            .Where(t => t.Key == delivery.TemplateKey && t.Channel == delivery.Channel && t.IsActive
-                        && (t.FacilityId == null || t.FacilityId == delivery.FacilityId)
-                        && (t.Language == delivery.Language || t.Language == "en"))
-            .ToListAsync(cancellationToken);
+        var versions = await Versions(delivery).ToListAsync(cancellationToken);
+        var candidates = versions.Where(t => t.IsActive).ToList();
+        if (candidates.Count == 0 && WhatsAppOptOutPolicy.IsEssential(delivery.TemplateKey))
+        {
+            // A sign-in code can't be switched off (TemplateSwitch): the stored version goes, with its DLT template id,
+            // rather than the built-in text without one, which the SMS gateway would refuse.
+            candidates = versions;
+        }
 
         var template = candidates
             .OrderByDescending(t => t.FacilityId == delivery.FacilityId && t.FacilityId != null)
@@ -441,6 +460,13 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
             return htmlEncode ? WebUtility.HtmlEncode(value) : value;
         });
 
+    /// <summary>The stored versions of the message's template on its channel that could apply to it, in use or not.</summary>
+    private IQueryable<NotificationTemplate> Versions(NotificationDelivery delivery) =>
+        db.Set<NotificationTemplate>().AsNoTracking()
+            .Where(t => t.Key == delivery.TemplateKey && t.Channel == delivery.Channel
+                        && (t.FacilityId == null || t.FacilityId == delivery.FacilityId)
+                        && (t.Language == delivery.Language || t.Language == "en"));
+
     private Task<string?> FacilityNameAsync(Guid? facilityId, CancellationToken ct) =>
         cache.GetOrCreateAsync($"facility-name:{facilityId}", async entry =>
         {
@@ -453,6 +479,30 @@ public sealed partial class NotificationTemplateRenderer(HospitalDbContext db, I
 
     [GeneratedRegex(@"\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}")]
     private static partial Regex PlaceholderRegex();
+}
+
+/// <summary>
+/// "In use" on a notification template: a version not in use is passed over for the next one that fits, and when no
+/// version that fits the message is in use, the message is not sent on that channel. So the hospital decides, message by
+/// message and channel by channel, what goes out: a WhatsApp template waiting for Meta's approval, say, or an SMS
+/// whose DLT registration lapsed. Sign-in codes can't be switched off: patients would be locked out of the portal.
+/// </summary>
+internal static class TemplateSwitch
+{
+    /// <param name="versionsInUse">Whether each stored version that could apply to the message is in use.</param>
+    public static bool IsOff(string templateKey, IReadOnlyCollection<bool> versionsInUse) =>
+        !WhatsAppOptOutPolicy.IsEssential(templateKey) && versionsInUse.Count > 0 && !versionsInUse.Contains(true);
+
+    public static string NotInUseReason(NotificationChannel channel) =>
+        $"Not sent: this message's {ChannelName(channel)} template is set to \"Not in use\" (Administration › Notification templates). Switch it on there to send it.";
+
+    private static string ChannelName(NotificationChannel channel) => channel switch
+    {
+        NotificationChannel.Sms => "SMS",
+        NotificationChannel.WhatsApp => "WhatsApp",
+        NotificationChannel.Email => "e-mail",
+        _ => channel.ToString(),
+    };
 }
 
 /// <summary>Outbox handlers that render templates and call the configured channel provider.</summary>
@@ -475,6 +525,22 @@ internal abstract class NotificationDeliveryHandler(
     {
         var delivery = message.Read<NotificationDelivery>();
         var log = await db.Set<NotificationLog>().FirstOrDefaultAsync(l => l.Id == delivery.LogId, cancellationToken);
+
+        // Checked before anything is rendered or made (a report's PDF): the hospital chose not to send this message on
+        // this channel, so it is skipped, not tried again. The message's other channels still go.
+        if (await renderer.NotInUseAsync(delivery, cancellationToken) is { } notInUse)
+        {
+            if (log is not null)
+            {
+                log.Status = NotificationStatus.Skipped;
+                log.Error = notInUse;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+
+            logger.LogInformation("Notification {TemplateKey} via {Channel} not sent: its template is not in use", delivery.TemplateKey, delivery.Channel);
+            return;
+        }
+
         if (await SuppressionReasonAsync(delivery, cancellationToken) is { } reason)
         {
             if (log is not null)
