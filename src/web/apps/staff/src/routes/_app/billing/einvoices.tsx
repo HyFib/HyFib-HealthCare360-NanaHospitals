@@ -11,17 +11,23 @@ import {
   Input,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Spinner,
   Text,
   Textarea,
 } from '@fluentui/react-components';
-import { ArrowDownloadRegular, DocumentCheckmarkRegular } from '@fluentui/react-icons';
+import {
+  ArrowDownloadRegular,
+  ChevronDownRegular,
+  ChevronRightRegular,
+  DocumentCheckmarkRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   CANCEL_REASONS,
   documentLabel,
@@ -29,11 +35,13 @@ import {
   einvoiceApi,
   einvoiceKeys,
   einvoiceQueries,
+  irnAnswer,
   irnProblems,
   STATE_LABELS,
   type EInvoiceCancelReason,
   type EInvoiceRow,
   type EInvoiceState,
+  type IrnAction,
 } from '@/modules/billing/einvoiceApi';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { gstStateName } from '@/modules/inventory/gst';
@@ -149,6 +157,59 @@ function EInvoicesPage() {
   );
 }
 
+/** A refused record, generate or cancel: what it means in plain words, then the server's own sentence. */
+function IrnAnswerBar({ action, error }: { action: IrnAction; error: unknown }) {
+  const answer = irnAnswer(action, error);
+  return (
+    <MessageBar intent={answer.intent} layout="multiline">
+      <MessageBarBody>
+        <MessageBarTitle>{answer.title}</MessageBarTitle>
+        {answer.detail}
+      </MessageBarBody>
+    </MessageBar>
+  );
+}
+
+/** The JSON to upload on the portal's own screens, and what the portal gives back for it. */
+function HandRecordFields({
+  canDownload,
+  onDownload,
+  ackNo,
+  onAckNo,
+  qr,
+  onQr,
+}: {
+  canDownload: boolean;
+  onDownload: () => void;
+  ackNo: string;
+  onAckNo: (value: string) => void;
+  qr: string;
+  onQr: (value: string) => void;
+}) {
+  return (
+    <>
+      <Button
+        icon={<ArrowDownloadRegular />}
+        disabled={!canDownload}
+        onClick={onDownload}
+        style={{ alignSelf: 'flex-start' }}
+      >
+        Download e-invoice JSON
+      </Button>
+      <Field label="Acknowledgement number" required>
+        <Input value={ackNo} maxLength={20} inputMode="numeric" onChange={(_, v) => onAckNo(v.value)} />
+      </Field>
+      <Field
+        label="Signed QR code"
+        required
+        hint="Paste the SignedQRCode the portal returned. It must name this invoice."
+      >
+        <Textarea value={qr} rows={4} maxLength={8000} onChange={(_, v) => onQr(v.value)} />
+      </Field>
+    </>
+  );
+}
+
 function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => void }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -157,6 +218,9 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
   const [qr, setQr] = useState('');
   const [reason, setReason] = useState<EInvoiceCancelReason>('DataEntryMistake');
   const [remark, setRemark] = useState('');
+  // Connected to the portal, recording by hand is the way round its API: folded away under the portal's own button.
+  const [byHand, setByHand] = useState(false);
+  const byHandId = useId();
   // Read the document again after every answer, a refusal included: what the server holds is what the dialog shows
   // (an IRN whose answer was lost on the way here and is now recorded, a cancellation the portal has settled).
   const refresh = () => void queryClient.invalidateQueries({ queryKey: einvoiceKeys.all });
@@ -294,11 +358,48 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 {!live && d.state !== 'NotNeeded' && d.portalConnected && (
                   <>
                     <Text>This facility is connected to the e-invoice portal: HC360 asks it for the IRN.</Text>
-                    {generate.error && (
-                      <MessageBar intent="error">
-                        <MessageBarBody>{errorMessage(generate.error, 'The portal gave no IRN.')}</MessageBarBody>
-                      </MessageBar>
-                    )}
+                    {generate.error && <IrnAnswerBar action="generate" error={generate.error} />}
+                    <Button
+                      appearance="subtle"
+                      icon={byHand ? <ChevronDownRegular /> : <ChevronRightRegular />}
+                      aria-expanded={byHand}
+                      aria-controls={byHandId}
+                      onClick={() => setByHand((open) => !open)}
+                      style={{ alignSelf: 'flex-start' }}
+                    >
+                      Record an IRN generated on the portal
+                    </Button>
+                    <div
+                      id={byHandId}
+                      role="group"
+                      aria-label="Record an IRN generated on the portal"
+                      hidden={!byHand}
+                      // Indented under the button's words, past its chevron.
+                      style={{ display: byHand ? 'flex' : 'none', flexDirection: 'column', gap: 12, paddingLeft: 38 }}
+                    >
+                      <Caption1>
+                        When the IRN was generated on the portal&apos;s own screens: upload this JSON there, then enter
+                        what the portal gives back. HC360 checks a recent IRN with the portal before recording it.
+                      </Caption1>
+                      <HandRecordFields
+                        canDownload={d.problems.length === 0 && !download.isPending}
+                        onDownload={() => download.mutate()}
+                        ackNo={ackNo}
+                        onAckNo={setAckNo}
+                        qr={qr}
+                        onQr={setQr}
+                      />
+                      {record.error && <IrnAnswerBar action="record" error={record.error} />}
+                      <Button
+                        icon={<DocumentCheckmarkRegular />}
+                        disabled={problems.length > 0 || record.isPending}
+                        title={problems.join(' ')}
+                        onClick={() => record.mutate()}
+                        style={{ alignSelf: 'flex-start' }}
+                      >
+                        Record IRN
+                      </Button>
+                    </div>
                   </>
                 )}
                 {live && d.ewayBillNeeded && !registration.ewbNo && (
@@ -333,29 +434,15 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 )}
                 {!live && d.state !== 'NotNeeded' && !d.portalConnected && (
                   <>
-                    <Button
-                      icon={<ArrowDownloadRegular />}
-                      disabled={d.problems.length > 0 || download.isPending}
-                      onClick={() => download.mutate()}
-                      style={{ alignSelf: 'flex-start' }}
-                    >
-                      Download e-invoice JSON
-                    </Button>
-                    <Field label="Acknowledgement number" required>
-                      <Input value={ackNo} maxLength={20} inputMode="numeric" onChange={(_, v) => setAckNo(v.value)} />
-                    </Field>
-                    <Field
-                      label="Signed QR code"
-                      required
-                      hint="Paste the SignedQRCode the portal returned. It must name this invoice."
-                    >
-                      <Textarea value={qr} rows={4} maxLength={8000} onChange={(_, v) => setQr(v.value)} />
-                    </Field>
-                    {record.error && (
-                      <MessageBar intent="error">
-                        <MessageBarBody>{errorMessage(record.error, 'The IRN could not be recorded.')}</MessageBarBody>
-                      </MessageBar>
-                    )}
+                    <HandRecordFields
+                      canDownload={d.problems.length === 0 && !download.isPending}
+                      onDownload={() => download.mutate()}
+                      ackNo={ackNo}
+                      onAckNo={setAckNo}
+                      qr={qr}
+                      onQr={setQr}
+                    />
+                    {record.error && <IrnAnswerBar action="record" error={record.error} />}
                   </>
                 )}
                 {live && registration.canCancel && (
@@ -380,13 +467,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                         <Input value={remark} maxLength={100} onChange={(_, v) => setRemark(v.value)} />
                       </Field>
                     </div>
-                    {cancel.error && (
-                      <MessageBar intent="error">
-                        <MessageBarBody>
-                          {errorMessage(cancel.error, 'The cancellation could not be recorded.')}
-                        </MessageBarBody>
-                      </MessageBar>
-                    )}
+                    {cancel.error && <IrnAnswerBar action="cancel" error={cancel.error} />}
                   </>
                 )}
                 {live && !registration.canCancel && (
