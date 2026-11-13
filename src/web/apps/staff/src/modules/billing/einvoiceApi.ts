@@ -193,8 +193,11 @@ export const einvoiceApi = {
     api.post<EInvoiceDetail>(`${base}/${source}/${id}/ewaybill`, body),
 };
 
-/** The calls that change a document's IRN: recording one by hand, asking the portal for one, and cancelling it. */
-export type IrnAction = 'record' | 'generate' | 'cancel';
+/**
+ * The calls that change a document's IRN: recording one by hand, asking the portal for one, cancelling it, and, past the
+ * 24 hours, asking the portal whether a cancellation made in time went through (the same cancel request, read back).
+ */
+export type IrnAction = 'record' | 'generate' | 'cancel' | 'askCancelled';
 
 /**
  * A refusal of one of those calls as the dialog shows it: `warning` when nothing is wrong with the document and trying
@@ -236,12 +239,17 @@ const HEADINGS: Record<IrnAction, Record<string, Heading>> = {
     'einvoice.irp_cancel_unknown': ['warning', 'Not known whether the portal cancelled the IRN'],
     'einvoice.irp_unreachable': ['warning', 'Not cancelled: the IRN is still active on the portal'],
   },
+  askCancelled: {
+    'einvoice.irp_cancel_unknown': ['warning', 'Not known whether the portal cancelled the IRN'],
+    'einvoice.cancel_window': ['error', 'Not cancelled on the portal: the IRN stays'],
+  },
 };
 
 const UNEXPLAINED: Record<IrnAction, string> = {
   record: 'The IRN was not recorded',
   generate: 'The portal gave no IRN',
   cancel: 'The cancellation was not recorded',
+  askCancelled: 'No cancellation was recorded',
 };
 
 /** The problem codes the dialog has words for, by call (each call's own and the common ones). */
