@@ -51,15 +51,19 @@ internal sealed class NicIrpClient(HttpClient http, IntegrationTrace trace, Time
     public async Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(IrpContext context, JsonObject request, CancellationToken cancellationToken)
     {
         var answer = await CallAsync(context, HttpMethod.Post, context.Settings.EwayBillPath, request, "ewaybill.generate", cancellationToken);
-        if (answer.Error is { } error)
-        {
-            return new IrpResult<IrpEwayBill>(null, error);
-        }
+        return answer.Error is { } error ? new IrpResult<IrpEwayBill>(null, error) : IrpAnswers.EwayBill(answer.Value!);
+    }
 
-        var data = answer.Value!;
-        return IrpAnswers.Number(data["EwbNo"]) is { } number && IrpAnswers.Time(data["EwbDt"]) is { } date
-            ? IrpResult<IrpEwayBill>.Ok(new IrpEwayBill(number, date, IrpAnswers.Time(data["EwbValidTill"])))
-            : IrpResult<IrpEwayBill>.Fail(IrpError.Unreachable, "The portal's answer did not hold the e-way bill number.");
+    /// <summary>
+    /// The e-way bill the portal holds for an IRN (GET <c>ewaybill/irn/{irn}</c> under the e-way bill path): <c>EwbNo</c>,
+    /// <c>Status</c>, <c>EwbDt</c> and <c>EwbValidTill</c>, or 4005 when it holds none. The path and answer are as GSP
+    /// documentation of the NIC API gives them, not yet run against NIC's sandbox.
+    /// </summary>
+    public async Task<IrpResult<IrpEwayBill>> GetEwayBillAsync(IrpContext context, string irn, CancellationToken cancellationToken)
+    {
+        var answer = await CallAsync(context, HttpMethod.Get, $"{context.Settings.EwayBillPath.TrimEnd('/')}/irn/{Uri.EscapeDataString(irn)}", null,
+            "ewaybill.get", cancellationToken);
+        return answer.Error is { } error ? new IrpResult<IrpEwayBill>(null, error) : IrpAnswers.EwayBill(answer.Value!);
     }
 
     private async Task<(JsonObject? Value, IrpError? Error)> CallAsync(

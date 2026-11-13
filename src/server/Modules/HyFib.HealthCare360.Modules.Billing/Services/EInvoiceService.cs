@@ -438,7 +438,8 @@ public sealed class EInvoiceService(
     /// <summary>
     /// Generates the e-way bill of a B2B invoice of goods (the pharmacy's) from its live IRN, when its value is above
     /// <see cref="EwayBillThresholdSetting"/> (CGST rule 138): Part-B by the vehicle, or Part-A only with the transporter's
-    /// id when the transporter will fill the vehicle in.
+    /// id when the transporter will fill the vehicle in. A request that fails is read back from the portal
+    /// (<see cref="ReadBackEwayBillAsync"/>), so one whose answer was lost is recorded, now or when asked again.
     /// </summary>
     public async Task<Result<EInvoiceDetail>> EwayBillAsync(string source, Guid id, GenerateEwayBillRequest request, CancellationToken ct)
     {
@@ -506,13 +507,21 @@ public sealed class EInvoiceService(
             body["VehType"] = request.OverDimensionalCargo ? "O" : "R";
         }
 
-        var answer = await portal.GenerateEwayBillAsync(document.FacilityId, Gstin.Normalize(seller.Gstin)!, body, ct);
-        if (!answer.IsSuccess)
+        var gstin = Gstin.Normalize(seller.Gstin)!;
+        var answer = await portal.GenerateEwayBillAsync(document.FacilityId, gstin, body, ct);
+        var bill = answer.IsSuccess ? answer.Value! : null;
+        if (bill is null)
         {
-            return PortalError(answer.Error!);
+            var held = await ReadBackEwayBillAsync(document.FacilityId, gstin, registration.Irn, answer.Error!, ct);
+            if (held.IsFailure)
+            {
+                return held.Error!;
+            }
+
+            bill = held.Value;
         }
 
-        var recorded = registration.RecordEwayBill(answer.Value!.EwbNo, answer.Value.EwbDate.ToUniversalTime(), answer.Value.ValidTill?.ToUniversalTime());
+        var recorded = registration.RecordEwayBill(bill.EwbNo, bill.EwbDate.ToUniversalTime(), bill.ValidTill?.ToUniversalTime());
         if (recorded.IsFailure)
         {
             return recorded.Error!;
@@ -520,6 +529,47 @@ public sealed class EInvoiceService(
 
         await db.SaveChangesAsync(ct);
         return await DetailAsync(document, [], ct);
+    }
+
+    /// <summary>
+    /// What an e-way bill request that failed left. It is not taken at its word: the portal is asked for the e-way bill it
+    /// holds for the IRN (<see cref="EwayBillRequests"/>), since one whose answer was lost was generated all the same, and
+    /// asked again the portal refuses a second (4002). The answer is a live e-way bill, to record, or why there is none.
+    /// </summary>
+    private async Task<Result<IrpEwayBill>> ReadBackEwayBillAsync(Guid facilityId, string gstin, string irn, IrpError failure, CancellationToken ct)
+    {
+        var held = await portal.GetEwayBillAsync(facilityId, gstin, irn, ct);
+        return EwayBillRequests.After(failure, held) switch
+        {
+            EwayBillOutcome.Generated => held.Value!,
+            EwayBillOutcome.NotGenerated => Error.Rule("einvoice.irp_unreachable",
+                $"{failure.Message} The portal holds no e-way bill for IRN {irn}, so none was generated. Try again."),
+            EwayBillOutcome.Cancelled => Error.Rule("einvoice.irp_ewaybill_cancelled",
+                $"The portal holds this invoice's e-way bill {held.Value!.EwbNo} as cancelled, so there is no live e-way bill to record. "
+                + "Goods that still move need a new one; if the portal does not generate another from this IRN, generate it on the e-way bill portal."),
+            EwayBillOutcome.NotFound => Error.Rule("einvoice.irp_ewaybill_unknown",
+                $"The portal says an e-way bill is already generated for IRN {irn}, yet holds none when asked for it. Nothing was recorded. "
+                + "Look the e-way bill up on the e-way bill portal with the GST adviser."),
+            EwayBillOutcome.Unknown => EwayBillUnknown(failure, held, irn),
+            _ => PortalError(failure),
+        };
+    }
+
+    /// <summary>
+    /// The portal did not answer the request, or said the IRN already has an e-way bill, and did not then say whether it
+    /// holds a live one: it could not be asked, or gave one without its status.
+    /// </summary>
+    private static Error EwayBillUnknown(IrpError failure, IrpResult<IrpEwayBill> held, string irn)
+    {
+        var request = failure.Code == IrpError.EwayBillExists
+            ? $"The portal says an e-way bill is already generated for IRN {irn}."
+            : $"{failure.Message} Whether the portal generated the e-way bill is not known.";
+        var readBack = held.Value is { } unclear
+            ? $" Asked for IRN {irn}'s e-way bill, it gave e-way bill {unclear.EwbNo} without saying whether it is live or cancelled."
+            : $" It could not then be asked for IRN {irn}'s e-way bill.";
+        return Error.Rule("einvoice.irp_ewaybill_unknown", request + readBack
+            + " Nothing was recorded. Try again once the portal answers: HC360 then records the live e-way bill it holds, without making a second. "
+            + "If it still does not say, look the e-way bill up on the e-way bill portal with the GST adviser.");
     }
 
     public async Task<Result<EInvoiceDetail>> CancelAsync(string source, Guid id, CancelIrnRequest request, CancellationToken ct)

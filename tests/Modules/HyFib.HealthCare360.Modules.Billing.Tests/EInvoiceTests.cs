@@ -264,6 +264,43 @@ public sealed class EInvoiceTests
             Status: held is "" ? null : held))
         : IrpResult<IrpIrn>.Fail(held, "The portal's words about the IRN.");
 
+    /// <summary>For <see cref="A_failed_e_way_bill_request_is_judged_by_the_e_way_bill_the_portal_then_holds_for_the_irn"/>: an e-way bill given with no status.</summary>
+    private const string NoStatus = "no status";
+
+    [Theory]
+    // A live e-way bill is the IRN's, whatever the request's failure said: the portal makes one per IRN.
+    [InlineData(IrpError.Unreachable, IrpIrn.ActiveStatus, EwayBillOutcome.Generated)]
+    [InlineData(IrpError.EwayBillExists, IrpIrn.ActiveStatus, EwayBillOutcome.Generated)]
+    [InlineData("9999", IrpIrn.ActiveStatus, EwayBillOutcome.Generated)]
+    // Cancelled on the e-way bill portal: there is no live one to record, and it explains only a failure that left one possible.
+    [InlineData(IrpError.Unreachable, IrpIrn.CancelledStatus, EwayBillOutcome.Cancelled)]
+    [InlineData(IrpError.EwayBillExists, IrpIrn.CancelledStatus, EwayBillOutcome.Cancelled)]
+    [InlineData("9999", IrpIrn.CancelledStatus, EwayBillOutcome.Refused)]
+    // Given without saying it is live or cancelled: it confirms nothing.
+    [InlineData(IrpError.Unreachable, NoStatus, EwayBillOutcome.Unknown)]
+    [InlineData(IrpError.EwayBillExists, NoStatus, EwayBillOutcome.Unknown)]
+    [InlineData("9999", NoStatus, EwayBillOutcome.Refused)]
+    // None held: after no answer, none was generated; after 4002, the portal contradicts itself.
+    [InlineData(IrpError.Unreachable, IrpError.EwayBillNotFound, EwayBillOutcome.NotGenerated)]
+    [InlineData(IrpError.EwayBillExists, IrpError.EwayBillNotFound, EwayBillOutcome.NotFound)]
+    [InlineData("9999", IrpError.EwayBillNotFound, EwayBillOutcome.Refused)]
+    // The read-back unanswered, or refused otherwise: never taken for nothing done.
+    [InlineData(IrpError.Unreachable, IrpError.Unreachable, EwayBillOutcome.Unknown)]
+    [InlineData(IrpError.EwayBillExists, IrpError.Unreachable, EwayBillOutcome.Unknown)]
+    [InlineData(IrpError.Unreachable, "9999", EwayBillOutcome.Unknown)]
+    [InlineData(IrpError.EwayBillExists, "9999", EwayBillOutcome.Unknown)]
+    [InlineData("9999", IrpError.Unreachable, EwayBillOutcome.Refused)]
+    [InlineData(IrpError.NotConnected, IrpError.NotConnected, EwayBillOutcome.Refused)]
+    public void A_failed_e_way_bill_request_is_judged_by_the_e_way_bill_the_portal_then_holds_for_the_irn(string failure, string held, EwayBillOutcome expected)
+    {
+        // Held: the status of the e-way bill the portal gives back, or the code it refuses the read-back with.
+        var readBack = held is IrpIrn.ActiveStatus or IrpIrn.CancelledStatus or NoStatus
+            ? IrpResult<IrpEwayBill>.Ok(new IrpEwayBill(611009719079, DateTimeOffset.UtcNow, null, held == NoStatus ? null : held))
+            : IrpResult<IrpEwayBill>.Fail(held, "The portal's words.");
+
+        EwayBillRequests.After(new IrpError(failure, "The portal's words."), readBack).ShouldBe(expected);
+    }
+
     private static EInvoiceItem Service() => new("Executive health check-up", true, "999311", 1m, 1000m, 1000m, 100m, 900m, 18m, 162m, 0m, 0m, 1062m);
 
     private static EInvoiceDocument Invoice(

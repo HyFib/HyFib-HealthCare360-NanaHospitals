@@ -189,6 +189,57 @@ public static class IrnCancellations
     };
 }
 
+/// <summary>What an e-way bill request the portal did not carry out left, once the portal is asked for the IRN's e-way bill.</summary>
+public enum EwayBillOutcome
+{
+    /// <summary>
+    /// The portal holds a live e-way bill for the IRN (its answer says <c>ACT</c>): it was generated (its answer lost, or
+    /// asked for before) and is recorded.
+    /// </summary>
+    Generated,
+
+    /// <summary>The portal holds the IRN's e-way bill as cancelled: there is no live one to record.</summary>
+    Cancelled,
+
+    /// <summary>The portal did not answer the request and holds no e-way bill for the IRN: none was generated, and it is asked again.</summary>
+    NotGenerated,
+
+    /// <summary>The portal says the IRN already has an e-way bill (4002), yet holds none for it when asked (4005): asking again does not settle it.</summary>
+    NotFound,
+
+    /// <summary>
+    /// The portal did not answer the request, or said the IRN already has an e-way bill, and then could not be asked for it
+    /// or gave it without saying it is live or cancelled: whether there is a live one, or which, is not known.
+    /// </summary>
+    Unknown,
+
+    /// <summary>The portal refused the request for another reason, and holds no live e-way bill for the IRN: its refusal stands.</summary>
+    Refused,
+}
+
+/// <summary>
+/// An e-way bill request that failed is never taken at its word. Its answer may have been lost after the e-way bill was
+/// generated, and asked again the portal refuses a second e-way bill for the IRN (4002): either way, the e-way bill the
+/// portal holds for the IRN (<see cref="IInvoiceRegistrationPortal.GetEwayBillAsync"/>) says what happened. A live one
+/// (<c>ACT</c>) is the IRN's e-way bill whatever the request's failure said, since the portal makes one per IRN; an
+/// answer that does not say <c>ACT</c> or <c>CNL</c> confirms nothing.
+/// </summary>
+public static class EwayBillRequests
+{
+    /// <summary>What <paramref name="failure"/> left, given the IRN's e-way bill <paramref name="held"/> asked for afterwards.</summary>
+    public static EwayBillOutcome After(IrpError failure, IrpResult<IrpEwayBill> held) => (failure.Code, held) switch
+    {
+        (_, { IsSuccess: true, Value.IsActive: true }) => EwayBillOutcome.Generated,
+
+        // Unanswered, or refused as already generated: the portal may hold an e-way bill for the IRN.
+        (IrpError.Unreachable or IrpError.EwayBillExists, { IsSuccess: true, Value.IsCancelled: true }) => EwayBillOutcome.Cancelled,
+        (IrpError.Unreachable, { Error.Code: IrpError.EwayBillNotFound }) => EwayBillOutcome.NotGenerated,
+        (IrpError.EwayBillExists, { Error.Code: IrpError.EwayBillNotFound }) => EwayBillOutcome.NotFound,
+        (IrpError.Unreachable or IrpError.EwayBillExists, _) => EwayBillOutcome.Unknown,
+        _ => EwayBillOutcome.Refused,
+    };
+}
+
 /// <summary>The supplier on an e-invoice: the facility, from its master.</summary>
 public sealed record EInvoiceSeller(string? Gstin, string LegalName, Address Address, string? Phone, string? Email);
 

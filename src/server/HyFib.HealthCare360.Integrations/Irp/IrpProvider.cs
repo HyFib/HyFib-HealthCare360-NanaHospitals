@@ -19,6 +19,8 @@ internal interface IIrpProvider
     Task<IrpResult<IrpIrn>> GetByIrnAsync(IrpContext context, string irn, CancellationToken cancellationToken);
 
     Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(IrpContext context, JsonObject request, CancellationToken cancellationToken);
+
+    Task<IrpResult<IrpEwayBill>> GetEwayBillAsync(IrpContext context, string irn, CancellationToken cancellationToken);
 }
 
 /// <summary>Reads the portal's answers (NIC e-invoice API v1.03), whoever passed them on.</summary>
@@ -60,6 +62,24 @@ internal static class IrpAnswers
         return IrpResult<IrpIrn>.Ok(new IrpIrn(irn.ToLowerInvariant(), ack ?? string.Empty, ackDate ?? DateTimeOffset.MinValue,
             Text(data["SignedInvoice"]) ?? string.Empty, qr ?? string.Empty, Number(data["EwbNo"]), Time(data["EwbDt"]), Time(data["EwbValidTill"]),
             string.IsNullOrEmpty(status) ? null : status, Time(data["CancelDate"])));
+    }
+
+    /// <summary>
+    /// An e-way bill as the portal gives it (generated from an IRN, or read back by it), with its <c>Status</c> (<c>ACT</c>
+    /// or <c>CNL</c>) where the answer says. A cancelled one is read for its state even without its date; any other needs it.
+    /// </summary>
+    public static IrpResult<IrpEwayBill> EwayBill(JsonObject data)
+    {
+        var number = Number(data["EwbNo"]);
+        var date = Time(data["EwbDt"]);
+        var status = Text(data["Status"])?.Trim().ToUpperInvariant();
+        if (number is null || (date is null && status != IrpIrn.CancelledStatus))
+        {
+            return IrpResult<IrpEwayBill>.Fail(IrpError.Unreachable, "The portal's answer did not hold the e-way bill's number and date.");
+        }
+
+        return IrpResult<IrpEwayBill>.Ok(new IrpEwayBill(number.Value, date ?? DateTimeOffset.MinValue, Time(data["EwbValidTill"]),
+            string.IsNullOrEmpty(status) ? null : status));
     }
 
     /// <summary>The first error of a refused call, and the IRN the portal already holds for a duplicate (its <c>InfoDtls</c>).</summary>

@@ -229,6 +229,79 @@ public sealed class IrpClientTests : IDisposable
         _tracing.Entries.Count(e => e.Error?.StartsWith(IrpError.Unreachable, StringComparison.Ordinal) == true).ShouldBe(4, "each failed call is in the log");
     }
 
+    /// <remarks>
+    /// The answers are as GSP documentation of the NIC API quotes them (NIC's own pages and sandbox were not reachable):
+    /// the live one from Vayana's "Get EWB Details by IRN", with <c>EwbNo</c> a number; the cancelled one from Logitax's,
+    /// with <c>EwbNo</c> a string and no validity; 4005 with the words of Vayana's not-found sample.
+    /// </remarks>
+    [Fact]
+    public async Task The_portal_gives_an_irns_e_way_bill_back_live_or_cancelled_and_4005_when_it_holds_none()
+    {
+        var irn = new string('a', 64);
+        var live = new JsonObject
+        {
+            ["EwbNo"] = 611009719079,
+            ["Status"] = "ACT",
+            ["GenGstin"] = "24AAAPI3182M002",
+            ["EwbDt"] = "2020-10-26 18:21:00",
+            ["EwbValidTill"] = "2020-10-27 23:59:00",
+        };
+        var cancelled = new JsonObject
+        {
+            ["EwbNo"] = "621009723114",
+            ["EwbDt"] = "2020-12-05 12:56:00",
+            ["EwbValidTill"] = null,
+            ["Status"] = "CNL",
+            ["GenGstin"] = "24AAAPI3182M002",
+        };
+        _http.Respond(HttpStatusCode.OK, """{"Status":1,"Data":{"AuthToken":"gsp-token"}}""")
+            .Respond(HttpStatusCode.OK, new JsonObject { ["Status"] = 1, ["Data"] = live.ToJsonString() }.ToJsonString())
+            .Respond(HttpStatusCode.OK, new JsonObject { ["Status"] = 1, ["Data"] = cancelled.ToJsonString() }.ToJsonString())
+            .Respond(HttpStatusCode.OK, """{"Status":0,"ErrorDetails":[{"ErrorCode":"4005","ErrorMessage":"Eway Bill details are not found"}]}""");
+        var context = Context("gsp");
+        var india = TimeSpan.FromHours(5.5);
+
+        var held = (await Client.GetEwayBillAsync(context, irn, Ct)).Value.ShouldNotBeNull();
+        (held.EwbNo, held.Status, held.IsCancelled).ShouldBe((611009719079L, IrpIrn.ActiveStatus, false));
+        (held.EwbDate, held.ValidTill).ShouldBe((new DateTimeOffset(2020, 10, 26, 18, 21, 0, india), (DateTimeOffset?)new DateTimeOffset(2020, 10, 27, 23, 59, 0, india)));
+        (_http.Requests[^1].Method, _http.Requests[^1].Uri.AbsolutePath, _http.Requests[^1].Body).ShouldBe((HttpMethod.Get, $"/eiewb/v1.03/ewaybill/irn/{irn}", (string?)null));
+
+        var gone = (await Client.GetEwayBillAsync(context, irn, Ct)).Value.ShouldNotBeNull();
+        (gone.EwbNo, gone.IsCancelled, gone.ValidTill).ShouldBe((621009723114L, true, (DateTimeOffset?)null));
+
+        (await Client.GetEwayBillAsync(context, irn, Ct)).Error.ShouldBe(new IrpError(IrpError.EwayBillNotFound, "Eway Bill details are not found"));
+        _tracing.Entries.Count(e => e.Operation == "ewaybill.get").ShouldBe(3, "each read-back is in the integration log");
+    }
+
+    [Fact]
+    public async Task The_simulator_gives_an_irns_e_way_bill_back_once_made_even_when_its_answer_was_lost()
+    {
+        var ledger = new SimulatorIrpLedger();
+        var simulator = new SimulatorIrp(ledger, _tracing.Trace, new TestClock(new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero)));
+        var hospital = SimulatorContext(Gstin);
+        var irn = (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Value!.Irn;
+        var request = new JsonObject { ["Irn"] = irn, ["Distance"] = 450, ["TransMode"] = "1", ["VehNo"] = "KL11AB1234", ["VehType"] = "R" };
+
+        (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Error.ShouldBe(new IrpError(IrpError.EwayBillNotFound, "Eway Bill details are not found"));
+
+        // Generated with its answer lost: the portal holds it, refuses a second, and gives it back to the IRN's GSTIN only.
+        using (ledger.Fail(SimulatorIrpOperations.EwayBill, SimulatorIrpFault.LoseAnswer, irn: irn))
+        {
+            (await simulator.GenerateEwayBillAsync(hospital, request, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        (await simulator.GenerateEwayBillAsync(hospital, request, Ct)).Error!.Code.ShouldBe(IrpError.EwayBillExists);
+        var made = ledger.Entries[irn].Irn;
+        var held = (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Value.ShouldNotBeNull();
+        (held.EwbNo, held.EwbDate, held.ValidTill, held.Status).ShouldBe((made.EwbNo!.Value, made.EwbDate!.Value, made.EwbValidTill, IrpIrn.ActiveStatus));
+        (await simulator.GetEwayBillAsync(SimulatorContext("29AABCN1234F1Z5"), irn, Ct)).IsSuccess.ShouldBeFalse("another GSTIN does not see it");
+
+        using (ledger.Fail(SimulatorIrpOperations.GetEwayBill, SimulatorIrpFault.Down, irn: irn))
+        {
+            (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+    }
+
     [Fact]
     public async Task Missing_credentials_stop_the_call_before_it_is_sent()
     {
