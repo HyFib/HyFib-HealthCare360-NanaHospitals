@@ -126,6 +126,9 @@ public sealed class CreditNoteGstTests(HospitalServer server)
         var waiting = await accountant.GetAsync<EInvoiceDetail>($"{Register}/creditnote/{note.Id}");
         (waiting.Type, waiting.Against).ShouldBe(("CRN", bill.BillNumber));
         waiting.Problems.ShouldContain(p => p.StartsWith($"Invoice {bill.BillNumber} has no IRN yet: record its IRN first", StringComparison.Ordinal));
+        (await billing.GetAsync<PrintableDocumentDto>($"/api/v1/billing/bills/{bill.Id}/credit-notes/{note.Id}/document")).Html.ShouldContain(
+            "<div class=\"einvoice-due keep\">E-invoice pending: this credit note has no IRN yet, which GST rule 48(4) requires.</div>",
+            Case.Sensitive, "until it has an IRN, its print says so where the IRN goes");
         using (var early = await accountant.SendRawAsync(HttpMethod.Get, $"{Register}/creditnote/{note.Id}/json"))
         {
             (await CodeAsync(early)).ShouldBe("einvoice.invalid");
@@ -159,6 +162,7 @@ public sealed class CreditNoteGstTests(HospitalServer server)
         (await BillOfAsync(billing, bill)).CreditNotes.Single().EInvoice.ShouldNotBeNull().Irn.ShouldBe(noteIrn);
         var printed = await billing.GetAsync<PrintableDocumentDto>($"/api/v1/billing/bills/{bill.Id}/credit-notes/{note.Id}/document");
         printed.Html.ShouldContain(noteIrn);
+        printed.Html.ShouldNotContain("class=\"einvoice-due");
         printed.Html.ShouldContain($"Against tax invoice: <b>{bill.BillNumber}</b>");
         printed.Html.ShouldContain($"GSTIN <b>{EInvoicing.KeralaCompany}</b>");
         printed.Html.ShouldContain("<tr><td>IGST credited</td><td class=\"num\">₹18.00</td></tr>");
@@ -226,8 +230,9 @@ public sealed class CreditNoteGstTests(HospitalServer server)
             .Single(v => v.Number == note.Number);
         voucher.Entries.ShouldNotContain(e => e.LedgerName.StartsWith("Output", StringComparison.Ordinal));
         voucher.Entries.Single(e => e.LedgerName == "Sales Returns & Allowances").Amount.ShouldBe(118m);
-        (await billing.GetAsync<PrintableDocumentDto>($"/api/v1/billing/bills/{bill.Id}/credit-notes/{note.Id}/document")).Html
-            .ShouldContain("<b>GST not reduced.</b>");
+        var late = (await billing.GetAsync<PrintableDocumentDto>($"/api/v1/billing/bills/{bill.Id}/credit-notes/{note.Id}/document")).Html;
+        late.ShouldContain("<b>GST not reduced.</b>");
+        late.ShouldNotContain("class=\"einvoice-due", Case.Sensitive, "a note that reduces no GST is not reported to the portal and is due no IRN");
     }
 
     [Fact]

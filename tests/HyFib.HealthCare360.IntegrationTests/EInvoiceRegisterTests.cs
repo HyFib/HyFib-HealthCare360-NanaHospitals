@@ -119,6 +119,57 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_bill_due_an_irn_prints_that_it_is_not_a_valid_tax_invoice_until_its_irn_is_recorded()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
+            $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
+        var company = await server.CreatePayerAsync(admin, new SavePayerRequest(
+            $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
+            null, "4/12 MG Road, Ernakulam, Kochi, Kerala 682016", KeralaCompany, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null,
+            IsActive: true, Notes: null, Version: null));
+        var accounts = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // E-invoicing starts tomorrow: today's bill is not due an IRN, and its print says nothing of one.
+        await using (await EInvoicingAsync(from: Today().AddDays(1)))
+        {
+            var early = await BillAsync(company, service);
+            early.MissingIrn.ShouldBeNull();
+            (await PrintAsync(accounts, early.Id)).ShouldNotContain("class=\"einvoice-due");
+        }
+
+        await using var _ = await EInvoicingAsync(from: Today().AddDays(-1));
+        var bill = await BillAsync(company, service);
+
+        // The portal is not connected, so nothing asks for the IRN: the bill as finalized (which the counter prints at
+        // once) and its A4 print say it is not yet a valid tax invoice for the buyer, where the IRN goes.
+        (await accounts.GetAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}")).PortalConnected.ShouldBeFalse();
+        bill.MissingIrn.ShouldBe(MissingIrn.Pending);
+        var waiting = await PrintAsync(accounts, bill.Id);
+        waiting.ShouldContain($"<div class=\"einvoice-due keep\">{PendingNotice}</div>");
+        waiting.ShouldNotContain("class=\"einvoice-qr\"");
+
+        // Recorded by hand, the IRN prints in the notice's place.
+        var irn = Irn();
+        var recorded = await accounts.PostAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}/irn",
+            new RecordIrnRequest("112610012345680", Qr(bill.BillNumber!, bill.NetAmount, KeralaCompany, irn, bill.Lines.Count)));
+        var registered = await accounts.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}");
+        (registered.EInvoice?.Irn, registered.MissingIrn).ShouldBe((irn, (MissingIrn?)null));
+        var printed = await PrintAsync(accounts, bill.Id);
+        printed.ShouldContain(irn);
+        printed.ShouldContain("class=\"einvoice-qr\"");
+        printed.ShouldNotContain("class=\"einvoice-due");
+
+        // Its IRN cancelled on the portal, it is no valid tax invoice again, and the portal never registers its number again.
+        await accounts.PostAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}/irn/cancel",
+            new CancelIrnRequest(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", recorded.Registration!.Version));
+        (await accounts.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).MissingIrn.ShouldBe(MissingIrn.IrnCancelled);
+        var cancelled = await PrintAsync(accounts, bill.Id);
+        cancelled.ShouldContain("<div class=\"einvoice-due keep\">IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).</div>");
+        cancelled.ShouldNotContain(irn);
+    }
+
+    [Fact]
     public async Task A_pharmacy_b2b_sale_needs_the_buyers_pin_code_and_gets_its_irn_like_a_bill()
     {
         await using var _ = await EInvoicingAsync(from: Today().AddDays(-1));
@@ -137,6 +188,8 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         (await ProblemCodeAsync(refused)).ShouldBe("einvoice.invalid");
 
         var sold = await SellAsync("Sree Clinic, 22 Beach Road, Kozhikode 673001");
+        (await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}")).MissingIrn
+            .ShouldBe(MissingIrn.Pending, "until it has an IRN, the invoice the counter prints says it is not yet valid for the buyer");
         var invoice = (await JsonAsync(pharmacist, $"{Register}/pharmacy/{sold.Id}/json")).AsArray().ShouldHaveSingleItem()!;
         var item = invoice["ItemList"]![0]!;
         (item["IsServc"]!.GetValue<string>(), item["Unit"]!.GetValue<string>()).ShouldBe(("N", "NOS"));
@@ -148,6 +201,7 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
             new RecordIrnRequest("112610087654321", Qr(invoice["DocDtls"]!["No"]!.GetValue<string>(), sold.NetAmount, KeralaCompany, irn, 1)));
         var sale = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}");
         sale.EInvoice.ShouldNotBeNull().Irn.ShouldBe(irn);
+        sale.MissingIrn.ShouldBeNull();
         sale.BuyerAddress.ShouldBe("Sree Clinic, 22 Beach Road, Kozhikode 673001");
         // Asked for by another pharmacist (whoever sold it may not ask), the cancellation is refused while the IRN stands.
         var secondPharmacist = await server.SignInAsync(HospitalServer.Users.SecondPharmacist);
@@ -178,7 +232,13 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
+    private const string PendingNotice = "E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).";
+
     private Task<IAsyncDisposable> EInvoicingAsync(DateOnly? from) => server.EInvoicingAsync(from, Ct);
+
+    /// <summary>The A4 bill as the counter prints it.</summary>
+    private static async Task<string> PrintAsync(ApiClient client, Guid billId) =>
+        (await client.GetAsync<PrintableDocumentDto>($"/api/v1/billing/bills/{billId}/document")).Html;
 
     private static async Task<JsonNode> JsonAsync(ApiClient client, string path)
     {
