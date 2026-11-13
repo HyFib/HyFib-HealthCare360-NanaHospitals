@@ -46,6 +46,9 @@ function report(servers: ServerNodeHealth[] | null): SystemHealthReport {
       httpsPort: 7360,
       portalHttpsPort: 7361,
       mdnsEnabled: false,
+      cables: null,
+      cableLost: false,
+      lastCableDropAt: null,
     },
     database: {
       reachable: true,
@@ -137,6 +140,57 @@ describe('SystemHealthWidget', () => {
     renderWidget();
 
     expect(await screen.findByText('Wired network')).toBeInTheDocument();
+  });
+
+  it('says a cabled server is on its cable, not that its idle WiFi card is disconnected', async () => {
+    const cabled = report(null);
+    readHealth.mockResolvedValue({
+      ...cabled,
+      network: {
+        ...cabled.network,
+        wifi: {
+          interfaceDescription: 'Intel(R) Wi-Fi 6 AX201 160MHz',
+          isConnected: false,
+          ssid: null,
+          bssid: null,
+          signalQuality: 0,
+          rssiDbm: null,
+          receiveRateMbps: null,
+          transmitRateMbps: null,
+          phyType: null,
+          authAlgorithm: null,
+          cipherAlgorithm: null,
+          security: 'Unknown',
+          detailsAvailable: false,
+          note: null,
+        },
+        cables: [
+          {
+            name: 'Ethernet',
+            description: 'Intel(R) Ethernet Connection (17) I219-V',
+            medium: 'Cable',
+            isUp: true,
+            speedMbps: 1000,
+            addresses: ['192.168.1.10'],
+            carriesNetwork: true,
+          },
+        ],
+      },
+    });
+    renderWidget();
+
+    expect(await screen.findByText('Cable · 1 Gbps')).toBeInTheDocument();
+    expect(screen.getByText('Network')).toBeInTheDocument();
+    expect(screen.queryByText('Disconnected')).not.toBeInTheDocument();
+    expect(screen.queryByText('WiFi')).not.toBeInTheDocument();
+  });
+
+  it('says the server lost its network cable', async () => {
+    const lost = report(null);
+    readHealth.mockResolvedValue({ ...lost, network: { ...lost.network, cables: [], cableLost: true } });
+    renderWidget();
+
+    expect(await screen.findByText('Cable disconnected')).toBeInTheDocument();
   });
 
   it('says which of several servers no longer reports, the one that runs the jobs included', async () => {

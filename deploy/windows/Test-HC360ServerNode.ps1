@@ -10,10 +10,10 @@
       - which disk holds Windows (PostgreSQL and HC360's data go there) and whether it is an NVMe SSD, its size, its
         health and wear, and whether there is another disk for backup copies;
       - BitLocker on every fixed disk, and the TPM;
-      - the network adapter in use (Ethernet or WiFi, and the WiFi standard), its profile (Private or Public), its address
-        and MAC address (for the DHCP reservation);
+      - the network adapter in use (a cable and the speed it runs at, or WiFi and its standard), its profile (Private or
+        Public), its address and MAC address (for the DHCP reservation);
       - a UPS reporting over USB, and how often in the last 30 days the machine lost power or was shut down or restarted;
-      - the computer name, the time zone, a restart Windows is waiting for;
+      - the computer name, the time zone, a restart Windows is waiting for, and whether Windows is activated;
       - the ports HC360 needs, other database engines (the current software's data may be on this machine), remote-access
         tools, Microsoft Edge (PDFs), WebView2 and winget.
     Each is graded against docs/deployment/DEPLOYMENT.md (section 1) and the SRS server sizing (section 3.2) for the number
@@ -102,6 +102,49 @@ function Get-PowerHistoryVerdict([int] $PowerLosses, [int] $Shutdowns, [int] $Da
     return 'Pass'
 }
 
+# A cable's speed as Windows gives it ("1 Gbps", "100 Mbps", "2.5 Gbps", or "2,5 Gbps" where a comma is the decimal
+# separator), in Mbps; $null when it cannot be read.
+function Get-LinkSpeedMbps([string] $LinkSpeed) {
+    if ($LinkSpeed -notmatch '^\s*(\d+(?:[.,]\d+)?)\s*([KMG])bps\s*$') { return $null }
+    $number = [double]::Parse($Matches[1].Replace(',', '.'), [System.Globalization.CultureInfo]::InvariantCulture)
+    switch ($Matches[2]) {
+        'K' { return $number / 1000 }
+        'G' { return $number * 1000 }
+    }
+    return $number
+}
+
+# Every workstation's requests reach the server over its cable: 1 Gbps or more passes. 100 Mbps is what a cable with a
+# broken pair, a cable older than Cat5e or a 10/100 switch port gives: it works, slowly once many staff open documents
+# at once. Slower fails. A speed Windows did not give ($null) is Unknown.
+function Get-LinkSpeedVerdict($Mbps) {
+    if ($null -eq $Mbps) { return 'Unknown' }
+    if ($Mbps -ge 1000) { return 'Pass' }
+    if ($Mbps -ge 100) { return 'Warn' }
+    return 'Fail'
+}
+
+# Windows' licence state (SoftwareLicensingProduct.LicenseStatus), in words.
+function Get-LicenseStatusName([int] $Status) {
+    switch ($Status) {
+        0 { return 'Unlicensed' }
+        1 { return 'Activated' }
+        2 { return 'Not activated (first grace period)' }
+        3 { return 'Not activated (grace period after a hardware change)' }
+        4 { return 'Not genuine (grace period)' }
+        5 { return 'Not activated' }
+        6 { return 'Not activated (extended grace period)' }
+    }
+    return "Licence state $Status"
+}
+
+# HC360 runs on a Windows that is not activated, but a hospital's server is to run licensed: a warning, to be cleared
+# before go-live.
+function Get-ActivationVerdict([int] $Status) {
+    if ($Status -eq 1) { return 'Pass' }
+    return 'Warn'
+}
+
 # What to do so that the address workstations reach stays this machine's. Only "Disabled" means a fixed address: when
 # Windows does not say, the address is not called fixed.
 function Get-AddressNote([string] $Dhcp, [string] $IPv4, [string] $MacAddress) {
@@ -188,6 +231,29 @@ Invoke-Section 'Windows' 'Pending restart' {
     $verdict = if ($pending) { 'Warn' } else { 'Pass' }
     $note = if ($pending) { 'Windows is waiting to restart for updates. Install them and restart before installing HC360.' } else { '' }
     Add-Check 'Windows' 'Pending restart' $(if ($pending) { 'Yes' } else { 'No' }) 'No' $verdict $note
+}
+
+Invoke-Section 'Windows' 'Activation' {
+    # Windows' own licences (Windows' application ID, so Office's are left out) that have a key.
+    $licences = @(Get-CimInstance -ClassName SoftwareLicensingProduct -Filter "ApplicationID = '55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL")
+    # An add-on, such as Windows 10's Extended Security Updates, depends on the edition's own licence: that one is read.
+    $editions = @($licences | Where-Object { -not (Get-Value $_ 'LicenseDependsOn') })
+    if ($editions.Count -eq 0) { $editions = $licences }
+    $needed = 'Activated, with the hospital''s licence'
+    if ($editions.Count -eq 0) {
+        Add-Check 'Windows' 'Activation' 'No Windows product key is installed' $needed 'Warn' 'Enter the hospital''s Windows licence: Settings > System > Activation.'
+        return
+    }
+    $licence = @($editions | Sort-Object -Property @{ Expression = { $_.LicenseStatus -ne 1 } } | Select-Object -First 1)[0]
+    $status = [int]$licence.LicenseStatus
+    $channel = Get-Value $licence 'ProductKeyChannel'
+    $facts.Activation = [ordered]@{ Status = Get-LicenseStatusName $status; Edition = $licence.Name; Channel = $channel }
+    $verdict = Get-ActivationVerdict $status
+    $note = if ($verdict -eq 'Pass') { '' } else {
+        'HC360 runs on it, but the hospital''s server is to run licensed Windows: activate it before go-live (Settings > System > Activation). ' +
+        'Activation needs the internet once. A licence built into the machine is for the edition it was sold with: Windows Pro needs a Pro licence.'
+    }
+    Add-Check 'Windows' 'Activation' "$(Get-LicenseStatusName $status): $($licence.Name)$(if ($channel) { ", $channel key" })" $needed $verdict $note
 }
 
 Invoke-Section 'Hardware' 'Processor cores' {
@@ -390,15 +456,25 @@ Invoke-Section 'Network' 'Network connection' {
     $addressed = @($facts.Network | Where-Object { $_.IPv4 })
     $wired = @($addressed | Where-Object { $_.Kind -eq 'Ethernet' })
     $wireless = @($addressed | Where-Object { $_.Kind -eq 'WiFi' })
-    $needed = 'An Ethernet cable to the access point, or WiFi 6 (802.11ax) or later'
+    $needed = 'A network cable to the hospital''s switch at 1 Gbps, or WiFi 6 (802.11ax) or later'
     if ($wired.Count -gt 0) {
-        Add-Check 'Network' 'Network connection' (($wired | ForEach-Object { "Ethernet ($($_.Name), $($_.LinkSpeed))" }) -join '; ') $needed 'Pass'
+        # Graded on the fastest cable: the one Windows sends the workstations' traffic over.
+        $speeds = @($wired | ForEach-Object { Get-LinkSpeedMbps $_.LinkSpeed } | Where-Object { $null -ne $_ })
+        $fastest = if ($speeds.Count -gt 0) { ($speeds | Measure-Object -Maximum).Maximum } else { $null }
+        $verdict = Get-LinkSpeedVerdict $fastest
+        $note = switch ($verdict) {
+            'Warn' { "The cable runs at $fastest Mbps, not 1 Gbps, and every workstation's request passes through it. A cable with a broken pair or older than Cat5e, or a 10/100 switch port, does this: use a Cat5e or Cat6 cable to a gigabit port of the hospital's switch (DEPLOYMENT.md section 1)." }
+            'Fail' { 'The cable runs below 100 Mbps: too slow for the workstations. It is usually a damaged cable or switch port: change the cable, then the port.' }
+            'Unknown' { 'Windows did not give the cable''s speed: read it in Settings > Network & internet > Ethernet (Link speed).' }
+            default { '' }
+        }
+        Add-Check 'Network' 'Network connection' (($wired | ForEach-Object { "Ethernet ($($_.Name), $($_.LinkSpeed))" }) -join '; ') $needed $verdict $note
     }
     elseif ($wireless.Count -gt 0) {
         $standard = if ($radio) { $radio } else { 'standard not read' }
         $strength = if ($null -ne $signal) { ", signal $signal%" } else { '' }
         $modern = $radio -match '^802\.11(ax|be)$'
-        $note = "Every workstation's request passes through this one link. An Ethernet cable to the access point is better (DEPLOYMENT.md section 1)$(if (-not $modern) { '; WiFi 6 (802.11ax) at least' })."
+        $note = "Every workstation's request passes through this one link. A network cable to the hospital's switch is better (DEPLOYMENT.md section 1)$(if (-not $modern) { '; WiFi 6 (802.11ax) at least' })."
         Add-Check 'Network' 'Network connection' "WiFi only ($standard$strength)" $needed 'Warn' $note
     }
     else {

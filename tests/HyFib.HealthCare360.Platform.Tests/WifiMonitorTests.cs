@@ -164,8 +164,8 @@ public sealed class WifiMonitorTests
         lost.Message.ShouldBe(
             "Server Node has no WiFi: the WLAN AutoConfig service is not running. Start it in Services. Workstations cannot reach HC360 over WiFi until then.");
         (detector.LinkLost, detector.AdapterMissing).ShouldBe(
-            (true, lost.Message + " If Server Node now runs on Ethernet on purpose, restart the HC360Server service to clear this warning."),
-            "System health says so while it lasts, and how to clear it on a server wired on purpose");
+            (true, lost.Message + " If Server Node now runs on a network cable on purpose, this warning clears once the cable is connected."),
+            "System health says so while it lasts, and how it clears on a server cabled on purpose");
 
         // Back, and connected.
         detector.Evaluate(null, Link(80), At(4), new NetworkOptions()).Select(e => e.Kind).ShouldBe([Reconnected]);
@@ -273,6 +273,140 @@ public sealed class WifiMonitorTests
         SystemHealthService.WifiWarnings(supported: false, null, null, 40).ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// A server cabled to the hospital LAN with a WiFi adapter beside the cable: workstations reach it over the cable, so
+    /// the WiFi coming and going is not a lost link. It was: a WiFi joined for a while and left raised a critical alert,
+    /// and an SMS to IT on-call, saying workstations could not reach HC360, while they reached it over the cable.
+    /// </summary>
+    [Fact]
+    public void While_a_cable_is_up_a_WiFi_drop_or_a_lost_WiFi_adapter_raises_nothing()
+    {
+        var detector = new WifiEventDetector(onWifiWhenLastRun: true, lastSsid: "Staff");
+
+        OnCable(detector, WifiAdapterAbsence.NoAdapter, Link(80), Down(), Down(), null, null, Link(80)).ShouldBeEmpty();
+        (detector.LinkLost, detector.AdapterMissing).ShouldBe((false, (string?)null), "System health has no WiFi loss to warn of");
+    }
+
+    [Fact]
+    public void While_a_cable_is_up_a_weak_WiFi_signal_raises_nothing_but_the_network_the_WiFi_joins_still_does()
+    {
+        OnCable(new WifiEventDetector(), WifiAdapterAbsence.Unknown, Link(30), Link(30), Link(30), Link(30)).ShouldBeEmpty();
+
+        var open = Link(80) with { Ssid = "Free WiFi", Security = WifiSecurityLevel.Open };
+        OnCable(new WifiEventDetector(), WifiAdapterAbsence.Unknown, open).ShouldHaveSingleItem().Kind.ShouldBe(InsecureNetwork,
+            "the server is on that network all the same, beside the cable");
+    }
+
+    [Fact]
+    public void A_WiFi_loss_already_told_is_over_once_a_cable_is_up()
+    {
+        var detector = new WifiEventDetector();
+        Sample(detector, WifiAdapterAbsence.NoAdapter, Link(80), null).Select(e => e.Kind).ShouldBe([AdapterLost]);
+        detector.AdapterMissing.ShouldNotBeNull();
+
+        // The cable is connected: the warning clears, and the WiFi coming back later is no reconnection to tell.
+        detector.Evaluate(null, null, At(2), new NetworkOptions(), WifiAdapterAbsence.NoAdapter, onCable: true).ShouldBeEmpty();
+        (detector.LinkLost, detector.AdapterMissing).ShouldBe((false, (string?)null));
+        detector.Evaluate(null, Link(80), At(3), new NetworkOptions(), onCable: true).ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A WiFi drop told to the administrators and the on-call number ("workstations cannot reach HC360"), then ended with a
+    /// network cable: its end is told too, once. Before, it ended without a word, since a cable takes the WiFi's place
+    /// silently and the cable had not been lost: whoever was told HC360 could not be reached was never told it can.
+    /// </summary>
+    [Fact]
+    public void A_WiFi_loss_ended_by_a_cable_is_told_over()
+    {
+        var detector = new WifiEventDetector();
+        var cables = new CableEventDetector();
+        List<WifiEvent> Step(WifiConnectionInfo? previous, WifiConnectionInfo? current, int sample, params NetworkLink[] up) =>
+            WifiMonitor.SampleLinks(detector, cables, previous, current, up, At(sample), new NetworkOptions(), () => WifiAdapterAbsence.Unknown);
+
+        Step(null, Link(80), 1).ShouldBeEmpty();
+        Step(Link(80), Down(), 2).Select(e => e.Kind).ShouldBe([Disconnected]);
+        Step(Down(), Down(), 3).ShouldBeEmpty("told once");
+
+        Step(Down(), Down(), 4, Cable(speedMbps: 1000)).Select(e => (e.Kind, e.Message)).ShouldBe([(CableReconnected,
+            "Server Node is back on the network, on a network cable ('Ethernet', 1 Gbps): workstations can reach HC360 again.")]);
+        Step(Down(), Down(), 5, Cable(speedMbps: 1000)).ShouldBeEmpty("its end is told once");
+        detector.LinkLost.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_cable_connected_beside_a_WiFi_that_was_never_lost_is_not_news()
+    {
+        var detector = new WifiEventDetector();
+        var cables = new CableEventDetector();
+
+        WifiMonitor.SampleLinks(detector, cables, null, Link(80), [], At(1), new NetworkOptions(), () => WifiAdapterAbsence.Unknown).ShouldBeEmpty();
+        WifiMonitor.SampleLinks(detector, cables, Link(80), Link(80), [Cable()], At(2), new NetworkOptions(), () => WifiAdapterAbsence.Unknown)
+            .ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// DED-06 on a cabled LAN: the cable the server is on, lost because it is out or its switch is off, is told once with
+    /// what it means, and its return once. Before, nothing watched the cable: a server on a cable that lost it said nothing,
+    /// and System health said "Wired".
+    /// </summary>
+    [Fact]
+    public void The_cable_lost_is_reported_once_however_long_it_stays_out_and_its_return_once()
+    {
+        var detector = new CableEventDetector();
+        var events = CableSamples(detector, null, [Cable()], [Cable()], [], [], [], [Cable(speedMbps: 1000)]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(2)), (CableReconnected, At(5))]);
+        events[0].Message.ShouldBe("Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
+        detector.CableLost.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void The_cable_lost_says_when_the_server_is_still_on_WiFi()
+    {
+        var events = CableSamples(new CableEventDetector(), Link(80), [Cable()], []);
+
+        events.ShouldHaveSingleItem().Message.ShouldBe("Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. It is on WiFi 'Staff' only.");
+    }
+
+    /// <summary>
+    /// A server that starts with no cable up may have started before its switch, after a power cut: a minute later the cable
+    /// is up. Nothing is told for it; System health tells a server with no link at all once that has lasted.
+    /// </summary>
+    [Fact]
+    public void A_server_that_starts_without_a_cable_up_raises_nothing_for_the_cable()
+    {
+        var detector = new CableEventDetector();
+
+        CableSamples(detector, null, [], [], [Cable()]).ShouldBeEmpty();
+        detector.CableLost.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task The_cable_lost_is_logged_and_alerts_the_administrators_in_app_and_the_on_call_number_by_sms()
+    {
+        var events = CableSamples(new CableEventDetector(), null, [Cable()], [], [Cable()]);
+        var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
+
+        await WifiMonitor.AlertAsync(events, audit, notifications, BySms, Server, Ct);
+
+        audit.Entries.Select(e => (e.Category, e.Action, e.Severity)).ShouldBe([
+            (AuditCategories.Admin, "network.cable_disconnected", AuditSeverity.Critical),
+            (AuditCategories.Admin, "network.cable_reconnected", AuditSeverity.Info)]);
+        notifications.InApp.Select(n => (n.Title, n.Severity)).ShouldBe([
+            ("Server network cable: Disconnected", "critical"), ("Server network cable: Connected", "info")]);
+        Rendered(notifications.Queued.ShouldHaveSingleItem()).ShouldBe(
+            "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
+    }
+
+    [Theory]
+    [InlineData(10, "10 Mbps")]
+    [InlineData(100, "100 Mbps")]
+    [InlineData(1000, "1 Gbps")]
+    [InlineData(2500, "2.5 Gbps")]
+    [InlineData(10000, "10 Gbps")]
+    public void A_link_speed_reads_as_people_say_it(long mbps, string said) => CableEventDetector.Speed(mbps).ShouldBe(said);
+
     /// <summary>Feeds the samples, 30 seconds apart, to one detector, as the monitor does, and returns the events raised.</summary>
     private static List<WifiEvent> Sample(params WifiConnectionInfo[] samples) => Sample(new NetworkOptions(), samples);
 
@@ -303,6 +437,36 @@ public sealed class WifiMonitorTests
 
         return events;
     }
+
+    /// <summary>The same with a network cable up at every sample, as on a cabled server with WiFi beside it.</summary>
+    private static List<WifiEvent> OnCable(WifiEventDetector detector, WifiAdapterAbsence absence, params WifiConnectionInfo?[] samples)
+    {
+        var events = new List<WifiEvent>();
+        WifiConnectionInfo? previous = null;
+        for (var i = 0; i < samples.Length; i++)
+        {
+            events.AddRange(detector.Evaluate(previous, samples[i], At(i), new NetworkOptions(), samples[i] is null ? absence : WifiAdapterAbsence.Unknown, onCable: true));
+            previous = samples[i];
+        }
+
+        return events;
+    }
+
+    /// <summary>Feeds the cables up at each sample, 30 seconds apart, to <paramref name="detector"/>, with <paramref name="wifi"/> beside them.</summary>
+    private static List<WifiEvent> CableSamples(CableEventDetector detector, WifiConnectionInfo? wifi, params NetworkLink[][] samples)
+    {
+        var events = new List<WifiEvent>();
+        for (var i = 0; i < samples.Length; i++)
+        {
+            events.AddRange(detector.Evaluate(samples[i], wifi, At(i)));
+        }
+
+        return events;
+    }
+
+    /// <summary>The server's network card with its cable in, as the hospital's i5-12400 has it.</summary>
+    private static NetworkLink Cable(string name = "Ethernet", long? speedMbps = null) =>
+        new(name, "Intel(R) Ethernet Connection (17) I219-V", LinkMedium.Cable, true, speedMbps, ["192.168.1.10"]);
 
     /// <summary>When the <paramref name="sample"/>th sample (from 0) is taken, at the default interval.</summary>
     private static DateTimeOffset At(int sample) => Start + (sample * WifiMonitor.SampleInterval(new NetworkOptions()));

@@ -10,7 +10,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { ArrowClockwiseRegular, ArrowDownloadRegular } from '@fluentui/react-icons';
-import { formatDateTime, formatRelative, formatTime, humanize } from '@hc360/core';
+import { formatDateTime, formatLinkSpeed, formatRelative, formatTime, humanize } from '@hc360/core';
 import { ErrorState, LoadingState, Page, PageHeader, Section } from '@hc360/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
@@ -38,6 +38,7 @@ import {
   SERVER_CERTIFICATE,
   integrationsSummary,
   integrationTone,
+  linkSummary,
   lowDiskSpace,
   runningFor,
   serverRole,
@@ -341,6 +342,7 @@ function ClockRow({ clock }: { clock: ClockCheck | null | undefined }) {
 function ServerCard({ node }: { node: ServerNodeHealth }) {
   const styles = useStyles();
   const wifi = node.network.wifi;
+  const link = linkSummary(node);
   return (
     <Section title={node.server.machineName} description={serverRole(node.server)}>
       <div className={styles.rows}>
@@ -355,11 +357,9 @@ function ServerCard({ node }: { node: ServerNodeHealth }) {
           {formatBytes(node.storage.freeBytes)} of {formatBytes(node.storage.totalBytes)}
         </Row>
         {node.storage.encryption && <EncryptionRow report={node.storage.encryption} />}
-        {wifi && (
-          <Row label="WiFi" tone={wifi.isConnected ? undefined : 'bad'}>
-            {wifi.isConnected
-              ? `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}`
-              : 'Disconnected'}
+        {(wifi || node.network.cables) && (
+          <Row label={link.label} tone={link.tone === 'ok' ? undefined : link.tone}>
+            {link.text}
           </Row>
         )}
         <Row label="Addresses">
@@ -414,6 +414,9 @@ function IntegrationsCard({ h }: { h: SystemHealthReport }) {
 function NetworkCard({ h }: { h: SystemHealthReport }) {
   const styles = useStyles();
   const wifi = h.network.wifi;
+  // On a cabled LAN the cable is the server's link, and a WiFi card beside it is not in use (DED-06).
+  const cables = h.network.cables ?? [];
+  const onCable = cables.length > 0;
   const signalTone = wifi?.detailsAvailable
     ? wifi.signalQuality < 40
       ? 'bad'
@@ -424,20 +427,35 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
   return (
     <Section title="Network">
       <div className={styles.rows}>
+        {cables.map((cable) => (
+          <Row key={cable.name} label="Cable" tone="ok">
+            {cable.name}
+            {cable.speedMbps !== null ? ` · ${formatLinkSpeed(cable.speedMbps)}` : ''}
+          </Row>
+        ))}
+        {h.network.cableLost && (
+          <Row label="Cable" tone={wifi?.isConnected ? 'warn' : 'bad'}>
+            Disconnected
+          </Row>
+        )}
         {!h.network.wifiSupported ? (
           wifiAdapterMissing(h) ? (
             <Row label="WiFi" tone="bad">
               Adapter missing
+            </Row>
+          ) : onCable || h.network.cableLost ? null : h.network.cables ? (
+            <Row label="Connection" tone="bad">
+              Not connected: no cable, and no WiFi
             </Row>
           ) : (
             <Row label="Connection">Wired (no WiFi adapter)</Row>
           )
         ) : wifi ? (
           <>
-            <Row label="WiFi" tone={wifi.isConnected ? 'ok' : 'bad'}>
-              {wifi.isConnected ? (wifi.ssid ?? 'Connected') : 'Disconnected'}
+            <Row label="WiFi" tone={wifi.isConnected ? 'ok' : onCable ? undefined : 'bad'}>
+              {wifi.isConnected ? (wifi.ssid ?? 'Connected') : onCable ? 'Not in use (on the cable)' : 'Disconnected'}
             </Row>
-            {wifi.detailsAvailable ? (
+            {!wifi.isConnected && onCable ? null : wifi.detailsAvailable ? (
               <>
                 <Row label="Signal" tone={signalTone}>
                   {wifi.signalQuality}%{wifi.rssiDbm !== null ? ` (${wifi.rssiDbm} dBm)` : ''}
@@ -464,6 +482,7 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
           {h.network.mdnsEnabled ? 'On (HC360 Desktop finds the server by itself)' : 'Off'}
         </Row>
         {h.network.lastDisconnectAt && <Row label="Last drop">{formatDateTime(h.network.lastDisconnectAt)}</Row>}
+        {h.network.lastCableDropAt && <Row label="Last cable drop">{formatDateTime(h.network.lastCableDropAt)}</Row>}
       </div>
       {h.network.recentEvents.length > 0 && (
         <div className={styles.events} style={{ marginTop: 12 }}>

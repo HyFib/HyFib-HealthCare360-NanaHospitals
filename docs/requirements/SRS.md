@@ -4,11 +4,23 @@
 |---|---|
 | Product | HyFib HealthCare360 (HC360) — Hospital Information & Management System |
 | Customer | Nana Hospitals |
-| Document revision | **2.0 — Windows application on a dedicated WiFi-connected machine** |
+| Document revision | **2.1 — Windows application on a dedicated machine, on the hospital's cabled LAN or its WiFi** |
 | Status | Baseline for implementation |
 | Owner | HyFib Product Engineering |
 
 ---
+
+## Revision 2.1 (12 November 2026) — a cabled LAN
+
+Nana Hospitals told HyFib on 12 November 2026 that the Server Node and every workstation are on the hospital's cabled
+LAN. Revision 2.0 assumed WiFi (A-09). Revision 2.1 keeps every WiFi requirement for a node on WiFi, and makes the
+requirements about a node's link apply to its network cable too:
+* DED-06: the server monitors its network cable as well as its WiFi, and a WiFi card beside a cable that is up is not
+  its link;
+* DED-07: a workstation's connection indicator shows its cable, or its WiFi signal;
+* DED-15: the installer keeps every network card at full power, the cable's as well as the WiFi's;
+* DED-17: the health dashboard shows the server's link: its cable and its speed, or its WiFi;
+* A-09: the Server Node's link is a network cable where the hospital is cabled, otherwise WiFi.
 
 ## 0. Revision 2.0 — what changed and why
 
@@ -131,8 +143,8 @@ All profiles: TPM 2.0 with BitLocker, UPS of at least 30 minutes, and an externa
 | DED-03 | HC360 Desktop shall discover servers automatically (mDNS), fall back to `localhost` (all-in-one) and to a manually configured address, and remember the last good server. | Must |
 | DED-04 | All client-server traffic, including on the LAN, shall use TLS 1.2+ (TLS 1.3 preferred). On first start the server shall generate a private hospital CA and a server certificate whose SANs cover the host name, `<host>.local` and current IPs, unless an administrator supplies a certificate. | Must |
 | DED-05 | Workstations shall enrol with the server once (administrator enrolment code). After that the Desktop app pins the server certificate fingerprint and refuses unknown certificates. | Must |
-| DED-06 | The server shall monitor its own WiFi link (SSID, BSSID, signal quality, receive/transmit rates, authentication type) every 30 seconds, log drops or degraded periods, and alert administrators in-app and by SMS/WhatsApp when the link is lost or signal stays below a threshold. | Must |
-| DED-07 | Workstations shall display a connection indicator (WiFi signal, server reachability, real-time channel state) and a non-blocking banner when connectivity is lost or degraded. | Must |
+| DED-06 | The server shall monitor its own network link every 30 seconds: its network cable (link state and speed) and its WiFi (SSID, BSSID, signal quality, receive/transmit rates, authentication type). It shall log drops or degraded periods, and alert administrators in-app and by SMS/WhatsApp when the link is lost, and when it is back, or the WiFi signal stays below a threshold. While a cable is up, the WiFi is not the server's link: its drops and signal raise no alert. | Must |
+| DED-07 | Workstations shall display a connection indicator (their link: network cable, or WiFi signal; server reachability, real-time channel state) and a non-blocking banner when connectivity is lost or degraded. | Must |
 | DED-08 | Every state-changing request shall carry an idempotency key. The server shall return the original result for a retried key, so a WiFi retry never duplicates a bill, payment, order or dispense. | Must |
 | DED-09 | The client shall retry transient failures with exponential backoff and jitter; real-time channels shall reconnect automatically and refresh stale data on reconnect. | Must |
 | DED-10 | Forms with free text (clinical notes, discharge summaries, incident reports) shall auto-save drafts locally every 5 seconds and restore them after a disconnect or crash; drafts are cleared on sign-out. | Must |
@@ -140,9 +152,9 @@ All profiles: TPM 2.0 with BitLocker, UPS of at least 30 minutes, and an externa
 | DED-12 | Nodes shall warn administrators when connected to open, WEP or WPA-Personal networks, or to a network whose SSID differs from the approved staff SSID list. | Should |
 | DED-13 | The server shall serve the staff UI and Patient Portal itself (no separate web server) and compress responses (Brotli/Gzip) to reduce WiFi airtime. | Must |
 | DED-14 | The installer shall configure Windows Firewall to allow HC360 only on Private/Domain profiles and only on the configured port (default 7360), plus mDNS. | Must |
-| DED-15 | The installer shall disable WiFi adapter power saving and system sleep on the Server Node and set Windows Update active hours so updates do not reboot the node during clinical hours. | Should |
+| DED-15 | The installer shall disable network adapter power saving (cable and WiFi) and system sleep on the Server Node and set Windows Update active hours so updates do not reboot the node during clinical hours. | Should |
 | DED-16 | Automated encrypted database backups shall run nightly (and on demand) to a local path and a secondary target, with retention policy and restore verification. | Must |
-| DED-17 | A health dashboard shall show server uptime, WiFi status, database size and connections, disk space, backup status, outbox backlog, integration status, UPS/battery status (when exposed by Windows), and certificate expiry. | Must |
+| DED-17 | A health dashboard shall show server uptime, network link status (network cable and its speed, or WiFi), database size and connections, disk space, backup status, outbox backlog, integration status, UPS/battery status (when exposed by Windows), and certificate expiry. | Must |
 | DED-18 | The Desktop app shall update itself from the Server Node (signed package) so workstations do not need internet access. | Should |
 | DED-19 | Support an all-in-one installation (Server + Desktop on one machine) for small facilities. | Must |
 | DED-20 | Optional secondary Server Node (warm standby) using PostgreSQL streaming replication, with documented manual failover. | Could |
@@ -413,4 +425,4 @@ Native mobile apps (the Portal is a PWA), full ERP accounting (Tally remains the
 | A-06 | Analysers | HL7 v2.3.1/2.5.1 or ASTM over TCP; serial analysers go through a workstation's Desktop bridge. | Analyser list and protocols. |
 | A-07 | Biometric | ZKTeco-compatible attendance terminals; UIDAI RD-service fingerprint readers at desks. | Device models. |
 | A-08 | AI provider | Anthropic Claude through the API for text structuring; speech-to-text is pluggable (Windows speech on Desktop, or a cloud/on-prem STT). | Data-processing agreement, enable/disable policy. |
-| A-09 | Server connectivity | The Server Node's primary link is WiFi (per this revision). An Ethernet fallback is recommended where cabling exists. | Confirm the WiFi controller/SSID policy allows client-to-server traffic and mDNS. |
+| A-09 | Server connectivity | The Server Node's primary link is a network cable to the hospital's switch where the hospital is cabled, as Nana Hospitals is (revision 2.1); otherwise WiFi. | On a cabled LAN, confirm the server's switch port runs at 1 Gbps and the switches pass client-to-server traffic and mDNS. On WiFi, confirm the WiFi controller/SSID policy allows client-to-server traffic and mDNS. |

@@ -1,3 +1,4 @@
+import { formatLinkSpeed } from '@hc360/core';
 import type { IntegrationHealthSummary, ServerInfo, ServerNodeHealth, SystemHealthReport, ClockCheck } from './api';
 
 export type HealthTone = 'ok' | 'warn' | 'bad';
@@ -139,6 +140,59 @@ export function wifiAdapterMissing(report: Pick<SystemHealthReport, 'server' | '
   return report.warnings.some(
     (w) => w.code === 'wifi.adapter_missing' && (w.server == null || w.server === report.server.machineName),
   );
+}
+
+/**
+ * How a server reaches the network, in one line (DED-06): its network cable while one is up, else its WiFi. A cabled
+ * server's idle WiFi card is not its link, so it is not "Disconnected". `tone` is bad when the server has no link: its
+ * cable lost, its WiFi down or its adapter missing, or no connection at all, as its System health warning says.
+ */
+export function linkSummary(report: Pick<SystemHealthReport, 'server' | 'warnings' | 'network'>): {
+  label: string;
+  text: string;
+  tone: HealthTone;
+} {
+  const { network } = report;
+  const wifi = network.wifi;
+  const mine = (code: string) =>
+    report.warnings.some((w) => w.code === code && (w.server == null || w.server === report.server.machineName));
+  const cable = network.cables?.[0];
+  if (cable) {
+    return {
+      label: 'Network',
+      text: `Cable${cable.speedMbps !== null ? ` · ${formatLinkSpeed(cable.speedMbps)}` : ''}`,
+      tone: 'ok',
+    };
+  }
+  if (network.cableLost) {
+    return {
+      label: 'Network',
+      text: wifi?.isConnected ? `Cable disconnected · on WiFi ${wifi.ssid ?? ''}`.trim() : 'Cable disconnected',
+      tone: wifi?.isConnected ? 'warn' : 'bad',
+    };
+  }
+  if (wifi?.isConnected) {
+    return {
+      label: 'WiFi',
+      text: `${wifi.ssid ?? 'Connected'}${wifi.detailsAvailable ? ` · ${wifi.signalQuality}%` : ''}`,
+      tone: 'ok',
+    };
+  }
+  if (wifiAdapterMissing(report)) {
+    return { label: 'WiFi', text: 'Adapter missing', tone: 'bad' };
+  }
+  if (mine('network.down')) {
+    return { label: 'Network', text: 'Not connected', tone: 'bad' };
+  }
+  if (network.wifiSupported) {
+    return { label: 'WiFi', text: 'Disconnected', tone: 'bad' };
+  }
+  if (network.cables) {
+    // The cables were read and none is up, and there is no WiFi on this machine: it has no link at all.
+    return { label: 'Network', text: 'Not connected', tone: 'bad' };
+  }
+  // The link monitor is off, so no cable was read: as before, a server with no WiFi adapter is taken to be wired.
+  return { label: 'Network', text: 'Wired network', tone: 'ok' };
 }
 
 /** Less than a tenth of the data drive is free, as the server warns. */

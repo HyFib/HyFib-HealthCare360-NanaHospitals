@@ -1,15 +1,17 @@
 ﻿<#
 .SYNOPSIS
     Checks Install-HC360Server.ps1's power settings for the always-on Server Node (SRS DED-15): no sleep, hibernation,
-    disk spin-down or WiFi power saving, on mains (AC) and on a USB UPS's battery (DC) in a power cut. CI runs it in
-    Windows PowerShell 5.1 and in PowerShell 7, the two the installer runs in.
+    disk spin-down or WiFi power saving, on mains (AC) and on a USB UPS's battery (DC) in a power cut, and no network
+    card, a cable's or a WiFi's, powered down to save power. CI runs it in Windows PowerShell 5.1 and in PowerShell 7,
+    the two the installer runs in.
 
 .DESCRIPTION
     Takes Set-AlwaysOnPower from the installer (running it would install HC360) and runs it with a powercfg that only
     records what it is asked, so the machine's own power plan is left alone and no administrator rights are needed. It
     checks every timeout and the WiFi adapter's power saving for both AC and DC, that the critical-battery action is left
     alone, that a setting Windows refuses is reported without stopping the others, and that the installer makes its
-    power settings through the function. Exit code 1 when a check fails.
+    power settings through the function. It takes Set-AdapterAlwaysOn too, and runs it on cards of its own with stand-ins
+    for the NetAdapter cmdlets, which take only the parameters Windows' do. Exit code 1 when a check fails.
 #>
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -25,6 +27,9 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [re
 $definitions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Set-AlwaysOnPower' }, $true))
 if ($definitions.Count -ne 1) { throw 'Install-HC360Server.ps1 no longer defines Set-AlwaysOnPower.' }
 . ([scriptblock]::Create($definitions[0].Extent.Text))
+$adapterDefinitions = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Set-AdapterAlwaysOn' }, $true))
+if ($adapterDefinitions.Count -ne 1) { throw 'Install-HC360Server.ps1 no longer defines Set-AdapterAlwaysOn.' }
+. ([scriptblock]::Create($adapterDefinitions[0].Extent.Text))
 
 # The Wireless Adapter Settings subgroup and its Power Saving Mode setting, in the active plan.
 $wifi = 'SCHEME_CURRENT 19cbb8fa-5279-450e-9fac-8a3d5fedd0c1 12bbebe6-58d6-4636-95bb-3217ef867c1a'
@@ -61,6 +66,75 @@ $outside = @($commands | Where-Object { $_.Extent.StartOffset -lt $definition.St
 Assert (@($outside | Where-Object { $_.GetCommandName() -eq 'Set-AlwaysOnPower' }).Count -eq 1) 'it runs Set-AlwaysOnPower once'
 $stray = @($outside | Where-Object { $_.GetCommandName() -match '^powercfg(\.exe)?$' })
 Assert ($stray.Count -eq 0) "it runs powercfg nowhere else, where it would not be tested (found: $($stray -join '; '))"
+
+# Stand-ins for the NetAdapter cmdlets, with only the parameters Windows' take: Set-NetAdapterPowerManagement has no
+# -AllowComputerToTurnOffDevice, so a call with it fails here as it does on Windows.
+function Get-NetAdapterPowerManagement {
+    [CmdletBinding()] param([string] $Name)
+    if (-not $script:power.ContainsKey($Name)) { throw "No network adapter named '$Name'." }
+    $script:power[$Name]
+}
+function Set-NetAdapterPowerManagement {
+    [CmdletBinding()] param([string[]] $Name, [Parameter(ValueFromPipeline = $true)] $InputObject, [switch] $NoRestart, [string] $ArpOffload,
+        [string] $D0PacketCoalescing, [string] $DeviceSleepOnDisconnect, [string] $NSOffload, [string] $RsnRekeyOffload, [string] $SelectiveSuspend,
+        [string] $WakeOnMagicPacket, [string] $WakeOnPattern)
+    process {
+        # By -Name, only the settings given as parameters change; given back, the card's settings as they were changed.
+        $card = if ($InputObject) { $InputObject.Name } else { $Name[0] }
+        if ($script:refuse -contains $card) { throw "Windows refused the setting for '$card'." }
+        $allow = if ($InputObject) { $InputObject.AllowComputerToTurnOffDevice } else { $script:power[$card].AllowComputerToTurnOffDevice }
+        $script:given.Add([pscustomobject]@{ Name = $card; Allow = $allow; NoRestart = [bool]$NoRestart })
+    }
+}
+function New-Card([string] $Name, [string] $Description, [int] $Medium, [string] $Allow = 'Enabled') {
+    $script:power[$Name] = [pscustomobject]@{ Name = $Name; AllowComputerToTurnOffDevice = $Allow }
+    [pscustomobject]@{ Name = $Name; InterfaceDescription = $Description; NdisPhysicalMedium = $Medium }
+}
+function Find-Given([string] $Name) { @($script:given | Where-Object { $_.Name -eq $Name }) }
+
+Write-Host 'No network card the workstations reach the server through is powered down: the cable''s, as at Nana Hospitals, as well as the WiFi''s'
+$script:power = @{}
+$script:refuse = @()
+$script:given = New-Object System.Collections.Generic.List[object]
+$cards = @(
+    (New-Card 'Ethernet' 'Intel(R) Ethernet Connection (17) I219-V' 14),
+    (New-Card 'Wi-Fi' 'Intel(R) Wi-Fi 6 AX201 160MHz' 9),
+    (New-Card 'Wi-Fi 2' 'Realtek RTL8821CE 802.11ac PCIe Adapter' 0),
+    (New-Card 'Bluetooth Network Connection' 'Bluetooth Device (Personal Area Network)' 10))
+$said = @(Set-AdapterAlwaysOn $cards 3>&1 6>&1)
+$warned = @($said | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+Assert ($warned.Count -eq 0) "Windows takes every change (warnings: $($warned -join '; '))"
+Assert (@(Find-Given 'Ethernet').Count -eq 1 -and @(Find-Given 'Ethernet')[0].Allow -eq 'Disabled') 'the network cable''s card is never powered down to save power'
+Assert (@(Find-Given 'Wi-Fi').Count -eq 1 -and @(Find-Given 'Wi-Fi')[0].Allow -eq 'Disabled') 'nor the WiFi card'
+Assert (@(Find-Given 'Wi-Fi 2').Count -eq 1) 'a WiFi card known by its name only, as Windows sometimes reports it'
+Assert (@(Find-Given 'Bluetooth Network Connection').Count -eq 0) 'a Bluetooth card is left alone'
+Assert (@($script:given | Where-Object { -not $_.NoRestart }).Count -eq 0) 'no card is restarted, so a remote session over it does not drop'
+Assert (@($said | Where-Object { "$_" -match 'from the next restart of Windows' }).Count -eq 3) 'and the installer says the setting applies from the next restart'
+
+Write-Host 'A card already set, or without power saving, is left as it is; one Windows refuses is reported, and the others are still set'
+$script:power = @{}
+$script:given.Clear()
+$script:refuse = @('Ethernet')
+$cards = @(
+    (New-Card 'Ethernet' 'Realtek PCIe GbE Family Controller' 14),
+    (New-Card 'Ethernet 2' 'Intel(R) Ethernet Connection I219-LM' 14 'Disabled'),
+    (New-Card 'Ethernet 3' 'ASIX AX88179 USB 3.0 to Gigabit Ethernet Adapter' 14 'Unsupported'),
+    (New-Card 'Wi-Fi' 'Intel(R) Wi-Fi 6 AX201 160MHz' 9))
+$said = @(Set-AdapterAlwaysOn $cards 3>&1 6>&1)
+$warned = @($said | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+Assert ($warned.Count -eq 1 -and "$($warned[0])" -match "'Ethernet'.*refused") "one warning names the card Windows refused (found: $($warned -join '; '))"
+Assert (@(Find-Given 'Ethernet 2').Count -eq 0 -and @(Find-Given 'Ethernet 3').Count -eq 0) 'a card already never powered down, or without power saving, is not changed'
+Assert (@(Find-Given 'Wi-Fi').Count -eq 1) 'the card after the refused one is still set'
+$script:refuse = @()
+
+Write-Host 'The installer keeps its network cards on through Set-AdapterAlwaysOn'
+$adapterDefinition = $adapterDefinitions[0].Extent
+$outsideAdapters = @($commands | Where-Object { $_.Extent.StartOffset -lt $adapterDefinition.StartOffset -or $_.Extent.EndOffset -gt $adapterDefinition.EndOffset })
+Assert (@($outsideAdapters | Where-Object { $_.GetCommandName() -eq 'Set-AdapterAlwaysOn' }).Count -eq 1) 'it runs Set-AdapterAlwaysOn once'
+$strayCards = @($outsideAdapters | Where-Object { $_.GetCommandName() -eq 'Set-NetAdapterPowerManagement' })
+Assert ($strayCards.Count -eq 0) "it sets no card's power management elsewhere, where it would not be tested (found: $($strayCards -join '; '))"
+$missing = @($commands | Where-Object { $_.GetCommandName() -eq 'Set-NetAdapterPowerManagement' -and $_.Extent.Text -match '-AllowComputerToTurnOffDevice' })
+Assert ($missing.Count -eq 0) "it never passes -AllowComputerToTurnOffDevice, which Windows' Set-NetAdapterPowerManagement does not have (found: $($missing -join '; '))"
 
 if ($script:failures -gt 0) {
     Write-Host "$($script:failures) check(s) failed." -ForegroundColor Red

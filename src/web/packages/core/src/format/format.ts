@@ -99,6 +99,11 @@ export function formatRelative(iso: string | null | undefined, now = Date.now())
   return formatDate(iso);
 }
 
+/** A network link's speed as people say it: "100 Mbps", "1 Gbps", "2.5 Gbps". */
+export function formatLinkSpeed(mbps: number): string {
+  return mbps >= 1000 ? `${Math.round(mbps / 100) / 10} Gbps` : `${mbps} Mbps`;
+}
+
 /** "34Y 2M" / "5M 12D" / "9D" — the compact age used on banners and prints. */
 export function formatAge(dateOfBirth: string | null | undefined, asOf: Date = new Date()): string {
   if (!dateOfBirth) {

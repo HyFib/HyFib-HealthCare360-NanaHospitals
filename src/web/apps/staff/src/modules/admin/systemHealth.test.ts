@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { IntegrationHealthSummary, ServerNodeHealth, SystemHealthReport } from './api';
+import type {
+  IntegrationHealthSummary,
+  NetworkLink,
+  ServerNodeHealth,
+  SystemHealthReport,
+  WifiConnectionInfo,
+} from './api';
 import {
   clockText,
   expiryTone,
@@ -7,6 +13,7 @@ import {
   SERVER_CERTIFICATE,
   integrationsSummary,
   integrationTone,
+  linkSummary,
   lowDiskSpace,
   runningFor,
   runsJobs,
@@ -133,6 +140,9 @@ function server(machineName: string, role: string, reporting = true): ServerNode
       httpsPort: 7360,
       portalHttpsPort: 7361,
       mdnsEnabled: false,
+      cables: null,
+      cableLost: false,
+      lastCableDropAt: null,
     },
     storage: { dataDirectory: 'C:\\data', freeBytes: 1, totalBytes: 2, encryption: null },
     certificate: { caFingerprint: null, serverExpiresAt: null, subjectAlternativeNames: [], caExpiresAt: null },
@@ -238,5 +248,105 @@ describe('wifiAdapterMissing', () => {
     expect(wifiAdapterMissing(report([warning('HC360-SRV')]))).toBe(true);
     expect(wifiAdapterMissing(report([warning('HC360-JOBS')]))).toBe(false);
     expect(wifiAdapterMissing(report([]))).toBe(false);
+  });
+});
+
+// SRS DED-06 on a cabled LAN, as at Nana Hospitals: the server's link is its network cable, and a WiFi card beside it is
+// not in use. A cabled server's idle WiFi card was a red "WiFi: Disconnected" on the home screen for as long as it ran.
+describe('linkSummary', () => {
+  const cable = (speedMbps: number | null = 1000): NetworkLink => ({
+    name: 'Ethernet',
+    description: 'Intel(R) Ethernet Connection (17) I219-V',
+    medium: 'Cable',
+    isUp: true,
+    speedMbps,
+    addresses: ['192.168.1.10'],
+    carriesNetwork: true,
+  });
+  const wifi = (isConnected: boolean): WifiConnectionInfo => ({
+    interfaceDescription: 'Intel(R) Wi-Fi 6 AX201 160MHz',
+    isConnected,
+    ssid: isConnected ? 'Staff' : null,
+    bssid: null,
+    signalQuality: isConnected ? 82 : 0,
+    rssiDbm: null,
+    receiveRateMbps: null,
+    transmitRateMbps: null,
+    phyType: null,
+    authAlgorithm: null,
+    cipherAlgorithm: null,
+    security: isConnected ? 'Enterprise' : 'Unknown',
+    detailsAvailable: isConnected,
+    note: null,
+  });
+  const warning = (code: string, server: string | null = null) => ({
+    code,
+    severity: 'critical',
+    message: code,
+    server,
+  });
+  const link = (network: Partial<SystemHealthReport['network']>, warnings: ReturnType<typeof warning>[] = []) => {
+    const node = server('HC360-SRV', 'all');
+    return linkSummary({ server: node.server, warnings, network: { ...node.network, ...network } });
+  };
+
+  it('is the cable while one is up, whatever the WiFi card beside it is doing', () => {
+    expect(link({ cables: [cable()], wifiSupported: true, wifi: wifi(false) })).toEqual({
+      label: 'Network',
+      text: 'Cable · 1 Gbps',
+      tone: 'ok',
+    });
+    expect(link({ cables: [cable()], wifiSupported: true, wifi: wifi(true) }).text).toBe('Cable · 1 Gbps');
+    expect(link({ cables: [cable(100)] }).text).toBe('Cable · 100 Mbps');
+    expect(link({ cables: [cable(null)] }).text, 'a speed the card does not report is left out').toBe('Cable');
+  });
+
+  it('says the cable is lost: bad with no WiFi to fall back on, a warning while the server is on WiFi', () => {
+    expect(link({ cables: [], cableLost: true, wifiSupported: true, wifi: wifi(false) })).toEqual({
+      label: 'Network',
+      text: 'Cable disconnected',
+      tone: 'bad',
+    });
+    expect(link({ cables: [], cableLost: true, wifiSupported: true, wifi: wifi(true) })).toEqual({
+      label: 'Network',
+      text: 'Cable disconnected · on WiFi Staff',
+      tone: 'warn',
+    });
+  });
+
+  it('says a server with no cable and no WiFi is not connected, not that it is wired', () => {
+    // As when it started with its cable out: the server warns network.down.
+    expect(link({ cables: [] }, [warning('network.down')])).toEqual({
+      label: 'Network',
+      text: 'Not connected',
+      tone: 'bad',
+    });
+    expect(link({ cables: [], wifiSupported: true, wifi: wifi(false) }, [warning('network.down')]).text).toBe(
+      'Not connected',
+    );
+    // The cables read and none up is no link, even without the warning (another server's is not this one's).
+    expect(link({ cables: [] }, [warning('network.down', 'HC360-JOBS')]).text).toBe('Not connected');
+  });
+
+  it('is the WiFi on a server that has no cable up, as before', () => {
+    expect(link({ cables: [], wifiSupported: true, wifi: wifi(true) })).toEqual({
+      label: 'WiFi',
+      text: 'Staff · 82%',
+      tone: 'ok',
+    });
+    expect(link({ cables: [], wifiSupported: true, wifi: wifi(false) })).toEqual({
+      label: 'WiFi',
+      text: 'Disconnected',
+      tone: 'bad',
+    });
+    expect(link({ cables: [] }, [warning('wifi.adapter_missing')])).toEqual({
+      label: 'WiFi',
+      text: 'Adapter missing',
+      tone: 'bad',
+    });
+  });
+
+  it('takes a server with no WiFi adapter to be wired while the link monitor is off and no cable was read', () => {
+    expect(link({ cables: null })).toEqual({ label: 'Network', text: 'Wired network', tone: 'ok' });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { NetworkStatus } from '../bridge/bridge';
-import { connectionHealth, weakWifiSignal } from './connection';
+import { connectionHealth, onCable, weakWifiSignal } from './connection';
 
 const wifi = (signalQuality: number | null, detailsAvailable = true): NetworkStatus => ({
   wifiConnected: true,
@@ -40,5 +40,29 @@ describe('weakWifiSignal', () => {
     expect(weakWifiSignal({ wifi: wifi(28, false) })).toBeNull();
     expect(weakWifiSignal({ wifi: wifi(null) })).toBeNull();
     expect(weakWifiSignal({ wifi: null })).toBeNull();
+  });
+});
+
+// DED-07 on a cabled LAN, as at Nana Hospitals: a workstation's cable is its link. A cabled laptop whose WiFi was also
+// on, weakly, was "Connection is weak" and told its WiFi signal was weak, while HC360 went over its cable.
+describe('on a network cable', () => {
+  const cabled = (signalQuality: number | null): NetworkStatus => ({
+    ...wifi(signalQuality),
+    wired: true,
+    cableSpeedMbps: 1000,
+  });
+
+  it('is told by HC360 Desktop; one that does not say is not taken to be on a cable', () => {
+    expect(onCable({ wifi: cabled(80) })).toBe(true);
+    expect(onCable({ wifi: { ...wifi(80), wired: false } })).toBe(false);
+    expect(onCable({ wifi: wifi(80) })).toBe(false);
+    expect(onCable({ wifi: null })).toBe(false);
+  });
+
+  it('a weak WiFi signal beside the cable is not a weak connection', () => {
+    expect(weakWifiSignal({ wifi: cabled(28) })).toBeNull();
+    expect(connectionHealth({ ...healthy, wifi: cabled(28) })).toBe('good');
+    expect(connectionHealth({ ...healthy, wifi: cabled(28), realtime: 'disconnected' })).toBe('degraded');
+    expect(connectionHealth({ ...healthy, wifi: cabled(28), serverReachable: false })).toBe('offline');
   });
 });

@@ -1,11 +1,11 @@
 # Deploying HyFib HealthCare360 at a hospital
 
-HC360 runs on **one dedicated Windows machine (the Server Node)** connected to the hospital WiFi. Everything else is a
-client: **HC360 Desktop** on workstations, kiosks and waiting-area TVs, and a browser on tablets. Nothing needs the
+HC360 runs on **one dedicated Windows machine (the Server Node)** on the hospital network: by a network cable to the
+hospital's switch, as at Nana Hospitals, Theni, or by WiFi. Everything else is a client: **HC360 Desktop** on workstations, kiosks and waiting-area TVs, and a browser on tablets. Nothing needs the
 internet to work; SMS/WhatsApp, payment gateways, ABDM and the AI assistant use it when available.
 
 ```
-  Hospital WiFi (WPA2/WPA3-Enterprise, one SSID for clinical devices)
+  Hospital network: cabled LAN (switches) and/or WiFi (WPA2/WPA3-Enterprise, one SSID for clinical devices)
   ┌─────────────────────────────────────────────────────────────────────────────┐
   │  Server Node (Windows 11 Pro / Server 2022+)                                │
   │   ├─ HC360Server service  :7360 HTTPS (staff app and API)                   │
@@ -56,29 +56,52 @@ window of step 4, as Administrator:
 
 It changes nothing. It reads what Settings › About does not show and grades each item against this section and the SRS
 server sizing for that many users: which disk Windows is on and whether it is an NVMe SSD, a second disk for backup
-copies, BitLocker and the TPM, the network adapter and profile, a UPS on USB, power cuts and shutdowns in the last 30
-days, the ports HC360 needs, other database engines and remote-access tools. It writes a JSON report with no patient
+copies, BitLocker and the TPM, the network adapter (a cable and the speed it runs at, or WiFi) and profile, a UPS on
+USB, power cuts and shutdowns in the last 30 days, the ports HC360 needs, other database engines, remote-access tools,
+and whether Windows is activated. It writes a JSON report with no patient
 data in it, and exits with code 1 if a check failed. [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md) shows how to
 use the report for one hospital.
 
 **Server hardware** (up to about 250 concurrent users):
 - 8-core CPU, 32 GB RAM.
 - 1 TB NVMe SSD, plus a second disk or NAS share for backup copies.
-- WiFi 6 adapter; an Ethernet cable to the access point is better still.
+- A network cable to a gigabit port of the hospital's switch (Cat5e or Cat6), running at 1 Gbps. A server on WiFi
+  alone needs a WiFi 6 adapter: every workstation's request passes through that one link.
 - A UPS with a USB connection, so HC360 can see power cuts (Administration › System health).
 - Before go-live, a load test on the same hardware shows it meets the SRS response times with the hospital's number of
   users: install a test server there first and follow [docs/testing/LOAD-TESTS.md](../testing/LOAD-TESTS.md).
 - Windows with BitLocker (Pro, Enterprise or Server), turned on with the TPM for every fixed disk before HC360 holds
   patient data. The keys that open HC360's stored data are on the same machine (SRS SEC-05).
+- Windows activated with the hospital's licence. HC360 runs without it, but a hospital's server is to run licensed
+  Windows: the preflight warns until it is (Settings › System › Activation, which needs the internet once).
 
 **Network checklist**:
 - The server gets a **DHCP reservation** (fixed IP) and keeps a fixed computer name, e.g. `HC360-SRV`.
-- **Client isolation must be off** on the clinical SSID. Many access points turn it on by default, and it blocks
-  workstations from reaching the server.
-- Multicast DNS (UDP 5353) should pass between access points so HC360 Desktop can find the server automatically.
-  If it can't, staff type the server name once, or IT pre-configures it (step 5).
 - The network profile on the server must be **Private**; the installer warns if it is Public.
 - Guest / patient WiFi must not be able to reach the server.
+- Multicast DNS (UDP 5353) should pass between the hospital's switches and access points so HC360 Desktop can find the
+  server automatically. If it can't, staff type the server name once, or IT pre-configures it (step 5).
+
+On a **cabled LAN**, where the server and the workstations are on network cables:
+- The server's cable goes to a **gigabit port** of the switch, by a Cat5e or Cat6 cable. The preflight passes 1 Gbps
+  and warns at 100 Mbps, which a cable with a broken pair or older than Cat5e, or a 10/100 switch port, gives.
+- The **switch the server is on, and those between it and the wards, are on a UPS** too: a server kept running on its
+  UPS reaches nobody once its switch is off.
+- A managed switch with IGMP snooping on and no IGMP querier can drop mDNS: turn on the querier, or let mDNS through.
+- System health watches the server's cable: a cable pulled or its switch turned off is told at once to the
+  administrators and the on-call number (`alerts.oncallPhone`), and so is its return. If **Last cable drop** in System
+  health keeps coming back, change the cable, then the switch port. If it still drops, turn off **Energy-Efficient
+  Ethernet** in the network card's Advanced settings (Device Manager): some switches drop the link with it. The
+  installer leaves the card's driver settings alone.
+- A server with two network cards on cables (one on an imaging network, say) is told when no cable is up. One of them
+  lost while the other is up is not told: on such a server, the cable-pull drill below is done on each cable, watching
+  its card's lights and Administration › System health.
+- Before go-live, from each workstation: `Test-NetConnection HC360-SRV -Port 7360` must end with
+  `TcpTestSucceeded : True`.
+
+On **WiFi**:
+- **Client isolation must be off** on the clinical SSID. Many access points turn it on by default, and it blocks
+  workstations from reaching the server.
 
 **Microsoft Edge on the server.** Reports, prescriptions, discharge summaries, bills and MIS reports are made into PDFs
 on the server by headless Microsoft Edge, so that the copy downloaded or sent to the patient is the same as the printed
@@ -142,6 +165,10 @@ The installer:
   mains and on the UPS's battery: in a power cut Windows switches to its battery settings, just when the UPS is keeping
   the hospital running. What Windows does when the battery is nearly empty is left as it is, so the server can still
   shut down cleanly before the UPS runs out, which protects the database.
+- Has Windows never turn off a network card, the cable's or the WiFi's, to save power. It does not restart the cards,
+  so a remote session over them stays up: the setting applies from the next restart. Restart the server once after the
+  first installation, which also shows HC360 starting with Windows. `Get-NetAdapterPowerManagement` then shows
+  `AllowComputerToTurnOffDevice : Disabled` for each card.
 - Sets Windows Update's active hours to 06:00–23:00, so updates restart the server only overnight. Choose other hours
   with `-UpdateActiveHoursStart` and `-UpdateActiveHoursEnd` (at most 18 apart, as Windows allows); an upgrade keeps
   the hours set before.
@@ -461,12 +488,13 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    active: System health warns when fewer remain.
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
-   WiFi drops, its WiFi adapter disappears, it starts without the WiFi it had when it last ran, its signal stays weak for
-   a minute or its network is not secure), and who a critical alert nobody acknowledges goes to next:
+   network cable is pulled or its switch goes off and when it is back, its WiFi drops, its WiFi adapter disappears, it
+   starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure),
+   and who a critical alert nobody acknowledges goes to next:
    `alerts.escalationPhone` (a second contact, such as the IT head) and `alerts.supportPhone` (HyFib support's number).
    Set up the heartbeat outside the hospital as "Alerts that reach someone" below says.
-   System health warns while the adapter is missing; on a server moved to Ethernet on purpose, restart the
-   `HC360Server` service to clear the warning.
+   System health warns while the adapter is missing; on a server moved to a network cable on purpose, the warning
+   clears once the cable is connected.
    Set `alerts.oncallWhatsApp` to `true` to have those alerts on WhatsApp too, once the hospital's WhatsApp provider
    has approved the `system_alert` template. A failed backup is told to the administrators in the app, not by SMS.
    Set `privacy.noticeVersion` to the version of the privacy notice the desk hands out (default `1`), and change it
@@ -565,7 +593,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    hand may not): a folder it cannot read counts as an empty one, and System health says why
    (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
    in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
-10. **Administration › System health**: everything should be green, and the WiFi signal above 60%. It also shows each
+10. **Administration › System health**: everything should be green: the server on its cable at 1 Gbps, or on WiFi with
+   its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health and the on-call phone must
+   say the cable is lost, and that it is back once it is in again. It also shows each
    integration set up in step 7 as Administration › Integrations does, and when the hospital CA and the server
    certificate expire. Run an alert drill there, and keep its timings with the go-live record ("Alerts that reach
    someone").
@@ -701,7 +731,8 @@ On first start HC360 Desktop:
 - asks for the enrolment code;
 - names the computer (e.g. "OPD Reception 2").
 
-Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the WiFi and shows the fingerprint for staff to compare.
+Without `-ServerUrl` / `-CaFingerprint`, it finds the server on the hospital network and shows the fingerprint for staff
+to compare.
 On an all-in-one machine (server and Desktop on one computer), setup also lists "This computer" when the server
 listens on port 7360 there, because the network search does not always find the computer it runs on.
 
@@ -1617,9 +1648,10 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 
 | Symptom | Check |
 |---|---|
-| "Cannot reach the HealthCare360 server" on workstations | Server switched on? WiFi connected? System health on the server; client isolation on the AP. After three tries the details line says HC360 is looking for the server at its other addresses; if the server's address changed and HC360 does not find it, use Change server… |
+| "Cannot reach the HealthCare360 server" on workstations | Server switched on? Its network cable in and its switch on, or its WiFi connected? System health on the server; client isolation on the AP. A workstation on a cable that is in says the server or the hospital network may be down: from it, `Test-NetConnection HC360-SRV -Port 7360`. After three tries the details line says HC360 is looking for the server at its other addresses; if the server's address changed and HC360 does not find it, use Change server… |
 | "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
-| Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal; Administration › System health shows the server's |
+| Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal (a workstation on a cable shows —); Administration › System health shows the server's link: on a cable, its speed (1 Gbps), else its WiFi signal. On a cabled ward, the ward's switch and its uplink |
+| "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Is the server's cable in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
