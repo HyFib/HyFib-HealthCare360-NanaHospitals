@@ -158,11 +158,20 @@ export function linkSummary(report: Pick<SystemHealthReport, 'server' | 'warning
     report.warnings.some((w) => w.code === code && (w.server == null || w.server === report.server.machineName));
   const cable = network.cables?.[0];
   if (cable) {
-    return {
-      label: 'Network',
-      text: `Cable${cable.speedMbps !== null ? ` · ${formatLinkSpeed(cable.speedMbps)}` : ''}`,
-      tone: 'ok',
-    };
+    // A server with two cards: a cable lost beside the one still up is named, bad if the workstations reached HC360 over it.
+    const lost = network.lostCables ?? [];
+    const theirs = lost.find((l) => l.servedWorkstations);
+    if (theirs) {
+      return { label: 'Network', text: `Cable '${theirs.name}' disconnected`, tone: 'bad' };
+    }
+    const speed = cable.speedMbps !== null ? ` · ${formatLinkSpeed(cable.speedMbps)}` : '';
+    return lost.length > 0
+      ? {
+          label: 'Network',
+          text: `Cable${speed} · ${lost.map((l) => `'${l.name}'`).join(', ')} disconnected`,
+          tone: 'warn',
+        }
+      : { label: 'Network', text: `Cable${speed}`, tone: 'ok' };
   }
   if (network.cableLost) {
     return {

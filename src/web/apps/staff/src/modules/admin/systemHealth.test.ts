@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   IntegrationHealthSummary,
+  LostCable,
   NetworkLink,
   ServerNodeHealth,
   SystemHealthReport,
@@ -143,6 +144,7 @@ function server(machineName: string, role: string, reporting = true): ServerNode
       cables: null,
       cableLost: false,
       lastCableDropAt: null,
+      lostCables: null,
     },
     storage: { dataDirectory: 'C:\\data', freeBytes: 1, totalBytes: 2, encryption: null },
     certificate: { caFingerprint: null, serverExpiresAt: null, subjectAlternativeNames: [], caExpiresAt: null },
@@ -343,6 +345,28 @@ describe('linkSummary', () => {
       label: 'WiFi',
       text: 'Adapter missing',
       tone: 'bad',
+    });
+  });
+
+  // A server with two cards, the hospital LAN and an imaging network: each lost cable is named, beside the one still up.
+  it('names a cable lost beside one still up: bad if the workstations used it, a warning otherwise', () => {
+    const imaging: NetworkLink = { ...cable(), name: 'Ethernet 2', addresses: ['10.20.0.5'] };
+    const lost = (name: string, servedWorkstations: boolean): LostCable => ({
+      name,
+      addresses: [],
+      lostAt: '2026-11-13T06:00:00Z',
+      servedWorkstations,
+    });
+
+    expect(link({ cables: [imaging], cableLost: true, lostCables: [lost('Ethernet', true)] })).toEqual({
+      label: 'Network',
+      text: "Cable 'Ethernet' disconnected",
+      tone: 'bad',
+    });
+    expect(link({ cables: [cable()], cableLost: true, lostCables: [lost('Ethernet 2', false)] })).toEqual({
+      label: 'Network',
+      text: "Cable · 1 Gbps · 'Ethernet 2' disconnected",
+      tone: 'warn',
     });
   });
 

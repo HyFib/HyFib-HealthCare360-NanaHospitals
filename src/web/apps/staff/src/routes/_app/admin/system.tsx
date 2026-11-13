@@ -433,7 +433,17 @@ function NetworkCard({ h }: { h: SystemHealthReport }) {
             {cable.speedMbps !== null ? ` · ${formatLinkSpeed(cable.speedMbps)}` : ''}
           </Row>
         ))}
-        {h.network.cableLost && (
+        {(h.network.lostCables ?? []).map((lost) => (
+          <Row
+            key={`lost-${lost.name}`}
+            label="Cable"
+            tone={lost.servedWorkstations || (!onCable && !wifi?.isConnected) ? 'bad' : 'warn'}
+          >
+            {lost.name} · Disconnected since {formatTime(lost.lostAt)}
+            {lost.addresses.length > 0 ? ` (was ${lost.addresses.join(', ')})` : ''}
+          </Row>
+        ))}
+        {h.network.cableLost && !h.network.lostCables && (
           <Row label="Cable" tone={wifi?.isConnected ? 'warn' : 'bad'}>
             Disconnected
           </Row>

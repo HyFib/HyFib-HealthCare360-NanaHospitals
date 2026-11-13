@@ -60,6 +60,7 @@ export const SYSTEM_HEALTH: SystemHealthReport = {
     cables: [],
     cableLost: false,
     lastCableDropAt: null,
+    lostCables: [],
   },
   database: {
     reachable: true,

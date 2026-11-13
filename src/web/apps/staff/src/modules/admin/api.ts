@@ -221,6 +221,17 @@ export interface NetworkLink {
   carriesNetwork: boolean;
 }
 
+/**
+ * A cable the server was on during this run, lost and not back (DED-06): the addresses it last had, and whether the
+ * workstations reached HC360 over it then.
+ */
+export interface LostCable {
+  name: string;
+  addresses: string[];
+  lostAt: string;
+  servedWorkstations: boolean;
+}
+
 export interface WifiConnectionInfo {
   interfaceDescription: string;
   isConnected: boolean;
@@ -401,9 +412,11 @@ export interface SystemHealthReport {
     mdnsEnabled: boolean;
     /** The network cables up, empty when none is; null when the link monitor has not read them (it is off). */
     cables: NetworkLink[] | null;
-    /** The cable the server was on is lost, and none is up again. */
+    /** A cable the server was on is lost and not back. */
     cableLost: boolean;
     lastCableDropAt: string | null;
+    /** Each cable lost and not back; null when the link monitor has not read the cables. */
+    lostCables: LostCable[] | null;
   };
   database: {
     reachable: boolean;
