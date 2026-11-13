@@ -64,6 +64,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<AdvanceService>();
         services.AddScoped<ShiftService>();
         services.AddScoped<PosService>();
+        services.AddScoped<CounterTerminalService>();
         services.AddScoped<PaymentGatewayService>();
         services.AddScoped<IpBillingService>();
         services.AddScoped<PolicyService>();
@@ -104,6 +105,7 @@ public sealed class BillingModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IChargePoster>(sp => sp.GetRequiredService<ChargeService>()));
         services.Replace(ServiceDescriptor.Scoped<IBillingStatusProvider, BillingStatusProvider>());
         services.Replace(ServiceDescriptor.Scoped<IPayerDirectory, PayerDirectory>());
+        services.Replace(ServiceDescriptor.Scoped<ICounterTerminal>(sp => sp.GetRequiredService<CounterTerminalService>()));
 
         services.AddHostedService<TallyDayBookScheduler>();
         services.AddHostedService<GatewayReconciliationJob>();

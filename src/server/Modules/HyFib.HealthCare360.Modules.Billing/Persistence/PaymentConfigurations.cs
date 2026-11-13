@@ -300,8 +300,14 @@ internal sealed class PosTransactionConfiguration : IEntityTypeConfiguration<Pos
         b.Property(x => x.Rrn).HasMaxLength(32);
         b.Property(x => x.Message).HasMaxLength(300);
         b.Property(x => x.Counter).HasMaxLength(64);
+        b.Property(x => x.Owner).HasMaxLength(32);
+        b.Property(x => x.OwnerDocument).HasMaxLength(64);
         b.Ignore(x => x.IsComplete);
+        b.Ignore(x => x.IsRecorded);
         b.HasIndex(x => new { x.Provider, x.TransactionId }).IsUnique();
+
+        // A counter's payment records one terminal sale, and a terminal sale is recorded once.
+        b.HasIndex(x => x.OwnerPaymentId).IsUnique().HasFilter("owner_payment_id IS NOT NULL");
         b.HasIndex(x => x.BillId);
         b.HasIndex(x => x.ApprovalCode).HasFilter("approval_code IS NOT NULL");
         b.HasIndex(x => new { x.Status, x.CreatedAt });
