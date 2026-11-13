@@ -89,16 +89,18 @@ On a **cabled LAN**, where the server and the workstations are on network cables
   UPS reaches nobody once its switch is off.
 - A managed switch with IGMP snooping on and no IGMP querier can drop mDNS: turn on the querier, or let mDNS through.
 - System health watches the server's cable: a cable pulled or its switch turned off is told at once to the
-  administrators and the on-call number (`alerts.oncallPhone`), and its return to the administrators in the app. If
-  **Last cable drop** in System health keeps coming back, change the cable, then the switch port. If it still drops,
-  turn off **Energy-Efficient Ethernet** in the network card's Advanced settings (Device Manager): some switches drop
-  the link with it. The installer leaves the card's driver settings alone.
+  administrators and the on-call number (`alerts.oncallPhone`), and so is its return, which says when it was lost and
+  when it was back. A server that reaches the SMS gateway over that cable alone cannot send the loss while it is out:
+  the loss is then withdrawn, and the phone gets the return alone, which says both. If **Last cable drop** in System
+  health keeps coming back, change the cable, then the switch port. If it still drops, turn off **Energy-Efficient
+  Ethernet** in the network card's Advanced settings (Device Manager): some switches drop the link with it. The
+  installer leaves the card's driver settings alone.
 - A server with two network cards on cables (the hospital LAN and an imaging network, say) has each cable watched on its
   own. The server reads which one the workstations reach it over from its own traffic: the address their requests
   arrive on. That cable lost is critical even while the other is up; the other cable lost is a warning. With no
   workstation's request in the last 15 minutes it cannot tell, and a cable lost while the other is up is a warning.
-  Each alert names the cable, the address it had and what is still up; its return is told in the app. Do the
-  cable-pull drill of section 4, step 10 on each cable.
+  Each alert names the cable, the address it had and what is still up, and each return says when that cable was lost
+  and when it was back. Do the cable-pull drill of section 4, step 10 on each cable.
 - Before go-live, from each workstation: `Test-NetConnection HC360-SRV -Port 7360` must end with
   `TcpTestSucceeded : True`.
 
@@ -491,8 +493,8 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    active: System health warns when fewer remain.
 7. **Administration › Settings**: set the SMS/WhatsApp/payment gateway keys (stored encrypted) and
    `alerts.oncallPhone` (IT's mobile, which gets an SMS for each critical warning in System health, and if the server's
-   network cable is pulled or its switch goes off, its WiFi drops, its WiFi adapter disappears, it starts without the
-   WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure),
+   network cable is pulled or its switch goes off and when it is back, its WiFi drops, its WiFi adapter disappears, it
+   starts without the WiFi it had when it last ran, its signal stays weak for a minute or its network is not secure),
    and who a critical alert nobody acknowledges goes to next:
    `alerts.escalationPhone` (a second contact, such as the IT head) and `alerts.supportPhone` (HyFib support's number).
    Set up the heartbeat outside the hospital as "Alerts that reach someone" below says.
@@ -597,16 +599,19 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    (`prescriptions.dsc_trust_unreadable`). In **Hospital setup › Doctors and clinical staff**, write each doctor's name
    in full as it is on their DSC: a DSC is accepted only from the doctor it is issued to.
 10. **Administration › System health**: everything should be green: the server on its cable at 1 Gbps, or on WiFi with
-   its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health and the on-call phone must
-   say the cable is lost, and System health and the administrators' notifications that it is back once it is in again;
-   its return sends no SMS. Where the server reaches the internet over that cable alone, the SMS comes once it is back
-   in, within a few minutes. On a server with two cabled cards, do it on each cable in turn while HC360 Desktop is open
-   on a workstation: its requests tell the server which cable the workstations use. System health must show the
-   hospital LAN's cable red, and its SMS must name that cable, with its address, and say the workstations cannot reach
-   HC360 until it is back. System health must show the other cable amber, and its SMS must name it and say the
-   workstations reach the server over the hospital LAN's cable, which is up. System health also shows each integration
-   set up in step 7 as Administration › Integrations does, and when the hospital CA and the server certificate expire.
-   Run an alert drill there, and keep its timings with the go-live record ("Alerts that reach someone").
+   its signal above 60%. On a cabled LAN, pull the server's cable for a minute: System health must say the cable is
+   lost, and that it is back once it is in again. Within a few minutes of it going back in, the on-call phone must get
+   an SMS that it is connected again, saying when it was lost and when it was back. Where the server reaches the SMS
+   gateway over that cable alone, that is the only SMS: the alert of the loss could not go while the cable was out, and
+   **Administration › Notifications** shows it suppressed, withdrawn. Where it has another way out, the phone gets the
+   loss at once and the return after it. On a server with two cabled cards, do it on each cable in turn while HC360
+   Desktop is open on a workstation: its requests tell the server which cable the workstations use. System health must
+   show the hospital LAN's cable red, and its return's SMS must say the workstations can reach HC360 again. System
+   health must show the other cable amber; its SMS, sent at once over the hospital LAN, must name it and say the
+   workstations reach the server over the hospital LAN's cable, which is up, and its return's SMS must follow. System
+   health also shows each integration set up in step 7 as Administration › Integrations does, and when the hospital CA
+   and the server certificate expire. Run an alert drill there, and keep its timings with the go-live record ("Alerts
+   that reach someone").
 
 ### Alerts that reach someone
 
@@ -1667,6 +1672,7 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | "HC360 now connects to the server at …" (tray) | The server stopped answering at its usual address, and answered at this one. Usually its IP address changed: give the server a fixed address or a DHCP reservation. The desktop log (`%LocalAppData%\HyFib\HC360Desktop\logs`) has both addresses |
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal (a workstation on a cable shows —); Administration › System health shows the server's link: on a cable, its speed (1 Gbps), else its WiFi signal. On a cabled ward, the ward's switch and its uplink |
 | "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Which cable: the alert and System health name it, with the address it had. Is it in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
+| The on-call phone says the server's network cable is connected again, with no SMS of its loss before | The server reaches the SMS gateway over that cable alone, so the loss could not go while it was out: it was withdrawn (**Administration › Notifications** shows it suppressed), and the return says when the cable was lost and when it was back. If it happens again, see the row above |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
