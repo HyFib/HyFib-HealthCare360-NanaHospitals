@@ -786,6 +786,15 @@ export function confirmRecoveryKey(keyId: string, key: string) {
   });
 }
 
+/**
+ * Removes a server of several that stopped reporting from System health, once it was retired, renamed or set up again
+ * elsewhere: its alert is acknowledged, so nobody further is paged. 409 `servers.reporting` for one that reports, which
+ * removes itself when it is stopped. Needs `admin.system.manage`.
+ */
+export function removeServer(node: string) {
+  return api.delete<void>(`/api/v1/admin/system/servers/${encodeURIComponent(node)}`);
+}
+
 /** Makes a new data encryption key current; data encrypted before moves to it in the background. Needs `admin.system.manage`. */
 export function rotateDataKey() {
   return api.post<EncryptionKeysStatus>('/api/v1/admin/system/keys/data/rotate');

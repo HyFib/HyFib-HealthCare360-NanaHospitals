@@ -16,6 +16,7 @@ import {
   integrationTone,
   linkSummary,
   lowDiskSpace,
+  removableServer,
   runningFor,
   runsJobs,
   serverRole,
@@ -154,6 +155,20 @@ function server(machineName: string, role: string, reporting = true): ServerNode
     reporting,
   };
 }
+
+describe('removableServer', () => {
+  const silent = { ...server('API1', 'api', false), server: { ...server('API1', 'api').server, node: 'a1b2' } };
+
+  it('lets one who manages the server remove a server that stopped reporting', () => {
+    expect(removableServer(silent, true)).toBe(true);
+  });
+
+  it('keeps a server that reports, one without an id, and anyone who only sees System health from removing it', () => {
+    expect(removableServer({ ...silent, reporting: true }, true)).toBe(false);
+    expect(removableServer({ ...silent, server: { ...silent.server, node: null } }, true)).toBe(false);
+    expect(removableServer(silent, false)).toBe(false);
+  });
+});
 
 describe('serversSummary', () => {
   it('is green while every server reports, the one that runs the jobs among them', () => {
