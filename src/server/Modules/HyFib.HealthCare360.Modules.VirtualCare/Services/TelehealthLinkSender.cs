@@ -27,7 +27,10 @@ public sealed class TelehealthLinkSender(HospitalDbContext db, INotificationServ
     public static string JoinUrl(string? baseUrl, Guid sessionId, string token) =>
         PortalAddress.Page(baseUrl ?? string.Empty, $"telehealth/{sessionId}?t={Uri.EscapeDataString(token)}");
 
-    /// <summary>Queues the link in the current unit of work. Returns false when the patient has no mobile or e-mail, or the record is hidden from the number (a protected category on a shared mobile number).</summary>
+    /// <summary>
+    /// Queues the link in the current unit of work. Returns false when the patient has no mobile or e-mail, or the record
+    /// is hidden from the number (a protected category on a shared mobile number).
+    /// </summary>
     public async Task<bool> SendAsync(TelehealthSession session, string joinUrl, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().AsNoTracking()

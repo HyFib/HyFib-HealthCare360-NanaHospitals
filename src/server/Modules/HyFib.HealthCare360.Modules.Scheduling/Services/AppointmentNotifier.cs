@@ -46,7 +46,8 @@ public sealed class AppointmentNotifier(HospitalDbContext db, INotificationServi
 
     /// <summary>
     /// Tells the patient that the doctor is not available for the booking (a leave or a block), with a link to choose
-    /// another time on the portal; on the <paramref name="channels"/> given. False when the patient has no contact details, or the record is hidden from the number (a protected category on a shared mobile number).
+    /// another time on the portal; on the <paramref name="channels"/> given. False when the patient has no contact
+    /// details, or the record is hidden from the number (a protected category on a shared mobile number).
     /// </summary>
     public async Task<bool> DoctorUnavailableAsync(Appointment appointment, IReadOnlyList<NotificationChannel> channels, CancellationToken ct)
     {
