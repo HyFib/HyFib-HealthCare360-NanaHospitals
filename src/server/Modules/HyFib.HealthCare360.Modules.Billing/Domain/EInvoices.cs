@@ -107,21 +107,86 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
     {
         if (Status == EInvoiceStatus.Cancelled)
         {
-            return Error.Rule("einvoice.cancelled", "This IRN is already cancelled.");
+            return AlreadyCancelled();
         }
 
         if (!CanCancel(now))
         {
-            return Error.Rule("einvoice.cancel_window",
-                "The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.");
+            return CancelWindowCrossed();
         }
 
+        return Cancelled(reason, remark, now);
+    }
+
+    /// <summary>
+    /// Records a cancellation the portal confirmed when asked how it holds the IRN, its answer to the cancellation itself
+    /// having been lost. The portal kept its own 24 hours, so it is recorded whenever HC360 learns of it, at the time the
+    /// portal gives (<paramref name="cancelledAt"/>), or the time HC360 learned of it when the portal gives none.
+    /// </summary>
+    public Result RecordPortalCancellation(EInvoiceCancelReason reason, string remark, DateTimeOffset? cancelledAt, DateTimeOffset learnedAt) =>
+        Status == EInvoiceStatus.Cancelled ? AlreadyCancelled() : Cancelled(reason, remark, cancelledAt ?? learnedAt);
+
+    internal static Error CancelWindowCrossed() => Error.Rule("einvoice.cancel_window",
+        "The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.");
+
+    private static Error AlreadyCancelled() => Error.Rule("einvoice.cancelled", "This IRN is already cancelled.");
+
+    private Result Cancelled(EInvoiceCancelReason reason, string remark, DateTimeOffset at)
+    {
         Status = EInvoiceStatus.Cancelled;
-        CancelledAt = now;
+        CancelledAt = at;
         CancelReason = reason;
         CancelRemark = remark.Trim();
         return Result.Success();
     }
+}
+
+/// <summary>What a cancellation the portal did not carry out left, once the portal is asked how it holds the IRN.</summary>
+public enum IrnCancelOutcome
+{
+    /// <summary>The portal holds the IRN as cancelled: the cancellation was made (its answer lost, or made before) and is recorded.</summary>
+    Cancelled,
+
+    /// <summary>The portal did not answer the cancellation and holds the IRN as active: nothing was cancelled, and it is asked again.</summary>
+    NotCancelled,
+
+    /// <summary>The portal did not answer the cancellation, nor say how it holds the IRN: whether it was cancelled is not known.</summary>
+    Unknown,
+
+    /// <summary>The portal refused it as past the 24 hours, and holds the IRN as active: a credit note undoes the invoice.</summary>
+    WindowCrossed,
+
+    /// <summary>
+    /// The portal refused it as past the 24 hours, and did not say how it holds the IRN (it refused that too, or its answer
+    /// gave no status): whether it cancelled the IRN in time is not known, and asking again may not tell.
+    /// </summary>
+    WindowCrossedUnconfirmed,
+
+    /// <summary>The portal refused it for another reason, and does not hold the IRN as cancelled: its refusal stands.</summary>
+    Refused,
+}
+
+/// <summary>
+/// A cancellation on the portal that failed is never taken at its word. Its answer may have been lost after the IRN was
+/// cancelled, and asked again the portal refuses an IRN it no longer holds as active: either way, the IRN's details
+/// (<see cref="IInvoiceRegistrationPortal.GetByIrnAsync"/>) say what happened.
+/// </summary>
+public static class IrnCancellations
+{
+    /// <summary>
+    /// What <paramref name="failure"/> left, given the IRN's <paramref name="details"/> asked for afterwards. Past the 24 hours
+    /// here the portal is not asked to cancel at all: <paramref name="failure"/> is then its 2270, known beforehand.
+    /// </summary>
+    public static IrnCancelOutcome After(IrpError failure, IrpResult<IrpIrn> details) => (failure.Code, details) switch
+    {
+        (_, { Value.IsCancelled: true }) => IrnCancelOutcome.Cancelled,
+        (IrpError.CancelWindowCrossed, { Value.IsActive: true }) => IrnCancelOutcome.WindowCrossed,
+        (IrpError.CancelWindowCrossed, { Error.Code: IrpError.Unreachable }) => IrnCancelOutcome.Unknown,
+        (IrpError.CancelWindowCrossed, _) => IrnCancelOutcome.WindowCrossedUnconfirmed,
+        (IrpError.Unreachable, { Value.IsActive: true }) => IrnCancelOutcome.NotCancelled,
+        (IrpError.Unreachable, _) => IrnCancelOutcome.Unknown,
+        _ => IrnCancelOutcome.Refused,
+    };
 }
 
 /// <summary>The supplier on an e-invoice: the facility, from its master.</summary>

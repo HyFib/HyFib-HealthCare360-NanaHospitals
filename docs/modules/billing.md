@@ -552,9 +552,9 @@ invoice it reduces (`against`, `againstDate`).
 | GET | `?from&to` | → `EInvoiceRegister`: whether e-invoicing applies and from when, and every B2B tax invoice of the days (the last 30 by default, at most 92, none before `gst.einvoice.from`) with its state (`Pending`, `Registered`, `IrnCancelled`, `NotNeeded`), the date it is due on the portal (30 days after the invoice) and its IRN |
 | GET | `/{source}/{id}` | → `EInvoiceDetail`: buyer, place of supply, value, state, the problems that would make the portal refuse it, and the latest IRN with its QR code. 422 `einvoice.not_applicable` before e-invoicing applies |
 | GET | `/{source}/{id}/json` | → the INV-01 (version 1.1) JSON, as a list of one invoice for the portal's bulk upload. 422 `einvoice.invalid` with the problems; 422 `einvoice.registered` once it has an IRN |
-| POST | `/{source}/{id}/irn` | `RecordIrnRequest(ackNo, signedQrCode)` → `EInvoiceDetail`. The signed QR code must name this invoice (400 `signedQrCode` with what differs); 409 `einvoice.registered` while an IRN is live, 409 `einvoice.irn_exists` for an IRN already recorded; 422 `einvoice.document_cancelled` |
-| POST | `/{source}/{id}/irn/generate` | → `EInvoiceDetail`: asks the connected portal for the IRN ([The portal connection](#the-portal-connection)). 422 `einvoice.irp_not_connected`, `einvoice.invalid` (with the problems), `einvoice.irp_refused` (the portal's code and words), `einvoice.irp_unreachable`, `einvoice.irp_mismatch` (the signed QR code is not this document's: nothing recorded); 409 `einvoice.registered`, `einvoice.irn_exists`; 422 `einvoice.document_cancelled` |
-| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version, cancelledOnPortal?)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. Connected to the portal, HC360 cancels it there first (`cancelledOnPortal: true` records one cancelled there by hand); a refusal is 422 `einvoice.irp_refused`. An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
+| POST | `/{source}/{id}/irn` | `RecordIrnRequest(ackNo, signedQrCode)` → `EInvoiceDetail`. The signed QR code must name this invoice (400 `signedQrCode` with what differs); 409 `einvoice.registered` while an IRN is live, 409 `einvoice.irn_exists` for an IRN already recorded; 422 `einvoice.document_cancelled`. Connected to the portal, an IRN generated within the last two days is checked with it first ([Checks and lost answers](#checks-and-lost-answers)): 422 `einvoice.irp_unconfirmed` (the portal does not hold it, active, under that acknowledgement, for this document), `einvoice.irp_unreachable` or `einvoice.irp_not_connected` (the connection is switched on but cannot be used), and nothing is recorded. Audited as `billing.einvoice.irn_recorded`, saying how it was checked |
+| POST | `/{source}/{id}/irn/generate` | → `EInvoiceDetail`: asks the connected portal for the IRN ([The portal connection](#the-portal-connection)). 422 `einvoice.irp_not_connected`, `einvoice.invalid` (with the problems), `einvoice.irp_refused` (the portal's code and words), `einvoice.irp_unreachable`, `einvoice.irp_mismatch` (the signed QR code is not this document's: nothing recorded), `einvoice.irp_cancelled` (the portal holds the document's number under an IRN it cancelled); 409 `einvoice.registered`, `einvoice.irn_exists`; 422 `einvoice.document_cancelled`. HC360 asks on its own once a document is final ([Automatic IRNs](#automatic-irns)) |
+| POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version, cancelledOnPortal?)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. Connected to the portal, HC360 cancels it there first (`cancelledOnPortal: true` records one cancelled there by hand). A cancellation that fails is read back from the portal before anyone is told to try again ([Checks and lost answers](#checks-and-lost-answers)): one the portal holds as cancelled is recorded, even past the 24 hours here; otherwise 422 `einvoice.irp_unreachable` (it still holds the IRN as active: nothing was cancelled), `einvoice.irp_cancel_unknown` (it did not answer the cancellation, nor say how it holds the IRN; past the 24 hours, it did not say whether it cancelled the IRN in time), `einvoice.irp_refused` or `einvoice.cancel_window` (past the 24 hours, it holds the IRN as active). An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
 | POST | `/{source}/{id}/ewaybill` | `GenerateEwayBillRequest(distanceKm, mode, vehicleNumber?, transporterGstin?, transporterName?, transportDocumentNumber?, transportDocumentDate?, overDimensionalCargo?)` → `EInvoiceDetail`: the e-way bill from the live IRN of an invoice of goods above `gst.ewaybill.threshold`. 422 `einvoice.ewaybill_goods`, `einvoice.ewaybill_not_needed`, `einvoice.not_registered`, `einvoice.irp_not_connected`, `einvoice.irp_refused`; 409 `einvoice.ewaybill_exists`; 400 without a vehicle or a transporter |
 
 ### GST returns — `/api/v1/billing/gst-returns` (`billing.gst.returns`)
@@ -990,6 +990,68 @@ pharmacy's B2B sales) above `gst.ewaybill.threshold` (₹50,000 by default; lowe
 its e-way bill from its live IRN, with the vehicle (Part-B) or the transporter's id (Part-A); its number and validity
 are kept on the registration.
 
+### Automatic IRNs
+Connected to the portal, a B2B document gets its IRN with nobody asking. In the transaction that makes it final, its
+module queues `billing.einvoice.generate` through the Platform contract `IEInvoiceQueue` (Billing's `EInvoiceQueue`,
+which lets go a document dated before `gst.einvoice.from`): a bill as it is finalized (`BillFinalized`, with GST, to a
+payer with a GSTIN), a bill's credit note or debit note to the payer as the approver issues it, a pharmacy counter sale
+to a buyer with a GSTIN, and the return of such a sale while its GST can still be reduced. The outbox delivers it once
+that transaction commits (`EInvoiceGenerateHandler`, in a scope of its own, so a conflict on the register fails that
+message alone and not the outbox's batch), and `EInvoiceService.GenerateQueuedAsync` decides what follows
+(`EInvoiceAutomation`):
+* **Nothing more** when the document needs no IRN now: it is no longer a B2B e-invoice of e-invoicing's days, it is
+  cancelled, it has an IRN (live, or cancelled on the portal), or the facility is not connected (the IRN is recorded by
+  hand, and [the morning reminder](#the-morning-reminder) keeps it in sight).
+* **Again later**, with the outbox's back-off (10 seconds, doubling to an hour, for seven days), when the portal did not
+  answer, when the connection is switched on but cannot be used (its credentials are incomplete), or when a credit or
+  debit note names an invoice still waiting for its own IRN: the note goes after the invoice, as the portal requires.
+* **Given up** when the document's problems (the portal's checks, made here), the portal's refusal (its code and words),
+  a signed QR code that is not the document's, or an IRN recorded against another document stop it. Asking again would
+  only spend the portal's calls: holders of `billing.einvoice` at the facility are told at once ("Invoice … did not get
+  its IRN", a warning linking to the register), and the document waits in the register for someone to put it right.
+
+A request asked here by hand at the same moment ends with the same single IRN: the portal answers the second with 2150
+and the IRN it holds, and the register keeps one live IRN per document (unique index), so whichever records second
+finds it and stops. IRNs asked for automatically are recorded by `HC360 (automatic)`.
+
+### Checks and lost answers
+* **A failed cancellation is read back.** A cancellation the portal does not confirm is not taken at its word: its
+  answer may have been lost after the IRN was cancelled, and asked again the portal refuses an IRN it no longer holds as
+  active. HC360 then asks the portal how it holds the IRN (`GetByIrnAsync`, `IrnCancellations`). Cancelled there, the
+  cancellation is recorded at the portal's time. Still active after an unanswered call (the portal's answer says `ACT`),
+  staff are told nothing was cancelled and to try again (422 `einvoice.irp_unreachable`). Unanswered, and the portal not
+  saying how it holds the IRN, they are told the outcome is not known (422 `einvoice.irp_cancel_unknown`), never that
+  nothing happened; trying again settles it, since HC360 then asks the portal first. Past the 24 hours here, the portal
+  is still asked whether it cancelled the IRN in time with its answer lost. Holding it as active, the portal cancels it
+  no more (422 `einvoice.cancel_window`: a credit note undoes the invoice). Not answering, the outcome is not known as
+  above. Answering otherwise (refusing to give the IRN's details, which it keeps for about three days, or giving no
+  status), whether it cancelled the IRN in time is not known and asking again may not tell: staff are told to look on
+  the portal and to issue a credit note while the IRN is active there (422 `einvoice.irp_cancel_unknown`), never a
+  credit note outright.
+* **A duplicate's IRN is checked.** The IRN fetched for a duplicate (2150) is not recorded when the portal holds it as
+  cancelled (422 `einvoice.irp_cancelled`): the portal registers a number once, so the document is cancelled here and
+  issued again under a new number.
+* **An IRN recorded by hand is checked.** Connected, HC360 asks the portal about an IRN generated within the last two
+  days (`IrnVerification`; the portal gives an IRN's details for about three days after its generation,
+  `IrpIrn.DetailsWindow`). It is recorded only when the portal holds it, active (its answer says `ACT`: one that does
+  not say confirms nothing), under the acknowledgement given, with a signed QR code naming the document (422
+  `einvoice.irp_unconfirmed` with what differs), and the portal's signed invoice is kept with it. When the portal
+  cannot be asked, nothing is recorded: 422 `einvoice.irp_unreachable` when it does not answer,
+  `einvoice.irp_not_connected` when the connection is switched on but cannot be used (its credentials are incomplete).
+  Meanwhile an administrator can switch the connection off to record IRNs without the check. An older IRN is recorded
+  on its signed QR code alone. The audit trail (`billing.einvoice.irn_recorded`) says how each was checked. The staff
+  app offers recording by hand only to a facility that is not connected; the check guards the API.
+
+### The morning reminder
+Each morning from 09:00 (the hospital's time), `EInvoiceReminderJob` queues one `billing.einvoice.reminder` for each
+facility that e-invoices, under a cluster-wide lock and only when none was queued that day: a second server or a restart
+does not send it twice, and a server that was off in the morning sends it when it starts. Delivered, it reads the
+register's own rows since e-invoicing applied (`EInvoiceService.RemindAsync`, `EInvoiceReminders`) and tells holders of
+`billing.einvoice` at the facility of the documents waiting more than `gst.einvoice.alert_after_days` (2 by default)
+for an IRN: how many, the oldest, how many are due on the portal within seven days and the first of them (the reminder
+is then critical, else a warning), and how many are past the portal's 30 days, which only the GST adviser can settle.
+Nothing is sent when none has waited that long.
+
 ## GST returns
 `GstReturnService` builds the returns of the signed-in facility's GSTIN for a month, with every facility registered
 under it, from every `IGstReturnSource` (Billing's `BillingGstReturnSource`: bills, credit notes, debit notes; the
@@ -1156,6 +1218,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `AppointmentPaidTwice` (Scheduling) | Queues the same message for the second payment, which is kept as an advance with its refund asked for |
 | `AppointmentCancelled` | For a cancelled (not rescheduled) prepaid booking, queues the same message to refund it |
 | `BillFinalized`, `BillPaid`, `BillCancelled`, `BillPaymentReversed` | Doctor-fee accrual (idempotent per bill line; a line whose accrual was reversed accrues again) and reversal |
+| `BillFinalized` | A bill with GST to a payer with a GSTIN queues `billing.einvoice.generate` ([Automatic IRNs](#automatic-irns)) |
 
 ### Appointment prepayments (OA-03)
 Scheduling posts nothing to billing. The outbox handler `billing.appointment.prepayment` (retried with back-off)
@@ -1564,6 +1627,10 @@ the bill's day again, never to delete it.
   `PlatformOptions.RunsJobs`), posts again a day someone posted before it ended, and queues again days stuck in Queued.
 * `billing.tally.check` — reconciles a posted day with its records and with Tally; not retried.
 * `billing.appointment.prepayment` — see above.
+* `billing.einvoice.generate` — asks the portal for a document's IRN once it is final, retried while the portal does not
+  answer or a note's invoice waits for its IRN, not after a refusal; see [Automatic IRNs](#automatic-irns).
+* `billing.einvoice.reminder` — the morning reminder of documents waiting too long for an IRN, one per facility and day,
+  queued by `EInvoiceReminderJob` from 09:00 where `PlatformOptions.RunsJobs`; see [The morning reminder](#the-morning-reminder).
 * `GatewayReconciliationJob` — re-checks open online payments, prepaid bookings and the orders they had before, follows
   gateway refunds, reads settlements; see [Gateway reconciliation](#gateway-reconciliation-int-pg). Every five minutes
   it also tells of new chargeback cases and reminds of their deadlines, and hourly it reads the gateway's disputes; see
@@ -1594,7 +1661,8 @@ the bill's day again, never to delete it.
   discharged with dues, admission cancelled (billing follow-up), cancelled order already billed; to holders of
   `billing.gateway.reconcile`: an online payment not recorded, an online refund failed, settled transactions that do
   not match, a chargeback taken back or disputed, a chargeback's deadline near or past, a chargeback lost at the
-  gateway.
+  gateway; to holders of `billing.einvoice`: a document that did not get its IRN automatically, and the morning
+  reminder of documents waiting too long for one.
 * Realtime: `billing.bill.changed`, `billing.pos.changed` (facility group).
 
 ### Bills on WhatsApp (INT-WA)
@@ -1659,6 +1727,7 @@ Bills, credit notes and debit notes are GST series: their formats are held to 16
 | `billing.pos.recheck` | `{ "timeoutMinutes": 15 }` | Terminal sales: a sale still waiting for the customer after `timeoutMinutes` (2–240) is cancelled on the terminal and marked timed out by `PosRecheckJob` |
 | `billing.pos.settlements` | `{ "settlementDays": 3, "otherTerminals": [], "columns": {} }` | Card and UPI reconciliation: a card or UPI payment not settled after `settlementDays` (1–30) is listed; `otherTerminals` are the acquirer's TIDs of the other counters (pharmacy, canteen): Billing's receipts are not looked for there, and a transaction there that no pharmacy or canteen payment names is set aside (`OtherCounter`); `columns` adds the acquirer's headings by field (`rrn`, `approvalCode`, `amount`, `charges`, `tax`, `net`, `terminalId`, `transactionDate`, `transactionTime`, `card`, `type`, `mode`, `settlementDate`, `utr`), tried before the built-in ones |
 | `gst.einvoice.from` | not set | The first invoice date GST e-invoicing applies to (`yyyy-MM-dd`); not set, the hospital does not e-invoice |
+| `gst.einvoice.alert_after_days` | `2` | How many days a B2B document may wait for its IRN before the morning reminder names it |
 | `doctorfees.accrual.trigger` | `finalized` | `finalized` or `paid` |
 | `doctorfees.tds.percent` | `10` | TDS (194J) on doctor payouts |
 
@@ -1701,8 +1770,14 @@ bill line, restrict; unique number), `bills.debit_amount` and `payer_debit_amoun
 
 ## Not covered yet
 * **The IRP connection has not met NIC or a GSP.** The NIC API client is built to v1.03 and tested against a fake
-  portal and the simulator; it needs the hospital's sandbox credentials to be run for real. IRNs are asked for one
-  document at a time from the register, not in a batch after each day's billing.
+  portal and the simulator; it needs the hospital's sandbox credentials to be run for real. Two things it relies on come
+  from GSP documentation of the NIC API and are still to be confirmed there: that an IRN's details carry its `Status`
+  (`ACT`, `CNL`), and for how long after its generation the portal gives them (three days; HC360 asks within two). IRNs
+  are asked for one document at a time, as each becomes final, not in a batch.
+* **An e-way bill whose answer was lost is not read back.** Unlike a cancellation, it needs NIC's get-e-way-bill-by-IRN
+  call, which HC360 does not make yet; asked again, the portal refuses a second e-way bill.
+* **A B2B document prints without its IRN while it waits for one**, with nothing on the print to say so; with the
+  portal connected, the IRN usually comes within seconds of the document becoming final.
 * **A payer credit note does not come from the settlement.** The claim desk records the deduction; the billing desk
   asks for the GST credit note on the bill afterwards. A deduction that is not a price reduction (a non-payable item
   the patient pays) needs none.

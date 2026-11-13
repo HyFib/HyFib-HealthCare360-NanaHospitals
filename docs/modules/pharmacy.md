@@ -98,7 +98,8 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   book posts. A return made after 30 November following the financial year of the sale (s.34(2)) takes back the value
   and not the GST, in the day book too, and is not reported.
   When the facility is connected to the e-invoice portal (`integrations.irp`, billing.md *The portal connection*), the
-  register asks the portal for the sale's IRN itself; a B2B invoice above `gst.ewaybill.threshold` (₹50,000 by
+  register asks the portal for the sale's IRN itself, on its own as the sale (or the return) is saved: the sale queues
+  it through `IEInvoiceQueue` (billing.md *Automatic IRNs*); a B2B invoice above `gst.ewaybill.threshold` (₹50,000 by
   default) then gets its **e-way bill** from the IRN, with the vehicle number or the transporter's GSTIN and the
   distance (one day's validity per 200 km), and the number and validity are kept with the IRN.
 * **GST returns.** Counter sales and their returns are in Billing's GSTR-1 and GSTR-3B (`PharmacyGstReturnSource`): a
