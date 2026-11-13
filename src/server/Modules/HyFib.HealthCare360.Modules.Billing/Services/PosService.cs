@@ -175,7 +175,8 @@ public sealed class PosService(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Could not start a sale on terminal {TerminalId}", terminalId);
+            // The id was typed at the counter: no line break in it may start a log line of its own.
+            logger.LogWarning(ex, "Could not start a sale on terminal {TerminalId}", terminalId.Replace('\r', ' ').Replace('\n', ' '));
             return Error.Rule("billing.pos_unavailable", "The terminal could not be reached. Check it is online and try again.");
         }
 

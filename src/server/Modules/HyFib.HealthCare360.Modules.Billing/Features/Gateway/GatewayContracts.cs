@@ -55,7 +55,7 @@ public sealed class StartPosSaleRequestValidator : AbstractValidator<StartPosSal
     {
         RuleFor(x => x).Must(x => (x.BillId is null) != (x.IpAccountId is null)).WithName("billId").WithMessage("Choose a bill or an IP account.");
         RuleFor(x => x.Amount).Amount();
-        RuleFor(x => x.TerminalId).NotEmpty().MaximumLength(64);
+        RuleFor(x => x.TerminalId).TerminalId();
         RuleFor(x => x.Mode).Must(mode => mode is PaymentMode.Card or PaymentMode.Upi).WithMessage("Terminal sales are card or UPI payments.");
     }
 }
