@@ -368,14 +368,12 @@ public sealed class SystemHealthService(
             }
             else if (!RunsJobs(server))
             {
-                warnings.Add(new("server.not_reporting", "warning",
-                    $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. The reverse proxy sends requests to the other servers meanwhile.",
-                    name));
+                warnings.Add(NotReporting(server, servers));
             }
             else
             {
                 warnings.Add(new("server.not_reporting", "critical",
-                    $"{name}, which ran the background jobs, has not reported for more than three minutes: it may be off, its HC360Server service stopped, or the database out of its reach. " +
+                    $"{name}, which ran the background jobs, has not reported for more than three minutes: {SilentBecause} " +
                     (standingBy.Length > 0
                         ? $"{string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by to take the jobs over within a minute."
                         : "Until it is back, nothing makes the backups, sends messages or listens for analysers and modalities."),
@@ -433,6 +431,42 @@ public sealed class SystemHealthService(
                 .ThenBy(s => s.Server.MachineName, StringComparer.OrdinalIgnoreCase),
         ];
     }
+
+    /// <summary>Why a server may have stopped reporting, as its warning says.</summary>
+    private const string SilentBecause =
+        "it may be off, its HC360Server service stopped, its network cable out, or the database out of its reach.";
+
+    /// <summary>
+    /// A server that does not run the background jobs and has stopped reporting. One that takes requests (an API node, or one
+    /// standing by for the job lease) is critical, so IT's phone is told, as for the job node: it may have been the last one
+    /// taking them, and the warning says whether another still does. A server stopped on purpose removes itself instead, and
+    /// pages nobody. One that only stands by for the jobs (a worker) is a warning: nothing stops until the job node does too.
+    /// </summary>
+    private static HealthWarning NotReporting(ServerNodeHealth server, IReadOnlyList<ServerNodeHealth> servers)
+    {
+        var name = server.Server.MachineName;
+        if (!ServesApi(server))
+        {
+            var standby = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && s.Server.Jobs is { Active: false })
+                .Select(s => s.Server.MachineName).ToArray();
+            return new("server.not_reporting", "warning",
+                $"{name}, which stands by for the background jobs, has not reported for more than three minutes: {SilentBecause} " + (standby.Length > 0
+                    ? $"{string.Join(", ", standby)} still stand{(standby.Length == 1 ? "s" : string.Empty)} by."
+                    : "Until it is back, no server takes the jobs over if the one that runs them stops."),
+                name);
+        }
+
+        var others = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && ServesApi(s)).Select(s => s.Server.MachineName).ToArray();
+        return new("server.not_reporting", "critical",
+            $"{name} has not reported for more than three minutes: {SilentBecause} " + (others.Length > 0
+                ? $"The reverse proxy sends requests to {string.Join(", ", others)} meanwhile."
+                : "No other server takes requests: workstations cannot reach HC360 until it is back."),
+            name);
+    }
+
+    /// <summary>Whether a server takes requests (SCAL-01): any but a dedicated worker.</summary>
+    internal static bool ServesApi(ServerNodeHealth server) =>
+        !string.Equals(server.Server.Role, "worker", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether a server runs the background jobs: the one holding the job lease, where the servers take turns at them
