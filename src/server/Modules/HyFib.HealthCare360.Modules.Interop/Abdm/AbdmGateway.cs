@@ -14,8 +14,9 @@ internal static class AbdmGatewaySettingKeys
     /// <c>{ "enabled": false, "baseUrl": "https://dev.abdm.gov.in/api/hiecm", "hipId": "IN27…", "cmId": "sbx", "timeoutSeconds": 30 }</c>,
     /// and optionally <c>"jwksUrl"</c>, where the gateway publishes the keys its callbacks are signed with,
     /// <c>"callbackClientId"</c> and <c>"callbackIssuer"</c>, the client id and issuer its callbacks' tokens carry,
-    /// <c>"dataPushUrl"</c>, where other providers post the records the hospital asks for, and <c>"autoLink"</c>
-    /// (true), whether completed records are linked to patients' ABHAs as they are completed.
+    /// <c>"dataPushUrl"</c>, where other providers post the records the hospital asks for, <c>"autoLink"</c> (true),
+    /// whether completed records are linked to patients' ABHAs as they are completed, and <c>"answerTimeoutMinutes"</c>
+    /// (15), how long a request waits for the gateway's answer before it is marked failed.
     /// </summary>
     public const string Gateway = "abdm.gateway";
 
@@ -55,6 +56,21 @@ internal sealed record AbdmGatewaySettings
     /// (<c>AbdmAutoLinking</c>). On by default; off, staff link records themselves.
     /// </summary>
     public bool AutoLink { get; init; } = true;
+
+    /// <summary>
+    /// How long a request waits for the gateway's callback before it is marked failed (<c>abdm.no_answer</c>) and staff
+    /// may send it again: a link request awaiting its token or the answer to its care contexts, a consent request awaiting
+    /// the consent manager's on-init. The gateway answers in seconds; an answer that comes later is still taken. Between
+    /// <see cref="MinAnswerTimeoutMinutes"/> and <see cref="MaxAnswerTimeoutMinutes"/> (<see cref="AnswerTimeout"/>).
+    /// </summary>
+    public int AnswerTimeoutMinutes { get; init; } = 15;
+
+    public const int MinAnswerTimeoutMinutes = 2;
+
+    public const int MaxAnswerTimeoutMinutes = 24 * 60;
+
+    /// <summary><see cref="AnswerTimeoutMinutes"/>, kept between its bounds.</summary>
+    public TimeSpan AnswerTimeout => TimeSpan.FromMinutes(Math.Clamp(AnswerTimeoutMinutes, MinAnswerTimeoutMinutes, MaxAnswerTimeoutMinutes));
 
     /// <summary>
     /// The gateway's key set (JWKS), which its callbacks to HC360 are checked against; by default

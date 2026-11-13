@@ -27170,6 +27170,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.HasIndex("PatientId", "CreatedAt")
                         .HasDatabaseName("ix_abdm_link_requests_patient_id_created_at");
 
+                    b.HasIndex("Status", "SentAt")
+                        .HasDatabaseName("ix_abdm_link_requests_status_sent_at")
+                        .HasFilter("status IN ('AwaitingToken', 'Sent')");
+
                     b.ToTable("abdm_link_requests", "interop");
                 });
 

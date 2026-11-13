@@ -86,6 +86,12 @@ internal sealed class AbdmLinkingService(
     public const string LinkPendingCode = "abdm.link_pending";
 
     /// <summary>
+    /// The gateway did not answer within <see cref="AbdmGatewaySettings.AnswerTimeout"/> (<see cref="AbdmUnansweredRequests"/>).
+    /// Unlike the gateway's own refusals, it is only HC360's guess: an answer that comes after it is still taken.
+    /// </summary>
+    public const string NoAnswerCode = "abdm.no_answer";
+
+    /// <summary>
     /// How long a link token is used after the gateway issued it: six months, as NHA's wrapper keeps it
     /// (<c>Utils.setLinkTokenExpiry</c>). An older one is not sent: a new one is asked for, rather than a refusal that
     /// fails the request.
@@ -297,7 +303,8 @@ internal sealed class AbdmLinkingService(
     /// <summary>
     /// The gateway's <c>on-generate-token</c>: the link token for the request it was asked under, kept for the ABHA
     /// address, and the care contexts sent with it. An answer to no request of this hospital's, or naming another ABHA
-    /// address, is ignored.
+    /// address, is ignored. One that comes after the request was marked unanswered (<see cref="NoAnswerCode"/>) is taken
+    /// all the same: the token is kept, and the records not linked or sent again since go with it.
     /// </summary>
     public async Task OnLinkTokenAsync(AbdmGatewayMessages.OnGenerateToken answer, CancellationToken ct)
     {
@@ -307,8 +314,14 @@ internal sealed class AbdmLinkingService(
             return;
         }
 
+        await AnswerAsync(() => TakeLinkTokenAsync(answer, requestId, ct));
+    }
+
+    private async Task TakeLinkTokenAsync(AbdmGatewayMessages.OnGenerateToken answer, Guid requestId, CancellationToken ct)
+    {
         var request = await Unscoped().FirstOrDefaultAsync(r => r.TokenRequestId == requestId, ct);
-        if (request is null || request.Status != AbdmLinkStatus.AwaitingToken)
+        var late = request is { Status: AbdmLinkStatus.Failed, ErrorCode: NoAnswerCode, LinkRequestId: null };
+        if (request is null || (request.Status != AbdmLinkStatus.AwaitingToken && !late))
         {
             log.LogWarning("An ABDM link token arrived for no waiting request ({RequestId})", requestId);
             return;
@@ -332,6 +345,23 @@ internal sealed class AbdmLinkingService(
         var (settings, _, _) = await configuration.ReadAsync(ct);
         await KeepTokenAsync(settings.HipId!, request.AbhaAddress, answer.LinkToken, now, ct);
 
+        if (late)
+        {
+            // Marked unanswered before the token came: the records linked since, or sent again in another request, stay out.
+            var (toSend, _, _) = await SortAsync(settings.HipId!, request.PatientId, request.AbhaAddress, Records(request.CareContextsJson), ct);
+            if (toSend.Count == 0)
+            {
+                await db.SaveChangesAsync(ct);
+                log.LogInformation("A late ABDM link token was kept; the records of request {RequestId} were linked or sent again meanwhile", request.Id);
+                return;
+            }
+
+            request.CareContextsJson = JsonSerializer.Serialize(toSend, AbdmGatewayMessages.Json);
+            request.ErrorCode = null;
+            request.Error = null;
+            request.AnsweredAt = null;
+        }
+
         var patient = await db.Set<Patient>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .FirstAsync(p => p.Id == request.PatientId, ct);
         await SendCareContextsAsync(request, patient, settings.HipId!, answer.LinkToken, now, ct);
@@ -339,7 +369,9 @@ internal sealed class AbdmLinkingService(
 
     /// <summary>
     /// The gateway's <c>on_carecontext</c>: whether the care contexts were linked. A refusal also drops the link token
-    /// kept for the ABHA address, so the next request asks for a new one (it may have expired or been revoked).
+    /// kept for the ABHA address, so the next request asks for a new one (it may have expired or been revoked). An answer
+    /// that comes after the request was marked unanswered (<see cref="NoAnswerCode"/>) is taken all the same: the patient's
+    /// PHR app shows what the gateway linked, and a consent naming it is honoured only if it is kept here.
     /// </summary>
     public async Task OnCareContextsAsync(AbdmGatewayMessages.OnAddCareContexts answer, CancellationToken ct)
     {
@@ -349,8 +381,13 @@ internal sealed class AbdmLinkingService(
             return;
         }
 
+        await AnswerAsync(() => TakeCareContextsAnswerAsync(answer, requestId, ct));
+    }
+
+    private async Task TakeCareContextsAnswerAsync(AbdmGatewayMessages.OnAddCareContexts answer, Guid requestId, CancellationToken ct)
+    {
         var request = await Unscoped().FirstOrDefaultAsync(r => r.LinkRequestId == requestId, ct);
-        if (request is null || request.Status != AbdmLinkStatus.Sent)
+        if (request is null || (request.Status != AbdmLinkStatus.Sent && request is not { Status: AbdmLinkStatus.Failed, ErrorCode: NoAnswerCode }))
         {
             log.LogWarning("An ABDM linking answer arrived for no request awaiting one ({RequestId})", requestId);
             return;
@@ -367,12 +404,31 @@ internal sealed class AbdmLinkingService(
         {
             request.Status = AbdmLinkStatus.Linked;
             request.AnsweredAt = now;
+            request.ErrorCode = null;
+            request.Error = null;
             var (settings, _, _) = await configuration.ReadAsync(ct);
             var linked = Records(request.CareContextsJson);
             await AbdmCareContexts.AddAsync(db, settings.HipId!, request.PatientId, request.AbhaAddress, linked, AbdmLinkRoute.HipInitiated, now, ct);
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Takes a gateway answer once more if the request changed as it was taken: the sweeper marked it unanswered at that
+    /// moment (<see cref="AbdmUnansweredRequests"/>). Read again, it is taken as a late answer, so the answer is not lost.
+    /// </summary>
+    private async Task AnswerAsync(Func<Task> take)
+    {
+        try
+        {
+            await take();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            db.ChangeTracker.Clear();
+            await take();
+        }
     }
 
     /// <summary>
