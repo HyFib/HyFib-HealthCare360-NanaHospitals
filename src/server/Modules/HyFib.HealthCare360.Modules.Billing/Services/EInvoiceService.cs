@@ -258,8 +258,11 @@ public sealed class EInvoiceService(
         var noun = InvoiceRegistrationPayload.Noun(document);
         switch (held.Error)
         {
+            // Switched on, the connection could not be used (its credentials are incomplete): the IRN is not taken unchecked.
             case { Code: IrpError.NotConnected } unusable:
-                return ((IrpIrn?)null, $"the portal connection cannot be used ({unusable.Message}), so the portal was not asked");
+                return Error.Rule("einvoice.irp_not_connected",
+                    $"{unusable.Message} The IRN could not be checked with the portal, and nothing was recorded. Try again once the connection works; "
+                    + "until then, an administrator can switch it off (Administration → Integrations) to record IRNs by hand without the check.");
             case { Code: IrpError.Unreachable } unanswered:
                 return Error.Rule("einvoice.irp_unreachable",
                     $"{unanswered.Message} The IRN could not be checked with the portal, and nothing was recorded. Try again once the portal answers; "

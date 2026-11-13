@@ -93,14 +93,18 @@ internal static class EInvoicing
 
     public static string Irn() => Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());
 
-    /// <summary>The e-invoice portal set to the training simulator (or switched off) for the rest of the test, then put back.</summary>
-    public static async Task<IAsyncDisposable> IrpPortalAsync(this HospitalServer server, bool enabled)
+    /// <summary>
+    /// The e-invoice portal set to the training simulator (or switched off) for the rest of the test, then put back.
+    /// <paramref name="provider"/> <c>nic</c> is a connection switched on that cannot be used: the test server holds no
+    /// credentials for it, so no call leaves the server.
+    /// </summary>
+    public static async Task<IAsyncDisposable> IrpPortalAsync(this HospitalServer server, bool enabled, string provider = "simulator")
     {
         const string key = "integrations.irp";
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = enabled, ["provider"] = "simulator" }, null, false, null));
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = enabled, ["provider"] = provider }, null, false, null));
         return new Restore(async () =>
             await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }

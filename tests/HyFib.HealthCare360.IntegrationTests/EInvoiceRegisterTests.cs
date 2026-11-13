@@ -289,6 +289,15 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
             (await ProblemCodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
         }
 
+        // Switched on, a connection without its credentials cannot ask the portal: the IRN is not taken unchecked.
+        await using (await server.IrpPortalAsync(enabled: true, provider: "nic"))
+        {
+            using var unusable = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{unknown.Id}/irn",
+                new RecordIrnRequest("112610012345678", Qr(unknown.BillNumber!, unknown.NetAmount, KeralaCompany, madeUp, lines)));
+            (await ProblemCodeAsync(unusable)).ShouldBe("einvoice.irp_not_connected");
+            (await unusable.Content.ReadAsStringAsync(Ct)).ShouldContain("nothing was recorded");
+        }
+
         (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{unknown.Id}")).State.ShouldBe(EInvoiceState.Pending);
 
         // Generated longer ago than the portal gives an IRN's details: recorded on its signed QR code, the portal not asked.
