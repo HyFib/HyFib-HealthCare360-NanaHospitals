@@ -196,14 +196,14 @@ startsAt }` after every change. Check-ins through the Patients visit screen also
 | `appointment.waitlist` | SMS, WhatsApp (seeded here) | a matching slot was freed | name, doctor, date, time, link, hospital |
 | `appointment.doctor_unavailable` | SMS, WhatsApp (seeded here) | staff tell the patients a leave or block strands (`POST /exceptions/{id}/notify-patients`) | name, doctor, date, time, reference, mode, hospital, link (`{portal}/portal/doctors/{doctorId}?reschedule={appointmentId}`) |
 
-Messages expire at the appointment time (outbox TTL).
+Messages expire at the appointment time (outbox TTL). They name the doctor, whose speciality can reveal the care, so a patient in a protected category (`SensitiveCategory`) whose mobile number another active patient shares gets none of them (`SharedNumbers.HiddenFromNumberAsync`); the desk tells that patient in person.
 
 **Telling the patients a doctor's leave strands.** Saving a leave or block lists the bookings it strands; the staff
 then tell those patients in one action (the schedules screen's *Tell the patients by SMS/WhatsApp*). A patient is told
 once per leave: a message of this template queued for them after the leave was last saved counts, so asking again
 tells only those not told yet. The list says who was told, when, on which channel and how each message fared (queued,
 sent, failed, skipped, suppressed by a WhatsApp STOP), and who cannot be told by message (no mobile number) for the
-desk to call. SMS in India goes only on a template registered on the DLT portal (TRAI TCCCPR 2018): where the SMS
+desk to call (a patient whose record is hidden from a shared number is listed there too, with a reason that does not name the category, and is not messaged). SMS in India goes only on a template registered on the DLT portal (TRAI TCCCPR 2018): where the SMS
 provider needs the DLT template id (anything but the simulator and Twilio) and the template has none, the SMS is not
 queued, the patients are told on WhatsApp alone and the list says why (`smsReady`, `smsNote`). Nothing is rebooked or
 cancelled: the patient chooses another time from the link, or the desk moves the booking. The action is audited

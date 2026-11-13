@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Scheduling.Domain;
 using HyFib.HealthCare360.Modules.Scheduling.Features.Schedules;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -121,13 +122,22 @@ public sealed class StrandedPatientNotifier(
             .Join(db.Set<Patient>(), a => a.PatientId, p => p.Id, (a, p) => new { a.Id, a.FacilityId, HasPhone = p.Phone != null, HasEmail = p.Email != null })
             .ToDictionaryAsync(x => x.Id, ct);
 
+        // The message names the doctor, whose speciality can reveal the care (a psychiatrist, say), so a record in a
+        // protected category on a number another patient shares is not messaged (SharedNumbers): the desk calls instead.
+        var hidden = new HashSet<Guid>();
+        foreach (var patientId in stranded.Select(s => s.PatientId).Distinct())
+        {
+            if (await SharedNumbers.HiddenFromNumberAsync(db, patientId, ct))
+            {
+                hidden.Add(patientId);
+            }
+        }
+
         var patients = stranded.Select(s =>
         {
             var sent = logs[s.PatientId].ToList();
             var contact = contacts.GetValueOrDefault(s.Id);
-            string? notTold = sent.Count > 0 || contact is null ? null
-                : !contact.HasPhone ? "No mobile number on record: call or write to the patient"
-                : null;
+            var notTold = NotToldReason(sent.Count > 0, contact is not null, contact?.HasPhone ?? false, hidden.Contains(s.PatientId));
             return new StrandedPatient(
                 s.Id, s.Number, s.PatientId, s.PatientName, s.PhoneMasked, s.StartsAt, s.Status,
                 sent.Count == 0 ? null : sent.Min(l => l.CreatedAt),
@@ -137,6 +147,25 @@ public sealed class StrandedPatientNotifier(
 
         var blocked = sms.Values.FirstOrDefault(r => !r.Sends);
         return new StrandedPatients(exception.Id, blocked is null, blocked?.Note, patients);
+    }
+
+    /// <summary>
+    /// Why the patient cannot be told by message, for the staff who then call them; null when they were told or can be.
+    /// A hidden record gets no reason that names the category.
+    /// </summary>
+    public static string? NotToldReason(bool alreadyTold, bool hasContact, bool hasPhone, bool hiddenFromNumber)
+    {
+        if (alreadyTold || !hasContact)
+        {
+            return null;
+        }
+
+        if (!hasPhone)
+        {
+            return "No mobile number on record: call or write to the patient";
+        }
+
+        return hiddenFromNumber ? "Not sent by message: call the patient" : null;
     }
 
     private sealed record SmsRoute(bool Sends, string? Note)

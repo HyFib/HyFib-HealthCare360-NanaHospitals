@@ -195,7 +195,7 @@ No events are raised. Real time: `telehealth.changed` on `Topics.Facility(facili
 
 | Template | Channels | Recipient |
 |---|---|---|
-| `telehealth.link` | SMS, WhatsApp | patient — values name, doctor, time, link, hospital |
+| `telehealth.link` | SMS, WhatsApp | patient — values name, doctor, time, link, hospital; not sent when the record is in a protected category and another active patient shares the mobile number (`sent` is false; the patient joins from the patient portal) |
 | `rpm.alert` | SMS (default), WhatsApp (seeded here) | care team — patient, reading, time |
 | `rpm.device_silent` | SMS, WhatsApp (seeded here) | patient — name, device, since |
 | `prescription.shared` | SMS (seeded here); WhatsApp (default) is sent by Clinical | patient — name, doctor, date |
