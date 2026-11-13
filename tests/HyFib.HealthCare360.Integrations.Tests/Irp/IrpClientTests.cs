@@ -187,6 +187,41 @@ public sealed class IrpClientTests : IDisposable
     }
 
     [Fact]
+    public async Task The_simulator_can_lose_its_answer_after_doing_the_work_or_not_be_reached_at_all()
+    {
+        var ledger = new SimulatorIrpLedger();
+        var simulator = new SimulatorIrp(ledger, _tracing.Trace, new TestClock(new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero)));
+        var hospital = SimulatorContext(Gstin);
+
+        // Not reached: nothing is registered.
+        using (ledger.Fail(SimulatorIrpOperations.Generate, SimulatorIrpFault.Down))
+        {
+            (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        ledger.Entries.ShouldBeEmpty();
+
+        // The answer lost: the IRN is registered all the same, and asked for again the document is a duplicate naming it.
+        using (ledger.Fail(SimulatorIrpOperations.Generate, SimulatorIrpFault.LoseAnswer))
+        {
+            (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        var irn = ledger.Entries.Keys.ShouldHaveSingleItem();
+        (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Error.ShouldBe(new IrpError(IrpError.DuplicateIrn, "Duplicate IRN", irn));
+
+        // A cancellation whose answer is lost is made; a fault is for the calls it was set on, and is cleared with its handle.
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, times: 2))
+        {
+            (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value!.IsCancelled.ShouldBeTrue();
+        (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).Error.ShouldBe(new IrpError("9999", "Invoice is not active."));
+        _tracing.Entries.Count(e => e.Error?.StartsWith(IrpError.Unreachable, StringComparison.Ordinal) == true).ShouldBe(3, "each failed call is in the log");
+    }
+
+    [Fact]
     public async Task Missing_credentials_stop_the_call_before_it_is_sent()
     {
         var context = Context("nic") with { Secrets = new IrpSecrets() };
