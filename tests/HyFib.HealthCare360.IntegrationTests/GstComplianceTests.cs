@@ -51,13 +51,13 @@ public sealed class GstComplianceTests(HospitalServer server)
 
         // Not connected: the IRN is asked for nowhere, and the hospital is told to upload the JSON by hand.
         var first = await BillAsync(company, service);
-        await using (await PortalAsync(enabled: false))
+        await using (await server.IrpPortalAsync(enabled: false))
         {
             using var off = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{first.Id}/irn/generate");
             (await CodeAsync(off)).ShouldBe("einvoice.irp_not_connected");
         }
 
-        await using var portal = await PortalAsync(enabled: true);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
         (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}")).PortalConnected.ShouldBeTrue();
         var registered = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}/irn/generate");
         registered.State.ShouldBe(EInvoiceState.Registered);
@@ -78,7 +78,7 @@ public sealed class GstComplianceTests(HospitalServer server)
 
         // A day and an hour later the portal no longer cancels it: a credit note undoes the invoice instead.
         var late = await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}");
-        await BackdateAsync(irn.Irn, TimeSpan.FromHours(25));
+        await server.BackdateIrnAsync(irn.Irn, TimeSpan.FromHours(25), Ct);
         late = await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}");
         late.Registration!.CanCancel.ShouldBeFalse();
         using (var refused = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{first.Id}/irn/cancel",
@@ -100,7 +100,7 @@ public sealed class GstComplianceTests(HospitalServer server)
     public async Task A_pharmacy_b2b_invoice_above_the_threshold_gets_its_e_way_bill_from_its_irn()
     {
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
-        await using var portal = await PortalAsync(enabled: true);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
         var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
         var sold = await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter",
@@ -135,7 +135,7 @@ public sealed class GstComplianceTests(HospitalServer server)
         var service = await TaxedServiceAsync(admin);
         var company = await CompanyAsync(admin);
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
-        await using var portal = await PortalAsync(enabled: true);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
         var bill = await BillAsync(company, service);
         var line = bill.Lines.Single(l => l.ServiceItemId == service.Id);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
@@ -286,18 +286,6 @@ public sealed class GstComplianceTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
-    /// <summary>The e-invoice portal set to the training simulator (or switched off) for the rest of the test, then put back.</summary>
-    private async Task<IAsyncDisposable> PortalAsync(bool enabled)
-    {
-        const string key = "integrations.irp";
-        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
-            .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = enabled, ["provider"] = "simulator" }, null, false, null));
-        return new Restore(async () =>
-            await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
-    }
-
     private async Task<IAsyncDisposable> SettingAsync(string key, decimal value)
     {
         await using var scope = server.Services.CreateAsyncScope();
@@ -318,16 +306,6 @@ public sealed class GstComplianceTests(HospitalServer server)
                 await store.SetAsync<decimal?>(key, null, facility, cancellationToken: CancellationToken.None);
             }
         });
-    }
-
-    /// <summary>Moves an IRN's generation back by <paramref name="age"/>, here and on the simulated portal.</summary>
-    private async Task BackdateAsync(string irn, TimeSpan age)
-    {
-        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
-        var entry = ledger.Entries[irn];
-        var at = DateTimeOffset.UtcNow - age;
-        ledger.Entries[irn] = entry with { Irn = entry.Irn with { AckDate = at } };
-        await WithDbAsync(db => db.Set<EInvoice>().Where(e => e.Irn == irn).ExecuteUpdateAsync(s => s.SetProperty(e => e.AckDate, at), Ct));
     }
 
     private async Task WithDbAsync(Func<HospitalDbContext, Task> work)

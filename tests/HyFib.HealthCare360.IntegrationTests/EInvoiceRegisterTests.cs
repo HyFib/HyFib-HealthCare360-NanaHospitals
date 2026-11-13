@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Integrations.Irp;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
@@ -16,6 +17,7 @@ using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.Extensions.DependencyInjection;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -154,6 +156,77 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         using var cancel = await secondPharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{sold.Id}/cancel", new { Reason = "Wrong buyer" });
         (await ProblemCodeAsync(cancel)).ShouldBe("einvoice.active");
     }
+
+    [Fact]
+    public async Task A_cancellation_whose_answer_is_lost_is_read_back_from_the_portal_before_anyone_is_told_to_try_again()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await TaxedServiceAsync(admin);
+        var company = await CompanyAsync(admin);
+        await using var einvoicing = await EInvoicingAsync(from: Today().AddDays(-1));
+        await using var portal = await server.IrpPortalAsync(enabled: true);
+        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // The portal cancels the IRN and its answer is lost: HC360 asks how the portal holds the IRN, and records the
+        // cancellation at the portal's time.
+        var first = await BillAsync(company, service);
+        var live = (await billing.IrnFromThePortalAsync("bill", first.Id, Ct)).Registration!;
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, irn: live.Irn))
+        {
+            var cancelled = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}/irn/cancel", Cancel(live.Version));
+            cancelled.State.ShouldBe(EInvoiceState.IrnCancelled);
+            cancelled.Registration!.CancelledAt!.Value.ShouldBe(ledger.Entries[live.Irn].CancelledAt!.Value, TimeSpan.FromMilliseconds(1));
+        }
+
+        // Its answer lost, and the portal not saying how it holds the IRN either: the outcome is not known, and staff are not
+        // told that nothing was done. Tried again, the portal refuses the IRN as no longer active; HC360 finds it cancelled
+        // there and records it.
+        var second = await BillAsync(company, service);
+        live = (await billing.IrnFromThePortalAsync("bill", second.Id, Ct)).Registration!;
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, irn: live.Irn))
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: live.Irn))
+        {
+            using var unknown = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{second.Id}/irn/cancel", Cancel(live.Version));
+            (await ProblemCodeAsync(unknown)).ShouldBe("einvoice.irp_cancel_unknown");
+        }
+
+        ledger.Entries[live.Irn].Cancelled.ShouldBeTrue("the portal did cancel it");
+        (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{second.Id}/irn/cancel", Cancel(live.Version))).State.ShouldBe(EInvoiceState.IrnCancelled);
+
+        // Not reached, the portal still holds the IRN as active: nothing was cancelled, and staff are told so.
+        var third = await BillAsync(company, service);
+        live = (await billing.IrnFromThePortalAsync("bill", third.Id, Ct)).Registration!;
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.Down, irn: live.Irn))
+        {
+            using var down = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{third.Id}/irn/cancel", Cancel(live.Version));
+            (await ProblemCodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
+            (await down.Content.ReadAsStringAsync(Ct)).ShouldContain($"The portal still holds IRN {live.Irn} as active, so nothing was cancelled.");
+        }
+
+        // A cancellation made in time with its answer lost is found on the portal even when tried again after the 24 hours.
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, irn: live.Irn))
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: live.Irn))
+        {
+            using var lost = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{third.Id}/irn/cancel", Cancel(live.Version));
+            (await ProblemCodeAsync(lost)).ShouldBe("einvoice.irp_cancel_unknown");
+        }
+
+        await server.BackdateIrnAsync(live.Irn, TimeSpan.FromHours(25), Ct);
+        var late = (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{third.Id}")).Registration!;
+        late.CanCancel.ShouldBeFalse();
+        (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{third.Id}/irn/cancel", Cancel(late.Version))).State.ShouldBe(EInvoiceState.IrnCancelled);
+    }
+
+    private static CancelIrnRequest Cancel(uint version) => new(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", version);
+
+    private async Task<ServiceItemDto> TaxedServiceAsync(ApiClient admin) => await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
+        $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
+
+    private async Task<PayerDetail> CompanyAsync(ApiClient admin, string address = "4/12 MG Road, Ernakulam, Kochi, Kerala 682016") =>
+        await server.CreatePayerAsync(admin, new SavePayerRequest(
+            $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
+            null, address, KeralaCompany, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null, IsActive: true, Notes: null, Version: null));
 
     /// <summary>A corporate visit with one charge of <paramref name="service"/>, billed and finalized by the billing desk.</summary>
     private async Task<BillDetail> BillAsync(PayerDetail company, ServiceItemDto service)

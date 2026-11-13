@@ -1,7 +1,11 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Integrations.Irp;
+using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
@@ -19,6 +23,7 @@ internal static class EInvoicing
 {
     public const string Hospital = "33AABCN1234F1Z3";
     public const string KeralaCompany = "32AAACH7409R1ZA";
+    public const string Register = "/api/v1/billing/einvoices";
 
     /// <summary>
     /// The hospital registered in Chennai, with e-invoicing <paramref name="from"/> a date (or off), for the rest of the
@@ -84,6 +89,70 @@ internal static class EInvoicing
     }
 
     public static string Irn() => Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()) + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray());
+
+    /// <summary>The e-invoice portal set to the training simulator (or switched off) for the rest of the test, then put back.</summary>
+    public static async Task<IAsyncDisposable> IrpPortalAsync(this HospitalServer server, bool enabled)
+    {
+        const string key = "integrations.irp";
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
+            .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
+        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = enabled, ["provider"] = "simulator" }, null, false, null));
+        return new Restore(async () =>
+            await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
+    }
+
+    /// <summary>Moves an IRN's generation back by <paramref name="age"/>, here and on the simulated portal.</summary>
+    public static async Task BackdateIrnAsync(this HospitalServer server, string irn, TimeSpan age, CancellationToken ct)
+    {
+        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
+        var entry = ledger.Entries[irn];
+        var at = DateTimeOffset.UtcNow - age;
+        ledger.Entries[irn] = entry with { Irn = entry.Irn with { AckDate = at } };
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<EInvoice>().Where(e => e.Irn == irn)
+            .ExecuteUpdateAsync(s => s.SetProperty(e => e.AckDate, at), ct);
+    }
+
+    /// <summary>
+    /// The document's IRN from the connected portal: asked for here unless HC360 has it already (the outbox asks for it on
+    /// its own once the document is final, and a 409 means it got there first), then the document as registered.
+    /// </summary>
+    public static async Task<EInvoiceDetail> IrnFromThePortalAsync(this ApiClient client, string source, Guid id, CancellationToken ct)
+    {
+        using (var asked = await client.SendRawAsync(HttpMethod.Post, $"{Register}/{source}/{id}/irn/generate"))
+        {
+            if (asked.StatusCode is not (HttpStatusCode.OK or HttpStatusCode.Conflict))
+            {
+                throw new ShouldAssertException($"Asking for the IRN of {source} {id}: {(int)asked.StatusCode} {await asked.Content.ReadAsStringAsync(ct)}");
+            }
+        }
+
+        return await client.EInvoiceWhenAsync(source, id, d => d.State == EInvoiceState.Registered, "the IRN", ct);
+    }
+
+    /// <summary>
+    /// The document's e-invoice once <paramref name="condition"/> holds, read again every second for up to a minute (or
+    /// <paramref name="within"/>): what the outbox does (it runs every two seconds, and backs off on a retry) is seen this way.
+    /// </summary>
+    public static async Task<EInvoiceDetail> EInvoiceWhenAsync(
+        this ApiClient client, string source, Guid id, Func<EInvoiceDetail, bool> condition, string what, CancellationToken ct, TimeSpan? within = null)
+    {
+        EInvoiceDetail detail;
+        var waited = TimeSpan.Zero;
+        while (!condition(detail = await client.GetAsync<EInvoiceDetail>($"{Register}/{source}/{id}")))
+        {
+            if (waited >= (within ?? TimeSpan.FromMinutes(1)))
+            {
+                throw new ShouldAssertException($"Waited {waited.TotalSeconds:0} s for {what} of {source} {id}; it stands {detail.State}.");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            waited += TimeSpan.FromSeconds(1);
+        }
+
+        return detail;
+    }
 
     /// <summary>The hospital's (IST) day.</summary>
     public static DateOnly Today() => DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(5.5)).DateTime);

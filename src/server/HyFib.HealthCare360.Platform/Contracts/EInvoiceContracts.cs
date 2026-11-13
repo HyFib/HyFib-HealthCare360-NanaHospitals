@@ -172,6 +172,9 @@ public sealed record IrpError(string Code, string Message, string? ExistingIrn =
     /// <summary>The portal's code for a document it already gave an IRN.</summary>
     public const string DuplicateIrn = "2150";
 
+    /// <summary>The portal's code for a cancellation asked for more than 24 hours after the IRN was generated.</summary>
+    public const string CancelWindowCrossed = "2270";
+
     /// <summary>Not a code of the portal's: the call did not reach it or got no answer.</summary>
     public const string Unreachable = "unreachable";
 
