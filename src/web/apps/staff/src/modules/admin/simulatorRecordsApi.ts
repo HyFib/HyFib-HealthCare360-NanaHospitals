@@ -30,7 +30,7 @@ export interface SimulatorOpenRecord {
   reference: string;
   at: string | null;
   amount: number | null;
-  entity: 'Receipt' | 'Refund' | 'Patient' | 'ImagingStudy' | 'LabOrder' | 'UnmatchedLabResult';
+  entity: 'Receipt' | 'Refund' | 'Patient' | 'ImagingStudy' | 'LabOrder' | 'UnmatchedLabResult' | 'EInvoice';
   entityId: string;
   patientId: string | null;
 }
@@ -109,6 +109,15 @@ export function openRecordLink(record: SimulatorOpenRecord): {
       return { label: 'Open the lab order', to: `/lab/orders/${record.entityId}` };
     case 'UnmatchedLabResult':
       return { label: 'Open the unmatched results', to: '/lab/unmatched', search: { search: record.reference } };
+    case 'EInvoice': {
+      // The e-invoices list shows a range of days: the IRN's own.
+      const day = record.at ? hospitalDay(record.at) : undefined;
+      return {
+        label: "Open the day's e-invoices",
+        to: '/billing/einvoices',
+        search: day ? { from: day, to: day } : undefined,
+      };
+    }
   }
 }
 

@@ -121,6 +121,11 @@ describe('openText and openRecordLink', () => {
       to: '/lab/unmatched',
       search: { search: 'NHRC260000123' },
     });
+    expect(openRecordLink(record('EInvoice'))).toMatchObject({
+      to: '/billing/einvoices',
+      search: { from: '2026-09-02', to: '2026-09-02' },
+    });
+    expect(openRecordLink(record('EInvoice', null)).search).toBeUndefined();
   });
 });
 
