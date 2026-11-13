@@ -8,16 +8,22 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// Receives analyser results from the lab-equipment gateway (LIS-04, INT-LAB) and answers bi-directional host queries.
 /// <list type="bullet">
 /// <item>Only registered, active analysers are accepted, and only for tubes of their own facility.</item>
+/// <item>When the analyser names the sample's patient (<see cref="InstrumentResultMessage.Patient"/>), that patient must
+/// be able to be the tube's (<see cref="PatientIdentity"/>): the analyser sent another registered patient's UHID, or no
+/// UHID to go by and a name that cannot be the tube patient's, and every result of the message is kept among the unmatched
+/// results (<see cref="UnmatchedResultReason.PatientMismatch"/>) with nothing of the tube changed or received. A message
+/// that names no patient is taken as before.</item>
 /// <item>Channels map to analytes by <c>INSTRUMENT:CHANNEL</c> (preferred) or plain <c>CHANNEL</c> codes. Only analytes
 /// ordered on the scanned tube are filled. Channels no test on the tube maps are logged when others in the message
 /// matched: analysers send whole profiles, of which a tube may need one test. A channel no active test in the catalogue
 /// maps at all is listed for the lab to map or ignore (<see cref="AnalyserChannelSightings"/>).</item>
 /// <item>Every other result is kept. One that cannot go on an open test (no sample id, a sample unknown or not in the
-/// lab, a tube none of whose tests maps any channel sent, a value the test cannot hold, another value or another
-/// reading of it for a verified test or for a test the message gave already) is stored among the unmatched results
-/// (<see cref="UnmatchedLabResult"/>) for a lab user to assign or discard, and the message is acknowledged: the analyser
-/// neither sends it for ever nor loses it. The same reading sent again (after a lost acknowledgement) changes nothing.
-/// Verified results are never overwritten; a rerun needs the result to be reopened first.</item>
+/// lab, another patient named for it, a tube none of whose tests maps any channel sent, a value the test cannot hold,
+/// another value or another reading of it for a verified test or for a test the message gave already) is stored among
+/// the unmatched results (<see cref="UnmatchedLabResult"/>) for a lab user to assign or discard, and the message is
+/// acknowledged: the analyser neither sends it for ever nor loses it. The same reading sent again (after a lost
+/// acknowledgement) changes nothing. Verified results are never overwritten; a rerun needs the result to be reopened
+/// first.</item>
 /// <item>Results are interpreted and delta-checked like manual entry, and keep what the analyser said about them: unit,
 /// flags, status and comment. They are auto-validated only when in range, QC was accepted today on this analyser, the
 /// delta check passed, and the analyser raised no flag, used the test's unit and reported the result as final.
@@ -89,6 +95,16 @@ internal sealed class InstrumentResultSink(
             notOnTube.AddRange(message.Results);
             return await KeepAllAsync(instrument, message, tube: null, UnmatchedResultReason.UnknownSample,
                 $"No sample of {instrument.Code}'s facility has the barcode {barcode}.", cancellationToken);
+        }
+
+        // The analyser named another patient for the sample: a misread or swapped barcode would put their values on this
+        // tube. Nothing of the message goes on it, and a collected tube is not received for it either.
+        if (message.Patient is { } sent && await PatientMismatchAsync(instrument, tube, sent, cancellationToken) is { } mismatch)
+        {
+            notOnTube.AddRange(message.Results);
+            logger.LogWarning("Analyser {Instrument} named another patient for sample {Barcode} than the tube's; its results are kept for the lab",
+                instrument.Code, barcode);
+            return await KeepAllAsync(instrument, message, tube, UnmatchedResultReason.PatientMismatch, mismatch, cancellationToken);
         }
 
         var now = time.GetUtcNow();
@@ -226,6 +242,44 @@ internal sealed class InstrumentResultSink(
         await realtime.PublishAsync(tube.FacilityId, "lab.results.received", new { tube.LabOrderId, SampleId = tube.Id }, cancellationToken);
         await AnnounceKeptAsync(instrument, barcode, kept, cancellationToken);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// What the lab is told when the analyser named another patient for the sample than the tube's, or null when its
+    /// patient can be the tube's or it named no one to compare (<see cref="PatientMismatch"/>).
+    /// </summary>
+    private async Task<string?> PatientMismatchAsync(LabInstrument instrument, LabSample tube, InstrumentPatient sent, CancellationToken ct)
+    {
+        var patient = await lookups.PatientAsync(tube.PatientId, ct);
+        if (patient is null)
+        {
+            return null;
+        }
+
+        var sentId = await lookups.WhoseIdAsync(sent.Id, patient, ct);
+        return PatientMismatch(instrument.Code, tube.Barcode, sent, sentId, patient.Uhid, patient.FullName);
+    }
+
+    /// <summary>
+    /// What the lab is told of a patient mismatch (<see cref="PatientIdentity"/>): the analyser sent another registered
+    /// patient's UHID, or no UHID to go by and a name that cannot be the tube patient's. Null when its patient can be the
+    /// tube's, or it named no one to compare. What the analyser sent is shown on one line, cut to 64 characters.
+    /// </summary>
+    internal static string? PatientMismatch(
+        string instrumentCode, string barcode, InstrumentPatient sent, AnalyserPatientId sentId, string uhid, string fullName)
+    {
+        var sentName = Shown(sent.Name);
+        return PatientIdentity.Compare(sentId, sent.Name, fullName) switch
+        {
+            PatientComparison.OtherId =>
+                $"{instrumentCode} sent sample {barcode} for patient {Shown(sent.Id)}{(sentName is null ? string.Empty : $" ({sentName})")}, " +
+                $"not the sample's patient {fullName} ({uhid}).",
+            PatientComparison.OtherName => $"{instrumentCode} sent sample {barcode} for {sentName}, not the sample's patient {fullName} ({uhid}).",
+            _ => null,
+        };
+
+        static string? Shown(string? text) =>
+            text is null ? null : TextLimits.Clip(string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)), 64);
     }
 
     /// <summary>A result for a test whose value is settled already: verified, or given earlier in this message.</summary>
