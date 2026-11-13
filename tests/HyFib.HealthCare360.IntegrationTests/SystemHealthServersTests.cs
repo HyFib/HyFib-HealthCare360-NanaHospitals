@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -112,6 +113,54 @@ public sealed class SystemHealthServersTests(HospitalServer server)
         {
             await after.WithdrawAsync(Ct);
             await before.WithdrawAsync(Ct);
+        }
+    }
+
+    /// <summary>
+    /// The alerts, from System health with several servers (DED-17, SCAL-01): an API node that stops reporting is told, and
+    /// once it reports again it is told back, judged from the same report. One stopped on purpose removes its row: its
+    /// alert clears too, but it is not back, and nobody is told it is.
+    /// </summary>
+    [Fact]
+    public async Task An_api_node_that_reports_again_is_told_back_and_one_stopped_on_purpose_is_not()
+    {
+        var scopes = server.Services.GetRequiredService<IServiceScopeFactory>();
+        var jobs = new ServerNodeBoard(scopes, NodeFolder());
+        var back = new ServerNodeBoard(scopes, NodeFolder());
+        var stopped = new ServerNodeBoard(scopes, NodeFolder());
+        var suffix = Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        var (backName, stoppedName) = ("IT-API-" + suffix, "IT-OFF-" + suffix);
+        try
+        {
+            await jobs.PublishAsync(JobNode("IT-JOBS-" + suffix) with { Warnings = [] }, Ct);
+            await back.PublishAsync(ApiNode(backName), Ct);
+            await stopped.PublishAsync(ApiNode(stoppedName), Ct);
+            await SilenceAsync(back.Node);
+            await SilenceAsync(stopped.Node);
+            var toldAt = DateTimeOffset.UtcNow;
+            await AlertsAsync(await ApiNodeReportAsync(), toldAt);
+            (await NotReportingAsync(backName)).ToldAt.ShouldNotBeNull("an API node gone silent is critical, and told");
+            (await NotReportingAsync(stoppedName)).ToldAt.ShouldNotBeNull();
+
+            // One starts again and reports; the other is stopped on purpose, which removes its row.
+            await back.PublishAsync(ApiNode(backName), Ct);
+            await stopped.WithdrawAsync(Ct);
+            await AlertsAsync(await ApiNodeReportAsync(), toldAt.AddMinutes(10));
+
+            (await NotReportingAsync(backName)).ClearedAt.ShouldNotBeNull();
+            (await NotReportingAsync(stoppedName)).ClearedAt.ShouldNotBeNull();
+            (await ToldBackAsync(backName)).ShouldBeGreaterThan(0, "everyone who may see System health is told it is back");
+            (await ToldBackAsync(stoppedName)).ShouldBe(0, "a server stopped on purpose is not back");
+        }
+        finally
+        {
+            await stopped.WithdrawAsync(Ct);
+            await back.WithdrawAsync(Ct);
+            await jobs.WithdrawAsync(Ct);
+
+            // The alerts as this single server runs them: those of the servers above clear without a word.
+            await using var scope = server.Services.CreateAsyncScope();
+            await AlertsAsync(await scope.ServiceProvider.GetRequiredService<SystemHealthService>().BuildAsync(Ct), DateTimeOffset.UtcNow);
         }
     }
 
@@ -265,6 +314,42 @@ public sealed class SystemHealthServersTests(HospitalServer server)
         DataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-node-" + Guid.NewGuid().ToString("N")),
         Cluster = { SharedDirectory = SharedFolder },
     });
+
+    /// <summary>The part an API node writes, with nothing to warn of.</summary>
+    private static ServerNodeHealth ApiNode(string machine) => JobNode(machine, role: "api") with { Warnings = [] };
+
+    /// <summary>A server's row as when it stopped writing it ten minutes ago, without saying so, as in a power cut.</summary>
+    private async Task SilenceAsync(string node)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Database.ExecuteSqlAsync(
+            $"UPDATE platform.server_nodes SET reported_at = now() - interval '10 minutes' WHERE node = {node}", Ct);
+    }
+
+    /// <summary>One check of the alerts at <paramref name="now"/>, from <paramref name="report"/>, as the node that runs them makes it.</summary>
+    private async Task AlertsAsync(SystemHealthReport report, DateTimeOffset now)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        await SystemHealthAlerts.CheckAsync(report, scope.ServiceProvider.GetRequiredService<AlertIncidents>(), now, Ct);
+    }
+
+    /// <summary>The alert raised last for <paramref name="machine"/> not reporting.</summary>
+    private async Task<AlertIncident> NotReportingAsync(string machine)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AlertIncident>().AsNoTracking()
+            .Where(i => i.Code == SystemHealthService.NotReportingCode && i.Server == machine)
+            .OrderByDescending(i => i.RaisedAt)
+            .FirstAsync(Ct);
+    }
+
+    /// <summary>How many in the app were told that <paramref name="machine"/> reports again.</summary>
+    private async Task<int> ToldBackAsync(string machine)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserNotification>()
+            .CountAsync(n => n.Title == SystemHealthAlerts.BackTitle && n.Body!.Contains(machine), Ct);
+    }
 
     private async Task<string?> ReportOfAsync(string node)
     {

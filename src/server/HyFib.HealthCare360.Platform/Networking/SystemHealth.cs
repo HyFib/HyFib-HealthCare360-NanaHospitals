@@ -184,6 +184,12 @@ public sealed class SystemHealthService(
     /// <summary>How long before the hospital CA expires its warning turns critical, which is told to IT on-call.</summary>
     public static readonly TimeSpan CaUrgentPeriod = TimeSpan.FromDays(90);
 
+    /// <summary>
+    /// The warning that a server of several (SCAL-01) has stopped reporting. Its alert, once told, is over when the server
+    /// reports again, and those it paged are told so (<see cref="AlertIncidents"/>).
+    /// </summary>
+    public const string NotReportingCode = "server.not_reporting";
+
     public async Task<SystemHealthReport> BuildAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
@@ -372,7 +378,7 @@ public sealed class SystemHealthService(
             }
             else
             {
-                warnings.Add(new("server.not_reporting", "critical",
+                warnings.Add(new(NotReportingCode, "critical",
                     $"{name}, which ran the background jobs, has not reported for more than three minutes: {SilentBecause} " +
                     (standingBy.Length > 0
                         ? $"{string.Join(", ", standingBy)} stand{(standingBy.Length == 1 ? "s" : string.Empty)} by to take the jobs over within a minute."
@@ -449,7 +455,7 @@ public sealed class SystemHealthService(
         {
             var standby = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && s.Server.Jobs is { Active: false })
                 .Select(s => s.Server.MachineName).ToArray();
-            return new("server.not_reporting", "warning",
+            return new(NotReportingCode, "warning",
                 $"{name}, which stands by for the background jobs, has not reported for more than three minutes: {SilentBecause} " + (standby.Length > 0
                     ? $"{string.Join(", ", standby)} still stand{(standby.Length == 1 ? "s" : string.Empty)} by."
                     : "Until it is back, no server takes the jobs over if the one that runs them stops."),
@@ -457,7 +463,7 @@ public sealed class SystemHealthService(
         }
 
         var others = servers.Where(s => !ReferenceEquals(s, server) && s.Reporting && ServesApi(s)).Select(s => s.Server.MachineName).ToArray();
-        return new("server.not_reporting", "critical",
+        return new(NotReportingCode, "critical",
             $"{name} has not reported for more than three minutes: {SilentBecause} " + (others.Length > 0
                 ? $"The reverse proxy sends requests to {string.Join(", ", others)} meanwhile."
                 : "No other server takes requests: workstations cannot reach HC360 until it is back."),

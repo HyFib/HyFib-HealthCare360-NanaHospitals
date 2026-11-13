@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
@@ -18,7 +19,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// Alerts that reach someone (audit P2), over the real API, database and alerts. A drill's test warning is told as any
 /// critical warning is, and keeps when each step happened; drills started at once start one. The heartbeat's address is
 /// kept secret, the heartbeat fetches it, and System health says when that fails. A live server says when a critical
-/// warning would not reach IT on-call, and when nothing outside the hospital would notice it stop.
+/// warning would not reach IT on-call, and when nothing outside the hospital would notice it stop. A server of several that
+/// stopped reporting and reports again is told back to everyone its alert reached, never before the alert itself, and
+/// never when it is gone rather than back.
 /// </summary>
 public sealed class AlertingTests(HospitalServer server)
 {
@@ -279,6 +282,126 @@ public sealed class AlertingTests(HospitalServer server)
         await CheckWithAsync();
     }
 
+    /// <summary>
+    /// A server of several that stopped reporting reports again (SCAL-01): IT on-call is told it is over, in the app too, with
+    /// when it was not reporting and when it was again. The alert of its silence, still waiting in the outbox after a failed
+    /// try, is withdrawn, so the return never reaches the phone before it.
+    /// </summary>
+    [Fact]
+    public async Task A_server_that_reports_again_is_told_back_and_its_alert_not_sent_yet_is_withdrawn()
+    {
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000154");
+        var name = ServerName();
+        var toldAt = DateTimeOffset.UtcNow;
+        await CheckWithAsync(toldAt, [], Silent(name));
+        var told = await SilentIncidentAsync(name);
+        told.ToldAt.ShouldNotBeNull();
+        var loss = told.OnCallMessageIds.ShouldHaveSingleItem("by SMS to IT on-call, who has no WhatsApp alerts here");
+        await FailedAndWaitingAsync(loss);
+
+        var backAt = toldAt.AddMinutes(12);
+        await CheckWithAsync(backAt, [name]);
+
+        var cleared = await SilentIncidentAsync(name);
+        (cleared.Id, cleared.ClearedAt).ShouldBe((told.Id, backAt));
+        (await StatusAsync(loss)).ShouldBe((NotificationStatus.Suppressed, AlertIncidents.WithdrawnBecauseBack));
+        var back = await QueuedAsync(cleared.OnCallMessageIds.Except([loss]).ShouldHaveSingleItem());
+        (back.TemplateKey, back.Channel, back.To, back.Values["server"]).ShouldBe(
+            (AlertReadiness.AlertTemplate, NotificationChannel.Sms, Phone.Normalize("+919800000154"), name));
+        back.Values["message"].ShouldBe(AlertIncidents.BackMessage(name, cleared.ToldAt.ShouldNotBeNull(), backAt));
+        back.Values["message"].ShouldStartWith($"{name} is reporting again: ");
+        (await InAppAsync(SystemHealthAlerts.BackTitle, name)).ShouldNotBeEmpty("everyone who may see System health saw it critical in the app");
+
+        // Told once: the next check finds its alert cleared, and sends nothing more.
+        await CheckWithAsync(backAt.AddMinutes(5), [name]);
+        (await SilentIncidentAsync(name)).OnCallMessageIds.Count.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// Nobody acknowledged it, and it reached the second contact and then HyFib support: each of them is told it is over,
+    /// as they were paged, HyFib support with the hospital's name.
+    /// </summary>
+    [Fact]
+    public async Task A_server_back_after_its_alert_was_escalated_is_told_back_to_everyone_it_reached()
+    {
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000155");
+        await using var second = await SettingAsync(AlertEscalation.SecondContactSetting, "+919800000156");
+        await using var support = await SettingAsync(AlertEscalation.SupportSetting, "+919800000157");
+        await using var escalateAt = await SettingAsync(AlertEscalation.EscalateMinutesSetting, 15);
+        await using var supportAt = await SettingAsync(AlertEscalation.SupportMinutesSetting, 30);
+        var name = ServerName();
+        var toldAt = DateTimeOffset.UtcNow;
+        await CheckWithAsync(toldAt, [], Silent(name));
+        await CheckWithAsync(toldAt.AddMinutes(15), [], Silent(name));
+        await CheckWithAsync(toldAt.AddMinutes(45), [], Silent(name));
+        var paged = await SilentIncidentAsync(name);
+        paged.Level.ShouldBe(AlertLevel.Support);
+
+        var backAt = toldAt.AddMinutes(50);
+        await CheckWithAsync(backAt, [name]);
+
+        var cleared = await SilentIncidentAsync(name);
+        var message = AlertIncidents.BackMessage(name, cleared.ToldAt.ShouldNotBeNull(), backAt);
+        var toOnCall = await QueuedAsync(cleared.OnCallMessageIds.Except(paged.OnCallMessageIds).ShouldHaveSingleItem());
+        var toSecond = await QueuedAsync(cleared.SecondContactMessageIds.Except(paged.SecondContactMessageIds).ShouldHaveSingleItem());
+        var toSupport = await QueuedAsync(cleared.SupportMessageIds.Except(paged.SupportMessageIds).ShouldHaveSingleItem());
+        (toOnCall.To, toOnCall.Values["server"], toOnCall.Values["message"]).ShouldBe((Phone.Normalize("+919800000155"), name, message));
+        (toSecond.To, toSecond.Values["server"], toSecond.Values["message"]).ShouldBe((Phone.Normalize("+919800000156"), name, message));
+        (toSupport.To, toSupport.Values["message"]).ShouldBe((Phone.Normalize("+919800000157"), message));
+        toSupport.Values["server"].ShouldEndWith($", {name}", customMessage: "HyFib support is told whose hospital it is, as when it was paged");
+    }
+
+    /// <summary>
+    /// Back, then silent again before the alert of its return could go (the SMS gateway out of reach): the return is
+    /// withdrawn, so the phone never ends on "reporting again" while the server is not; the new alert is told at once.
+    /// </summary>
+    [Fact]
+    public async Task A_server_silent_again_before_its_return_went_withdraws_the_return()
+    {
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000158");
+        var name = ServerName();
+        var toldAt = DateTimeOffset.UtcNow;
+        await CheckWithAsync(toldAt, [], Silent(name));
+        await CheckWithAsync(toldAt.AddMinutes(10), [name]);
+        var first = await SilentIncidentAsync(name);
+        first.OnCallMessageIds.Count.ShouldBe(2, "the alert of its silence, then of its return");
+        var back = first.OnCallMessageIds[^1];
+        await FailedAndWaitingAsync(back);
+
+        await CheckWithAsync(toldAt.AddMinutes(15), [], Silent(name));
+
+        var again = await SilentIncidentAsync(name);
+        again.Id.ShouldNotBe(first.Id);
+        (again.ToldAt, again.ClearedAt).ShouldBe((again.RaisedAt, null));
+        again.OnCallMessageIds.ShouldHaveSingleItem();
+        (await StatusAsync(back)).ShouldBe((NotificationStatus.Suppressed, AlertIncidents.WithdrawnBecauseSilentAgain));
+
+        await CheckWithAsync(toldAt.AddMinutes(20), null);
+    }
+
+    /// <summary>
+    /// A server stopped on purpose removes itself from the servers that report, and one silent for a day is dropped from
+    /// them: its alert clears all the same, but it is not back, and nobody is told it is. The alert of its silence stands.
+    /// </summary>
+    [Fact]
+    public async Task A_server_gone_rather_than_back_is_not_told_back()
+    {
+        await using var onCall = await SettingAsync("alerts.oncallPhone", "+919800000159");
+        var name = ServerName();
+        var toldAt = DateTimeOffset.UtcNow;
+        await CheckWithAsync(toldAt, [], Silent(name));
+        var loss = (await SilentIncidentAsync(name)).OnCallMessageIds.ShouldHaveSingleItem();
+        await FailedAndWaitingAsync(loss);
+
+        await CheckWithAsync(toldAt.AddMinutes(10), ["HC360-API2"]);
+
+        var cleared = await SilentIncidentAsync(name);
+        cleared.ClearedAt.ShouldNotBeNull();
+        cleared.OnCallMessageIds.ShouldBe([loss], "no return is queued");
+        (await StatusAsync(loss)).Status.ShouldBe(NotificationStatus.Failed, "the alert of its silence is not withdrawn: it is still true");
+        (await InAppAsync(SystemHealthAlerts.BackTitle, name)).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task The_report_counts_every_alert_of_the_period_though_it_lists_only_the_latest_that_cleared()
     {
@@ -402,12 +525,81 @@ public sealed class AlertingTests(HospitalServer server)
         (await admin.GetAsync<AlertReport>($"{Alerts}?days=1")).Incidents.Where(i => i.Code == code).MaxBy(i => i.RaisedAt).ShouldNotBeNull();
 
     /// <summary>One check of the alerts with System health's critical warnings now and <paramref name="extra"/>.</summary>
-    private async Task CheckWithAsync(params HealthWarning[] extra)
+    private Task CheckWithAsync(params HealthWarning[] extra) => CheckWithAsync(DateTimeOffset.UtcNow, null, extra);
+
+    /// <summary>
+    /// One check of the alerts at <paramref name="now"/>, with System health's critical warnings and <paramref name="extra"/>,
+    /// as a server of several that runs them finds <paramref name="reporting"/> reporting.
+    /// </summary>
+    private async Task CheckWithAsync(DateTimeOffset now, IReadOnlyCollection<string>? reporting, params HealthWarning[] extra)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var critical = (await scope.ServiceProvider.GetRequiredService<SystemHealthService>().BuildAsync(Ct)).Warnings
             .Where(w => w.Severity == "critical" && !w.Code.StartsWith("wifi.", StringComparison.Ordinal));
-        await scope.ServiceProvider.GetRequiredService<AlertIncidents>().CheckAsync([.. critical, .. extra], DateTimeOffset.UtcNow, Ct);
+        await scope.ServiceProvider.GetRequiredService<AlertIncidents>().CheckAsync([.. critical, .. extra], now, reporting, Ct);
+    }
+
+    /// <summary>A server name of this test alone, as a machine is named.</summary>
+    private static string ServerName() => "TEST-" + Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+
+    /// <summary>System health's warning that <paramref name="name"/>, a server that takes requests, has stopped reporting.</summary>
+    private static HealthWarning Silent(string name) => new(SystemHealthService.NotReportingCode, "critical",
+        $"{name} has not reported for more than three minutes: it may be off, its HC360Server service stopped, its network cable out, "
+        + "or the database out of its reach. The reverse proxy sends requests to HC360-API2 meanwhile.",
+        name);
+
+    /// <summary>The alert raised last for <paramref name="name"/> not reporting, as the database keeps it.</summary>
+    private async Task<AlertIncident> SilentIncidentAsync(string name)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AlertIncident>().AsNoTracking()
+            .Where(i => i.Code == SystemHealthService.NotReportingCode && i.Server == name)
+            .OrderByDescending(i => i.RaisedAt)
+            .FirstAsync(Ct);
+    }
+
+    /// <summary>What a message waiting in the outbox says, and to whom.</summary>
+    private async Task<NotificationDelivery> QueuedAsync(Guid logId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var id = logId.ToString();
+        return (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>().AsNoTracking()
+            .SingleAsync(m => m.Payload.Contains(id), Ct)).Read<NotificationDelivery>();
+    }
+
+    /// <summary>
+    /// A message as when its first try failed (the SMS gateway out of reach) and the outbox waits to try it again: not sent,
+    /// and not tried again during the test. The outbox holds a message's row while it tries it, so whatever it was doing
+    /// with this one is done first.
+    /// </summary>
+    private async Task FailedAndWaitingAsync(Guid logId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var id = logId.ToString();
+        await db.Set<OutboxMessage>().Where(m => m.Payload.Contains(id)).ExecuteUpdateAsync(s => s
+            .SetProperty(m => m.Status, OutboxStatus.Pending)
+            .SetProperty(m => m.NextAttemptAt, DateTimeOffset.UtcNow.AddHours(1)), Ct);
+        await db.Set<NotificationLog>().Where(l => l.Id == logId).ExecuteUpdateAsync(s => s
+            .SetProperty(l => l.Status, NotificationStatus.Failed)
+            .SetProperty(l => l.Error, "The SMS gateway could not be reached."), Ct);
+    }
+
+    private async Task<(NotificationStatus Status, string? Error)> StatusAsync(Guid logId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var log = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<NotificationLog>().AsNoTracking()
+            .SingleAsync(l => l.Id == logId, Ct);
+        return (log.Status, log.Error);
+    }
+
+    /// <summary>The in-app notifications titled <paramref name="title"/> about <paramref name="name"/>.</summary>
+    private async Task<List<UserNotification>> InAppAsync(string title, string name)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserNotification>().AsNoTracking()
+            .Where(n => n.Title == title && n.Body!.Contains(name))
+            .ToListAsync(Ct);
     }
 
     private async Task<int> EscalationsAsync(Guid incidentId)
