@@ -96,6 +96,27 @@ const live = (portalConnected: boolean): EInvoiceDetail => ({
   registration: REGISTRATION,
 });
 
+/** Past the 24 hours: the portal cancels the IRN no more. */
+const lapsed = (portalConnected: boolean): EInvoiceDetail => ({
+  ...live(portalConnected),
+  registration: { ...REGISTRATION, canCancel: false, cancelBy: new Date(Date.now() - 4 * 3600_000).toISOString() },
+});
+
+/** Cancelled on the portal within the 24 hours, its answer lost, and recorded once the portal said so. */
+const CANCELLED_IN_TIME: EInvoiceDetail = {
+  ...pending(true),
+  state: 'IrnCancelled',
+  registration: {
+    ...REGISTRATION,
+    status: 'Cancelled',
+    canCancel: false,
+    cancelBy: new Date(Date.now() - 4 * 3600_000).toISOString(),
+    cancelledAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
+    cancelReason: 'DataEntryMistake',
+    cancelRemark: 'Wrong buyer',
+  },
+};
+
 /** A refusal as the server sends it: a business rule is a 422 with its code and its own sentence. */
 const refused = (code: string, detail: string, status = 422) =>
   json({ title: 'Cannot complete this action', status, code, detail }, status);
@@ -243,6 +264,73 @@ describe('GST e-invoices', SCREEN_TESTS, () => {
     await waitFor(() => expect(reads()).toBe(before + 1));
     expect(dialog.getByRole('textbox', { name: /Remark/ })).toHaveValue('Wrong buyer');
     expect(cancel).toBeEnabled();
+  });
+
+  it('connected, past the 24 hours, asks the portal whether a cancellation made in time went through', async () => {
+    let detail = lapsed(true);
+    const answers: unknown[] = [
+      refused(
+        'einvoice.cancel_window',
+        'The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.',
+      ),
+      refused(
+        'einvoice.irp_cancel_unknown',
+        `The portal cancels an IRN only within 24 hours of its generation, and did not say whether it cancelled IRN ${IRN} in time (2283: IRN details are not found). Check the IRN on the portal: while it is active there, issue a credit note against the invoice instead.`,
+      ),
+    ];
+    const { user, dialog } = await openBill({
+      [`GET ${DOC}`]: () => detail,
+      [`POST ${DOC}/irn/cancel`]: () => answers.shift(),
+    });
+
+    // The IRN stays; asking about a cancellation made in time is folded away under its own button.
+    expect(dialog.getByText(/More than 24 hours have passed/)).toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Cancel IRN on the portal' })).not.toBeInTheDocument();
+    const ask = dialog.getByRole('button', { name: 'Ask the portal whether it was cancelled' });
+    expect(ask).toHaveAttribute('aria-expanded', 'false');
+    expect(dialog.queryByRole('textbox', { name: /Remark/ })).not.toBeInTheDocument();
+
+    await user.click(ask);
+    expect(ask).toHaveAttribute('aria-expanded', 'true');
+    const panel = within(dialog.getByRole('group', { name: 'Ask the portal whether it was cancelled' }));
+    const send = panel.getByRole('button', { name: 'Ask the portal' });
+    expect(send).toBeDisabled();
+    await user.type(panel.getByRole('textbox', { name: /Remark/ }), 'Wrong buyer');
+
+    // The portal holds the IRN as active: nothing was cancelled in time, and a credit note undoes the invoice.
+    const before = reads();
+    await user.click(send);
+    expect(await panel.findByText('Not cancelled on the portal: the IRN stays', {}, SLOW)).toBeInTheDocument();
+    expect(panel.getByText(/Issue a credit note against the invoice instead/)).toBeInTheDocument();
+    expect(posted(`${DOC}/irn/cancel`)[0]?.body).toEqual({
+      reason: 'DataEntryMistake',
+      remark: 'Wrong buyer',
+      version: 3,
+    });
+    await waitFor(() => expect(reads()).toBe(before + 1));
+
+    // The portal would not say how it holds the IRN: it is to be looked up there.
+    await user.click(send);
+    expect(await panel.findByText('Not known whether the portal cancelled the IRN', {}, SLOW)).toBeInTheDocument();
+    expect(panel.getByText(/Check the IRN on the portal/)).toBeInTheDocument();
+    expect(panel.getByRole('textbox', { name: /Remark/ })).toHaveValue('Wrong buyer');
+    await expectNoAxeViolations();
+
+    // The portal had cancelled it in time: the cancellation is recorded, and the question goes.
+    detail = CANCELLED_IN_TIME;
+    answers.push(CANCELLED_IN_TIME);
+    await user.click(send);
+    expect(await dialog.findByText('IRN cancelled', {}, SLOW)).toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Ask the portal whether it was cancelled' })).not.toBeInTheDocument();
+    expect(posted(`${DOC}/irn/cancel`)).toHaveLength(3);
+  });
+
+  it('not connected, past the 24 hours, only says a credit note undoes the invoice', async () => {
+    const { dialog } = await openBill({ [`GET ${DOC}`]: lapsed(false) });
+
+    expect(dialog.getByText(/More than 24 hours have passed/)).toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Ask the portal whether it was cancelled' })).not.toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Record IRN cancellation' })).not.toBeInTheDocument();
   });
 
   it('not connected, records the IRN by hand as before, with the field the server refused named', async () => {
