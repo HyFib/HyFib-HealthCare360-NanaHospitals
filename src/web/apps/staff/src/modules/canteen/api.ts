@@ -1,6 +1,7 @@
 import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { CounterTerminalSale, StartTerminalSaleRequest, TerminalSaleApi } from '@/lib/terminal/types';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
 
 export const MENU_CATEGORIES = [
@@ -98,6 +99,8 @@ export interface CreateSaleRequest {
   patientId: string | null;
   paymentMode: CanteenPaymentMode;
   paymentReference: string | null;
+  /** A card/UPI payment taken on the terminal for exactly the bill's net amount (no reference is typed). */
+  terminalSaleId?: string | null;
   lines: { menuItemId: string; quantity: number }[];
 }
 
@@ -132,6 +135,10 @@ export interface CanteenSaleDto {
   netAmount: number;
   paymentMode: CanteenPaymentMode;
   paymentReference: string | null;
+  /** Taken on the card terminal: what the terminal reported. */
+  terminalSaleId?: string | null;
+  approvalCode?: string | null;
+  cardLast4?: string | null;
   status: CanteenSaleStatus;
   cashierName: string | null;
   cancelledAt: string | null;
@@ -315,6 +322,16 @@ export const canteenQueries = {
       queryFn: ({ signal }) =>
         api.get<StaffStatement>('/api/v1/canteen/staff-credit/statement', { query: { employeeCode, period }, signal }),
     }),
+};
+
+/** The card/UPI terminal of the canteen counter (see `TerminalSaleDialog`). */
+export const canteenTerminalApi: TerminalSaleApi = {
+  queryKey: ['canteen', 'terminal-sales'],
+  start: (request: StartTerminalSaleRequest, options) =>
+    api.post<CounterTerminalSale>('/api/v1/canteen/terminal-sales', request, options),
+  get: (id, signal) => api.get<CounterTerminalSale>(`/api/v1/canteen/terminal-sales/${id}`, { signal }),
+  cancel: (id) => api.post<CounterTerminalSale>(`/api/v1/canteen/terminal-sales/${id}/cancel`),
+  unused: (signal) => api.get<CounterTerminalSale[]>('/api/v1/canteen/terminal-sales/unused', { signal }),
 };
 
 export const canteenApi = {

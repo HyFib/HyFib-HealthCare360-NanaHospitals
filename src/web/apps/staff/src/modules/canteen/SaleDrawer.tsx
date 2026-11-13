@@ -28,6 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
 import { usePermission } from '@/lib/permissions';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
 import { ReasonDialog } from '@/modules/inpatient/ReasonDialog';
 import { canteenApi, canteenKeys, canteenQueries, CUSTOMER_LABEL, hsnSacLabel, PAYMENT_LABEL } from './api';
 import { printCanteenReceipt } from './print';
@@ -165,6 +166,11 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
               Paid by {PAYMENT_LABEL[s.paymentMode]}
               {s.paymentReference ? ` · ${s.paymentReference}` : ''}
             </Text>
+            {terminalDetailsLine({ cardLast4: s.cardLast4, approvalCode: s.approvalCode }) && (
+              <Caption1 className={styles.muted}>
+                {terminalDetailsLine({ cardLast4: s.cardLast4, approvalCode: s.approvalCode })}
+              </Caption1>
+            )}
             {s.status === 'Completed' && !sameDay && (
               <Caption1 className={styles.muted}>Bills can be cancelled only on the day they were made.</Caption1>
             )}

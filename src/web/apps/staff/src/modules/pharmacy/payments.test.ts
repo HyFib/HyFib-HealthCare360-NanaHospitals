@@ -3,8 +3,10 @@ import {
   changeDue,
   checkPayments,
   defaultPayments,
+  paymentsRequest,
   paymentsTotal,
   resolvePayments,
+  roomForRow,
   statusFor,
   type PaymentDraft,
 } from './payments';
@@ -88,5 +90,62 @@ describe('counter payments', () => {
     expect(changeDue(400, 432.5)).toBe(0);
     expect(changeDue(null, 432.5)).toBe(0);
     expect(statusFor(0, 0)).toBe('Paid');
+  });
+
+  describe('paid on the terminal', () => {
+    const terminal = {
+      id: 'ts-1',
+      mode: 'Card' as const,
+      amount: 300,
+      rrn: '123456',
+      approvalCode: 'A1',
+      cardLast4: '1111',
+    };
+    const onTerminal = (over: Partial<PaymentDraft> = {}): PaymentDraft => ({
+      key: 'terminal-row',
+      mode: 'Card',
+      amount: null,
+      reference: 'left over',
+      terminal,
+      ...over,
+    });
+
+    it('fixes the row to the terminal payment and emits its id without a reference', () => {
+      const resolved = resolvePayments(500, [onTerminal({ mode: 'Cash', amount: 10 }), draft('Cash', null)]);
+      expect(resolved.map((p) => [p.mode, p.amount, p.reference, p.terminalSaleId, p.auto])).toEqual([
+        ['Card', 300, null, 'ts-1', false],
+        ['Cash', 200, null, undefined, true],
+      ]);
+      expect(paymentsRequest(resolved)).toEqual([
+        { mode: 'Card', amount: 300, reference: null, terminalSaleId: 'ts-1' },
+        { mode: 'Cash', amount: 200, reference: null, terminalSaleId: null },
+      ]);
+    });
+
+    it('is not the balance row even with no amount typed', () => {
+      const resolved = resolvePayments(300, [onTerminal()]);
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0]).toMatchObject({ amount: 300, auto: false, terminalSaleId: 'ts-1' });
+      expect(checkPayments(300, resolved, false).ok).toBe(true);
+    });
+
+    it('needs no typed reference, while a card row without a terminal payment still does', () => {
+      expect(checkPayments(300, resolvePayments(300, [onTerminal()]), false).ok).toBe(true);
+      const typed = checkPayments(300, resolvePayments(300, [draft('Card', null)]), false);
+      expect(typed).toMatchObject({ ok: false, field: 'reference' });
+    });
+
+    it('still has to add up to the bill', () => {
+      const check = checkPayments(500, resolvePayments(500, [onTerminal()]), false);
+      expect(check.ok).toBe(false);
+      expect(check.field).toBe('amount');
+    });
+
+    it('tells how much of the bill a row may take', () => {
+      const resolved = resolvePayments(500, [onTerminal(), draft('Cash', null)]);
+      expect(roomForRow(500, resolved, 'terminal-row')).toBe(300);
+      expect(roomForRow(500, resolved, 'Cash-null')).toBe(200);
+      expect(roomForRow(100, resolved, 'Cash-null')).toBe(0);
+    });
   });
 });

@@ -11,6 +11,7 @@ import {
   type Letterhead,
 } from '@hc360/core';
 import { printLabelJob } from '@/lib/labelPrinting';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
 import { gstStateName } from '@/modules/inventory/gst';
@@ -88,10 +89,12 @@ export function buildReceiptHtml(
   const substituted = sale.items.filter((i) => i.isSubstitution);
   const gst = gstSummaryByRate(sale.items);
   const interState = sale.igstAmount !== 0;
+  const terminalLine = (p: { cardLast4?: string | null; approvalCode?: string | null }) =>
+    terminalDetailsLine({ cardLast4: p.cardLast4, approvalCode: p.approvalCode });
   const payments = sale.payments
     .map(
       (p) =>
-        `<tr><td>${p.isRefund ? 'Refund' : 'Paid'} by ${escapeHtml(paymentModeLabel[p.mode])}${p.reference ? ` (${escapeHtml(p.reference)})` : ''}</td><td class="right">${escapeHtml(formatInr(p.isRefund ? -p.amount : p.amount))}</td></tr>`,
+        `<tr><td>${p.isRefund ? 'Refund' : 'Paid'} by ${escapeHtml(paymentModeLabel[p.mode])}${p.reference ? ` (${escapeHtml(p.reference)})` : ''}${terminalLine(p) ? `<br><span class="muted">${escapeHtml(terminalLine(p))}</span>` : ''}</td><td class="right">${escapeHtml(formatInr(p.isRefund ? -p.amount : p.amount))}</td></tr>`,
     )
     .join('');
   const body = `
