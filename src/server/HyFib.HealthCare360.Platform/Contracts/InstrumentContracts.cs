@@ -17,6 +17,26 @@ public sealed record InstrumentResult(string ChannelCode, string Value, string? 
 }
 
 /// <summary>
+/// The patient an analyser named for a sample, as it sent them (HL7 PID-3 and PID-5, ASTM P.3 and P.6). HC360's own
+/// orders give an analyser the UHID and name, so one that was sent the order usually sends those back; one whose
+/// operator typed the patient in sends what was typed.
+/// </summary>
+/// <param name="Id">
+/// The patient id the analyser holds (HC360's orders send the UHID), or null when it sent none it can be read as.
+/// </param>
+/// <param name="Name">The name as the analyser wrote it, its parts (family, given, middle) joined by spaces; null when it sent none.</param>
+public sealed record InstrumentPatient(string? Id, string? Name)
+{
+    /// <summary>The patient, its id and name trimmed; null when the analyser sent neither, as many analysers do not.</summary>
+    public static InstrumentPatient? Of(string? id, string? name)
+    {
+        var trimmedId = string.IsNullOrWhiteSpace(id) ? null : id.Trim();
+        var trimmedName = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+        return trimmedId is null && trimmedName is null ? null : new InstrumentPatient(trimmedId, trimmedName);
+    }
+}
+
+/// <summary>
 /// A decoded analyser message for one sample. <see cref="SampleBarcode"/> is empty when the analyser named no sample:
 /// the LIS keeps such results for a person to assign, instead of the gateway dropping them.
 /// </summary>
@@ -25,7 +45,16 @@ public sealed record InstrumentResultMessage(
     string SampleBarcode,
     IReadOnlyList<InstrumentResult> Results,
     string RawMessage,
-    DateTimeOffset ReceivedAt);
+    DateTimeOffset ReceivedAt)
+{
+    /// <summary>
+    /// The patient the analyser named for the sample; null when it named none (no PID or P record, or empty ones). The
+    /// LIS puts the results on the tube only when that patient can be the tube's: a misread or swapped barcode would
+    /// otherwise put one patient's values on another's. The results of one sample sent under two patients come as two
+    /// messages, never one.
+    /// </summary>
+    public InstrumentPatient? Patient { get; init; }
+}
 
 /// <summary>Tests the analyser should run for a sample (host query answer, or an order HC360 sends unasked).</summary>
 public sealed record InstrumentOrder(string SampleBarcode, string PatientName, string? Gender, DateOnly? DateOfBirth, IReadOnlyList<string> ChannelCodes)

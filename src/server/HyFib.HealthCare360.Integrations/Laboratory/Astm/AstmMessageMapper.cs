@@ -10,16 +10,19 @@ namespace HyFib.HealthCare360.Integrations.Laboratory.Astm;
 internal static class AstmMessageMapper
 {
     /// <summary>
-    /// The results of each sample, in record order. Results under an order record whose sample id cannot be read, or
-    /// with no order record of their own, come under an empty sample id: the LIS keeps them for a person to assign,
-    /// where acknowledging the message and dropping them would lose them without anyone knowing.
+    /// The results of each sample, in record order, with the patient of the P record they come under
+    /// (<see cref="Patient"/>), for the LIS to check against the tube's. Results under an order record whose sample id
+    /// cannot be read, or with no order record of their own, come under an empty sample id: the LIS keeps them for a
+    /// person to assign, where acknowledging the message and dropping them would lose them without anyone knowing. A
+    /// sample sent under two patients makes two messages.
     /// </summary>
     public static IReadOnlyList<InstrumentResultMessage> MapResults(
         IReadOnlyList<AstmRecord> records, string instrumentCode, string rawMessage, DateTimeOffset receivedAt, TimeZoneInfo zone)
     {
         var header = records.FirstOrDefault(r => r.Type == 'H');
         var messageTime = LabTime.Parse(header?.Field(14), zone);
-        var samples = new List<(string SampleId, List<InstrumentResult> Results)>();
+        var samples = new List<(string SampleId, InstrumentPatient? Patient, List<InstrumentResult> Results)>();
+        InstrumentPatient? patient = null;
         List<InstrumentResult>? current = null;
 
         // A comment record belongs to the result record it follows (its position in the sample's results), if any.
@@ -30,19 +33,20 @@ internal static class AstmMessageMapper
             {
                 case 'P':
                     // A new patient: results must be preceded by their own order record.
+                    patient = Patient(record);
                     current = null;
                     commented = -1;
                     break;
                 case 'O':
                     current = [];
-                    samples.Add((SampleId(record) ?? string.Empty, current));
+                    samples.Add((SampleId(record) ?? string.Empty, patient, current));
                     commented = -1;
                     break;
                 case 'R':
                     if (current is null)
                     {
                         current = [];
-                        samples.Add((string.Empty, current));
+                        samples.Add((string.Empty, patient, current));
                     }
 
                     commented = -1;
@@ -62,10 +66,25 @@ internal static class AstmMessageMapper
 
         return samples
             .Where(s => s.Results.Count > 0)
-            .GroupBy(s => s.SampleId, StringComparer.Ordinal)
-            .Select(g => new InstrumentResultMessage(instrumentCode, g.Key, g.SelectMany(s => s.Results).ToList(), rawMessage, receivedAt))
+            .GroupBy(s => (s.SampleId, s.Patient))
+            .Select(g => new InstrumentResultMessage(instrumentCode, g.Key.SampleId, g.SelectMany(s => s.Results).ToList(), rawMessage, receivedAt)
+            {
+                Patient = g.Key.Patient,
+            })
             .ToList();
     }
+
+    /// <summary>
+    /// The patient a P record names: its patient id, and P.6, the name (last ^ first ^ middle as the analyser wrote them,
+    /// joined by spaces; the suffix and title are not name parts). The id is the first of P.3 (practice-assigned, where
+    /// HC360's orders put the UHID), P.4 (laboratory-assigned) and P.5 (a third id) the analyser filled, as analysers
+    /// differ in where they put it. One of them may be the analyser's own number: the LIS takes an id for a patient's only
+    /// when a registered patient has it. Null when the record names no one.
+    /// </summary>
+    internal static InstrumentPatient? Patient(AstmRecord record) =>
+        InstrumentPatient.Of(
+            new[] { 3, 4, 5 }.Select(field => record.Component(field, 1).Trim()).FirstOrDefault(id => id.Length > 0),
+            string.Join(' ', record.Components(6).Take(3).Select(c => c.Trim()).Where(c => c.Length > 0)));
 
     /// <summary>O.3 specimen id (first component: analysers append rack/position), else O.4 instrument specimen id.</summary>
     internal static string? SampleId(AstmRecord order)

@@ -193,4 +193,56 @@ public sealed class AstmMessageMapperTests
     [InlineData(OrderPriority.Urgent, "A")]
     [InlineData(OrderPriority.Stat, "S")]
     public void Maps_priorities_to_astm(OrderPriority priority, string expected) => AstmMessageMapper.Priority(priority).ShouldBe(expected);
+
+    [Fact]
+    public void The_patient_record_goes_with_the_results_of_its_orders() =>
+        Map(LabSamples.AstmResultRecords).ShouldHaveSingleItem().Patient.ShouldBe(new InstrumentPatient("UHID00012345", "SHARMA RAVI"));
+
+    [Theory]
+    // HC360's own order sent back: the UHID in P.3, and the whole name in one part of P.6.
+    [InlineData("P|1|UHID1|||Ravi Kumar Sharma", "UHID1", "Ravi Kumar Sharma")]
+    // P.6 is last ^ first ^ middle; the suffix and title are not name parts.
+    [InlineData("P|1|UHID1|||SHARMA^RAVI^KUMAR^JR^MR", "UHID1", "SHARMA RAVI KUMAR")]
+    // The id where the analyser put it: P.3, else P.4 (as the cobas-style fixture does), else P.5; the first one filled.
+    [InlineData("P|1||UHID1||SHARMA^RAVI", "UHID1", "SHARMA RAVI")]
+    [InlineData("P|1|||UHID1|^RAVI", "UHID1", "RAVI")]
+    [InlineData("P|1|UHID1|LAB-77|NAT-9", "UHID1", null)]
+    [InlineData("P|1|  |LAB-77", "LAB-77", null)]
+    // A name holding a delimiter, escaped as HC360's orders write it; only the first component of the id.
+    [InlineData("P|1|UHID1|||SHARMA&S&RAVI", "UHID1", "SHARMA^RAVI")]
+    [InlineData("P|1|UHID1^2^7", "UHID1", null)]
+    public void The_patient_is_read_from_the_first_id_filled_and_p6(string record, string? id, string? name) =>
+        AstmMessageMapper.Patient(AstmRecords.Parse(record)[0]).ShouldBe(new InstrumentPatient(id, name));
+
+    [Theory]
+    [InlineData("P|1")]
+    [InlineData("P|1|||||^^^^MR")]
+    [InlineData("P| 1 ||   ||  ")]
+    public void A_patient_record_that_names_no_one_is_no_patient(string record) =>
+        AstmMessageMapper.Patient(AstmRecords.Parse(record)[0]).ShouldBeNull();
+
+    [Fact]
+    public void One_sample_sent_under_two_patients_makes_two_messages_and_results_without_an_order_keep_their_patient()
+    {
+        var messages = Map(
+            @"H|\^&",
+            "P|1||UHID-A||ARORA^ANIL",
+            "O|1|S1||^^^GLU",
+            "R|1|^^^GLU|98|mg/dL",
+            "P|2||UHID-B||BOSE^BINA",
+            "R|1|^^^GLU|120|mg/dL",
+            "O|1|S1||^^^CREA",
+            "R|1|^^^CREA|1.0|mg/dL",
+            "P|3||UHID-A||ARORA^ANIL",
+            "O|1|S1||^^^UREA",
+            "R|1|^^^UREA|20|mg/dL",
+            "L|1|N");
+
+        messages.Select(m => (m.SampleBarcode, m.Patient!.Id, string.Join(",", m.Results.Select(r => r.ChannelCode))))
+            .ShouldBe([("S1", "UHID-A", "GLU,UREA"), ("", "UHID-B", "GLU"), ("S1", "UHID-B", "CREA")]);
+    }
+
+    [Fact]
+    public void Results_without_a_patient_record_have_no_patient() =>
+        Map(@"H|\^&", "O|1|S1||^^^GLU", "R|1|^^^GLU|98|mg/dL", "L|1|N").ShouldHaveSingleItem().Patient.ShouldBeNull();
 }
