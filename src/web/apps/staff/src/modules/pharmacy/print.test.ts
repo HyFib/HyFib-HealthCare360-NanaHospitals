@@ -188,6 +188,38 @@ describe('pharmacy prints', () => {
     expect(html).not.toContain('Discount (');
   });
 
+  it('says in place of the IRN that a B2B invoice due one is not a valid tax invoice for the buyer, until the IRN prints', () => {
+    const b2b = { ...sale, buyerGstin: '33AAACH7409R1Z8', buyerLegalName: 'Sree Clinic' };
+    const letterhead = { name: 'Nana Hospitals', gstin: '33AABCN1234F1Z3' };
+
+    const pending = buildReceiptHtml({ ...b2b, missingIrn: 'Pending' }, letterhead);
+    expect(pending).toContain(
+      '<div class="einvoice-due">E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).</div>',
+    );
+    expect(pending).not.toContain('Signed QR code of the e-invoice');
+    expect(buildReceiptHtml({ ...b2b, missingIrn: 'IrnCancelled' }, letterhead)).toContain(
+      '<div class="einvoice-due">IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).</div>',
+    );
+
+    const registered = buildReceiptHtml(
+      {
+        ...b2b,
+        missingIrn: 'Pending',
+        eInvoice: {
+          irn: 'd'.repeat(64),
+          ackNo: '112610087654321',
+          ackDate: '2026-09-26T05:10:00Z',
+          signedQrCode: 'eyJ.e30.c2ln',
+          qrCodeSvg: 'data:image/svg+xml;base64,PHN2Zy8+',
+        },
+      },
+      letterhead,
+    );
+    expect(registered).toContain(`IRN ${'d'.repeat(64)}`);
+    expect(registered).not.toContain('class="einvoice-due"');
+    expect(buildReceiptHtml(b2b, letterhead)).not.toContain('class="einvoice-due"');
+  });
+
   it('marks cancelled invoices', () => {
     expect(
       buildReceiptHtml({ ...sale, status: 'Cancelled', cancelReason: 'Wrong patient' }, { name: 'Nana Hospitals' }),
