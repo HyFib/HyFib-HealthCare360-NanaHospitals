@@ -69,6 +69,10 @@ internal static class PatientIdentity
         "UNKNOWN", "UNK", "NONE", "NIL", "NULL", "NA", "NAME", "PATIENT", "TEST",
     };
 
+    /// <summary>
+    /// How the analyser's patient compares with the tube's: by the UHID when the analyser sent a registered patient's
+    /// (<paramref name="id"/>, looked up by the caller), else by the names (<see cref="NamesAgree"/>).
+    /// </summary>
     public static PatientComparison Compare(AnalyserPatientId id, string? sentName, string? tubeName) => id switch
     {
         AnalyserPatientId.TubePatient => PatientComparison.SameId,

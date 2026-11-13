@@ -17,12 +17,13 @@ public sealed record InstrumentResult(string ChannelCode, string Value, string? 
 }
 
 /// <summary>
-/// The patient an analyser named for a sample, as it sent them (HL7 PID-3 and PID-5, ASTM P.3 and P.6). HC360's own
-/// orders give an analyser the UHID and name, so one that was sent the order usually sends those back; one whose
-/// operator typed the patient in sends what was typed.
+/// The patient an analyser named for a sample, as it sent them (HL7 PID-3 and PID-5; ASTM the first of P.3, P.4 and P.5
+/// it filled, and P.6). HC360's own orders give an analyser the UHID and name, so one that was sent the order usually
+/// sends those back; one whose operator typed the patient in sends what was typed.
 /// </summary>
 /// <param name="Id">
-/// The patient id the analyser holds (HC360's orders send the UHID), or null when it sent none it can be read as.
+/// The patient id the analyser holds (HC360's orders send the UHID; it may be the analyser's own number), or null when
+/// it sent none it can be read as.
 /// </param>
 /// <param name="Name">The name as the analyser wrote it, its parts (family, given, middle) joined by spaces; null when it sent none.</param>
 public sealed record InstrumentPatient(string? Id, string? Name)
