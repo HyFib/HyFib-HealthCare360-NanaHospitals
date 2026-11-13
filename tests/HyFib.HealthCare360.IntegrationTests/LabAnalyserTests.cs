@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Features.LabConnections;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
+using HyFib.HealthCare360.Integrations.Laboratory.Hl7;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
@@ -896,6 +897,96 @@ public sealed class LabAnalyserTests(HospitalServer server)
             .ShouldBeInRange(before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
     }
 
+    [Fact]
+    public async Task A_result_the_analyser_withdraws_stops_counting_before_verification_and_is_put_to_the_lab_after()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var analyser = await Hl7AnalyserAsync(admin);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+        var at = DateTimeOffset.UtcNow.AddMinutes(-30);
+        (await AnalyserSendsHl7Async(analyser, Oru(analyser, tube.Barcode, at, "OBX|1|NM|GLU^Glucose||98|mg/dL||N|||F"))).Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Status.ShouldBe(LabResultStatus.Entered);
+
+        // Posted in error (OBX-11 W): the value no longer counts as a result to verify, and the bench is told why.
+        var withdrawal = Oru(analyser, tube.Barcode, at.AddMinutes(5), "OBX|1|NM|GLU^Glucose||98|mg/dL||N|||W");
+        (await AnalyserSendsHl7Async(analyser, withdrawal)).Accepted.ShouldBeTrue();
+        var withdrawn = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        (withdrawn.Status, withdrawn.Value, withdrawn.InstrumentCode).ShouldBe((LabResultStatus.Pending, null, null));
+        withdrawn.HeldReasons.ShouldBe([$"{analyser} withdrew its result 98 mg/dL (status W): run the test again or enter the result by hand."]);
+        using (var refused = await pathologist.SendRawAsync(HttpMethod.Post, "/api/v1/lab/results/verify",
+                   new VerifyResultsRequest([withdrawn.ResultId], null, null, Release: false)))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.result_missing");
+        }
+
+        // Sent again, with nothing of the analyser's left on the test, it changes nothing and keeps nothing aside.
+        (await AnalyserSendsHl7Async(analyser, withdrawal)).Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Version.ShouldBe(withdrawn.Version);
+        (await UnmatchedAsync(lab, tube.Barcode)).ShouldBeEmpty();
+
+        // The rerun goes on the test, the withdrawal's note with the old value, and a pathologist verifies it.
+        (await AnalyserSendsHl7Async(analyser, Oru(analyser, tube.Barcode, at.AddMinutes(10), "OBX|1|NM|GLU^Glucose||101|mg/dL||H|||F")))
+            .Accepted.ShouldBeTrue();
+        var rerun = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        (rerun.Status, rerun.Value).ShouldBe((LabResultStatus.Entered, "101"));
+        rerun.HeldReasons.ShouldNotContain(reason => reason.Contains("withdrew", StringComparison.Ordinal));
+        await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify", new VerifyResultsRequest([rerun.ResultId], null, null, Release: false));
+
+        // Withdrawn once verified: the verified result stands, and the withdrawal waits for the lab beside it, kept once.
+        var late = Oru(analyser, tube.Barcode, at.AddMinutes(20), "OBX|1|NM|GLU^Glucose||101|mg/dL||H|||W");
+        (await AnalyserSendsHl7Async(analyser, late)).Accepted.ShouldBeTrue();
+        (await AnalyserSendsHl7Async(analyser, late)).Accepted.ShouldBeTrue();
+        var verified = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        (verified.Status, verified.Value).ShouldBe((LabResultStatus.Verified, "101"));
+        var kept = (await UnmatchedAsync(lab, tube.Barcode)).ShouldHaveSingleItem();
+        (kept.Reason, kept.LabResultId, kept.Value, kept.InstrumentStatus).ShouldBe((UnmatchedResultReason.Withdrawn, verified.ResultId, "101", "W"));
+        kept.Detail.ShouldBe(
+            $"{verified.TestName} on sample {tube.Barcode} is verified as 101 mg/dL; {analyser} withdrew it (status W). Check it, and reopen or amend it if it is wrong.");
+
+        // A withdrawal is no value: it is never put on a test, only discarded once the result is checked.
+        using (var assigned = await lab.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/unmatched-results/{kept.Id}/assign",
+                   new AssignUnmatchedResultRequest(verified.ResultId)))
+        {
+            assigned.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            (await assigned.Content.ReadAsStringAsync(Ct)).ShouldContain("lab.unmatched_withdrawn");
+        }
+    }
+
+    [Fact]
+    public async Task A_result_the_analyser_could_not_obtain_is_noted_on_the_test_and_one_it_withdraws_is_not_left_to_be_assigned()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // The EM 360 could not run the glucose (ASTM R.9 X): the test stays pending, and the bench sees why, once.
+        string[] notRun = [$"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU||mg/dL||||X"];
+        (await AnalyserSendsAsync("EM360", notRun)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var line = (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem();
+        (line.Status, line.Value).ShouldBe((LabResultStatus.Pending, null));
+        line.HeldReasons.ShouldBe(["EM360 could not obtain a result for this test (status X): run it again or enter the result by hand."]);
+        (await AnalyserSendsAsync("EM360", notRun)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Version.ShouldBe(line.Version);
+        (await UnmatchedAsync(lab, tube.Barcode)).ShouldBeEmpty();
+
+        // A value for a sample no tube has is kept for the lab until the analyser deletes it (OBX-11 D): then it is
+        // discarded with why, so nobody puts it on a test. Sent again, the deletion finds nothing more.
+        var analyser = await Hl7AnalyserAsync(admin);
+        var unknown = "6" + Digits(8);
+        var at = DateTimeOffset.UtcNow.AddMinutes(-30);
+        (await AnalyserSendsHl7Async(analyser, Oru(analyser, unknown, at, "OBX|1|NM|GLU^Glucose||97|mg/dL||N|||F"))).Accepted.ShouldBeTrue();
+        var kept = (await UnmatchedAsync(lab, unknown)).ShouldHaveSingleItem();
+        var deletion = Oru(analyser, unknown, at.AddMinutes(5), "OBX|1|NM|GLU^Glucose||||||||D");
+        (await AnalyserSendsHl7Async(analyser, deletion)).Accepted.ShouldBeTrue();
+        (await AnalyserSendsHl7Async(analyser, deletion)).Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, unknown)).ShouldBeEmpty();
+        var discarded = (await UnmatchedAsync(lab, unknown, UnmatchedResultStatus.Discarded)).ShouldHaveSingleItem();
+        (discarded.Id, discarded.DiscardReason, discarded.ResolvedBy).ShouldBe((kept.Id, $"{analyser} withdrew this result (status D).", null));
+    }
+
     /// <summary>
     /// The EM 360 runs each of its glucose controls today, on its target mean, so today's QC for glucose on it is accepted
     /// and its results may auto-validate. The demo seed runs them on the morning the server starts, which is yesterday once
@@ -976,6 +1067,36 @@ public sealed class LabAnalyserTests(HospitalServer server)
 
         var instrument = new LabInstrumentSettings { Code = code, Name = code, Protocol = LabProtocol.Astm };
         return await server.Services.GetRequiredService<ILabMessageProcessor>().SubmitResultsAsync(instrument, results, raw, Ct);
+    }
+
+    /// <summary>An HL7 chemistry analyser of the test's own, which leaves every result for a person to verify.</summary>
+    private static async Task<string> Hl7AnalyserAsync(ApiClient admin)
+    {
+        var code = "HL" + Letters(6).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            code, "Chemistry analyser " + code, "Beckman", "AU480", LabSection.Biochemistry, InstrumentProtocol.Hl7,
+            IsBidirectional: false, AutoValidationEnabled: false, Location: null, IsActive: true, Version: null));
+        return code;
+    }
+
+    /// <summary>
+    /// An ORU^R01 from the analyser for one sample (OBR-3), its OBX segments sent at <paramref name="at"/> (MSH-7, the
+    /// results' time): the same text is the message sent again.
+    /// </summary>
+    private static string Oru(string code, string barcode, DateTimeOffset at, params string[] observations) =>
+        string.Join("\r", [$@"MSH|^~\&|{code}|Lab|HC360|Nana|{Stamp(at)}||ORU^R01|M{Stamp(at)}|P|2.5.1", $"OBR|1||{barcode}", .. observations]);
+
+    /// <summary>
+    /// An HL7 result message from the analyser, read by the gateway's own mapper and handed to the LIS as the analyser's
+    /// MLLP session hands it; the session answers AA when the outcome is accepted.
+    /// </summary>
+    private async Task<LabSubmitOutcome> AnalyserSendsHl7Async(string code, string raw)
+    {
+        Hl7Message.TryParse(raw, out var message, out var error).ShouldBeTrue(error);
+        var mapped = Hl7ResultMapper.Map(message, code, null, raw, DateTimeOffset.UtcNow, India);
+        mapped.Error.ShouldBeNull();
+        var instrument = new LabInstrumentSettings { Code = code, Name = code, Protocol = LabProtocol.Hl7v2 };
+        return await server.Services.GetRequiredService<ILabMessageProcessor>().SubmitResultsAsync(instrument, mapped.Messages, raw, Ct);
     }
 
     /// <summary>The channels <paramref name="analyser"/> sends that no test maps, as Lab setup lists them.</summary>
