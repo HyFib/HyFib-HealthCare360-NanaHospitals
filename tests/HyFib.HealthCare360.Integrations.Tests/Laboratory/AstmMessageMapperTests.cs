@@ -27,6 +27,13 @@ public sealed class AstmMessageMapperTests
             new InstrumentResult("GLU", "98", "mg/dL", "N", new DateTimeOffset(2026, 9, 25, 10, 35, 0, Ist)) { Status = "F" },
             // No completion time on the record: the header's message time applies.
             new InstrumentResult("CREA", "1.4", "mg/dL", "H", new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist)) { Status = "F" },
+            // The urea the analyser could not measure, with its comment: no value for the LIS, but the bench is told.
+            new InstrumentResult("UREA", "0", "mg/dL", null, new DateTimeOffset(2026, 9, 25, 10, 30, 0, Ist))
+            {
+                Status = "X",
+                Kind = InstrumentResultKind.NotObtained,
+                Comment = "Sample slightly haemolysed",
+            },
         ]);
     }
 
@@ -85,8 +92,9 @@ public sealed class AstmMessageMapperTests
         results.Select(r => (r.ChannelCode, r.Status, r.Comment)).ShouldBe(
         [
             ("GLU", "P", "Lipaemic index 2 Repeat advised"),
-            // No status sent; and the comment on the urea the analyser could not measure is not put on the creatinine.
+            // No status sent; and the comment on the urea the analyser could not measure is the urea's, not the creatinine's.
             ("CREA", null, null),
+            ("UREA", "X", "Insufficient sample"),
         ]);
     }
 
@@ -100,12 +108,33 @@ public sealed class AstmMessageMapperTests
     }
 
     [Theory]
-    [InlineData("R|1|^^^GLU|98|mg/dL||||X")]
     [InlineData("R|1|^^^GLU|98|mg/dL||||I")]
     [InlineData("R|1|^^^GLU||mg/dL||||F")]
+    [InlineData("R|1|^^^GLU||mg/dL")]
     [InlineData("R|1|||mg/dL||||F")]
+    [InlineData("R|1|||mg/dL||||X")]
     public void Skips_results_that_carry_nothing_to_store(string record) =>
         AstmMessageMapper.Result(AstmRecords.Parse(record)[0], LabSamples.India, null).ShouldBeNull();
+
+    [Theory]
+    [InlineData("R|1|^^^GLU|98|mg/dL||||X", "98")]
+    [InlineData("R|1|^^^GLU||mg/dL||||x", "")]
+    public void A_test_the_analyser_could_not_do_is_passed_on_with_or_without_a_value(string record, string value)
+    {
+        var result = AstmMessageMapper.Result(AstmRecords.Parse(record)[0], LabSamples.India, null).ShouldNotBeNull();
+
+        (result.ChannelCode, result.Value, result.Kind, result.Status).ShouldBe(("GLU", value, InstrumentResultKind.NotObtained, "X"));
+    }
+
+    [Theory]
+    [InlineData("F")]
+    [InlineData("C")]
+    [InlineData("P")]
+    [InlineData("W")]
+    [InlineData("")]
+    public void Every_other_status_is_a_value_and_w_is_astms_validity_warning_not_a_withdrawal(string status) =>
+        AstmMessageMapper.Result(AstmRecords.Parse($"R|1|^^^GLU|98|mg/dL||N||{status}")[0], LabSamples.India, null)
+            .ShouldNotBeNull().Kind.ShouldBe(InstrumentResultKind.Value);
 
     [Fact]
     public void Uses_the_first_non_empty_test_id_component_when_the_manufacturer_code_is_missing() =>

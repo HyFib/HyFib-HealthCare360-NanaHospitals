@@ -53,4 +53,18 @@ public sealed class UnmatchedLabResultTests
         assigned.Status.ShouldBe(UnmatchedResultStatus.Assigned);
         discarded.Status.ShouldBe(UnmatchedResultStatus.Discarded);
     }
+
+    [Fact]
+    public void The_analysers_withdrawal_of_a_verified_result_is_never_put_on_a_test_only_discarded()
+    {
+        var withdrawal = Kept();
+        withdrawal.Reason = UnmatchedResultReason.Withdrawn;
+
+        withdrawal.EnsureAssignable().Error!.Code.ShouldBe("lab.unmatched_withdrawn");
+        withdrawal.Assign(Guid.CreateVersion7(), UserId, Now).Error!.Message
+            .ShouldBe("EM360 withdrew its GLU result, so it cannot go on a test. Check the verified result it names, then discard it.");
+        withdrawal.Status.ShouldBe(UnmatchedResultStatus.Open);
+        withdrawal.Discard("Checked: the verified result is right.", UserId, Now).IsSuccess.ShouldBeTrue();
+        Kept().EnsureAssignable().IsSuccess.ShouldBeTrue();
+    }
 }

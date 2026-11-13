@@ -302,8 +302,13 @@ export function CollectDepositDialog({
             setSide(null);
             if (sale.receiptId) {
               void printReceiptById(sale.receiptId);
+              notify.success('Advance received on the terminal', formatInr(sale.amount));
+            } else {
+              notify.warning(
+                'Paid on the terminal, but no receipt yet',
+                `${formatInr(sale.amount)}: do not take the money again.`,
+              );
             }
-            notify.success('Advance received on the terminal', formatInr(sale.amount));
             onClose();
           }}
         />

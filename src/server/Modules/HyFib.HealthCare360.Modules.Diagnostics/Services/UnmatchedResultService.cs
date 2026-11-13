@@ -65,6 +65,13 @@ internal sealed class UnmatchedResultService(
             return Error.NotFound(nameof(UnmatchedLabResult), id);
         }
 
+        // Resolved already, or the analyser's withdrawal of a result: no value to put on a test.
+        var assignable = unmatched.EnsureAssignable();
+        if (assignable.IsFailure)
+        {
+            return assignable;
+        }
+
         var target = await db.Set<LabResult>().FirstOrDefaultAsync(r => r.Id == request.ResultId, ct);
         if (target is null)
         {

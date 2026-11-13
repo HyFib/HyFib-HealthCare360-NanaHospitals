@@ -983,6 +983,54 @@ JSON for a radiographer or radiologist. For a test PACS, Orthanc with its DICOMw
 `deploy/docker/compose.dev.yml --profile pacs` starts one at `http://localhost:58042/dicom-web`. Upload a DICOM file
 whose Accession Number and Patient ID are a study's accession number and the patient's UHID, then link the study.
 
+### Card and UPI terminals (Pine Labs)
+
+HC360 pushes the amount to the counter's Pine Labs terminal (Plutus Smart, cloud integration), the patient pays on
+the terminal, and the receipt is recorded with the terminal's RRN, approval code and the card's last four digits
+(`docs/modules/integrations.md`, "Card/UPI POS"). Billing's counters push bills and IP advances to the terminal; the
+pharmacy and canteen counters do not yet, and type the RRN or UPI reference from the slip instead.
+
+1. **From Pine Labs** (the hospital's relationship manager, or Pine Labs' integration team): the UAT and production
+   addresses of the cloud integration service, the merchant id, the security token, the user id, and for each terminal
+   its store/POS code and its IMEI or serial number. Ask also for their Cloud Integration document. Its version 1.36
+   matches HC360's payment-mode codes (card `1`, UPI `10`) but lists no status code for a sale still waiting on the
+   terminal: ask Pine Labs for it, and confirm it in step 3.
+2. **Set it up in UAT first**: Administration › Integrations › Card/UPI POS: provider Pine Labs, the UAT address,
+   merchant id, user id, security token and the terminals, one entry per counter with an id such as `OPD-1`. When Pine
+   Labs' codes differ from HC360's defaults, set *Payment mode codes* (card `1`, upi `10`) and *Codes that mean "still
+   waiting"* (`1001`). At each billing counter, the first card or UPI payment asks for the terminal id (on the
+   terminal's label), and the computer remembers it.
+3. **Run the UAT test pack** with a UAT terminal and Pine Labs' test cards, and keep each result for Pine Labs' sign-off:
+
+   | # | At the counter | On the terminal | HC360 shows |
+   |---|---|---|---|
+   | 1 | A bill by card | pay with a test card | Approved, and a receipt with the card's last four digits, the approval code and the RRN |
+   | 2 | A bill by UPI | pay by UPI | Approved, and a receipt with the UPI reference |
+   | 3 | A card sale of ₹1,234.56 | the same amount, paise included | Approved for ₹1,234.56 |
+   | 4 | A card sale | press Cancel | Cancelled, no receipt |
+   | 5 | Cancel in HC360 before paying | the sale disappears | Cancelled |
+   | 6 | Cancel in HC360 while the customer pays | pay | Approved, and the receipt is recorded: an approval wins |
+   | 7 | A card sale, then wait past the auto-cancel time | nothing | Timed out or cancelled |
+   | 8 | Close the payment screen, then pay | pay | The receipt is recorded within a minute by the re-check |
+   | 9 | An IP advance by card | pay | Approved, and an advance receipt |
+   | 10 | Part of a bill on the terminal, the rest in cash | pay | Two payments on the bill |
+   | 11 | A card Pine Labs declines (their decline test card) | try again or cancel | The sale stays waiting while the terminal lets the customer retry, or ends declined (note which) |
+   | 12 | A sale while the terminal is offline | nothing | Waiting; Cancel in HC360 ends it |
+   | 13 | A void on the terminal, then a refund in HC360 with the void's RRN | void | The refund is recorded |
+
+   Administration › Integrations › Integration log shows each call's `code=… message=…`. Note the code and message
+   for a waiting, approved, cancelled, declined and timed-out sale: HC360 relies on them. If a sale that is still
+   waiting shows any code other than `1001`, add it to *Codes that mean "still waiting"* before going live, or HC360
+   takes the sale as declined while the customer may still pay.
+4. **Settlement**: import the UAT day's settlement report on Billing › Card and UPI settlements. Every approved test
+   sale should match its receipt.
+5. **Go live** once Pine Labs signs off UAT: switch the address, merchant id, user id, security token and terminals to
+   the production ones, then run one small live sale and void it.
+
+Money a terminal took that HC360 could not record (an advance for a stay whose account was closed meanwhile, say) is
+shown on the counter screen ("Paid, but no receipt yet"), raised in Billing › Gateway reconciliation as a payment
+without a receipt, and the accountants are alerted. Record it or refund it on the terminal there.
+
 ### BI tools: Power BI and the extract folder
 
 HC360 writes BI extracts (Analytics › BI extracts) as CSV files to one folder, and the BI tool reads them from there.

@@ -1283,7 +1283,7 @@ only the one that clashed is merely refreshed.
 
 | Rank | Kind | Raised when | Clears itself when |
 |---|---|---|---|
-| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert) | the receipt is recorded |
+| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert) | the receipt is recorded |
 | 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 2 | `FailedSettlement` | a settlement paid out fails afterwards; its journal is reversed in the books of the day it is learnt (accountants get an alert) | the gateway pays the settlement out after all (its journal is restored); "Read the settlements again" reads its day |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
@@ -1628,8 +1628,11 @@ the bill's day again, never to delete it.
   `billing.pos.recheck` timeout is cancelled on the terminal and marked `TimedOut` ("Nobody completed the payment
   within 15 minutes; HC360 cancelled the sale on the terminal."), so a later approval cannot leave money unrecorded.
   If the terminal does not confirm the cancel, the sale stays open and is tried again on the next run. An answer from
-  another provider than the one that started the sale (POS switched off or changed since) is not applied. The counter
-  hears of the outcome through `billing.pos.changed`. Each run is idempotent, so a second worker or the counter polling
+  another provider than the one that started the sale (POS switched off or changed since) is not applied. An approved
+  sale whose receipt the bill or admission refuses (an advance for a stay whose account was closed meanwhile, or that
+  became free of cost) keeps the reason on the sale, and the counter shows it and warns not to take the money again; it
+  opens an `UnrecordedPayment` exception and alerts the accountants once. A receipt recorded later clears it. The
+  counter hears of the outcome through `billing.pos.changed`. Each run is idempotent, so a second worker or the counter polling
   at the same moment does no harm.
 * SMS/WhatsApp templates used: `bill.receipt` (SMS, every counter/POS/gateway receipt; on WhatsApp too once its
   WhatsApp template is switched on, except with the payment that settles a bill sent there), `bill.shared` (WhatsApp,

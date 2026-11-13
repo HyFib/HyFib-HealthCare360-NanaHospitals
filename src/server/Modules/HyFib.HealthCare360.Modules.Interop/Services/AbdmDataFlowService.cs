@@ -46,6 +46,7 @@ internal sealed class AbdmDataFlowService(
     public const string TransferType = "abdm.transfer";
     public const string ConsentGranted = "abdm.consent_granted";
     public const string ConsentEnded = "abdm.consent_ended";
+    public const string ConsentGrantIgnored = "abdm.consent_grant_ignored";
     public const string Shared = "abdm.shared";
 
     public const string ErrorCode = "1000";
@@ -98,6 +99,21 @@ internal sealed class AbdmDataFlowService(
                 await db.SaveChangesAsync(ct);
             }
 
+            await SendAsync(new AbdmGatewayMessages.OnConsentNotify(new("OK", consentId), response, null), ct);
+            return;
+        }
+
+        // A consent that has ended stays ended: a late or repeated grant is acknowledged, so the gateway stops retrying, and changes nothing.
+        if (kept is not null && (kept.EndedAt is not null || !AbdmConsentLifecycle.MayChange(kept.Status, Granted)))
+        {
+            audit.Add(new AuditEntry(AuditCategories.PhiAccess, ConsentGrantIgnored, $"ABDM grant for an ended consent ignored ({kept.Status.ToLowerInvariant()})")
+            {
+                PatientId = kept.PatientId,
+                EntityType = "abdm.consent",
+                EntityId = consentId,
+                Details = new { api = "abdm", status = kept.Status, hiu = kept.HiuId },
+            });
+            await db.SaveChangesAsync(ct);
             await SendAsync(new AbdmGatewayMessages.OnConsentNotify(new("OK", consentId), response, null), ct);
             return;
         }

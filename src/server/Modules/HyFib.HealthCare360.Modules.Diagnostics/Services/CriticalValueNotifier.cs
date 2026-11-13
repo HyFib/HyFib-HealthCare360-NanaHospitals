@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Logging;
 
@@ -16,7 +18,10 @@ internal sealed record CriticalAlert(
 /// <item>At verification, the ordering doctor gets an SMS (template <c>lab.critical</c> or <c>diagnostics.critical_finding</c>),
 /// queued in the same transaction so the outbox delivers it through internet outages, plus an in-app alert. Holders of
 /// <c>diagnostics.critical.alerts</c> are alerted as well.</item>
+/// <item>An analyser result flagged critical that is kept among the unmatched results is on no test, so no pathologist
+/// hears of it: whoever assigns unmatched results is told to match it now.</item>
 /// </list>
+/// The alerts after commit name the patient when the look-up works; when it fails they go without the name.
 /// </summary>
 internal sealed class CriticalValueNotifier(
     DiagnosticsLookups lookups, INotificationService notifications, DiagnosticsRealtime realtime, ILogger<CriticalValueNotifier> logger)
@@ -27,12 +32,15 @@ internal sealed class CriticalValueNotifier(
     /// <summary>A critical SMS older than a shift is no longer actionable; the call register and in-app alerts remain.</summary>
     private static readonly TimeSpan SmsExpiry = TimeSpan.FromHours(12);
 
-    /// <summary>After commit: tell the pathologists a critical value is waiting for verification.</summary>
+    /// <summary>
+    /// After commit: tell the pathologists a critical value is waiting for verification. Nothing here may fail the caller:
+    /// the value is saved, and an analyser whose message failed would send it again, find it stored and alert nobody.
+    /// </summary>
     public async Task AlertVerifiersAsync(IReadOnlyCollection<CriticalAlert> alerts, CancellationToken ct)
     {
         foreach (var alert in alerts)
         {
-            var patient = await lookups.PatientAsync(alert.PatientId, ct);
+            var patient = await PatientOrNullAsync(alert.PatientId, ct);
             await SafeAsync(() => notifications.NotifyPermissionHoldersAsync(
                 DiagnosticsPermissions.LabResultsVerify,
                 alert.FacilityId,
@@ -79,11 +87,14 @@ internal sealed class CriticalValueNotifier(
     {
         foreach (var alert in alerts)
         {
-            var (title, body) = Words(alert, await lookups.PatientAsync(alert.PatientId, ct));
+            var (title, body) = Words(alert, await PatientOrNullAsync(alert.PatientId, ct));
             if (alert.OrderingPractitionerId is { } practitionerId)
             {
-                var users = await lookups.UserIdsForPractitionerAsync(practitionerId, ct);
-                await SafeAsync(() => notifications.NotifyUsersAsync(users, title, body, alert.Link, "diagnostics", "critical", ct));
+                await SafeAsync(async () =>
+                {
+                    var users = await lookups.UserIdsForPractitionerAsync(practitionerId, ct);
+                    await notifications.NotifyUsersAsync(users, title, body, alert.Link, "diagnostics", "critical", ct);
+                });
             }
 
             await SafeAsync(() => notifications.NotifyPermissionHoldersAsync(
@@ -107,6 +118,61 @@ internal sealed class CriticalValueNotifier(
             }
 
             realtime.AlertStaffAfterCommit(new DeferredStaffAlert(DiagnosticsPermissions.CriticalAlerts, alert.FacilityId, title, body, alert.Link, "critical"));
+        }
+    }
+
+    /// <summary>
+    /// Before SaveChanges: an analyser result kept among the unmatched results (no sample id, an unknown or cancelled tube,
+    /// a value its test cannot hold…) is on no test, so no pathologist is alerted to it. One the analyser flagged critical
+    /// (<see cref="AnalyserFlags"/>) is put to whoever can assign it, through the outbox in the transaction that keeps it:
+    /// told only if it is kept, and once, as a message sent again keeps nothing more.
+    /// </summary>
+    public void AlertUnmatchedAfterCommit(LabInstrument instrument, IEnumerable<UnmatchedLabResult> kept)
+    {
+        foreach (var alert in kept.Select(row => UnmatchedAlert(instrument, row)).OfType<DeferredStaffAlert>())
+        {
+            realtime.AlertStaffAfterCommit(alert);
+        }
+    }
+
+    /// <summary>
+    /// The alert for an analyser result kept aside that the analyser flagged critical, to whoever assigns unmatched results
+    /// (<see cref="DiagnosticsPermissions.LabResultsEnter"/>), with the analyser, the sample id and the test; null for any
+    /// other, and for the analyser's withdrawal of a result, which is no value.
+    /// </summary>
+    internal static DeferredStaffAlert? UnmatchedAlert(LabInstrument instrument, UnmatchedLabResult kept)
+    {
+        if (kept.Reason == UnmatchedResultReason.Withdrawn || !AnalyserFlags.IsCritical(kept.InstrumentFlags))
+        {
+            return null;
+        }
+
+        var value = kept.InstrumentUnit is { } unit ? $"{kept.Value} {unit}" : kept.Value;
+        var sample = kept.SampleBarcode is { } barcode ? $"for sample {barcode}" : "without a sample id";
+        return new DeferredStaffAlert(
+            DiagnosticsPermissions.LabResultsEnter,
+            kept.FacilityId,
+            $"Critical analyser result to match: {kept.ChannelCode} from {instrument.Code}",
+            $"{instrument.Name} ({instrument.Code}) sent {kept.ChannelCode} {value}, flagged {kept.InstrumentFlags}, {sample}. It went on no test, "
+            + $"so no pathologist has been alerted: {kept.Detail} Match it to the right sample's test now.",
+            $"/lab/unmatched?search={Uri.EscapeDataString(kept.SampleBarcode ?? kept.ChannelCode)}",
+            "critical");
+    }
+
+    /// <summary>
+    /// The patient an alert after commit names; null, logged, when the look-up fails, and the alert goes without the name
+    /// rather than not at all.
+    /// </summary>
+    private async Task<PatientSnapshot?> PatientOrNullAsync(Guid patientId, CancellationToken ct)
+    {
+        try
+        {
+            return await lookups.PatientAsync(patientId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not look up the patient of a critical-value alert; it is sent without the name");
+            return null;
         }
     }
 

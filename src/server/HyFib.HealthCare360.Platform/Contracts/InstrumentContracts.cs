@@ -14,6 +14,32 @@ public sealed record InstrumentResult(string ChannelCode, string Value, string? 
 
     /// <summary>The analyser's comment on this result (ASTM C records after the R record, HL7 NTE after the OBX).</summary>
     public string? Comment { get; init; }
+
+    /// <summary>
+    /// A value (the default), or the analyser withdrawing its result for the test or saying it could not obtain one.
+    /// The gateway reads it from the protocol's status, because the same letter means different things in HL7 and ASTM
+    /// (W is "posted in error" in HL7, a validity warning in ASTM); <see cref="Status"/> keeps the letter as sent.
+    /// </summary>
+    public InstrumentResultKind Kind { get; init; }
+}
+
+/// <summary>What an analyser's result record says of its test.</summary>
+public enum InstrumentResultKind
+{
+    /// <summary>A value for the test: final, preliminary, a correction… (<see cref="InstrumentResult.Status"/> says which).</summary>
+    Value = 0,
+
+    /// <summary>
+    /// The analyser withdraws the result it sent for the test (HL7 OBX-11 W, posted in error, or D, deleted): it must
+    /// not be reported. Whatever the record carries as its value is not a result.
+    /// </summary>
+    Withdrawn,
+
+    /// <summary>
+    /// The analyser could not obtain a result for the test (HL7 OBX-11 X, ASTM R.9 X: not run, or no result). Whatever
+    /// the record carries as its value is not a result.
+    /// </summary>
+    NotObtained,
 }
 
 /// <summary>
@@ -76,10 +102,11 @@ public sealed record InstrumentOrderRequest(string SampleBarcode, InstrumentOrde
 public interface IInstrumentResultSink
 {
     /// <summary>
-    /// Stores one sample's results. Every result is kept: on the sample's open tests, or, when it cannot go on one (no
+    /// Stores one sample's results. Every value is kept: on the sample's open tests, or, when it cannot go on one (no
     /// sample id, a sample unknown or not in the lab, a value the test cannot hold, another value for a verified test),
-    /// among the unmatched results for a person to assign or discard. An identical resend changes nothing. A failure
-    /// means nothing of the sample was stored, so the analyser should send it again.
+    /// among the unmatched results for a person to assign or discard. A result the analyser withdraws stops counting
+    /// (or, verified already, is put to a person), and one it could not obtain is noted on the test. An identical resend
+    /// changes nothing. A failure means nothing of the sample was stored, so the analyser should send it again.
     /// </summary>
     Task<Result> ReceiveAsync(InstrumentResultMessage message, CancellationToken cancellationToken);
 

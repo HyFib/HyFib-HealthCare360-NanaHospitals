@@ -1347,7 +1347,8 @@ const posSpec: SettingsSpec = {
       kind: 'number',
       defaultNumber: 5,
       min: 1,
-      max: 60,
+      max: 30,
+      hint: 'At most 30: HC360 asks the terminal for no longer.',
     },
     {
       key: POS,

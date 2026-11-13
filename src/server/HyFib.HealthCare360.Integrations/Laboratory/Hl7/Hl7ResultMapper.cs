@@ -11,7 +11,9 @@ internal sealed record Hl7MappingResult(IReadOnlyList<InstrumentResultMessage> M
 /// one per sample. Each OBR starts an order block; its OBX segments are the results, and the NTE segments after an
 /// OBX its comments. The sample barcode is taken from the configured fields in order (default SPM-2, SAC-3, OBR-3,
 /// OBR-2) because analysers disagree about where they put it. Results of a block with no sample id in any of them come
-/// under an empty sample id, which the LIS keeps for a person to assign.
+/// under an empty sample id, which the LIS keeps for a person to assign. An OBX the analyser withdraws (OBX-11 D or W)
+/// or could not obtain (X) is passed on as such, with or without a value, so the LIS acts on it instead of keeping the
+/// value it had.
 /// </summary>
 internal static class Hl7ResultMapper
 {
@@ -19,9 +21,6 @@ internal static class Hl7ResultMapper
 
     // Encapsulated data (histograms, images) and reference pointers are not results the LIS can store as values.
     private static readonly HashSet<string> SkippedValueTypes = new(StringComparer.OrdinalIgnoreCase) { "ED", "RP", "AD" };
-
-    // D = delete, W = posted in error, X = could not be obtained.
-    private static readonly HashSet<string> SkippedStatuses = new(StringComparer.OrdinalIgnoreCase) { "D", "W", "X" };
 
     public static bool IsResultMessage(Hl7Message message) =>
         (message.MessageType == "ORU" && message.TriggerEvent is "R01" or "R30" or "R32")
@@ -68,15 +67,18 @@ internal static class Hl7ResultMapper
     internal static InstrumentResult? Result(Hl7Segment obx, TimeZoneInfo zone, DateTimeOffset? fallbackTime)
     {
         var valueType = obx.Component(2, 1);
-        var status = obx.Component(11, 1);
-        if (SkippedValueTypes.Contains(valueType) || SkippedStatuses.Contains(status))
+        if (SkippedValueTypes.Contains(valueType))
         {
             return null;
         }
 
+        var status = obx.Component(11, 1).Trim().ToUpperInvariant();
+        var kind = Kind(status);
         var code = FirstNonEmpty(obx.Component(3, 1), obx.Component(3, 2));
         var value = Value(obx, valueType);
-        if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(value))
+
+        // A withdrawal, or a result that could not be obtained, speaks of the test and needs no value.
+        if (string.IsNullOrWhiteSpace(code) || (kind == InstrumentResultKind.Value && string.IsNullOrWhiteSpace(value)))
         {
             return null;
         }
@@ -86,9 +88,18 @@ internal static class Hl7ResultMapper
         return new InstrumentResult(code.Trim(), value.Trim(), string.IsNullOrWhiteSpace(units) ? null : units.Trim(),
             flags.Length == 0 ? null : flags, LabTime.Parse(obx.Value(14), zone) ?? fallbackTime)
         {
-            Status = string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToUpperInvariant(),
+            Status = status.Length == 0 ? null : status,
+            Kind = kind,
         };
     }
+
+    /// <summary>OBX-11 as the LIS acts on it: D (deleted) and W (posted in error) withdraw a result; X could not be obtained.</summary>
+    internal static InstrumentResultKind Kind(string status) => status switch
+    {
+        "D" or "W" => InstrumentResultKind.Withdrawn,
+        "X" => InstrumentResultKind.NotObtained,
+        _ => InstrumentResultKind.Value,
+    };
 
     /// <summary>NTE-3, its repetitions joined; null for an empty note.</summary>
     private static string? Note(Hl7Segment nte)
