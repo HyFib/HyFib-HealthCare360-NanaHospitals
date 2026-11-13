@@ -6,6 +6,10 @@ using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.WindowsInterop;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using static HyFib.HealthCare360.Platform.Networking.WifiEventKind;
 
 namespace HyFib.HealthCare360.Platform.Tests;
@@ -445,7 +449,7 @@ public sealed class WifiMonitorTests
         }
 
         Task Step(int sample, params NetworkLink[] up) =>
-            WifiMonitor.AlertAsync(detector.Evaluate(up, null, At(sample)), new RecordingAudit(), notifications, onCall, Server, told, Withdraw, Ct);
+            WifiMonitor.AlertAsync(detector.Evaluate(up, null, At(sample)), new RecordingAudit(), notifications, onCall, Server, severalServers: false, told, Withdraw, Ct);
 
         await Step(0, Cable());
         await Step(1);
@@ -463,6 +467,91 @@ public sealed class WifiMonitorTests
         await Step(4);
         await Step(5, Cable());
         withdrawn.ShouldBe([.. loss.Ids, .. notifications.Queued[2].Ids], "a later loss is followed afresh, and its return withdraws its own");
+    }
+
+    /// <summary>
+    /// Every server watches its own links (DED-06), whatever its role and whether or not it holds the job lease. Before, the
+    /// monitor was registered and ran only where the background jobs run, and with the lease only on its holder, so an API
+    /// node could lose the cable its requests come in on unseen.
+    /// </summary>
+    [Theory]
+    [InlineData("api")]
+    [InlineData("worker")]
+    [InlineData("all")]
+    public void Every_server_watches_its_own_links_whatever_its_role(string role)
+    {
+        var data = Directory.CreateTempSubdirectory("hc360-links-");
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HealthCare360:Role"] = role,
+                ["HealthCare360:DataDirectory"] = data.FullName,
+                ["ConnectionStrings:Hospital"] = "Host=localhost;Database=hc360;Username=hc360", // registered, never opened
+            }).Build();
+            var services = new ServiceCollection();
+            services.AddHospitalPlatform(configuration, new DevelopmentHost(), [], "migrations");
+
+            services.Count(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(WifiMonitor)).ShouldBe(1);
+            WifiMonitor.Watches(configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>()!).ShouldBeTrue();
+        }
+        finally
+        {
+            data.Delete(recursive: true);
+        }
+
+        JobLeadership.IsJob(typeof(WifiMonitor)).ShouldBeFalse("it runs on every server at once, not only on the one holding the job lease");
+        WifiMonitor.Watches(new PlatformOptions { Role = role, Network = new NetworkOptions { EnableWifiMonitor = false } })
+            .ShouldBeFalse("the hospital may still turn the monitor off");
+    }
+
+    /// <summary>
+    /// One server of several (SCAL-01) takes its requests through the reverse proxy, which sends them to the other servers
+    /// while it is out: its alerts say so, rather than that the workstations cannot reach HC360, which would be untrue.
+    /// </summary>
+    [Fact]
+    public void One_server_of_several_says_the_reverse_proxy_sends_its_requests_to_the_others()
+    {
+        var events = TwoCards(new CableEventDetector(severalServers: true), ["192.168.1.10"], [Lan, Imaging], [Imaging], [Lan, Imaging]);
+
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10), which requests reach it over: the reverse proxy sends "
+            + "them to the other servers until it is back. It is still on 'Ethernet 2' (10.20.0.5).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): it takes requests again. Lost at 09:30, back at 09:31.");
+        CableSamples(new CableEventDetector(severalServers: true), null, [Cable()], []).ShouldHaveSingleItem().Message.ShouldBe(
+            "Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. The reverse proxy sends requests to the other servers until it is back.");
+        TwoCards(new CableEventDetector(severalServers: true), ["192.168.1.10"], [Lan, Imaging], [Lan]).ShouldHaveSingleItem().Message.ShouldBe(
+            "Server Node lost its network cable 'Ethernet 2' (10.20.0.5). Requests reach it over 'Ethernet', which is up; what used 'Ethernet 2' cannot reach it until it is back.");
+    }
+
+    /// <summary>
+    /// With several servers the administrators get every one's alerts: the in-app title names the server, as the SMS does, and
+    /// the audit trail records it.
+    /// </summary>
+    [Fact]
+    public async Task One_server_of_several_names_itself_in_the_app_the_audit_trail_and_the_sms()
+    {
+        var events = CableSamples(new CableEventDetector(severalServers: true), null, [Cable()], []);
+        var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
+
+        await WifiMonitor.AlertAsync(events, audit, notifications, BySms, "HC360-API2", severalServers: true, new CableLossMessages(),
+            (_, _) => Task.CompletedTask, Ct);
+
+        notifications.InApp.ShouldHaveSingleItem().Title.ShouldBe("Server network cable: Disconnected (HC360-API2)");
+        var logged = audit.Entries.ShouldHaveSingleItem();
+        (logged.EntityType, logged.EntityId).ShouldBe(("Server", "HC360-API2"));
+        Rendered(notifications.Queued.ShouldHaveSingleItem()).ShouldStartWith("HC360 server alert (HC360-API2): ");
+    }
+
+    /// <summary>
+    /// Each server's WiFi samples are its own, for its WiFi history and its check at start-up; those from before servers were
+    /// told apart count as a single server's, which they are.
+    /// </summary>
+    [Fact]
+    public void A_servers_wifi_samples_are_its_own_and_those_from_before_servers_were_told_apart()
+    {
+        WifiSample[] samples = [new() { Node = "api-1" }, new() { Node = "api-2" }, new() { Node = null }];
+
+        samples.AsQueryable().Where(WifiSample.Of("api-1")).ShouldBe([samples[0], samples[2]]);
     }
 
     /// <summary>
@@ -702,6 +791,18 @@ public sealed class WifiMonitorTests
             throw new NotSupportedException();
 
         public Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>A development host: the platform's settings are checked when the host starts, not when it registers.</summary>
+    private sealed class DevelopmentHost : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+
+        public string ApplicationName { get; set; } = "HC360";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class RecordingAudit : IAuditLogger

@@ -500,7 +500,7 @@ public sealed class SystemHealthService(
         // Its link: its certificate, and its network cable and WiFi.
         var link = new List<HealthWarning>(CertificateWarnings(certificate, now));
         link.AddRange(LinkWarnings(network.Cables, network.LostCables ?? [], network.WifiSupported, network.Wifi, wifi.AdapterMissing, wifi.WifiLinkLost,
-            options.Value.Network.WifiWeakSignalThreshold));
+            options.Value.Network.WifiWeakSignalThreshold, directories.IsShared));
 
         // What runs on it: the modules' own set-up here (such as the DSC trust folder), the PDF browser, and its UPS.
         var services = new List<HealthWarning>();
@@ -702,11 +702,13 @@ public sealed class SystemHealthService(
     /// every cable it was on lost: <c>network.cable_down</c>, critical unless it is still on WiFi. Off a cable all this run,
     /// on WiFi or with a WiFi loss the monitor told: the WiFi's warnings. And with no cable up, no WiFi connected, and no loss
     /// told, as when the server started with its cable out: <c>network.down</c>, which no monitor tells, so System health's
-    /// alerts do.
+    /// alerts do. One server of several (<paramref name="severalServers"/>, SCAL-01) takes its requests through the reverse
+    /// proxy, which sends them to the other servers while it is out: its warnings say so, rather than that the workstations
+    /// cannot reach HC360.
     /// </summary>
     internal static IEnumerable<HealthWarning> LinkWarnings(
         IReadOnlyList<NetworkLink>? cables, IReadOnlyList<LostCable> lostCables, bool wifiSupported, WifiConnectionInfo? wifi, string? adapterMissing,
-        bool wifiLinkLost, int weakThreshold)
+        bool wifiLinkLost, int weakThreshold, bool severalServers = false)
     {
         var wifiWarnings = WifiWarnings(wifiSupported, wifi, adapterMissing, weakThreshold).ToList();
         if (cables is null)
@@ -717,16 +719,16 @@ public sealed class SystemHealthService(
         if (cables.Count > 0)
         {
             var network = wifiWarnings.Where(w => w.Code is "wifi.insecure" or "wifi.shared_password");
-            return lostCables.Count == 0 ? network : [LostBesideAnother(cables, lostCables), .. network];
+            return lostCables.Count == 0 ? network : [LostBesideAnother(cables, lostCables, severalServers), .. network];
         }
 
         var onWifi = wifi is { IsConnected: true };
+        var cutOff = severalServers ? "the reverse proxy sends requests to the other servers" : "workstations cannot reach HC360";
         if (lostCables.Count > 0)
         {
             HealthWarning cable = onWifi
                 ? new("network.cable_down", "warning", "The Server Node's network cable is disconnected: it is on WiFi only.")
-                : new("network.cable_down", "critical",
-                    "The Server Node's network cable is disconnected, and it has no WiFi connection: workstations cannot reach HC360.");
+                : new("network.cable_down", "critical", $"The Server Node's network cable is disconnected, and it has no WiFi connection: {cutOff}.");
             return [cable, .. wifiWarnings.Where(w => w.Code is not ("wifi.down" or "wifi.adapter_missing"))];
         }
 
@@ -738,8 +740,8 @@ public sealed class SystemHealthService(
         return
         [
             new("network.down", "critical", wifiSupported
-                ? "The Server Node has no network connection: no network cable is connected, and its WiFi is not connected. Workstations cannot reach HC360."
-                : "The Server Node has no network connection: no network cable is connected, and it has no WiFi. Workstations cannot reach HC360."),
+                ? $"The Server Node has no network connection: no network cable is connected, and its WiFi is not connected. {Sentence(cutOff)}"
+                : $"The Server Node has no network connection: no network cable is connected, and it has no WiFi. {Sentence(cutOff)}"),
         ];
     }
 
@@ -747,7 +749,7 @@ public sealed class SystemHealthService(
     /// The cables lost while the server is still on another (two cards: the hospital LAN and an imaging network, say), named
     /// with their last addresses: critical when the workstations' requests came over one of them, a warning otherwise.
     /// </summary>
-    private static HealthWarning LostBesideAnother(IReadOnlyList<NetworkLink> up, IReadOnlyList<LostCable> lost)
+    private static HealthWarning LostBesideAnother(IReadOnlyList<NetworkLink> up, IReadOnlyList<LostCable> lost, bool severalServers)
     {
         static string Named(string name, IReadOnlyList<string> addresses) =>
             addresses.Count == 0 ? $"'{name}'" : $"'{name}' ({string.Join(", ", addresses)})";
@@ -759,10 +761,15 @@ public sealed class SystemHealthService(
         var used = lost.Where(l => l.ServedWorkstations).Select(l => $"'{l.Name}'").ToList();
         return used.Count == 0
             ? new("network.cable_down", "warning", $"The Server Node's {cables} disconnected. {stillOn}")
-            : new("network.cable_down", "critical",
-                $"The Server Node's {cables} disconnected. Workstations reached HC360 over {(lost.Count == 1 ? "it" : string.Join(", ", used))}, "
-                + $"so they cannot until it is back. {stillOn}");
+            : new("network.cable_down", "critical", severalServers
+                ? $"The Server Node's {cables} disconnected. Requests reached it over {(lost.Count == 1 ? "it" : string.Join(", ", used))}, "
+                  + $"so the reverse proxy sends them to the other servers until it is back. {stillOn}"
+                : $"The Server Node's {cables} disconnected. Workstations reached HC360 over {(lost.Count == 1 ? "it" : string.Join(", ", used))}, "
+                  + $"so they cannot until it is back. {stillOn}");
     }
+
+    /// <summary><paramref name="clause"/> as a sentence of its own: capitalised, with its full stop.</summary>
+    private static string Sentence(string clause) => string.Concat(char.ToUpperInvariant(clause[0]).ToString(), clause.AsSpan(1), ".");
 
     /// <summary>
     /// The warnings about the Server Node's WiFi link (DED-06): details Windows withholds, a weak signal, an insecure or
@@ -888,10 +895,12 @@ internal static class SystemEndpoints
         admin.MapPost("/alerts/{id:guid}/acknowledge", async (Guid id, AlertIncidents alerts, CancellationToken ct) =>
             (await alerts.AcknowledgeAsync(id, ct)).ToOk());
 
-        admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
+        // This server's WiFi history: with several, each watches its own link (WifiSample.Node).
+        admin.MapGet("/wifi-samples", async (int? hours, HospitalDbContext db, ServerNodeBoard board, TimeProvider time, CancellationToken ct) =>
         {
             var since = time.GetUtcNow().AddHours(-Math.Clamp(hours ?? 24, 1, 24 * 30));
             return TypedResults.Ok(await db.Set<WifiSample>().AsNoTracking()
+                .Where(WifiSample.Of(board.Node))
                 .Where(s => s.At >= since)
                 .OrderBy(s => s.At)
                 .Select(s => new WifiSampleDto(s.At, s.Connected, s.SignalQuality, s.RssiDbm, s.ReceiveRateMbps, s.Ssid))

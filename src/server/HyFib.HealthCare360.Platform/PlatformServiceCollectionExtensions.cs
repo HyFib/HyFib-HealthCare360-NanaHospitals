@@ -348,6 +348,9 @@ public static class PlatformServiceCollectionExtensions
         // With several servers, each one's own part of System health, for the API node that answers (SCAL-01).
         services.AddSingleton<ServerNodeBoard>();
         services.AddHostedService<ServerNodeSharing>();
+
+        // Every server watches its own network links (DED-06), whatever its role, and alerts under its own name.
+        services.AddHostedService<WifiMonitor>();
         services.AddSingleton<IClusterStore, ClusterStore>();
         services.AddScoped<PartitionMaintenance>();
         services.AddMonthlyPartitions(PartitionedTables.Audit);
@@ -421,7 +424,6 @@ public static class PlatformServiceCollectionExtensions
             services.AddHostedService<PartitionMaintenanceJob>();
             services.AddHostedService<AuditEntityIndexJob>();
             services.AddHostedService<ClusterStoreCleanup>();
-            services.AddHostedService<WifiMonitor>();
             services.AddHostedService<FieldKeyMoverService>();
 
             services.AddQuartz(quartz =>
