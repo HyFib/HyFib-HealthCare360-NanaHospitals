@@ -945,9 +945,10 @@ is not set, nothing is listed and nothing can be recorded.
   key, and the code is verified by scanning it with the GST verification app. The IRN, the acknowledgement and the QR
   code then print on the A4 bill, the 80 mm bill, the pharmacy invoice and a bill's credit note.
 * **Until it has one, the print says so.** An invoice that should carry an IRN and does not is not an invoice (rule
-  48(5)). Nothing asks the portal for an IRN by itself (see [Not covered yet](#not-covered-yet)), so a document due one
-  can be printed, at the counter or as the patient's PDF, well before it has one. Its print then carries a notice where
-  the IRN goes:
+  48(5)). Connected to the portal, HC360 asks for the IRN as the document becomes final ([Automatic IRNs](#automatic-irns))
+  and it usually comes within seconds; but a copy printed before then, at the counter or as the patient's PDF, one at a
+  hospital that records its IRNs by hand, and one whose request the portal refused or has not answered, is printed
+  without it. Its print then carries a notice where the IRN goes:
   * the A4 bill (and its PDF, in the language it is made in), the 80 mm bill and the pharmacy invoice: "E-invoice
     pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5))"; and, once its IRN was cancelled on
     the portal (which never registers that number again: the invoice is cancelled here and issued again), "IRN
@@ -1791,8 +1792,6 @@ bill line, restrict; unique number), `bills.debit_amount` and `payer_debit_amoun
   are asked for one document at a time, as each becomes final, not in a batch.
 * **An e-way bill whose answer was lost is not read back.** Unlike a cancellation, it needs NIC's get-e-way-bill-by-IRN
   call, which HC360 does not make yet; asked again, the portal refuses a second e-way bill.
-* **A B2B document prints without its IRN while it waits for one**, with nothing on the print to say so; with the
-  portal connected, the IRN usually comes within seconds of the document becoming final.
 * **A payer credit note does not come from the settlement.** The claim desk records the deduction; the billing desk
   asks for the GST credit note on the bill afterwards. A deduction that is not a price reduction (a non-payable item
   the patient pays) needs none.
