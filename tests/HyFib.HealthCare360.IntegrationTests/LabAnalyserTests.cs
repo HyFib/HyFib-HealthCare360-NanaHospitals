@@ -9,6 +9,7 @@ using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
 using HyFib.HealthCare360.Integrations.Laboratory.Hl7;
 using HyFib.HealthCare360.Integrations.Laboratory.Relay;
+using HyFib.HealthCare360.Modules.Diagnostics;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Quality;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
@@ -987,6 +988,29 @@ public sealed class LabAnalyserTests(HospitalServer server)
         (discarded.Id, discarded.DiscardReason, discarded.ResolvedBy).ShouldBe((kept.Id, $"{analyser} withdrew this result (status D).", null));
     }
 
+    [Fact]
+    public async Task A_critical_result_kept_aside_tells_whoever_assigns_unmatched_results_once()
+    {
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var unknown = "5" + Digits(8);
+
+        // A glucose the analyser flagged above its panic limit, for a sample no tube has: on no test, so no pathologist
+        // hears of it. Whoever assigns unmatched results is told, in the transaction that keeps it.
+        string[] critical = [$"O|1|{unknown}||^^^GLU|R", "R|1|^^^GLU|480|mg/dL||HH||F"];
+        (await AnalyserSendsAsync("EM360", critical)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, unknown)).ShouldHaveSingleItem().InstrumentFlags.ShouldBe("HH");
+        var alert = (await StaffAlertsAsync(unknown)).ShouldHaveSingleItem();
+        (alert.Permission, alert.Severity, alert.Link).ShouldBe((DiagnosticsPermissions.LabResultsEnter, "critical", $"/lab/unmatched?search={unknown}"));
+        alert.Title.ShouldBe("Critical analyser result to match: GLU from EM360");
+        alert.Body.ShouldContain($"sent GLU 480 mg/dL, flagged HH, for sample {unknown}");
+
+        // Sent again after a lost acknowledgement it is kept once, so told once; a value not flagged critical tells nobody.
+        (await AnalyserSendsAsync("EM360", critical)).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await AnalyserSendsAsync("EM360", $"O|1|{unknown}||^^^GLU|R", "R|1|^^^GLU|97|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await UnmatchedAsync(lab, unknown)).Count.ShouldBe(2);
+        (await StaffAlertsAsync(unknown)).ShouldHaveSingleItem();
+    }
+
     /// <summary>
     /// The EM 360 runs each of its glucose controls today, on its target mean, so today's QC for glucose on it is accepted
     /// and its results may auto-validate. The demo seed runs them on the morning the server starts, which is yesterday once
@@ -1235,6 +1259,17 @@ public sealed class LabAnalyserTests(HospitalServer server)
             .Where(m => m.Type == InstrumentOrderRequest.OutboxType)
             .ToListAsync(Ct);
         return messages.Select(m => m.Read<InstrumentOrderRequest>()).ToList();
+    }
+
+    /// <summary>The in-app alerts to staff queued for after commit (Diagnostics' outbox) that link to <paramref name="search"/>.</summary>
+    private async Task<List<DeferredStaffAlert>> StaffAlertsAsync(string search)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var messages = await db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == DiagnosticsOutboxTypes.StaffAlert)
+            .ToListAsync(Ct);
+        return [.. messages.Select(m => m.Read<DeferredStaffAlert>()).Where(a => a.Link.EndsWith("search=" + search, StringComparison.Ordinal))];
     }
 
     private async Task<LabOrderDownload> WaitForQueuedOrderAsync(string barcode)
