@@ -7,9 +7,11 @@ import { create } from 'zustand';
  * Forms read and write them in memory. They are kept on this computer encrypted (audit P10): AES-GCM, under a key the
  * server gives each signed-in user (AuthResult.draftKey), with the draft's storage key as associated data so one draft
  * cannot stand in for another. The key is the same in each of the user's sessions, so a draft typed before a crash or an
- * outage opens again once they sign in again. It never leaves memory: the computer holds only ciphertext, which someone
- * else signed in on the same Windows account cannot read. Until the key comes (a locked session, or a page without
- * WebCrypto) drafts are kept in memory only.
+ * outage opens again once they sign in again, even when their session ended meanwhile. It never leaves memory: the
+ * computer holds only ciphertext, which someone else signed in on the same Windows account cannot read. Until the key
+ * comes (a locked session, or a page without WebCrypto) drafts are kept in memory only.
+ *
+ * They go when their user signs out, and when another user signs in on this computer: kept for the same user only.
  */
 
 const DRAFT_PREFIX = 'hc360:draft:';
@@ -68,7 +70,8 @@ export const draftStorage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> =
 /**
  * Opens the user's drafts with the key the server gave them. Those kept on the computer are read into memory, any an
  * older HC360 kept unencrypted are kept again encrypted, and so are any typed before the key came. Another user's
- * drafts, if open, are closed first.
+ * drafts, if open, are closed first, and any another user left on the computer (their session ended without their
+ * signing out, say during an outage) are removed unread: another user has signed in here.
  */
 export async function openDrafts(userId: string, draftKey: string): Promise<void> {
   if (current?.userId === userId) {
@@ -76,6 +79,17 @@ export async function openDrafts(userId: string, draftKey: string): Promise<void
   }
   if (current) {
     closeDrafts();
+  }
+  const prefix = draftStorageKey(userId, '');
+  for (const storageKey of [...memory.keys()]) {
+    if (!storageKey.startsWith(prefix)) {
+      memory.delete(storageKey);
+    }
+  }
+  for (const storageKey of storedKeys(DRAFT_PREFIX)) {
+    if (!storageKey.startsWith(prefix)) {
+      removeStored(storageKey);
+    }
   }
   const drafts: OpenDrafts = { userId, key: importKey(draftKey) };
   current = drafts;
@@ -87,7 +101,6 @@ export async function openDrafts(userId: string, draftKey: string): Promise<void
     // Without WebCrypto the kept drafts cannot be read, so they stay closed; new ones are kept in memory only.
     return;
   }
-  const prefix = draftStorageKey(userId, '');
   for (const storageKey of storedKeys(prefix)) {
     // One typed since the app started is newer than the one kept.
     if (memory.has(storageKey)) {
@@ -116,15 +129,22 @@ export function closeDrafts(): void {
   useDrafts.setState({ openFor: null });
 }
 
-/** Removes every user's drafts, from memory and from the computer: at sign-out, or when the server ends the session. */
+/**
+ * Removes every user's drafts, from memory and from the computer: at sign-out. (A session the server ended keeps them,
+ * closed, for the same user's next sign-in: `closeDrafts`.)
+ */
 export function clearDrafts(): void {
   closeDrafts();
   for (const storageKey of storedKeys(DRAFT_PREFIX)) {
-    try {
-      localStorage.removeItem(storageKey);
-    } catch {
-      // Storage unavailable: nothing to clear.
-    }
+    removeStored(storageKey);
+  }
+}
+
+function removeStored(storageKey: string): void {
+  try {
+    localStorage.removeItem(storageKey);
+  } catch {
+    // Storage unavailable: nothing to remove.
   }
 }
 

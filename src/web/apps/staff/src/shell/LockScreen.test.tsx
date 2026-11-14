@@ -1,6 +1,10 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
 import {
   ApiError,
+  clearDrafts,
+  draftStorage,
+  draftStorageKey,
+  openDrafts,
   rememberedUnlockKeys,
   rememberUnlockKey,
   useConnection,
@@ -253,6 +257,32 @@ describe('LockScreen', () => {
     expect(get).not.toHaveBeenCalled();
     expect(rememberedUnlockKeys('u1')).toEqual([]);
     expect(screen.queryByRole('button', { name: /^Unlock with/ })).not.toBeInTheDocument();
+  });
+
+  it('ends a session the server says is over without signing out, so the drafts typed in it stay', async () => {
+    const noteDraft = draftStorageKey('u1', 'nursing-note:adm-1');
+    await openDrafts('u1', btoa(String.fromCharCode(...new Uint8Array(32).fill(7))));
+    draftStorage.setItem(noteDraft, JSON.stringify({ value: { note: 'BP 150/95' }, savedAt: 1 }));
+    await waitFor(() => expect(localStorage.getItem(noteDraft)).toMatch(/^\{"v":2,/));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === '/api/v1/auth/unlock') {
+        // It expired while the screen was locked, through an outage.
+        throw new ApiError({ status: 401, title: 'Please sign in again', code: 'auth.session_ended' });
+      }
+      return undefined;
+    });
+    renderLocked();
+
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await waitFor(() => expect(useSession.getState().status).toBe('anonymous'));
+    // Nobody signed out: no sign-out is sent, and the draft stays, encrypted, for Asha's next sign-in.
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+    expect(localStorage.getItem(noteDraft)).toMatch(/^\{"v":2,/);
+    clearDrafts();
   });
 
   it('keeps what was typed and not yet saved on the screen behind the lock', async () => {

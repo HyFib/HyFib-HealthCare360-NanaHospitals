@@ -176,6 +176,15 @@ function LockPanel({ user }: { user: AuthUser }) {
     await navigate({ to: '/login', search: {}, ignoreBlocker: true });
   };
 
+  // The server ended the session (too many wrong tries, or it expired while locked, perhaps through an outage): it ends
+  // here too, but nobody signed out, so the drafts typed in it stay for the same user's next sign-in (SRS DED-10), which
+  // the sign-in page leads back to. The offline copy goes, as whenever a session ends while the server can be reached.
+  const ended = async () => {
+    await wipeOfflineCopy();
+    auth.ended();
+    queryClient.clear();
+  };
+
   const unlocked = (result: AuthResult) => {
     auth.apply(result);
     setLocked(false);
@@ -197,7 +206,7 @@ function LockPanel({ user }: { user: AuthUser }) {
       void rememberOfflineSecret(user.id, kind, secret);
     } catch (err) {
       if (isApiError(err) && err.status === 401) {
-        await signOut();
+        await ended();
         return;
       }
       if (isApiError(err) && (err.isNetworkError || err.status >= 500)) {
@@ -287,7 +296,7 @@ function LockPanel({ user }: { user: AuthUser }) {
       );
     } catch (err) {
       if (isApiError(err) && err.status === 401) {
-        await signOut();
+        await ended();
         return;
       }
       // No key on the server, turned off, or a kiosk or display board, which nobody's Windows Hello may unlock: the
