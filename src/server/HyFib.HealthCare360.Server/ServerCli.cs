@@ -43,6 +43,11 @@ internal static class ServerCli
           backup decrypt --in <backup.hc360bak> --out <database.dump> [--key <recovery-key>]
               Checks the whole backup and writes only its database dump, for pg_restore. Nothing else changes.
 
+          backup check-documents
+              After a restore: checks every stored document the database records. Its file must be in place, decrypt with
+              the encryption keys on this machine, and hold what was saved (the SHA-256 recorded when it was saved). The
+              restore drill (Invoke-HC360RestoreDrill.ps1) runs it. Reads only; exit code 2 when a document fails.
+
           backup restore --in <backup.hc360bak> [--blobs <folder>] [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
               Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
               rotations) on this Server Node, with the HC360 service stopped. A different key already here is kept under a
@@ -180,6 +185,7 @@ internal static class ServerCli
                 ["backup", "verify", ..] when options.ContainsKey("in") => await VerifyAsync(options),
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
+                ["backup", "check-documents", ..] => await CheckDocumentsAsync(),
                 ["audit", "verify-export", ..] when options.ContainsKey("in") => AuditCli.VerifyExport(options["in"], options.GetValueOrDefault("anchors")),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
                 ["loadtest", "patients", ..] when options.ContainsKey("count") => await LoadTestCli.AddPatientsAsync(options["count"]),
@@ -876,6 +882,32 @@ internal static class ServerCli
         Console.WriteLine("  1. Start the HC360Server service: it issues itself a certificate from the new CA.");
         Console.WriteLine("  2. On a warm standby and every other server node, import the CA again: 'certificates export-ca' here, 'certificates import-ca' there.");
         Console.WriteLine("  3. Give the certificate probe's tasks the new fingerprint.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Checks the stored documents of the database the server uses against their files and the keys on this machine
+    /// (<see cref="HyFib.HealthCare360.Platform.Files.DocumentIntegrityCheck"/>), for the restore drill. Reads only.
+    /// </summary>
+    private static async Task<int> CheckDocumentsAsync()
+    {
+        await using var app = CatalogueCli.BuildApplication();
+        await using var scope = app.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var result = await HyFib.HealthCare360.Platform.Files.DocumentIntegrityCheck.RunAsync(services.GetRequiredService<HospitalDbContext>(),
+            services.GetRequiredService<DataDirectories>(), services.GetRequiredService<IFieldProtector>(), CancellationToken.None);
+        Console.WriteLine(HyFib.HealthCare360.Platform.Files.DocumentIntegrityCheck.Summary(result));
+        foreach (var problem in result.Problems)
+        {
+            Console.Error.WriteLine("  " + problem);
+        }
+
+        if (!result.Ok)
+        {
+            Console.Error.WriteLine("Some documents are not as they were saved: the restore is not complete. Restore again from another copy of the backup folder.");
+            return 2;
+        }
+
         return 0;
     }
 

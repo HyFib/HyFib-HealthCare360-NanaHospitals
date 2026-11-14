@@ -124,6 +124,9 @@ internal static class BackupOffsite
     /// <summary>The metadata each copy carries: the id of the recovery key that opens it.</summary>
     public const string RecoveryKeyMetadata = "hc360-recovery-key";
 
+    /// <summary>The generation of the bucket (<c>gen-yyyyMMdd</c>) a format 3 backup's documents are in, to download with it.</summary>
+    public const string GenerationMetadata = "hc360-generation";
+
     /// <summary>
     /// How long a request may take: a part of a large backup on a slow uplink takes minutes, and a connection that stalls
     /// is given up after this, to be tried again at the next run.
@@ -729,13 +732,6 @@ internal sealed class BackupOffsiteUploader(
                 string.Create(CultureInfo.InvariantCulture, $"{fileName} is {length:N0} bytes now, and was {made:N0} when it was made and checked: it is not uploaded."));
         }
 
-        // The documents a format 3 backup needs go up first, into the bucket's generation: the backup is uploaded only once
-        // every one of them is confirmed there, so a backup off site always has its documents (F22).
-        if (await UploadDocumentsAsync(client, settings, run, file, location, save, ct) is { } stopped)
-        {
-            return stopped;
-        }
-
         var objectLock = settings.RetainDays > 0 ? new S3ObjectLock(time.GetUtcNow() + TimeSpan.FromDays(settings.RetainDays)) : null;
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
         if (run.Sha256 is { Length: > 0 } sha256)
@@ -746,6 +742,14 @@ internal sealed class BackupOffsiteUploader(
         if (run.RecoveryKeyId is { Length: > 0 } keyId)
         {
             metadata[BackupOffsite.RecoveryKeyMetadata] = keyId;
+        }
+
+        // The documents a format 3 backup needs go up first, into the bucket's generation, which the backup's metadata then
+        // names: the backup is uploaded only once every one of them is confirmed there, so a backup off site always has its
+        // documents (F22), and a restore downloads that generation with it.
+        if (await UploadDocumentsAsync(client, settings, run, file, location, metadata, save, ct) is { } stopped)
+        {
+            return stopped;
         }
 
         try
@@ -978,7 +982,8 @@ internal sealed class BackupOffsiteUploader(
     /// An older backup, with its documents inside, has no list and needs none uploaded.
     /// </summary>
     private async Task<Outcome?> UploadDocumentsAsync(
-        S3Client client, BackupOffsiteSettings settings, BackupRun run, string archive, string location, Func<CancellationToken, Task> save, CancellationToken ct)
+        S3Client client, BackupOffsiteSettings settings, BackupRun run, string archive, string location, Dictionary<string, string> metadata,
+        Func<CancellationToken, Task> save, CancellationToken ct)
     {
         var folder = Path.GetDirectoryName(archive)!;
         var fileName = Path.GetFileName(archive);
@@ -1071,6 +1076,7 @@ internal sealed class BackupOffsiteUploader(
             logger.LogInformation("Uploaded {Count} new documents of backup {File} into {Generation} off site", uploaded, fileName, ledger.Generation);
         }
 
+        metadata[BackupOffsite.GenerationMetadata] = ledger.Generation;
         return null;
     }
 

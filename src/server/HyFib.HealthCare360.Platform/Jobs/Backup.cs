@@ -182,6 +182,12 @@ internal sealed class BackupService(
     /// </summary>
     internal const string UnusedKeptNote = "Unused documents were kept: ";
 
+    /// <summary>
+    /// Called at each step of a backup with the step's name, for the tests that stop a backup at every step as a crash would
+    /// (BackupModelTests). Null in the server.
+    /// </summary>
+    internal Action<string>? Checkpoint { get; init; }
+
     private static readonly string ServerVersion =
         typeof(BackupService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
@@ -282,6 +288,7 @@ internal sealed class BackupService(
 
             await EnsureRoomAsync(includeDocuments ? NewDocumentBytes(store, hashes) : 0, ct);
             await postgres.DumpAsync(dump, ct);
+            Checkpoint?.Invoke("dumped");
 
             // The documents are listed after the database snapshot. The file store writes a document in full before its row
             // is committed and never removes it, so every document the dump refers to is on disk by now. One saved since is
@@ -307,6 +314,7 @@ internal sealed class BackupService(
                     }
 
                     listed.Add(new BackupIndexedDocument(document.RelativePath, id, document.Length));
+                    Checkpoint?.Invoke("document copied");
                 }
 
                 hashes.KeepOnly(documents.Select(d => d.RelativePath).ToHashSet(StringComparer.Ordinal));
@@ -328,9 +336,21 @@ internal sealed class BackupService(
             {
                 await using var file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
-                await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, ct);
+                if (includeDocuments)
+                {
+                    await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, ct);
+                }
+                else
+                {
+                    // The backup before an update has no documents, and is restored by the version updated from when the
+                    // update is undone (DEPLOYMENT.md section 7, "Going back"): format 2, which every earlier version reads.
+                    await BackupArchive.WriteAsync(encryptor, manifest with { DocumentCount = 0, DocumentBytes = 0 }, masterKey, ring.Keys, sealKey, dump,
+                        directories.Files, [], ct);
+                }
+
                 await encryptor.CompleteAsync(ct);
                 sha256 = encryptor.Sha256!;
+                Checkpoint?.Invoke("archive written");
             }
             finally
             {
@@ -350,13 +370,16 @@ internal sealed class BackupService(
 
             File.Delete(dump);
             var warning = await VerifyAsync(partial, backupKey, ct);
+            Checkpoint?.Invoke("archive verified");
             CheckDocumentsPresent(store, index ?? []);
 
             // The list first, then the archive: an archive in the folder always has its list, so its documents are never
             // taken for unused.
             var ids = (index ?? []).Select(d => d.BlobId).ToList();
             store.WriteReferences(held, fileName, ids, referencesKey);
+            Checkpoint?.Invoke("list written");
             File.Move(partial, target);
+            Checkpoint?.Invoke("archive in place");
             var verifiedAt = time.GetUtcNow();
             if (includeDocuments)
             {
@@ -374,6 +397,7 @@ internal sealed class BackupService(
                 }
             }
 
+            Checkpoint?.Invoke("before prune");
             var pruned = store.Prune(held, options.Value.Backup.RetentionDays, referencesKey);
             if (pruned.SweepSkipped is { } skipped)
             {
@@ -455,10 +479,12 @@ internal sealed class BackupService(
                     foreach (var id in ids)
                     {
                         await store.AddAsync(held, primary.PathOf(id), id, ct);
+                        Checkpoint?.Invoke("secondary document copied");
                     }
 
                     var name = Path.GetFileName(archive);
                     store.WriteReferences(held, name, ids, referencesKey);
+                    Checkpoint?.Invoke("secondary list written");
                     var copy = Path.Combine(store.Directory, name);
                     if (store.AppendOnly)
                     {

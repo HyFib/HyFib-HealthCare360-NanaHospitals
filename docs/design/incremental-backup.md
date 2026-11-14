@@ -60,7 +60,7 @@ not measurements.
 |---|---|---|---|
 | Documents (*Docs*) | 91 GB | 274 GB | 274 GB (+274 GB of old blobs) |
 | Server backup folder today, R = 30 | 2.9 TB | 8.7 TB | 8.7 TB |
-| Server backup folder proposed, R = 30 | 0.24 TB | 0.73 TB | 1.0 TB |
+| Server backup folder proposed (31 kept: tonight's and 30 days) | 0.25 TB | 0.74 TB | 1.0 TB |
 | Each USB disk today (about 16 of the last 30 nights on each of two weekly-swapped disks) | 1.5 TB | 4.6 TB | 4.6 TB |
 | Each USB disk proposed | 0.17 TB | 0.51 TB | 0.79 TB |
 | Index *I* (assuming ~200 KB per document, which **must be measured**) | 28 MB/archive | 82 MB/archive | |
@@ -293,43 +293,62 @@ Failure rows for these destinations:
      erasure window (F21, F22, F25).
 4. Restore, verify and decrypt with `--blobs`. Restore-from-secondary-alone and stale-disk tests (F3, F16). Key rotation:
    data key (F8, F9) and recovery key (F10).
-5. A model-based test: seeded random sequences of {backup, add document, key-move rewrite, discard, rotate recovery key,
-   swap or unplug disk, crash at step *k*, advance a day}. Invariant after every step: every retained archive in every
-   location restores completely from that location alone, and no blob outlives R+1 days after its last reference
-   (F14). It uses a seeded random generator rather than adding FsCheck, unless you want the dependency.
-6. A growth benchmark over 60 simulated nights, asserting size ≈ `R × (D + I) + Docs + Docs_R`.
-7. Docs: DEPLOYMENT.md §7 (downgrade note), §8, §9 step 3, the readiness doc's sizing. A restore-drill script for a
-   clean Windows VM from one USB disk (row counts plus per-document hashes, timed).
+5. A model-based test (`BackupModelTests`, done). Seeded random sequences of 110 steps over about seven weeks: nightly
+   and extra backups, documents added, moved to a new key and removed, recovery keys rotated, two USB disks swapped and
+   unplugged, backups stopped at any of nine steps (`BackupService.Checkpoint`), and the files a power cut leaves (a
+   `.tmp` copy, a `.partial` archive, a list without its archive, a copy cut short on an append-only disk). After every
+   backup, every archive in every folder must restore from that folder alone to the documents the model recorded when it
+   was made. After every backup that finished, a deletable folder must hold exactly the documents its archives list and
+   no archive past its time. Eight sequences run with deletable disks and eight with append-only ones. To check that it
+   catches faults, each of these changes to the code was made on purpose and failed it: the sweep not deleting (16 of
+   16 sequences fail), the hash cache ignoring file times (16 of 16), and append-only copies taken without checking
+   their length (3 of 8 append-only sequences fail; `BackupStoreTests` covers it directly).
+6. A growth benchmark (`BackupGrowthBenchmarkTests`, done). It runs 60 nights of real backup runs: 2 to 4 documents of 5
+   to 40 kB added each night, the data key rotated on night 20 (every document written again), and the 30-day backup
+   period reached on night 31. Every night, in both the server's folder and the USB disk, the folder's size equals
+   exactly the kept archives and their lists, plus one copy of each document version they list, plus the folder's
+   marker, lock and hash cache. It also matches `R × (D + I) + Docs + Docs_R` within 2%. Measured on the server folder:
 
+   | Night | Backups kept | Documents now | Earlier versions kept | Folder | Every document in every backup |
+   |---|---|---|---|---|---|
+   | 19 | 19 | 1.2 MB | 0 | 1.7 MB | 23.7 MB |
+   | 20 | 20 | 1.3 MB | 1.2 MB | 3.0 MB | 26.0 MB |
+   | 31 | 31 | 2.1 MB | 1.2 MB | 4.1 MB | 65.9 MB |
+   | 49 | 31 | 3.1 MB | 1.2 MB | 5.3 MB | 96.1 MB |
+   | 50 | 31 | 3.2 MB | 0 | 4.1 MB | 98.7 MB |
+   | 60 | 31 | 3.8 MB | 0 | 4.9 MB | 119.8 MB |
+
+   After the rotation the earlier versions stay exactly as long as a backup made before it is kept (to night 49). The
+   folder then grows by the new documents and one backup a night. The full table is in the test's output.
+7. Docs and the restore drill (done). DEPLOYMENT.md sections 7, 8 and 9 and the readiness doc are updated.
+   `Invoke-HC360RestoreDrill.ps1` restores one backup from one USB disk, NAS folder or download on a spare machine, and
+   times each step. It then checks every stored document the restored database records: the file is in place, decrypts
+   with the restored keys, and its content's SHA-256 is the one the file store recorded when it was saved
+   (`backup check-documents`, `DocumentIntegrityCheck`). That is a check independent of the backup's own index. It also
+   compares every table's row count with counts exported from the live server right after the backup. Its decisions are
+   tested in CI in both PowerShell versions (`tests/deploy/Test-RestoreDrill.ps1`). Writing the docs found two gaps in
+   steps 3 and 4, now fixed. Going back from an upgrade (F17) restores the backup taken before it with the earlier
+   version, so that backup is written in format 2. And the off-site restore steps downloaded the archive alone, so each
+   backup uploaded now names its generation (`x-amz-meta-hc360-generation`).
 ---
 
 ## Appendix A. Measurements to run on the Nana server (read-only)
 
-In `psql` against the HC360 database:
+Run `deploy\windows\Measure-HC360BackupSizing.ps1` on the Server Node, from an elevated PowerShell. Add
+`-SecondaryDirectory E:\HC360-Backups` with a USB disk connected, and `-MeasureDump` to measure the real compressed
+dump: it runs `pg_dump -Fc` to a temporary file, measures it and deletes it, which takes a few minutes. The script:
 
-```sql
--- Documents: count, bytes, and size distribution, by type (content is kept for soft-deleted rows, so all rows count)
-SELECT content_type, category, count(*) AS documents, round(sum(size_bytes) / 1e9, 2) AS gb,
-       round(avg(size_bytes) / 1e3) AS avg_kb,
-       percentile_cont(ARRAY[0.5, 0.9, 0.99]) WITHIN GROUP (ORDER BY size_bytes) AS p50_p90_p99_bytes
-FROM platform.stored_files GROUP BY ROLLUP (content_type, category) ORDER BY gb DESC NULLS FIRST;
+- reads the database in a read-only session (`default_transaction_read_only`), and file and disk sizes only;
+- measures documents by type and category, their size percentiles, daily and monthly growth (with the rate over the
+  last 90 days by least squares), the database and dump sizes, the documents folder against `stored_files` (each file
+  is its content plus a 29- or 37-byte encryption header), recorded backups against the files, each volume's file
+  system and cluster size, and the documents disk's reading speed;
+- projects the server folder, each USB disk and the bucket for now, year 1 and year 3, with the model of section 2.2
+  as `BackupGrowthBenchmarkTests` checks it (`tests/deploy/Test-BackupSizing.ps1` checks its arithmetic);
+- warns of an exFAT or FAT backup disk, a backup folder that will outgrow the disk it shares with Windows or the data,
+  a documents folder that does not match the database, and backup files whose size changed;
+- writes `hc360-backup-sizing-<machine>-<date>.json` and `.md`, with totals only and no patient, document or file
+  name, so both can be sent to HyFib as they are. The `.md` table replaces the assumed figures in section 2.2 and in
+  NANA-THENI-READINESS.md.
 
--- Growth: documents and GB a day, last 60 days (IST)
-SELECT (created_at AT TIME ZONE 'Asia/Kolkata')::date AS day, count(*) AS documents, round(sum(size_bytes) / 1e9, 3) AS gb
-FROM platform.stored_files WHERE created_at > now() - interval '60 days' GROUP BY 1 ORDER BY 1;
-
--- Backups: size and document count per run (status 1 = Succeeded; kind 0 scheduled, 1 manual, 2 pre-migration)
-SELECT started_at, kind, round(size_bytes / 1e9, 2) AS gb, document_count, secondary_copied
-FROM platform.backup_runs WHERE status = 1 ORDER BY started_at DESC LIMIT 60;
-
--- The database itself
-SELECT pg_size_pretty(pg_database_size(current_database()));
-```
-
-In PowerShell on the server, with each USB disk connected in turn:
-
-```powershell
-$files = Get-ChildItem "$env:ProgramData\HyFib\HealthCare360\files" -Recurse -File
-"{0:N0} files, {1:N1} GB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1GB)
-Get-Volume | Select-Object DriveLetter, FileSystem, AllocationUnitSize, Size, SizeRemaining
-```
+Run it before go-live, and again after a month of use, when the growth rate means something.
