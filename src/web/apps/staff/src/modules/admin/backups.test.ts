@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backupContents, backupKeyText } from './api';
+import { backupContents, backupKeyText, custodyAdvice, offsiteText } from './api';
 
 describe('backupContents', () => {
   it('describes a full backup with its documents', () => {
@@ -38,5 +38,51 @@ describe('backupKeyText', () => {
   it('gives the id of any other key', () => {
     expect(backupKeyText('7B1E0A44C2D9F3A8', '3F2A9C1B0D4E5F60')).toBe('Opens with recovery key 7B1E0A44C2D9F3A8');
     expect(backupKeyText('7B1E0A44C2D9F3A8', undefined)).toBe('Opens with recovery key 7B1E0A44C2D9F3A8');
+  });
+});
+
+describe('offsiteText', () => {
+  const run = (patch: Partial<Parameters<typeof offsiteText>[0]> = {}) =>
+    offsiteText({
+      status: 'Succeeded',
+      kind: 'Scheduled',
+      offsiteUploadedAt: null,
+      offsiteAttempts: 0,
+      offsiteError: null,
+      ...patch,
+    });
+
+  it('says whether a full backup is off site, going up, or failing to', () => {
+    expect(run({ offsiteUploadedAt: '2026-11-14T02:01:00Z', offsiteAttempts: 1 })).toBe('Yes');
+    expect(run({ offsiteAttempts: 1 })).toBe('Uploading');
+    expect(run({ offsiteAttempts: 3, offsiteError: 'The store could not be reached.' })).toBe(
+      'Not yet: the last try failed',
+    );
+    expect(run()).toBe('No');
+  });
+
+  it('shows nothing for a backup that is not uploaded: one that failed, or the one before an update', () => {
+    expect(run({ status: 'Failed' })).toBe('—');
+    expect(run({ kind: 'PreMigration' })).toBe('—');
+  });
+});
+
+describe('custodyAdvice', () => {
+  const now = new Date('2026-11-14T06:00:00Z');
+  const holder = (name: string, daysAgo: number) => ({
+    userId: name,
+    name,
+    lastProvenAt: new Date(now.getTime() - daysAgo * 86_400_000).toISOString(),
+  });
+
+  it('asks for two people who hold the key, as System health does', () => {
+    expect(custodyAdvice({ custodians: null }, now)).toMatch(/^Nobody has typed this key in/);
+    expect(custodyAdvice({ custodians: [holder('itadmin', 1)] }, now)).toMatch(/^Only itadmin has shown/);
+    expect(custodyAdvice({ custodians: [holder('director', 2), holder('itadmin', 40)] }, now)).toBeNull();
+  });
+
+  it('asks for the quarterly check once nobody has typed it in for 90 days', () => {
+    expect(custodyAdvice({ custodians: [holder('director', 91), holder('itadmin', 120)] }, now)).toMatch(/for 90 days/);
+    expect(custodyAdvice({ custodians: [holder('director', 89), holder('itadmin', 120)] }, now)).toBeNull();
   });
 });

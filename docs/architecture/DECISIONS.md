@@ -46,6 +46,7 @@ Each entry records a decision, its context, and the consequences. New decisions 
 **Context:** On WiFi, a request may succeed on the server while the response is lost, and the client then retries.
 **Decision:** Every unsafe request carries `Idempotency-Key`. The server persists a key → response snapshot for 24 h and replays it on retry.
 **Consequences:** Retries never duplicate bills, payments, dispenses or orders. It costs one small table and a filter.
+**Amended (November 2026):** a retry never runs a request a second time, whatever became of the first attempt. The first attempt runs to its end even if the client goes and its outcome is recorded before the answer is sent; one that never finished (the server stopped while it ran) is answered 409 `idempotency.outcome_unknown`, telling the user to check, instead of being run again. The apps keep the key of a write whose outcome is not known, so the user pressing Save again sends the same key.
 
 ## ADR-008 — Transactional outbox for integrations
 **Status:** Accepted

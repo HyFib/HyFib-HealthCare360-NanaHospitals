@@ -20,6 +20,8 @@ internal sealed class WhatsAppReplyConfirmationHandler(HospitalDbContext db, IWh
 
     public string Type => MessageType;
 
+    public string Provider => OutboxProviders.WhatsApp;
+
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var confirmation = message.Read<WhatsAppReplyConfirmation>();
@@ -29,7 +31,8 @@ internal sealed class WhatsAppReplyConfirmationHandler(HospitalDbContext db, IWh
             cancellationToken);
         if (!result.Success)
         {
-            throw new InvalidOperationException(result.Error ?? "The WhatsApp confirmation was not sent.");
+            var error = result.Error ?? "The WhatsApp confirmation was not sent.";
+            throw result.ProviderUnreachable ? new ProviderUnreachableException(error) : new InvalidOperationException(error);
         }
     }
 

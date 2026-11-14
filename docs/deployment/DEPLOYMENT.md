@@ -123,13 +123,20 @@ Open **PowerShell as Administrator** in the extracted `deploy` folder:
 .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
 ```
 
-This does six things:
+This does seven things:
 - Installs PostgreSQL through winget.
 - Restricts it to localhost, with scram-sha-256 authentication only. Only a warm standby is ever let in from the
   network, and only once it is set up (section 9).
 - Sizes its memory settings from the machine's RAM.
 - Logs statements slower than two seconds, without their parameter values, which can be patient details.
 - Sets the time zone to IST.
+- Sets `wal_sync_method = fsync`. On Windows PostgreSQL's default (`open_datasync`) is safe only while the disk's write
+  cache is off or survives a power cut, and a server without a UPS can lose committed work when the power goes.
+  PostgreSQL's documentation (Reliability) says to turn the cache off or use `fsync`: it flushes the cache at every
+  commit. The setting is written with `ALTER SYSTEM`, so running the script again changes nothing. A server installed
+  earlier needs `ALTER SYSTEM SET wal_sync_method = 'fsync';` as the postgres user, then a restart of its service. The
+  preflight (`Test-HC360ServerNode.ps1`, section 1) reports the system disk's write cache and, once PostgreSQL is
+  installed, the `wal_sync_method` it runs with, and warns on a cache that is on without power protection.
 - Has Windows restart its service if the service's process fails. The HC360 installer (step 3) also starts PostgreSQL
   again when the database itself crashes (see "When PostgreSQL stops" below).
 
@@ -441,7 +448,20 @@ showed the original key on screen; System health says when backups still use tha
    so a key nobody wrote down never becomes the one they need. A mistake in the copy is caught here.
 
 The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
-on a NAS or USB drive, are deleted: 30 days by default. Both steps are recorded in the audit log, without the key.
+on a NAS or USB drive and off site, are deleted: 30 days by default, 35 in the off-site bucket. Both steps are recorded
+in the audit log, without the key.
+
+**Two people hold the key.** A key one person holds is lost with them. Give a copy to a second administrator (the
+medical director, or the hospital administrator), who keeps it outside the building, at home or in a bank locker, so a
+fire takes at most one copy. The administrator who typed the new key back is its first holder. The second opens
+Administration › Backups, **Recovery key**, selects **I hold this key**, and types it in from their own copy; HC360
+records who and when, and never shows the key again. The dialog lists who has shown they hold the key. It needs the
+backups permission (`admin.backups.manage`), not `admin.system.manage`. System health warns
+(`backup.recovery_key_custodians`) until two different people have typed in the current key.
+
+**Check the copies every quarter.** Each holder finds their copy and types it in the same way. System health warns
+(`backup.recovery_key_unchecked`) once nobody has for 90 days. A copy that can no longer be read, or found, is a reason
+to make a new key now, while the current one still opens the backups.
 HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again. Until it is typed
 back, the new key waits, protected the same way, beside it in the keys folder; with several servers (section 10) that
 is the folder they share, so whichever server the reverse proxy sends the confirmation to finds it.
@@ -660,8 +680,12 @@ sure it reaches someone. On a live server, System health warns while one is miss
    never the HC360 server.
    - Create a heartbeat check with a period of 5 minutes and a grace time of 5 to 10, alerting IT and HyFib support.
    - Set `alerts.heartbeatUrl.secret` to its address, and `alerts.heartbeatMinutes` if the period is not 5. The server
-     that runs the jobs fetches it while the database answers, so a server that cannot reach its database counts as
-     down. The address is https, or http to a private address on the hospital's network.
+     that runs the jobs fetches it only while the database answers **and** the server's own web host answers: before
+     each fetch it asks `/health/ready` on its own staff address over HTTPS on this machine (a 5-second limit, trusting
+     only the server's own LAN certificate). A server whose web host is wedged, with staff unable to work, so stops the
+     heartbeat, and counts as down like one that cannot reach its database. System health does not warn of the pause
+     itself (the web host may be what is stuck): the monitor's alarm is how it is noticed. The address is https, or http
+     to a private address on the hospital's network.
    - Let the server through the firewall to the monitor's host: one https request every few minutes, carrying nothing
      but the address.
    - Keep the address to those who need it: whoever has it could fetch it and hide an outage. HC360 keeps it
@@ -1048,6 +1072,11 @@ reference from the slip instead.
    | 11 | A card Pine Labs declines (their decline test card) | try again or cancel | The sale stays waiting while the terminal lets the customer retry, or ends declined (note which) |
    | 12 | A sale while the terminal is offline | nothing | Waiting; Cancel in HC360 ends it |
    | 13 | A void on the terminal, then a refund in HC360 with the void's RRN | void | The refund is recorded |
+   | 14 | A card sale; pull the terminal's network cable just as **Send to terminal** is pressed, and put it back after the screen has answered | the sale may or may not appear | Not confirmed (never Declined), with what to check on the terminal, the time a new sale may be sent, and **Try again** off. Note whether the sale appeared on the terminal |
+   | 15 | The same, then press **Send to terminal** again at once from another counter | the first sale, if it appeared | Refused with "The last sale of ₹… at … may still be on the terminal"; the customer is charged once |
+   | 16 | The same, with the sale on the terminal: pay it | pay | Record the payment from the slip; the exception raised later is resolved with a note |
+   | 17 | The same, with no sale on the terminal | idle menu | **The terminal shows no sale** with a note frees the terminal; the note is in the audit trail |
+   | 18 | The same, and leave it past the auto-cancel time plus two minutes | nothing | Lapsed, outcome unknown, and a Gateway reconciliation exception the accountants clear against the settlement |
    | 14 | A pharmacy walk-in counter sale by card, **Take on terminal** | pay with a test card | "Paid on the terminal · Card ending …"; the invoice's payment has the RRN, approval code and card digits |
    | 15 | A pharmacy dispense paid part by UPI on the terminal, the rest in cash | pay by UPI | Two payments on the invoice; the UPI one has the terminal's reference |
    | 16 | A canteen bill by UPI, **Take on terminal**, then **Finish the bill** | pay by UPI | The bill is saved with the terminal's reference |
@@ -1205,7 +1234,10 @@ each.
    data.
 3. **Restore the backup:** `.\Restore-HC360.ps1 -BackupFile '<file>'`. It keeps the upgraded database under another
    name (`hc360_before_restore_<time>`), restores the one from before the update, and starts HC360. The backup holds
-   the database and its keys, not the documents, which stay as they are.
+   the database and its keys, not the documents, which stay as they are. As HC360 starts on it, it moves every number
+   series past the numbers issued since the upgrade, so a bill or UHID printed meanwhile is not issued again, and holds
+   outgoing messages until an administrator releases them (section 8, "After a restore"; a previous version does so
+   only if it is this version or later).
 4. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`, so that HC360 starts with
    Windows again. *Check:* Administration › System health shows the previous version and nothing red.
 5. **Workstations.** HC360 Desktop never goes back a version by itself. One that took the newer version keeps it; where
@@ -1216,11 +1248,13 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 ## 8. Backups and disaster recovery
 
 - An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST and is kept for 30 days. With
-  `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
+  `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS, and once the off-site copy is set up
+  (below), it is uploaded to a bucket outside the building within 15 minutes.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
-- **The copy to the second disk or NAS** is what survives if the server's own disk fails. When a copy fails (the USB
-  disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:
+- **The copy to the second disk or NAS** is what survives if the server's own disk fails. The number series'
+  high-water mark is copied there too, every minute while numbers are issued ("After a restore" below). When a copy
+  fails (the USB disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:
   - the Backups screen shows "No" in its **Second copy** column, and the reason in its **File / error** column;
   - the administrators are told in the app ("Backup not copied");
   - System health warns (`backup.copy_failed`), naming the folder and the reason;
@@ -1238,14 +1272,17 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   records.
 - Each backup holds the database, the stored documents, the field encryption keys and the audit seal key, all encrypted.
   Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this.
-- **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:
+- **Restore test every quarter** on a spare machine. The restored copy holds its outgoing messages ("After a restore"
+  below): leave them held there, or patients get the test copy's messages. To check a copy on the NAS or a USB drive
+  without restoring it:
 
   ```powershell
   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
   ```
 
 - To restore after a disk failure on new hardware:
-  1. Install PostgreSQL and HC360 as above.
+  1. Install PostgreSQL and HC360 as above, with the old server's `-SecondaryBackupDir`: HC360 finds the copy of the
+     number series' high-water mark there ("After a restore" below).
   2. Run:
 
      ```powershell
@@ -1263,6 +1300,9 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      before HC360 left those out holds them: the script clears them after restoring the database, and names them
      ("Cleared the rows of the servers the backup knew …"). If it cannot, it says so and goes on; remove any old
      server that shows as not reporting with **Remove** on its card in System health.
+
+     Last, before it starts HC360, it leaves `restored.json` in the data folder. What HC360 then does, and what to check
+     before the hospital works on the restored server, is under "After a restore" below.
   3. Workstations see a new server certificate. If the hospital CA was exported from the old server and kept (section
      9, step 3), install it with step 1's installer run: `.\Install-HC360Server.ps1 -HospitalCaFile <the .pfx>`, before
      the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
@@ -1278,6 +1318,216 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   Backups whose recovery key is "Original key" open with the original key, which no screen shows any more. On the
   Server Node that made them, enter `original` when the script asks for the key; elsewhere, use the copy made when
   administrators could still display it.
+
+### After a restore
+
+A restore puts the database back to the moment its backup was made, and with it every number series. The UHIDs, visit
+numbers, bills, receipts and GST invoices issued since would be issued again, though they are on cards, wristbands and
+invoices already, and messages queued then would go again. So as HC360 starts on a restored database, before anyone
+can sign in, it:
+
+1. **Moves every number series past the numbers issued before the restore.** The server that runs the jobs keeps a
+   high-water mark of every series outside the database: `numbering\number-series-high-water-mark.json` in the data
+   folder, written every minute while numbers are issued and as the service stops, and copied beside the backups'
+   second copy (`-SecondaryBackupDir`), which is the copy that survives a disk failure. Each series behind the mark goes
+   on from the last number the mark records **plus 100**, for the numbers issued in the minute before a power cut. So
+   after last night's backup is restored, the next UHID is about 100 above the last one printed. Each series moved is in
+   the audit trail (`numbering.raised`, Administration › Audit), which explains its gap to the auditors of bills and
+   receipts. A yearly series moves into the new year when the mark has numbers of it. This happens at every start, so a
+   restore made by hand, without the script, is caught too; only the next two steps need the script's `restored.json`.
+2. **Holds the outgoing messages queued before the restore** (SMS, WhatsApp, e-mail, ABDM, e-invoicing). Some were sent
+   after the backup was made and would go again. Messages queued after the restore go as usual, among them the SMS that
+   tells IT on-call of the restore.
+3. **Says so in System health**, as a critical warning (`system.restored`): the backup it was restored from, the series
+   it moved with their next numbers, and that the messages are held. It lasts until the messages are released.
+
+Before the hospital works on the restored server:
+- Sign in, check the records entered last before the failure, and enter again from paper what is missing.
+- Check the next numbers System health names against the last ones printed (the last bill, the last wristband).
+- Check the held messages, then release them (below). None of them goes out until then.
+
+Without the mark's copy (no `-SecondaryBackupDir`, or a different one on the new hardware), a restore on new hardware
+finds no mark, and System health says so: set each series' next number past the last one printed, in Hospital setup ›
+Number formats, before the hospital works on it. The mark is sealed with the audit seal key that every backup carries,
+so one written elsewhere, or changed by hand, is not used. If start-up cannot do all of this after a restore, it stops
+rather than issue numbers or send messages twice; the reason is in the log and Windows Event Viewer, and the marker
+stays until HC360 starts.
+
+**The held messages.** A restored database holds, as waiting, the messages that were waiting when the
+backup was made, and some of them may have gone out since: a payment link, a bill, a result. So as the restored server
+starts, it holds the messages queued before that moment that go to the internet (the hospital-wide setting
+`messaging.outbox.hold`): none of them goes by SMS, WhatsApp, e-mail, ABDM or e-invoicing until an administrator
+releases them. Messages queued after the restore are new and go as usual, the SMS that tells IT on-call of the restore
+among them, and so do alerts in the app, the analysers' orders and Tally. A held message still expires when its time
+is up (a sign-in code after ten minutes), and System health counts it as expired. System health shows the restore as
+a critical warning (`system.restored`), which the alerts tell IT on-call, and counts the held messages in a warning of
+its own, which does not page anyone again: "12 outgoing messages queued before the restore at … are held: check them,
+then release". To release them:
+1. Open **Administration › System health**. The **Messages waiting to send** card says how many messages are held and
+   when the backup was made.
+2. Check what is held: **Check the queued messages** opens **Administration › Notifications › Delivery log** at the
+   Queued messages; those queued before the restore are the held ones. Compare them with what the providers' own
+   portals show went out after the backup was made (MSG91's report, Meta's WhatsApp Manager, the mail server's log), and
+   tell anyone who should know of a message that will go twice.
+3. Press **Release** on the card (`admin.system.manage`) and confirm. The release clears the hold and the restore's
+   warning, is audited (`messaging.outbox_released`, with what the hold said and how many messages it held), and the
+   messages go within seconds, on every server, as each provider answers.
+
+A hold set for any other reason works the same way, and its warning is critical: nothing else tells of it.
+
+### The off-site copy
+
+The second disk or NAS is in the same building as the server, so a fire, a flood, a theft, or ransomware on the server
+can take both. HC360 therefore also uploads every verified full backup to a bucket outside the building, in an
+S3-compatible object store: AWS in Mumbai (`ap-south-1`) or Hyderabad (`ap-south-2`), OCI in Mumbai or Hyderabad, or
+any S3-compatible store hosted in India. The backups are encrypted with the recovery key before they leave; the store
+never has that key.
+
+- **When.** The server that runs the background jobs looks every 15 minutes. It uploads the newest verified full backup
+  first, then older ones not yet off site that were made within the last 7 days (`backfillDays`), one at a time. The
+  backup taken before an update holds no documents and is not uploaded.
+- **Large backups on a slow line.** A backup over 16 MB goes up in parts of 8 MB or more. Each part the store takes is
+  recorded with the backup, so an upload cut off by a lost connection or a restart goes on from where it stopped. Size
+  the uplink so that a night's backup goes up within the day: a 6 GB backup takes about 80 minutes at 10 Mbit/s.
+- **Checked on the way and at the end.** Every request goes over https only, is signed with the access key, and carries
+  the SHA-256 and MD5 of what it sends, which the store checks: a part damaged on the way is refused, not stored. Before
+  the parts are joined, HC360 reads the backup file again and checks it against the SHA-256 it was verified with when
+  it was made. Afterwards it reads back the copy's size and checksum from the store. Only a copy that matches counts.
+- **Locked.** Each copy is locked for 35 days (`retainDays`) with S3 Object Lock in compliance mode: nobody can delete
+  or overwrite it before then, not HC360, not an administrator, not the owner of the store account. HC360's access key
+  cannot delete anything in any case.
+- **Shown.** The Backups screen's **Off site** column says Yes, with the time, or the store's answer to the last try.
+
+**Setting it up.**
+
+1. With the hospital's own administrator account for the store (never HC360's key), create the bucket with Object Lock
+   on. Versioning comes with it. With the AWS CLI:
+
+   ```powershell
+   aws s3api create-bucket --bucket nana-hc360-backups --region ap-south-1 `
+       --create-bucket-configuration LocationConstraint=ap-south-1 --object-lock-enabled-for-bucket
+   aws s3api put-public-access-block --bucket nana-hc360-backups `
+       --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+   aws s3api put-bucket-lifecycle-configuration --bucket nana-hc360-backups --lifecycle-configuration file://hc360-lifecycle.json
+   ```
+
+   `hc360-lifecycle.json` removes each copy as its lock passes, and the parts of uploads that never finished. Keep its
+   `Days` equal to `retainDays`: the privacy notice tells patients that erased data leaves the backups within
+   `retainDays` + 2 days (37) while the off-site copy is on, and counts on it (docs/modules/privacy.md).
+
+   ```json
+   {
+     "Rules": [
+       {
+         "ID": "hc360-backups",
+         "Status": "Enabled",
+         "Filter": { "Prefix": "hc360/" },
+         "Expiration": { "Days": 35 },
+         "NoncurrentVersionExpiration": { "NoncurrentDays": 1 },
+         "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+       }
+     ]
+   }
+   ```
+
+   Keep the bucket's default encryption with keys the store manages (SSE-S3), not KMS keys: HC360 checks each copy
+   against its ETag, which is a checksum only with SSE-S3.
+2. Make an access key for HC360 alone: an IAM user with this policy and nothing else. It may upload, finish or give up
+   an upload, and read back what it uploaded. It may not delete anything, list the bucket, or change the bucket, its
+   lock or its lifecycle.
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "HC360UploadsBackups",
+         "Effect": "Allow",
+         "Action": ["s3:PutObject", "s3:PutObjectRetention", "s3:GetObject", "s3:AbortMultipartUpload"],
+         "Resource": "arn:aws:s3:::nana-hc360-backups/hc360/*"
+       },
+       {
+         "Sid": "HC360NeverDeletes",
+         "Effect": "Deny",
+         "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion", "s3:BypassGovernanceRetention", "s3:PutBucketObjectLockConfiguration", "s3:PutLifecycleConfiguration", "s3:PutBucketPolicy"],
+         "Resource": ["arn:aws:s3:::nana-hc360-backups", "arn:aws:s3:::nana-hc360-backups/*"]
+       }
+     ]
+   }
+   ```
+
+   `s3:PutObject` covers a multipart upload's start, parts and completion; `s3:AbortMultipartUpload` gives up one whose
+   backup file failed its check (it removes parts, never a finished copy). `s3:PutObjectRetention` lets each upload set
+   its copy's lock (in compliance mode a lock can be lengthened, never shortened), and `s3:GetObject` lets HC360 read back
+   what arrived. Keep the account's administrator credentials off the Server Node.
+3. In HC360, under Administration › Backups, **Off-site copy**: switch it on, enter the store address, region, bucket and
+   folder (`hc360/`), and the access key ID and secret access key, and save. The change waits for a second
+   administrator (MAKER-CHECKER.md), who approves it under Approvals; nothing is uploaded until then. The settings are
+   `backup.offsite` and, encrypted, `backup.offsite.secret`, for the whole hospital.
+4. Select **Back up now**. Within 15 minutes the backup's **Off site** column says Yes. Check that the bucket shows the
+   file under `hc360/`, with its lock date.
+
+| Store | Store address | Region | Path-style | Lock |
+|---|---|---|---|---|
+| AWS Mumbai | `https://s3.ap-south-1.amazonaws.com` | `ap-south-1` | Off | Object Lock, `retainDays` 35 |
+| AWS Hyderabad | `https://s3.ap-south-2.amazonaws.com` | `ap-south-2` | Off | Object Lock, `retainDays` 35 |
+| OCI Mumbai | `https://<namespace>.compat.objectstorage.ap-mumbai-1.oraclecloud.com` | `ap-mumbai-1` | On | A retention rule of 35 days on the bucket, and `retainDays` 0 |
+| OCI Hyderabad | `https://<namespace>.compat.objectstorage.ap-hyderabad-1.oraclecloud.com` | `ap-hyderabad-1` | On | As for OCI Mumbai |
+| Another S3-compatible store in India | Its S3 address, from its documentation | As it names it | As it says (On for MinIO-based stores) | Object Lock where it offers it; otherwise its own lock on the bucket, and `retainDays` 0 |
+
+On OCI, the access key is a customer secret key of a user whose group's policy allows only `OBJECT_CREATE`,
+`OBJECT_INSPECT` and `OBJECT_READ` in that bucket.
+
+**What System health says** (`backup.offsite_stale`):
+
+- A warning while the newest backup's upload fails, with the store's answer. HC360 tries again every 15 minutes.
+- Critical once no backup has reached the bucket for three and a half days (where none ever has, once uploads have
+  failed that long), or once the newest verified backup is still not off site a day after it was made, as on an uplink
+  too slow to carry a night's backup in a day, or a server that stopped trying. Critical warnings are told to IT on-call
+  by SMS and escalated (section 4, "Alerts that reach someone").
+- A warning, on a live server with nightly backups, while no off-site copy is set up: "No copy of the backups leaves the
+  building".
+
+| The store's answer | What it means |
+|---|---|
+| "The store could not be reached" | No internet, or a firewall or proxy in the way: the server must reach the store address on port 443. |
+| 403 `AccessDenied` | The access key, or its policy, does not allow uploads to that bucket and folder. |
+| 403 `SignatureDoesNotMatch` | The secret access key is wrong, or the server's clock is out (System health says so too). |
+| 301 `PermanentRedirect`, or "the bucket is in …" | The region is not the bucket's. |
+| 404 `NoSuchBucket` | The bucket's name, or path-style, is wrong. |
+| 400 `InvalidRequest` about Object Lock | The bucket was made without Object Lock: make a new one with it, or lock the bucket another way and set `retainDays` to 0. |
+| "does not match the backup" | The copy read back from the store differs from what was sent. HC360 uploads it again, and after three such copies stops and says so: check that the bucket encrypts with SSE-S3, not KMS keys. |
+| "no longer matches the SHA-256" | The backup file on the server's disk changed after it was checked: the disk may be failing. It is not uploaded; check the disk, and take a backup. |
+
+**Restoring from the off-site copy.** When the server and the second disk are both gone:
+
+1. On the new machine, with the hospital's own credentials for the store (not HC360's key), download the backup the
+   Backups list named, or the newest one, from the store's console or with the AWS CLI:
+
+   ```powershell
+   aws s3 cp s3://nana-hc360-backups/hc360/hc360-<date>-scheduled.hc360bak D:\Restore\
+   ```
+
+   The object's metadata names the backup's SHA-256 (`x-amz-meta-hc360-sha256`) and the recovery key that opens it
+   (`x-amz-meta-hc360-recovery-key`).
+2. Check it without restoring it: `backup verify --in D:\Restore\hc360-<date>-scheduled.hc360bak`, as above.
+3. Restore it with `.\Restore-HC360.ps1 -BackupFile D:\Restore\hc360-<date>-scheduled.hc360bak`, as above. No other tool
+   is needed.
+
+### A second copy the server cannot delete
+
+The off-site bucket's copies cannot be deleted by the server. The copy on the NAS can be made the same way, so the
+server, and ransomware on it, can add copies there but not remove or change them:
+
+- Give the server's computer account (`HOSPITAL\HC360-SRV$`) permission to create and write files in the share, but not
+  *Delete*, *Delete subfolders and files*, *Change permissions* or *Take ownership*. HC360 writes each copy once, under a
+  new name, and never changes it.
+- Better still, make the share a WORM folder (write once, read many: Synology's WriteOnce, QNAP's WORM), which keeps
+  each file unchangeable for the days set, or take immutable snapshots of it every day. Then a copy cannot be
+  overwritten either.
+- Let the NAS's own retention remove the copies after 30 days or more. HC360 cannot: each backup's note then says it was
+  copied and that the older copies there were not removed. That note is not a failed copy, and raises no warning.
+- Keep the NAS's administrator account off the Server Node.
 
 ## 9. Warm standby and failover (optional)
 
@@ -1789,6 +2039,8 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal (a workstation on a cable shows —); Administration › System health shows the server's link: on a cable, its speed (1 Gbps), else its WiFi signal. On a cabled ward, the ward's switch and its uplink |
 | "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Which cable: the alert and System health name it, with the address it had. Is it in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
 | The on-call phone says the server's network cable is connected again, with no SMS of its loss before | The server reaches the SMS gateway over that cable alone, so the loss could not go while it was out: it was withdrawn (**Administration › Notifications** shows it suppressed), and the return says when the cable was lost and when it was back. If it happens again, see the row above |
+| "Outbound messages are queued for more than 30 minutes (internet down?)" (System health), or SMS and WhatsApp arrive late | Is the internet up? Alerts in the app (a fridge out of range, a critical result) do not wait for it. A provider that could not be reached three times in a row waits 30 s, doubling to 5 minutes, before its next try, and the server log says so ("… could not be reached 3 or more times in a row"); once the internet is back, its messages go within 5 minutes. System health counts the messages that failed or expired unsent in the last day |
+| "… outgoing messages queued before the restore at … are held: check them, then release" (System health) | The messages queued before the restore wait; those queued since go as usual. Check the queued messages, then press **Release** on the Messages waiting to send card (section 8, "Messages held after a restore"), which also clears the restore's warning |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |
@@ -1796,6 +2048,9 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | Service will not start | The newest `hc360-server-<date>.json` in `%ProgramData%\HyFib\HealthCare360\logs\` (see "Reading the server log"), then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
 | A restore says "This backup opens with recovery key …, not with the key entered" | Each backup opens with the key in use when it was made. Use the copy whose ID the message names; the Backups list names every backup's key |
 | "The backup of … was not copied to …" or "No backup has been copied to … since …" (System health), or "Backup not copied" in the app | The message gives Windows' reason. "Could not find a part of the path": the USB disk is unplugged, or came back with another drive letter (give both disks the same one in Disk Management). "The network path was not found": the NAS is off or unreachable. "Access … denied": HC360 may not write there: on the server that is `NT SERVICE\HC360Server`, on a NAS share the server's computer account (`HOSPITAL\HC360-SRV$`). Fix it, then **Back up now** (section 8) |
+| "Copied to the secondary directory; older copies there were not removed" in a backup's note | The share lets the server add copies but not delete them, as an append-only share should (section 8, "A second copy the server cannot delete"). Nothing failed; let the NAS's own retention remove the old copies |
+| "No copy of the backups leaves the building", or "has not reached the off-site copy" (System health, `backup.offsite_stale`) | Set up the off-site copy, or read the store's answer in the warning against the table in section 8, "The off-site copy" |
+| "Only … has shown they hold recovery key …" or "Nobody has typed in recovery key … since …" (System health) | A second administrator, or each holder at the quarterly check, types the key in under Backups › Recovery key, **I hold this key** (section 3, "A new backup recovery key") |
 | A restore says "The recovery key has a mistake in it" | A character was copied or typed wrong. The key has no letters I, L, O or U; an I or L is read as 1, and an O as 0 |
 | Service will not start, and the log says `SSPI authentication failed for user "hc360_app"` or `No password has been provided but the backend requires one` | PostgreSQL no longer has HC360's sign-in rules, for example after it was reinstalled or upgraded to a new version with a new data folder. Run `Install-HC360Server.ps1` again: it writes them again. To sign in with a password instead, run it with `-DatabaseSignIn Password` |
 | The installer warns "The server did not reach the database with its Windows account" | It put everything back, and HC360 signs in with its password as before. The HC360 log in `logs\` and PostgreSQL's log (`log\` in its data folder) say why. Send both to HyFib support; until then HC360 works as it did |

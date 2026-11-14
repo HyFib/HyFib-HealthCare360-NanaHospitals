@@ -33,11 +33,13 @@ public sealed record HeartbeatState(
 /// database, or a site cut off from the internet tells nobody. So every few minutes (<c>alerts.heartbeatMinutes</c>, 5 if
 /// not set) the server that runs the jobs fetches the address the hospital set (<see cref="UrlSetting"/>) from a
 /// monitoring service outside the hospital, which raises its own alarm when the fetches stop. It fetches only while the
-/// database answers, so a server that cannot reach it counts as down. The address is https, or http to an address on the
+/// database answers and the server's own web host answers its readiness check over HTTP (<see cref="IServerReadinessProbe"/>),
+/// so a server that cannot reach its database, or whose web host is wedged while staff cannot work, counts as down. The address is https, or http to an address on the
 /// hospital's own network; the fetch carries nothing but the address, and follows no redirect (<see cref="Http.OutboundHttp"/>).
 /// </summary>
 public sealed class AlertHeartbeat(
-    IServiceScopeFactory scopes, IHttpClientFactory http, IOptions<PlatformOptions> options, TimeProvider time, ILogger<AlertHeartbeat> logger)
+    IServiceScopeFactory scopes, IHttpClientFactory http, IOptions<PlatformOptions> options, TimeProvider time, ILogger<AlertHeartbeat> logger,
+    IServerReadinessProbe? readiness = null)
     : BackgroundService
 {
     /// <summary>
@@ -128,6 +130,12 @@ public sealed class AlertHeartbeat(
             {
                 return Set(state with { Minutes = minutes, LastAttemptAt = now, LastError = "the database does not answer, so no heartbeat was sent." },
                     address.AbsoluteUri);
+            }
+
+            // And while the web host does not answer its own readiness over HTTP: a wedged Kestrel or starved thread pool must not look healthy.
+            if (readiness is not null && await readiness.CheckAsync(ct) is { } unready)
+            {
+                return Set(state with { Minutes = minutes, LastAttemptAt = now, LastError = unready + " No heartbeat was sent." }, address.AbsoluteUri);
             }
 
             var error = await FetchAsync(address, ct);

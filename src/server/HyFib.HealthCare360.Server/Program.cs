@@ -105,6 +105,9 @@ builder.Services.AddHttpsRedirection(redirection => redirection.HttpsPort = plat
 
 builder.AddServerApplication(certificates);
 
+// The outside heartbeat is sent only while this server's own staff listener answers its readiness (not in the in-memory test server, which has none).
+builder.Services.AddSingleton<IServerReadinessProbe>(new LoopbackReadinessProbe(platformOptions.HttpsPort, () => certificates.ServerCertificate));
+
 builder.Services.AddHospitalCompression();
 
 // A year, and every name under the server's own (there are none by default, so nothing else on the LAN is affected).

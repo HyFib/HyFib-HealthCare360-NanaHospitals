@@ -490,10 +490,15 @@ public sealed class ColdChainService(HospitalDbContext db, IOutbox outbox, ICurr
     }
 }
 
-/// <summary>Delivers a cold-chain alert: to the store's in-charge, or with none set, to everyone who manages cold chain in the facility.</summary>
+/// <summary>
+/// Delivers a cold-chain alert: to the store's in-charge, or with none set, to everyone who manages cold chain in the
+/// facility. In the app only, so on the local lane: a fridge's alert never waits behind the internet.
+/// </summary>
 internal sealed class ColdChainAlertOutboxHandler(INotificationService notifications) : IOutboxHandler
 {
     public string Type => ColdChainService.AlertType;
+
+    public OutboxLane Lane => OutboxLane.Local;
 
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {

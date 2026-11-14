@@ -37,7 +37,9 @@ public sealed record PosRecheckSettings
 /// moved on while the customer was still paying. Each sale still open, or approved without its receipt, is asked about
 /// again; an approval is recorded once, and a sale nobody paid within the facility's timeout is cancelled on the terminal
 /// and marked timed out. A counter that bills its own sales (the pharmacy, the canteen) records its approved sales
-/// itself: one it has not recorded within the same timeout is kept as an exception for the accountants. Background work has no signed-in facility, so every sale is read across facilities and asked
+/// itself: one it has not recorded within the same timeout is kept as an exception for the accountants. A sale whose upload
+/// answer was lost (unconfirmed) cannot be asked about; once its window on the terminal has passed it lapses and is kept as an
+/// exception too. Background work has no signed-in facility, so every sale is read across facilities and asked
 /// about with its own facility's terminal settings.
 /// </summary>
 public sealed class PosRecheckRunner(
@@ -105,6 +107,7 @@ public sealed class PosRecheckRunner(
         return await db.Set<PosTransaction>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(s => s.CreatedAt > after && s.CreatedAt <= before)
             .Where(s => s.Status == PosTransactionStatus.Initiated || s.Status == PosTransactionStatus.AwaitingCustomer
+                        || s.Status == PosTransactionStatus.Unconfirmed
                         || (s.Status == PosTransactionStatus.Approved && s.Owner == null && s.ReceiptId == null)
                         || (s.Status == PosTransactionStatus.Approved && s.Owner != null && s.OwnerPaymentId == null
                             && !exceptions.Any(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Key == s.TransactionId)))

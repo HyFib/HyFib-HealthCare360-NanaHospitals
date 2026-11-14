@@ -33,7 +33,10 @@ export const PACK_SLOT = 'pack';
 export const REFRESH_MS = 15 * 60 * 1000;
 
 interface OfflineCopyState {
-  /** When the copy in hand was taken (ms), or null when there is none. */
+  /**
+   * When the copy in hand was fetched (ms), or null when there is none. That is the age of the worklists only: the ward
+   * sheets and medicines are as old as the pack itself (its `generatedAt`), which can be hours older.
+   */
   takenAt: number | null;
   pack: DowntimePack | null;
   worklists: OfflineWorklist[];

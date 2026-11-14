@@ -36,6 +36,7 @@ public sealed class DischargeSummaryWhatsAppTests(HospitalServer server)
         var nurse = await server.SignInAsync(Users.Nurse);
         var (patient, stay) = await AdmitAsync(server, frontOffice, doctor);
         var phone = await PhoneAsync(patient.Id);
+        await server.VerifyPatientPhonesAsync(phone); // the summary goes only to a verified number
         var draft = await doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{stay.Id}", Summary(patient.Id));
         var signed = await doctor.PostAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/{draft.Id}/sign", new SignDischargeSummaryRequest(draft.Version));
         await InitiateAndClearAsync(server, nurse, stay.Id);
@@ -54,6 +55,39 @@ public sealed class DischargeSummaryWhatsAppTests(HospitalServer server)
             var completed = await DeliveriesAsync("discharge.completed", phone, since);
             completed.Select(d => d.Channel).ShouldBe([NotificationChannel.Sms]);
             completed.Single().Document.ShouldBeNull("an SMS carries no document");
+        }
+        finally
+        {
+            await SwitchSummaryTemplatesAsync(inUse: false, only: switchedOn);
+        }
+
+        await CleanBedAsync(nurse, stay.Id);
+    }
+
+    [Fact]
+    public async Task With_the_summary_template_on_a_number_nobody_has_verified_gets_the_discharge_message_without_the_summary()
+    {
+        var frontOffice = await server.SignInAsync(Users.FrontOffice);
+        var doctor = await server.SignInAsync(Users.Doctor);
+        var nurse = await server.SignInAsync(Users.Nurse);
+        var (patient, stay) = await AdmitAsync(server, frontOffice, doctor);
+        var phone = await PhoneAsync(patient.Id);
+        var draft = await doctor.PutAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/by-admission/{stay.Id}", Summary(patient.Id));
+        await doctor.PostAsync<DischargeSummaryDto>($"/api/v1/clinical/discharge-summaries/{draft.Id}/sign", new SignDischargeSummaryRequest(draft.Version));
+        await InitiateAndClearAsync(server, nurse, stay.Id);
+
+        var switchedOn = await SwitchSummaryTemplatesAsync(inUse: true);
+        try
+        {
+            var since = DateTimeOffset.UtcNow.AddSeconds(-1);
+            (await nurse.PostAsync<DischargeResult>(Complete(stay.Id), new CompleteDischargeRequest(DischargeType.Normal, null, "Discharged home", NotifyPatient: true)))
+                .Status.ShouldBe(AdmissionStatus.Discharged);
+
+            // The number may not be the patient's (a digit typed wrong at the desk): the notice goes, the summary does not.
+            (await DeliveriesAsync("discharge.summary", phone, since)).ShouldBeEmpty();
+            var completed = await DeliveriesAsync("discharge.completed", phone, since);
+            completed.Select(d => d.Channel).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+            completed.ShouldAllBe(d => d.Document == null);
         }
         finally
         {

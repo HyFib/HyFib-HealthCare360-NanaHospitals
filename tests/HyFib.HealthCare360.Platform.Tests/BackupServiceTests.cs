@@ -92,6 +92,45 @@ public sealed class BackupServiceTests : IDisposable
         Directory.EnumerateFiles(_directories.Backups, "*.partial").ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// An append-only share (DEPLOYMENT.md section 8) lets the server add copies but not delete the old ones, so ransomware
+    /// on the server cannot delete them either: the copy is made, and its note says so and that the older copies were kept,
+    /// never that the copy failed (which System health would then warn of).
+    /// </summary>
+    [Fact]
+    public void A_copy_to_a_share_that_refuses_deletes_is_made_and_says_the_older_copies_were_kept()
+    {
+        var backup = Path.Combine(_directories.Backups, "hc360-20261114-013000-scheduled.hc360bak");
+        File.WriteAllBytes(backup, RandomNumberGenerator.GetBytes(64));
+        var share = Path.Combine(_root, "append-only");
+
+        var (copied, note) = BackupService.CopyToSecondary(backup, share,
+            _ => throw new UnauthorizedAccessException(@"Access to the path '\\NAS\HC360-Backups\hc360-20261014-013000-scheduled.hc360bak' is denied."),
+            NullLogger.Instance);
+
+        copied.ShouldBeTrue();
+        File.ReadAllBytes(Path.Combine(share, Path.GetFileName(backup))).ShouldBe(File.ReadAllBytes(backup));
+        note.ShouldNotBeNull().ShouldStartWith("Copied to the secondary directory; older copies there were not removed: Access to the path");
+        note.ShouldNotContain(BackupService.CopyFailedNote);
+        BackupCopies.Reason(note).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_copy_that_cannot_be_made_says_why_and_removes_nothing()
+    {
+        var backup = Path.Combine(_directories.Backups, "hc360-20261114-013000-scheduled.hc360bak");
+        File.WriteAllBytes(backup, RandomNumberGenerator.GetBytes(64));
+        var unplugged = Path.Combine(_root, "unplugged");
+        File.WriteAllText(unplugged, string.Empty);
+        var removed = false;
+
+        var (copied, note) = BackupService.CopyToSecondary(backup, Path.Combine(unplugged, "HC360-Backups"), _ => removed = true, NullLogger.Instance);
+
+        (copied, removed).ShouldBe((false, false));
+        note.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
+        BackupCopies.Reason(note).ShouldNotBeNullOrWhiteSpace();
+    }
+
     [Fact]
     public async Task A_document_saved_while_the_database_is_dumped_is_in_the_backup()
     {

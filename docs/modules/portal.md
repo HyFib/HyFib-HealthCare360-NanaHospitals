@@ -70,12 +70,44 @@ and `npx eslint apps/portal`.
   family members the old number's account saw move to the new number's account when no other patient in use keeps the
   old number (a relative the new number sees already, or the patient themself, ends instead); and when the old number
   then reaches no patient at all, its portal account is signed out everywhere and forgets the patient's name, so whoever
-  gets the number next (a recycled SIM) sees nothing of the patient.
+  gets the number next (a recycled SIM) sees nothing of the patient. The new number is verified with the change (below).
+* **A number nobody has verified (ASVS V6.6.1).** Holding the number the desk typed is not proof of being the patient:
+  a digit typed wrong, or a disconnected number the telco gave to someone new, puts the number in a stranger's hands. So
+  each record keeps when its number was verified and which number that was (`patients.phone_verified_at`,
+  `phone_verified_number`); the verification holds only while the record still has that number. A number is verified
+  three ways:
+  * **at the desk**, with "Verify mobile" on the patient's profile and on the registration's result: a 6-digit code goes
+    to the number (template `patients.verify_code`, by SMS, and on WhatsApp once the hospital switches that template
+    on), and staff enter it as the patient reads it out (`POST /api/v1/patients/{id}/phone-verification`, then
+    `…/phone-verification/{verificationId}/confirm`). The code is the number change's, with its limits: 10 minutes, 5
+    tries, 3 codes to a number in 15 minutes whether they change a number or verify one. It is optional: a quick
+    registration is saved without it;
+  * **by a change of number** with a code to the new number (above);
+  * **in the portal**, as below.
+
+  The portal shows a record on the account's own number only once its number is verified. Until then the record waits
+  for the account to confirm it: after sign-in the portal says that records on this number are not confirmed yet (a
+  count, nothing else of the record, not even a name) and asks for the patient's date of birth, or the UHID printed on
+  their hospital card, bills and receipts. Each record the details match is shown from then on, and its number is
+  verified. A date of birth worked out from an age at registration matches nothing (the patient does not know the desk's
+  estimate; they give the UHID). Wrong details count per number: 5 in 24 hours, then every try is refused, the right one
+  too, until the oldest of them is a day old (422 `portal.confirm_throttled` with `retryAfterSeconds`). Tries for one
+  number take turns under a lock on it, so tries sent together cannot get past the limit; every try is in the audit
+  trail (`portal.record_confirm_failed`, `portal.record_confirm_throttled`, and `patient.phone_verified` on each record
+  confirmed), and nothing typed is kept. The front desk can always verify the number instead. Family links are not
+  affected: they were made with a code to the patient's own number. Records in a protected category on a shared number
+  stay hidden as before, and are not offered for confirming. An account that sees nobody yet shows the confirm step in
+  place of "No hospital records use this number yet"; one that sees someone shows a notice on the home page with
+  "Confirm details". A new portal account takes its name from a verified record only.
+
+  After the upgrade that brought this, only numbers that were given with a code (a number change) count as verified:
+  every other record waits for its date of birth or UHID in the portal, or for "Verify mobile" at the desk, and its
+  reports, prescriptions, bills and discharge summaries go to its number without the document until then.
 * **Tokens.** The access token stays in memory (core session). The refresh token is the server's HttpOnly cookie. The
   portal and the staff console have addresses of their own, but browsers send a host's cookies to all its ports, so each
   keeps its own refresh cookie and each address reads only its own app's: signing in to one never signs the other out,
   and nothing on the portal's address can renew a staff session.
-* **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the verified number, then the family
+* **Family.** `GET /api/v1/portal/profiles` returns everyone registered with the number whose number is verified (above), then the family
   members on other numbers that the account sees through a family link (below). A date of birth worked out from the
   age given at registration (`isDateOfBirthEstimated`) is shown as estimated, not as the patient's birthday. The patient chooses whose records to
   see, and the switcher is always in the header. Every query key starts `['portal', patientId, …]`, and family-wide
@@ -111,7 +143,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 |---|---|---|
 | `/sign-in` | no | Phone number, then OTP. `?redirect=` accepts same-app paths only |
 | `/link/{token}` | no | A link to the portal sent to the patient's registered number: the hospital and the number masked, "Send code", then the sign-in page's code step |
-| `/home` | yes | Greeting; video consultation ready to join; quick actions; next appointment; amount due; recent reports and prescriptions |
+| `/home` | yes | Greeting; video consultation ready to join; records on this number waiting to be confirmed ("Confirm details"); quick actions; next appointment; amount due; recent reports and prescriptions. An account that sees nobody yet gets the confirm step here instead, when records on its number wait |
 | `/doctors`, `/doctors/{practitionerId}` | no | Find a doctor and book. The list takes `?q=`, `?specialtyId=`, `?facilityId=`, `?language=` and `?video=true`. The doctor page takes `?mode=video`, `?branch=`, `?reschedule={appointmentId}` and `?slot=`. Choosing a time while signed out goes to sign-in and returns to the same time |
 | `/appointments`, `/appointments/{id}` | yes | Upcoming and past, waiting list, pay, reschedule, cancel, join video |
 | `/video`, `/video/{sessionId}` | yes | Video consultations: device check, waiting room, call, chat, audio-only |
@@ -156,6 +188,7 @@ The paths below are router paths. In the address bar they sit under `/portal`.
 | Anti-automation | `POST /api/v1/public/challenge {action: otp\|feedback, subject?}` → `{required, challenge, bits, expiresAt, algorithm}`; the proof goes in `X-HC360-Proof: {challenge}:{nonce}` |
 | Link to the portal (public) | `GET /api/v1/public/portal-links/{token}` → `{hospital, maskedPhone, expiresAt}`; `POST …/{token}/otp` (proof of work, action `otp`, no subject) → `{challengeId, expiresAt, maskedPhone}` as the sign-in's code request answers (422 `auth.otp_throttled` after three codes to the number in 15 minutes); 404 "This link no longer works." for any token that does not work now. Then `POST /api/v1/auth/otp/verify` |
 | Profiles | `GET /api/v1/portal/profiles` |
+| Records to confirm | `GET /api/v1/portal/records-to-confirm` → `{unconfirmed, attemptsLeft, retryAfterSeconds}`; `POST /api/v1/portal/records-to-confirm {dateOfBirth, uhid}` (one of the two; with both, a record must match both) → `{confirmed, unconfirmed}`; 422 `portal.confirm_no_match` with `data.attemptsLeft`, `portal.confirm_throttled` with `data.retryAfterSeconds`, `portal.confirm_nothing` |
 | Family on other numbers | `GET /api/v1/portal/family/` → `{linked[{linkId, patientId, fullName, uhid, relation, source, linkedAt}], sharedWith[{linkId, patientId, patientName, accountPhoneMasked, relation, linkedAt}]}`; `POST /api/v1/portal/family/codes {uhid, phone, relation}` → `{codeId, expiresAt}` (the same answer whether or not they match; 422 `portal.family_code_throttled`, `portal.family_own_number`; 409 `portal.family_already_linked`); `POST …/codes/{codeId}/verify {code}` → the relative (400 on a wrong code, 422 `portal.family_code_expired` once it is used up); `POST …/links/{linkId}/end` → 204 |
 | Doctors (public) | `GET /api/v1/public/doctors/filters`, `GET /api/v1/public/doctors`, `GET /api/v1/public/doctors/{id}`, `GET /api/v1/public/doctors/{id}/slots` |
 | Rate list (public) | `GET /api/v1/public/rate-list` (the facilities that publish it), `GET /api/v1/public/rate-list/{facilityId}`, `GET …/{facilityId}/pdf` |
@@ -351,6 +384,10 @@ the record's preferred language, else English.
   made only while the record still has the number it had when the code was sent (409 `patient.phone_changed_meanwhile`
   otherwise). Both steps are on the record's history (`patient.phone_code_sent`, `patient.phone_changed`), the numbers
   masked and never the code.
+* **Records on a number nobody has verified.** Shown only once the number is verified on them, at the desk, by a number
+  change, or with the patient's date of birth or UHID here; until then the portal tells the account how many wait and
+  nothing else. Five wrong answers a day per number, counted under a lock on the number; each try audited, nothing typed
+  kept (*A number nobody has verified*, above).
 * **Family codes.** The code goes only to the relative's own registered number, and the first answer is the same
   whether or not the UHID and the number match, so the page cannot be used to find out whose number is whose. The code
   field has no one-time-code autofill, because the code arrives on the relative's phone. The server stores codes
@@ -385,6 +422,10 @@ the record's preferred language, else English.
   transfer (none for cash), the list with its bill on the Bills page and without it on the bill's own page, and Hindi.
 * **WebRTC codecs and quality.**
 * **The feedback form in jsdom:** stars, the 0–10 score, the comment, and the call-back number check.
+* **Confirming records on the number** (`modules/confirm/confirm.test.tsx`): an account that sees nobody gets the
+  confirm step and nothing of the record, a date not on the calendar is refused before a try is spent, a wrong date says
+  how many tries are left, the right one shows the record; the home page's notice and the UHID in its sheet; the wait
+  once the day's tries are used; the old "no records" page when nothing waits; the form's rules and the refusals' words.
 * **Unsaved changes:** the add-family sheet asks before *Not now* or Esc throw typed details away, and the leave
   question stays or leaves.
 * **A link to the portal end to end in jsdom** (`modules/signIn/linkPage.test.tsx`): the page shows the hospital and the

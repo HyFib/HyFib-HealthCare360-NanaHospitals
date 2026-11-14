@@ -14,6 +14,14 @@ internal static class IntegrationHttp
     /// <summary>Provider answers are kilobytes; anything larger is refused rather than buffered.</summary>
     private const long MaxResponseBytes = 4 * 1024 * 1024;
 
+    /// <summary>
+    /// How long opening a connection may take, TLS included. A link that drops packets would otherwise spend the whole
+    /// attempt timeout (15 s for a cloud API) on a connection that never opens, and the outbox an SMS's whole attempt; a
+    /// provider that is there connects well within this, on the LAN or over the internet. The attempt timeouts still bound
+    /// the whole call.
+    /// </summary>
+    internal static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(5);
+
     /// <summary>Wire JSON for provider requests: property names exactly as written (providers use snake_case/PascalCase).</summary>
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.General)
     {
@@ -36,7 +44,7 @@ internal static class IntegrationHttp
                 client.MaxResponseContentBufferSize = MaxResponseBytes;
                 client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HealthCare360/1.0");
             })
-            .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler)
+            .ConfigurePrimaryHttpMessageHandler(CreateHandler)
             .AddHttpMessageHandler<CorrelationIdForwardingHandler>()
             .AddStandardResilienceHandler(options =>
             {
@@ -46,6 +54,14 @@ internal static class IntegrationHttp
                 options.CircuitBreaker.SamplingDuration = TimeSpan.FromTicks(Math.Max(TimeSpan.FromSeconds(30).Ticks, attemptTimeout.Ticks * 2));
                 options.Retry.DisableForUnsafeHttpMethods();
             });
+    }
+
+    /// <summary>The adapters' connection handler: the platform's outbound one, with <see cref="ConnectTimeout"/>.</summary>
+    internal static SocketsHttpHandler CreateHandler()
+    {
+        var handler = OutboundHttp.CreateHandler();
+        handler.ConnectTimeout = ConnectTimeout;
+        return handler;
     }
 
     public static StringContent JsonBody(object payload) =>

@@ -358,13 +358,19 @@ public enum ChartWithholding
     Confidential,
 }
 
-/// <summary>Links a patient-portal sign-in (mobile OTP) to the earliest active patient record with that mobile number.</summary>
+/// <summary>
+/// Links a patient-portal sign-in (mobile OTP) to the earliest active patient record with that mobile number whose number
+/// is verified (<see cref="VerifiedNumbers"/>): the account takes that patient's name, which an unverified record must not
+/// give to whoever holds the number (ASVS V6.6.1). A record confirmed in the portal later gives it then
+/// (<see cref="PortalRecordConfirmationService"/>).
+/// </summary>
 internal sealed class PortalAccountResolver(HospitalDbContext db) : IPortalAccountResolver
 {
     public async Task<PortalAccount?> ResolveAsync(string phoneE164, CancellationToken cancellationToken)
     {
         var patient = await db.Set<Patient>().AsNoTracking()
             .Where(p => p.Phone == phoneE164 && p.IsActive && p.MergedIntoPatientId == null)
+            .Where(VerifiedNumbers.Verified)
             .OrderBy(p => p.RegisteredAt)
             .Select(p => new { p.Id, p.FullName })
             .FirstOrDefaultAsync(cancellationToken);

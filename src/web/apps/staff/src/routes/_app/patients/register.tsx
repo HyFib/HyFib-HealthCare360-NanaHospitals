@@ -21,17 +21,19 @@ import {
   DocumentTextRegular,
   PrintRegular,
 } from '@fluentui/react-icons';
-import { formatRelative, isApiError, useSession } from '@hc360/core';
+import { formatPhone, formatRelative, isApiError, normalizePhone, useSession } from '@hc360/core';
 import { applyServerErrors, LEAVE_KEEPING_DRAFT, Page, PageHeader, Section, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 import { printUhidCard } from '@/lib/print';
+import { usePermission } from '@/lib/permissions';
 import { useFormDraft } from '@/lib/useFormDraft';
 import { abhaShareApi, abhaShareQueries, formFromShare, tokenLabel } from '@/modules/front-office/abhaShares';
 import { CheckInDialog } from '@/modules/front-office/CheckInDialog';
 import { patientApi, patientKeys, type DuplicateCandidate } from '@/modules/patients/api';
+import { MobileVerification } from '@/modules/patients/MobileVerification';
 import { PatientForm } from '@/modules/patients/PatientForm';
 import { NOT_ON_PAPER, paperOf, type PaperEntry } from '@/modules/patients/downtimeApi';
 import { PaperRegistrationFields } from '@/modules/patients/PaperRegistrationFields';
@@ -75,6 +77,14 @@ const useStyles = makeStyles({
     color: tokens.colorBrandForeground1,
   },
   muted: { color: tokens.colorNeutralForeground3 },
+  mobile: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+    marginTop: '8px',
+  },
   candidates: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' },
   candidate: {
     padding: '8px 12px',
@@ -89,6 +99,8 @@ interface Registered {
   fullName: string;
   ageSex: string;
   phone: string | null;
+  /** When the desk verified the mobile number with a code (Verify mobile), if it did: optional, the registration is done either way. */
+  phoneVerifiedAt: string | null;
 }
 
 function fullNameOf(values: PatientFormValues): string {
@@ -117,6 +129,10 @@ function RegisterPatientPage() {
   const queryClient = useQueryClient();
   const search = Route.useSearch();
   const facilityName = useSession((s) => s.user?.facilityName) ?? 'Nana Hospitals';
+  // Verifying the mobile number with a code is for those who edit patients' details, as changing it is.
+  const canRegister = usePermission('patients.register');
+  const canReadContact = usePermission('patients.contact.read');
+  const canVerifyPhone = canRegister && canReadContact;
   const [form, setForm] = useState<UseFormReturn<PatientFormValues> | null>(null);
   const draft = useFormDraft(form, 'patient-register');
   const [duplicates, setDuplicates] = useState<{ values: PatientFormValues; candidates: DuplicateCandidate[] } | null>(
@@ -167,6 +183,7 @@ function RegisterPatientPage() {
         fullName: fullNameOf(values),
         ageSex: ageSexOf(values),
         phone: values.phone || null,
+        phoneVerifiedAt: null,
       });
       void queryClient.invalidateQueries({ queryKey: patientKeys.all });
       if (fromShare) {
@@ -356,6 +373,22 @@ function RegisterPatientPage() {
                 </Text>
                 <Caption1 className={styles.muted}>UHID</Caption1>
                 <span className={styles.uhid}>{registered?.uhid}</span>
+                {registered?.phone && (
+                  <div className={styles.mobile}>
+                    <Caption1 className={styles.muted}>
+                      Mobile {formatPhone(normalizePhone(registered.phone) ?? registered.phone)}
+                    </Caption1>
+                    <MobileVerification
+                      patientId={registered.id}
+                      phone={formatPhone(normalizePhone(registered.phone) ?? registered.phone)}
+                      verifiedAt={registered.phoneVerifiedAt}
+                      canVerify={canVerifyPhone}
+                      onVerified={(done) =>
+                        setRegistered((current) => current && { ...current, phoneVerifiedAt: done.verifiedAt })
+                      }
+                    />
+                  </div>
+                )}
               </div>
             </DialogContent>
             <DialogActions fluid>

@@ -24,6 +24,16 @@ internal sealed class UnmatchedResultService(
     /// <summary>Stored on a result assigned by hand, and shown to whoever verifies it.</summary>
     internal const string AssignedReason = "A lab user put this analyser result on the test from the unmatched results, so a person verifies it.";
 
+    /// <summary>
+    /// Stored as well on a result kept as a patient mismatch and assigned by hand, followed by what the analyser sent: the
+    /// pathologist verifying it sees that the analyser named another patient, and whom.
+    /// </summary>
+    internal const string PatientMismatchReason = "The analyser named another patient for the sample:";
+
+    /// <summary>Why a result assigned by hand waits for a person: always that a person chose where it goes, and a patient mismatch.</summary>
+    internal static IReadOnlyList<string> HeldReasons(UnmatchedLabResult unmatched) =>
+        unmatched.Reason == UnmatchedResultReason.PatientMismatch ? [AssignedReason, $"{PatientMismatchReason} {unmatched.Detail}"] : [AssignedReason];
+
     /// <summary>The facility's results waiting to be matched (or those assigned or discarded), newest first.</summary>
     public async Task<PagedResult<UnmatchedResultDto>> ListAsync(PageRequest page, UnmatchedResultStatus status, CancellationToken ct)
     {
@@ -117,7 +127,7 @@ internal sealed class UnmatchedResultService(
             return recorded;
         }
 
-        target.HoldForReview([AssignedReason]);
+        target.HoldForReview(HeldReasons(unmatched));
         var sample = context.Sample(target.SampleId)?.Barcode;
         audit.Add(new AuditEntry(AuditCategories.Clinical, "lab.unmatched.assigned",
             $"Put {unmatched.InstrumentCode}'s {unmatched.ChannelCode} result {unmatched.Value} on {target.TestName} of sample {sample}")

@@ -849,13 +849,18 @@ if ($CreateDatabase) {
             & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE $DatabaseName OWNER $OwnerRole ENCODING 'UTF8'"
             if ($LASTEXITCODE -ne 0) { throw 'Creating the database failed.' }
         }
-        # Extensions need superuser. Then the accounts' rights: the owner owns everything (a database hc360_app owned before
-        # the split included), hc360_app reads and writes rows (hc360-database-roles.sql).
-        & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d $DatabaseName -v ON_ERROR_STOP=1 -q -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm; REVOKE ALL ON SCHEMA public FROM PUBLIC;'
+        # The accounts' rights: the owner owns everything (a database hc360_app owned before the split included), hc360_app
+        # reads and writes rows (hc360-database-roles.sql).
+        & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d $DatabaseName -v ON_ERROR_STOP=1 -q -c 'REVOKE ALL ON SCHEMA public FROM PUBLIC;'
         if ($LASTEXITCODE -ne 0) { throw 'Preparing the database failed.' }
         $rolesArguments = Get-RolesSqlArguments $PostgresHost $PostgresPort $PostgresSuperuser $DatabaseName (Join-Path $PSScriptRoot $RolesSqlFile)
         & $psql @rolesArguments
         if ($LASTEXITCODE -ne 0) { throw "Setting up the database accounts ($RolesSqlFile) failed." }
+        # Then pg_trgm, as the owner, which owns the database now: a trusted extension, which a database's owner may make.
+        # So the owner owns it, as in a database Restore-HC360.ps1 restores, where the owner runs the nightly dump's
+        # COMMENT ON EXTENSION pg_trgm. One the superuser made before stays as it is.
+        & $psql -h $PostgresHost -p $PostgresPort -U $PostgresSuperuser -d $DatabaseName -v ON_ERROR_STOP=1 -q -c "SET ROLE $OwnerRole; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+        if ($LASTEXITCODE -ne 0) { throw 'Enabling the pg_trgm extension failed.' }
     }
     finally {
         Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue

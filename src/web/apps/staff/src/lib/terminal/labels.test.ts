@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isTerminalSalePending, terminalDetailsLine, terminalSaleFits, terminalStatusLabel } from './labels';
+import {
+  isTerminalBusy,
+  isTerminalSalePending,
+  terminalDetailsLine,
+  terminalSaleFits,
+  terminalStatusLabel,
+  unconfirmedGuidance,
+} from './labels';
 
 describe('terminal sale labels', () => {
   it('writes the card details the terminal gave', () => {
@@ -27,5 +34,32 @@ describe('terminal sale labels', () => {
     expect(terminalSaleFits({ amount: 90 }, 100, true)).toBe(false);
     expect(terminalSaleFits({ amount: 90 }, 100, false)).toBe(true);
     expect(terminalSaleFits({ amount: 110 }, 100, false)).toBe(false);
+  });
+
+  it('does not treat an unconfirmed sale as pending or declined', () => {
+    expect(isTerminalSalePending('Unconfirmed')).toBe(false);
+    expect(terminalStatusLabel('Unconfirmed')).toBe('Not confirmed: the sale may still be on the terminal');
+    expect(terminalStatusLabel('Lapsed')).toBe('Never confirmed: the outcome is unknown');
+  });
+
+  it('keeps the terminal busy until the end of the wait', () => {
+    const sale = { status: 'Unconfirmed', retryAfter: '2026-11-14T05:07:00Z' };
+    expect(isTerminalBusy(sale, new Date('2026-11-14T05:06:59Z'))).toBe(true);
+    expect(isTerminalBusy(sale, new Date('2026-11-14T05:07:00Z'))).toBe(false);
+    expect(isTerminalBusy({ status: 'Unconfirmed' }, new Date())).toBe(true);
+    expect(isTerminalBusy({ status: 'Declined', retryAfter: '2999-01-01T00:00:00Z' }, new Date())).toBe(false);
+  });
+
+  it('says what to check and until when', () => {
+    const text = unconfirmedGuidance({
+      amount: 1250,
+      createdAt: '2026-11-14T05:00:00Z',
+      retryAfter: '2026-11-14T05:07:00Z',
+    });
+    expect(text).toContain('may still be on the terminal');
+    expect(text).toContain("Check the terminal's screen");
+    expect(text).toContain('record the payment from the slip');
+    expect(text).toMatch(/sent at 10:30/);
+    expect(text).toMatch(/wait until 10:37/);
   });
 });

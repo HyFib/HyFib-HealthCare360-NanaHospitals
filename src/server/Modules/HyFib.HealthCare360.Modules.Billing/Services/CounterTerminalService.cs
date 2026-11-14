@@ -35,23 +35,23 @@ internal sealed class CounterTerminalService(PosService pos, IEnumerable<ICounte
         }
 
         var sale = await pos.StartForCounterAsync(request.Counter, request.Amount, request.TerminalId, mode, request.PatientId, cancellationToken);
-        return sale.IsFailure ? sale.Error! : ToSale(sale.Value);
+        return sale.IsFailure ? sale.Error! : await ToSaleAsync(sale.Value, cancellationToken);
     }
 
     public async Task<Result<CounterTerminalSale>> RefreshAsync(string counter, Guid id, CancellationToken cancellationToken)
     {
         var sale = await pos.RefreshSaleAsync(id, counter, cancellationToken);
-        return sale.IsFailure ? sale.Error! : ToSale(sale.Value);
+        return sale.IsFailure ? sale.Error! : await ToSaleAsync(sale.Value, cancellationToken);
     }
 
-    public async Task<Result<CounterTerminalSale>> CancelAsync(string counter, Guid id, CancellationToken cancellationToken)
+    public async Task<Result<CounterTerminalSale>> CancelAsync(string counter, Guid id, string? note, CancellationToken cancellationToken)
     {
-        var sale = await pos.CancelSaleAsync(id, counter, cancellationToken);
-        return sale.IsFailure ? sale.Error! : ToSale(sale.Value);
+        var sale = await pos.CancelSaleAsync(id, counter, note, cancellationToken);
+        return sale.IsFailure ? sale.Error! : await ToSaleAsync(sale.Value, cancellationToken);
     }
 
     public async Task<IReadOnlyList<CounterTerminalSale>> UnusedAsync(string counter, CancellationToken cancellationToken) =>
-        (await pos.UnusedAsync(counter, cancellationToken)).Select(ToSale).ToList();
+        (await pos.UnusedAsync(counter, cancellationToken)).Select(s => ToSale(s)).ToList();
 
     public async Task<Result<CounterTerminalPayment>> UseAsync(CounterTerminalUse use, CancellationToken cancellationToken)
     {
@@ -78,7 +78,9 @@ internal sealed class CounterTerminalService(PosService pos, IEnumerable<ICounte
         _ => null,
     };
 
-    private static CounterTerminalSale ToSale(PosTransaction s) => new(
+    private async Task<CounterTerminalSale> ToSaleAsync(PosTransaction s, CancellationToken ct) => ToSale(s, await pos.RetryAfterAsync(s, ct));
+
+    private static CounterTerminalSale ToSale(PosTransaction s, DateTimeOffset? retryAfter = null) => new(
         s.Id, s.Owner ?? string.Empty, s.Provider, s.TerminalId, s.TransactionId, s.Amount, s.Mode == PaymentMode.Upi ? CounterPaymentMode.Upi : CounterPaymentMode.Card,
-        s.Status, s.ApprovalCode, s.CardLast4, s.Rrn, s.Message, s.OwnerDocument, s.CreatedAt, s.CompletedAt);
+        s.Status, s.ApprovalCode, s.CardLast4, s.Rrn, s.Message, s.OwnerDocument, s.CreatedAt, s.CompletedAt, retryAfter);
 }

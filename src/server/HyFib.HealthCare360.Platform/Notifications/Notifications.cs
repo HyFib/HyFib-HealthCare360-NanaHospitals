@@ -368,6 +368,8 @@ public static class DefaultNotificationTemplates
         ("portal.family_code", NotificationChannel.Sms, null, "{{requester}} wants to see your {{hospital}} records in the patient portal. Give them code {{code}} only if you agree. It expires in {{minutes}} minutes.", "Code for a family member to see a patient's records in the portal"),
         ("portal.family_code_desk", NotificationChannel.Sms, null, "{{hospital}}: you are sharing your records with the patient portal account of {{number}}. Give code {{code}} to the hospital staff only if you agree. It expires in {{minutes}} minutes.", "Code the front desk asks the patient for before sharing their records with a family member's portal account, sent to the patient's own number"),
         ("patients.phone_code", NotificationChannel.Sms, null, "{{code}} is your code to register this number with {{hospital}}. Give it to the hospital staff only if you asked to change your mobile number. It expires in {{minutes}} minutes.", "Code to confirm a patient's new mobile number, sent to the new number"),
+        ("patients.verify_code", NotificationChannel.Sms, null, "{{code}} is your code to confirm this mobile number with {{hospital}}. Give it to the hospital staff only if you are at the hospital and asked them to confirm your number. It expires in {{minutes}} minutes.", "Code to verify the mobile number a patient is registered with, sent to that number"),
+        ("patients.verify_code", NotificationChannel.WhatsApp, null, "{{code}} is your code to confirm this mobile number with {{hospital}}. Give it to the hospital staff only if you are at the hospital and asked them to confirm your number. It expires in {{minutes}} minutes.", "Code to verify the mobile number a patient is registered with (WhatsApp; register it with Meta as an authentication template first)"),
         ("portal.link", NotificationChannel.Sms, null, "{{hospital}}: open your patient portal here: {{link}} . We will send a sign-in code to this number. The link works for 7 days.", "Link to the patient portal, sent by staff to the patient's registered number"),
         ("portal.link", NotificationChannel.WhatsApp, null, "{{hospital}}: open your patient portal here: {{link}} . We will send a sign-in code to this number. The link works for 7 days.", "Link to the patient portal, sent by staff to the patient's registered number (WhatsApp)"),
         ("appointment.confirmed", NotificationChannel.Sms, null, "Dear {{name}}, your appointment with {{doctor}} is confirmed for {{date}} at {{time}}. Ref {{reference}}. - {{hospital}}", "Appointment booked"),
@@ -430,6 +432,7 @@ public static class DefaultNotificationTemplates
         ("discharge.summary", NotificationChannel.WhatsApp),
         ("feedback.request", NotificationChannel.WhatsApp),
         ("followup.reminder", NotificationChannel.WhatsApp),
+        ("patients.verify_code", NotificationChannel.WhatsApp),
     };
 
     /// <summary>
@@ -638,6 +641,9 @@ internal abstract class NotificationDeliveryHandler(
 
     public abstract string Type { get; }
 
+    /// <summary>The channel's provider (<see cref="OutboxProviders"/>): on the internet lane, its failures to answer counted together.</summary>
+    public abstract string Provider { get; }
+
     protected HospitalDbContext Db => db;
 
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
@@ -713,7 +719,10 @@ internal abstract class NotificationDeliveryHandler(
         if (!result.Success)
         {
             logger.LogWarning("Notification {TemplateKey} via {Channel} failed: {Error}", delivery.TemplateKey, delivery.Channel, result.Error);
-            throw new InvalidOperationException(result.Error ?? "Delivery failed.");
+
+            // A provider that did not answer is told apart from one that refused, so the outbox can let it cool down.
+            var error = result.Error ?? "Delivery failed.";
+            throw result.ProviderUnreachable ? new ProviderUnreachableException(error) : new InvalidOperationException(error);
         }
     }
 
@@ -772,6 +781,8 @@ internal sealed class SmsDeliveryHandler(
 {
     public override string Type => NotificationService.SmsType;
 
+    public override string Provider => OutboxProviders.Sms;
+
     protected override Task<SendResult> SendAsync(
         NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
         sms.SendAsync(new SmsMessage(delivery.To, message.Body, message.Template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
@@ -783,6 +794,8 @@ internal sealed class WhatsAppDeliveryHandler(
     : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.WhatsAppType;
+
+    public override string Provider => OutboxProviders.WhatsApp;
 
     /// <summary>
     /// A number that replied STOP gets only essential messages on WhatsApp, and reminders and campaigns go only to numbers
@@ -831,6 +844,8 @@ internal sealed class EmailDeliveryHandler(
     : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.EmailType;
+
+    public override string Provider => OutboxProviders.Email;
 
     protected override bool CarriesDocument(NotificationTemplate? template) => true;
 

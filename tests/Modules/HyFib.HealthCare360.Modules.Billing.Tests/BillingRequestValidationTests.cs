@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.DoctorFees;
+using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Platform.Http;
@@ -54,5 +55,16 @@ public sealed class BillingRequestValidationTests
         new AssignPackageRequestValidator().Validate(new AssignPackageRequest(Guid.NewGuid(), 12)).IsValid.ShouldBeTrue();
         new AssignPackageRequestValidator().Validate(new AssignPackageRequest(Guid.Empty, 0)).Errors.Select(e => e.PropertyName)
             .ShouldBe(["PackageId", "Version"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void A_terminal_sales_cancel_has_no_note_or_one_the_screen_can_hold()
+    {
+        var validator = new CancelPosSaleRequestValidator();
+
+        validator.Validate(new CancelPosSaleRequest(null)).IsValid.ShouldBeTrue();
+        validator.Validate(new CancelPosSaleRequest(new string('n', 200))).IsValid.ShouldBeTrue();
+        validator.Validate(new CancelPosSaleRequest(new string('n', 201))).Errors.Select(e => e.PropertyName).ShouldBe(["Note"]);
+        validator.Validate(new CancelPosSaleRequest("checked\u0007 the screen")).IsValid.ShouldBeFalse();
     }
 }

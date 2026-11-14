@@ -55,7 +55,11 @@ public sealed record StorageInfo(string DataDirectory, long? FreeBytes, long? To
 
 public sealed record BackupInfo(bool Enabled, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastFailureAt, string? LastError, long? LastSizeBytes);
 
-public sealed record OutboxInfo(int Pending, int FailedLast24Hours, DateTimeOffset? OldestPendingAt);
+/// <param name="ExpiredLast24Hours">Messages whose time was up before they could be tried, in the last day (<see cref="SystemHealthOutbox"/>).</param>
+/// <param name="Hold">While outgoing messages are held after a restore, the hold (<see cref="OutboxHold"/>); else null.</param>
+/// <param name="HeldMessages">How many messages the hold holds: those on the internet lane queued before it began.</param>
+public sealed record OutboxInfo(
+    int Pending, int FailedLast24Hours, DateTimeOffset? OldestPendingAt, int ExpiredLast24Hours = 0, OutboxHold? Hold = null, int HeldMessages = 0);
 
 /// <summary>
 /// The hospital CA and the server certificate it issued. <see cref="CaExpiresAt"/> is null with an administrator-supplied
@@ -156,8 +160,10 @@ public sealed class SystemHealthService(
     ServerClock clock,
     IAdministrationDesktops administrationDesktops,
     ISettingsService settings,
+    IEnumerable<IOutboxHandler> outboxHandlers,
     TimeProvider time,
-    JobLeadership? jobs = null)
+    JobLeadership? jobs = null,
+    IRecoveryKeyCustodyWarnings? recoveryKeyCustody = null)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
 
@@ -197,14 +203,7 @@ public sealed class SystemHealthService(
         var database = await ReadDatabaseAsync(ct);
         var backup = await ReadBackupAsync(ct);
 
-        var dayAgo = now.AddDays(-1);
-        var outbox = new OutboxInfo(
-            await db.Set<OutboxMessage>().CountAsync(m => m.Status == OutboxStatus.Pending, ct),
-            // When it failed, not when it was queued: a message is retried for up to its lifetime (days) before
-            // it fails.
-            await db.Set<OutboxMessage>()
-                .CountAsync(m => m.Status == OutboxStatus.Failed && (m.ProcessedAt ?? m.CreatedAt) > dayAgo, ct),
-            await db.Set<OutboxMessage>().Where(m => m.Status == OutboxStatus.Pending).OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct));
+        var outbox = await SystemHealthOutbox.ReadAsync(db, settings, outboxHandlers, now, ct);
 
         var integrations = await integrationHealth.ListAsync(ct);
 
@@ -232,17 +231,14 @@ public sealed class SystemHealthService(
             backupWarnings.Add(notCopied);
         }
 
-        var messageWarnings = new List<HealthWarning>();
-        if (outbox.FailedLast24Hours > 0)
+        // Whether the backups leave the building: the upload to the off-site bucket.
+        if (await BackupOffsite.WarningAsync(db, settings, options.Value, now, ct) is { } notOffsite)
         {
-            messageWarnings.Add(new("outbox.failed", "warning", $"{outbox.FailedLast24Hours} outbound message(s) failed in the last 24 hours."));
+            backupWarnings.Add(notOffsite);
         }
 
-        if (outbox.OldestPendingAt is { } oldest && now - oldest > TimeSpan.FromMinutes(30))
-        {
-            messageWarnings.Add(new("outbox.backlog", "warning", "Outbound messages are queued for more than 30 minutes (internet down?)."));
-        }
-
+        // Held after a restore (how many), ended unsent (failed or expired), or queued for long.
+        var messageWarnings = new List<HealthWarning>(SystemHealthOutbox.Warnings(outbox, now));
         messageWarnings.AddRange(IntegrationWarnings(integrations));
 
         // Whether a critical warning reaches IT at all (audit P2): who it goes to and how, the heartbeat that tells someone
@@ -306,6 +302,11 @@ public sealed class SystemHealthService(
                     "Backups still use the original recovery key, which any administrator with the backups permission could display. Make a new one under Backups › Recovery key.")
                 : new("backup.recovery_key_missing", "critical",
                     "Nobody holds the recovery key for the backups, so they cannot be restored on new hardware. Make one under Backups › Recovery key."));
+        }
+        else if (recoveryKeyCustody is not null)
+        {
+            // Who holds the key: two people who have typed it in, and someone within the last 90 days.
+            keyWarnings.AddRange(await recoveryKeyCustody.WarningsAsync(now, ct));
         }
 
         // A single Server Node: its own warnings in the places System health has always shown them.

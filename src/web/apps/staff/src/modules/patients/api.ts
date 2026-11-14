@@ -122,6 +122,13 @@ export interface PatientDetail {
    * is asked for, and someone who approves identity changes decides it.
    */
   identityCorrectableUntil?: string | null;
+  /**
+   * When the mobile number the record has now was verified: a code at the desk (Verify mobile), a number change with a
+   * code, or the patient portal (date of birth or UHID). Absent or null while it is not: the portal keeps the record from
+   * whoever signs in with the number until they confirm it, and reports, prescriptions, bills and discharge summaries go
+   * to the number without the document.
+   */
+  phoneVerifiedAt?: string | null;
 }
 
 /** A change to a patient's record waiting for a second person: the request, its kind, what it does, who asked and when. */
@@ -705,6 +712,7 @@ export const patientKeys = {
   identitySetup: ['patients', 'identity-setup'] as const,
   sensitive: (id: string) => ['patients', 'sensitive', id] as const,
   phoneChange: (id: string) => ['patients', 'phone-change', id] as const,
+  phoneVerification: (id: string) => ['patients', 'phone-verification', id] as const,
 };
 
 export const patientQueries = {
@@ -936,6 +944,38 @@ export const phoneChangeApi = {
     api.post<PhoneChange>(`/api/v1/patients/${patientId}/phone-change`, { phone }),
   confirm: (patientId: string, changeId: string, code: string) =>
     api.post<PhoneChangeConfirmed>(`/api/v1/patients/${patientId}/phone-change/${changeId}/confirm`, { code }),
+};
+
+/** A verification of the patient's mobile number waiting for its code: the number masked, the code's expiry and tries left. */
+export interface PhoneVerification {
+  verificationId: string;
+  maskedPhone: string;
+  expiresAt: string;
+  attemptsLeft: number;
+}
+
+/** The number is verified: masked, and when. */
+export interface PhoneVerified {
+  maskedPhone: string;
+  verifiedAt: string;
+}
+
+/**
+ * Verifying the patient's registered mobile number at the desk (needs `patients.register` and `patients.contact.read`,
+ * as a number change does): a 6-digit code goes to the number, and it is verified when the code the patient reads out is
+ * entered. Sending answers 202 with the verification; 422 `patient.phone_already_verified`, `patient.no_mobile`, or
+ * `patient.phone_code_throttled` with `data.retryAfterSeconds` (a number gets three codes in 15 minutes, changes and
+ * verifications together). Confirming answers as a number change's code does: 400 on `code` with `data.attemptsLeft`,
+ * 422 `patient.phone_code_expired`, 409 `patient.phone_changed_meanwhile`, 404 `patient.phone_verification_not_found`.
+ * `pending` is null (204) when nothing waits for a code.
+ */
+export const phoneVerificationApi = {
+  pending: async (patientId: string, signal?: AbortSignal) =>
+    (await api.get<PhoneVerification | undefined>(`/api/v1/patients/${patientId}/phone-verification`, { signal })) ??
+    null,
+  request: (patientId: string) => api.post<PhoneVerification>(`/api/v1/patients/${patientId}/phone-verification`),
+  confirm: (patientId: string, verificationId: string, code: string) =>
+    api.post<PhoneVerified>(`/api/v1/patients/${patientId}/phone-verification/${verificationId}/confirm`, { code }),
 };
 
 /**

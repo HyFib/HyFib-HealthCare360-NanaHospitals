@@ -26,6 +26,10 @@ public sealed record PatientListItem(
 /// Until when the signed-in user may still correct the identity at once (they registered the patient, within a day, before
 /// the patient was seen); null when a change to it waits for approval.
 /// </param>
+/// <param name="PhoneVerifiedAt">
+/// When the mobile number the record has now was verified (a code at the desk, a number change, or the patient portal);
+/// null while it is not (<see cref="Patient.IsPhoneVerified"/>).
+/// </param>
 public sealed record PatientDetail(
     Guid Id,
     string Uhid,
@@ -70,7 +74,8 @@ public sealed record PatientDetail(
     bool ContactsMasked = false,
     IReadOnlyList<PendingPatientChange>? PendingChanges = null,
 
-    DateTimeOffset? IdentityCorrectableUntil = null);
+    DateTimeOffset? IdentityCorrectableUntil = null,
+    DateTimeOffset? PhoneVerifiedAt = null);
 
 /// <summary>Compact identity used by banners, pickers and other modules.</summary>
 /// <param name="IsDateOfBirthEstimated">The date of birth was worked out from the age given at registration.</param>

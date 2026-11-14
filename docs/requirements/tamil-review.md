@@ -48,6 +48,9 @@ Points we would most like checked:
   *consultant*, "செய்யப்பட்ட சிகிச்சை முறைகள்" for *procedures*, and "மீண்டும் வருகை (ஃபாலோ-அப்)" for *follow-up*.
 * "சுயமாக" for *Self* (in "Referred by: Self") and "பரிசோதனைக்கு எழுதப்பட்டது" for *Ordered* on reports.
 * "ரேடியாலஜி அறிக்கை" and "இதய பரிசோதனை அறிக்கை" as report titles, and "அக்செஷன் எண்" for *accession no.*
+* The replies to a save sent twice (rows 156 to 166) use "சேமிக்கப்பட்டது" for *saved* and "கோரிக்கை" for *request*, as
+  the other messages do. Patients see rows 159 to 166 after a weak connection; rows 156 to 158 name the Idempotency-Key
+  and reach a patient only if the app itself goes wrong.
 
 ## Document labels (bills, prescriptions, reports, discharge summaries)
 
@@ -409,6 +412,62 @@ Points we would most like checked:
 | 148 | `message.privacy.child_guardian_unverified` | The patient is under 18: a parent's or lawful guardian's consent must be verified first, by a code sent to their mobile number or by their identity document. | நோயாளிக்கு 18 வயதுக்குக் குறைவு: முதலில் பெற்றோர் அல்லது சட்டப்படியான பாதுகாவலரின் ஒப்புதல், அவர்களின் கைபேசி எண்ணுக்கு அனுப்பப்படும் குறியீடு அல்லது அவர்களின் அடையாள ஆவணம் மூலம், சரிபார்க்கப்பட வேண்டும். | |
 | 149 | `message.privacy.child_marketing` | The patient is under 18: the DPDP Act (s.9(3)) does not allow marketing or targeted messages to children, even with a parent's consent. | நோயாளிக்கு 18 வயதுக்குக் குறைவு: பெற்றோரின் ஒப்புதல் இருந்தாலும், குழந்தைகளுக்கு விளம்பர அல்லது இலக்கு வைத்த செய்திகளை அனுப்ப DPDP சட்டம் (பிரிவு 9(3)) அனுமதிப்பதில்லை. | |
 | 150 | `message.privacy.consent_ended` | This consent has already ended. | இந்த ஒப்புதல் ஏற்கெனவே முடிந்துவிட்டது. | |
+| 151 | `message.portal.confirm_no_match` | These details do not match a record registered with this mobile number. Check them and try again. | இந்த விவரங்கள் இந்த மொபைல் எண்ணில் பதிவு செய்யப்பட்ட எந்தப் பதிவுடனும் பொருந்தவில்லை. சரிபார்த்து மீண்டும் முயற்சி செய்யுங்கள். | |
+| 152 | `message.portal.confirm_throttled` | Too many wrong tries for this mobile number. Try again later, or ask at the hospital's front desk to confirm your mobile number. | இந்த மொபைல் எண்ணிலிருந்து பலமுறை தவறான விவரங்கள் கொடுக்கப்பட்டுள்ளன. பிறகு மீண்டும் முயற்சி செய்யுங்கள், அல்லது உங்கள் மொபைல் எண்ணை உறுதிசெய்ய மருத்துவமனையின் முன் மேசையில் கேளுங்கள். | |
+| 153 | `message.portal.confirm_nothing` | There are no records waiting to be confirmed on this mobile number. | இந்த மொபைல் எண்ணில் உறுதிசெய்ய வேண்டிய பதிவுகள் எதுவும் இல்லை. | |
+| 154 | `message.portal.confirm_details_required` | Enter the patient's date of birth, or the UHID printed on the hospital card. | நோயாளியின் பிறந்த தேதியை, அல்லது மருத்துவமனை அட்டையில் அச்சிடப்பட்டுள்ள UHID-ஐ உள்ளிடுங்கள். | |
+| 155 | `message.portal.confirm_date_of_birth` | Enter a date of birth that has passed. | கடந்துவிட்ட ஒரு பிறந்த தேதியை உள்ளிடுங்கள். | |
+| 156 | `message.idempotency.invalid_key_title` | Invalid Idempotency-Key header | கோரிக்கையின் அடையாளம் (Idempotency-Key header) சரியாக இல்லை | |
+| 157 | `message.idempotency.key_reused_title` | Idempotency key reused with a different request | இதே கோரிக்கை அடையாளம் (Idempotency-Key) வேறொரு கோரிக்கையுடன் அனுப்பப்பட்டுள்ளது | |
+| 158 | `message.idempotency.key_reused_detail` | Generate a new Idempotency-Key for a new operation. | புதிய செயலுக்குப் புதிய கோரிக்கை அடையாளத்தை (Idempotency-Key) உருவாக்குங்கள். | |
+| 159 | `message.idempotency.answer_not_kept_title` | This request was already answered | இந்தக் கோரிக்கைக்கு ஏற்கனவே பதில் அளிக்கப்பட்டுவிட்டது | |
+| 160 | `message.idempotency.answer_not_kept_detail` | Its answer is not kept, so it can't be sent again. Please ask again. | இதன் பதில் சேமிக்கப்படுவதில்லை, எனவே அதை மீண்டும் அனுப்ப முடியாது. தயவுசெய்து மீண்டும் கோரிக்கை அனுப்புங்கள். | |
+| 161 | `message.idempotency.in_progress_title` | This request is still being processed | இந்தக் கோரிக்கை இன்னும் செயல்பாட்டில் உள்ளது | |
+| 162 | `message.idempotency.in_progress_detail` | An earlier attempt of this request has not finished yet. Wait a moment, then try again with the same details: it will not be saved twice. | இந்தக் கோரிக்கையின் முந்தைய முயற்சி இன்னும் முடியவில்லை. சிறிது நேரம் காத்திருந்து, அதே விவரங்களுடன் மீண்டும் முயற்சி செய்யுங்கள்: இது இரண்டு முறை சேமிக்கப்படாது. | |
+| 163 | `message.idempotency.outcome_unknown_title` | This may already have been saved | இது ஏற்கனவே சேமிக்கப்பட்டிருக்கலாம் | |
+| 164 | `message.idempotency.outcome_unknown_detail` | An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again. | இந்தக் கோரிக்கையின் முந்தைய முயற்சி முடியவில்லை, எனவே இது சேமிக்கப்பட்டிருக்கலாம் அல்லது சேமிக்கப்படாமலும் இருக்கலாம்: மீண்டும் முயற்சி செய்வதற்கு முன் சரிபார்த்துக்கொள்ளுங்கள். | |
+| 165 | `message.idempotency.unreadable_answer_title` | This request was already processed | இந்தக் கோரிக்கை ஏற்கனவே முடிக்கப்பட்டுவிட்டது | |
+| 166 | `message.idempotency.unreadable_answer_detail` | Reload the screen to see the result. | பக்கத்தை மீண்டும் திறந்து முடிவைப் பாருங்கள். | |
+
+## Portal text for confirming records on a number
+
+The portal's own screen for a record on the patient's mobile number that nobody has verified yet: it is shown once
+the patient's date of birth or UHID is given (`src/web/apps/portal/src/i18n/messages/confirm.ts`). The Tamil was written by
+the development team. A correction goes in that file.
+
+| # | Key | English | Tamil | OK? |
+|---|---|---|---|---|
+| 1 | `confirm.title` | Confirm your details | உங்கள் விவரங்களை உறுதிசெய்யுங்கள் | |
+| 2 | `confirm.banner.title` | Some records on this number are not confirmed yet | இந்த எண்ணில் உள்ள சில பதிவுகள் இன்னும் உறுதிசெய்யப்படவில்லை | |
+| 3 | `confirm.banner.body` | To see them here, enter the patient’s date of birth or UHID. | அவற்றை இங்கே பார்க்க, நோயாளியின் பிறந்த தேதி அல்லது UHID-ஐ உள்ளிடுங்கள். | |
+| 4 | `confirm.banner.action` | Confirm details | விவரங்களை உறுதிசெய்யுங்கள் | |
+| 5 | `confirm.lead.one` | One record registered with your mobile number is not confirmed yet. To keep patients’ records private, it is shown here only once you enter the patient’s date of birth, or the UHID printed on their hospital card. | உங்கள் மொபைல் எண்ணில் பதிவு செய்யப்பட்ட ஒரு பதிவு இன்னும் உறுதிசெய்யப்படவில்லை. நோயாளிகளின் பதிவுகளை ரகசியமாக வைக்க, நோயாளியின் பிறந்த தேதியை, அல்லது அவரது மருத்துவமனை அட்டையில் அச்சிடப்பட்டுள்ள UHID-ஐ நீங்கள் உள்ளிட்ட பிறகே அது இங்கே காட்டப்படும். | |
+| 6 | `confirm.lead.many` | {count} records registered with your mobile number are not confirmed yet. To keep patients’ records private, each is shown here only once you enter that patient’s date of birth, or the UHID printed on their hospital card, one at a time. | உங்கள் மொபைல் எண்ணில் பதிவு செய்யப்பட்ட {count} பதிவுகள் இன்னும் உறுதிசெய்யப்படவில்லை. நோயாளிகளின் பதிவுகளை ரகசியமாக வைக்க, ஒவ்வொரு நோயாளியின் பிறந்த தேதியை, அல்லது அவரது மருத்துவமனை அட்டையில் அச்சிடப்பட்டுள்ள UHID-ஐ ஒவ்வொன்றாக நீங்கள் உள்ளிட்ட பிறகே அந்தப் பதிவு இங்கே காட்டப்படும். | |
+| 7 | `confirm.method` | Confirm with | எதைக் கொண்டு உறுதிசெய்வது | |
+| 8 | `confirm.method.dateOfBirth` | Date of birth | பிறந்த தேதி | |
+| 9 | `confirm.method.uhid` | UHID | UHID | |
+| 10 | `confirm.dob.label` | The patient’s date of birth | நோயாளியின் பிறந்த தேதி | |
+| 11 | `confirm.dob.day` | Day | நாள் | |
+| 12 | `confirm.dob.month` | Month | மாதம் | |
+| 13 | `confirm.dob.year` | Year | ஆண்டு | |
+| 14 | `confirm.dob.hint` | As given at the hospital, for example 23 06 1979. | மருத்துவமனையில் கொடுத்தது போலவே, எடுத்துக்காட்டாக 23 06 1979. | |
+| 15 | `confirm.dob.invalid` | Enter a real date: the day, the month and the year in four digits. | சரியான தேதியை உள்ளிடுங்கள்: நாள், மாதம், நான்கு இலக்க ஆண்டு. | |
+| 16 | `confirm.dob.past` | Enter a date of birth that has passed. | கடந்துவிட்ட ஒரு பிறந்த தேதியை உள்ளிடுங்கள். | |
+| 17 | `confirm.uhid.label` | The patient’s UHID | நோயாளியின் UHID | |
+| 18 | `confirm.uhid.hint` | Printed on the hospital card, bills and receipts. | மருத்துவமனை அட்டை, பில்கள் மற்றும் ரசீதுகளில் அச்சிடப்பட்டிருக்கும். | |
+| 19 | `confirm.uhid.invalid` | Enter the UHID printed on the hospital card or a bill. | மருத்துவமனை அட்டையில் அல்லது பில்லில் அச்சிடப்பட்டுள்ள UHID-ஐ உள்ளிடுங்கள். | |
+| 20 | `confirm.submit` | Confirm | உறுதிசெய்யுங்கள் | |
+| 21 | `confirm.submitting` | Checking… | சரிபார்க்கிறது… | |
+| 22 | `confirm.attemptsLeft` | Tries left today: {count}. | இன்று மீதமுள்ள முயற்சிகள்: {count}. | |
+| 23 | `confirm.done.one` | The record is confirmed. You can see it now. | பதிவு உறுதிசெய்யப்பட்டது. இப்போது நீங்கள் அதைப் பார்க்கலாம். | |
+| 24 | `confirm.done.many` | {count} records are confirmed. You can see them now. | {count} பதிவுகள் உறுதிசெய்யப்பட்டன. இப்போது நீங்கள் அவற்றைப் பார்க்கலாம். | |
+| 25 | `confirm.error.noMatch` | These details do not match a record registered with this number. Check them and try again. | இந்த விவரங்கள் இந்த எண்ணில் பதிவு செய்யப்பட்ட எந்தப் பதிவுடனும் பொருந்தவில்லை. சரிபார்த்து மீண்டும் முயற்சி செய்யுங்கள். | |
+| 26 | `confirm.error.throttled` | Too many wrong tries for this number. Please try again later, or ask at the hospital’s front desk to confirm your mobile number. | இந்த எண்ணிலிருந்து பலமுறை தவறான விவரங்கள் கொடுக்கப்பட்டுள்ளன. தயவுசெய்து பிறகு மீண்டும் முயற்சி செய்யுங்கள், அல்லது உங்கள் மொபைல் எண்ணை உறுதிசெய்ய மருத்துவமனையின் முன் மேசையில் கேளுங்கள். | |
+| 27 | `confirm.error.nothing` | There is nothing left to confirm on this number. | இந்த எண்ணில் உறுதிசெய்ய இனி எதுவும் இல்லை. | |
+| 28 | `confirm.wait.hours` | You can try again in about {count} hours. | சுமார் {count} மணி நேரத்தில் மீண்டும் முயற்சி செய்யலாம். | |
+| 29 | `confirm.wait.minutes` | You can try again in about {count} minutes. | சுமார் {count} நிமிடங்களில் மீண்டும் முயற்சி செய்யலாம். | |
+| 30 | `confirm.wait.minute` | You can try again in about a minute. | சுமார் ஒரு நிமிடத்தில் மீண்டும் முயற்சி செய்யலாம். | |
+| 31 | `confirm.frontDesk` | You can also ask at the hospital’s front desk to confirm your mobile number on the patient’s record, with a code sent to it. | நோயாளியின் பதிவில் உங்கள் மொபைல் எண்ணை, அதற்கு அனுப்பப்படும் குறியீட்டைக் கொண்டு உறுதிசெய்யுமாறு மருத்துவமனையின் முன் மேசையிலும் கேட்கலாம். | |
 
 ## The validators' own messages (shown next to a field)
 

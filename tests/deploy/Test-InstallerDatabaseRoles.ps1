@@ -96,6 +96,21 @@ Assert ($restoreText -match "rolname = 'hc360_owner'") 'Restore-HC360.ps1 finds 
 Assert ($restoreText -match '--role=\$owner') 'and restores the tables as their owner'
 Assert ($restoreText -match 'hc360-database-roles\.sql') 'then gives hc360_app its rights again'
 
+Write-Host 'pg_trgm is the owner''s'
+# pg_restore runs as the owner (--role), and the nightly dump holds COMMENT ON EXTENSION pg_trgm, which only the extension's
+# owner may run: made as the superuser, the extension stopped every restore. The integration tests restore as the script
+# does (ScriptedRestore); here, that the scripts make it so.
+$restoreExtension = [regex]::Match($restoreText, 'SET ROLE \$owner; CREATE EXTENSION IF NOT EXISTS pg_trgm')
+$restoreRun = $restoreText.IndexOf("pg_restore.exe') @pgArgs")
+Assert ($restoreExtension.Success -and $restoreRun -gt $restoreExtension.Index) 'Restore-HC360.ps1 makes pg_trgm as the owner, before pg_restore'
+Assert ([regex]::Matches($restoreText, 'CREATE EXTENSION').Count -eq 1) 'and nowhere as the superuser'
+Assert ($restoreText -match '--no-owner --role=\$owner --exit-on-error') 'pg_restore still stops at its first error'
+$installerExtension = [regex]::Match($installerText, 'SET ROLE \$OwnerRole; CREATE EXTENSION IF NOT EXISTS pg_trgm')
+$installerRoles = $installerText.IndexOf('& $psql @rolesArguments')
+Assert ($installerExtension.Success -and $installerRoles -ge 0 -and $installerExtension.Index -gt $installerRoles) 'the installer makes pg_trgm as the owner, once the owner owns the database'
+Assert ([regex]::Matches($installerText, 'CREATE EXTENSION').Count -eq 1) 'and nowhere as the superuser'
+Assert ($installerText -match "-c 'REVOKE ALL ON SCHEMA public FROM PUBLIC;'") 'PUBLIC still loses its rights on the public schema, as the superuser takes them'
+
 if ($script:failures) {
     Write-Host "$($script:failures) check(s) failed." -ForegroundColor Red
     exit 1

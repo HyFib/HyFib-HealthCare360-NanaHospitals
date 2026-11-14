@@ -1,6 +1,7 @@
-# Secret scan (gitleaks), run by CI over every commit with the default rules. The values below were reviewed and are not
-# secrets. A new finding is either a real secret (revoke it at the provider first, then remove it from the history) or,
-# once reviewed, a value added here with where it comes from.
+# Secret scan (gitleaks), run by CI with the default rules over every commit in the history of the change under test.
+# The values below were reviewed and are not secrets. A new finding is either a real secret (revoke it at the provider
+# first, then remove it from the history) or, once reviewed, a value added here with where it comes from, in the same
+# change as the value.
 title = "HC360 secret scan"
 
 [extend]
@@ -26,6 +27,7 @@ regexes = [
   '''MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCyi1RFLomOVu22''', # tests/HyFib.HealthCare360.Integrations.Tests/Nhcx/NhcxEnvelopeTests.cs (an RSA key made for these tests only; node-jose sealed the test messages to it)
   '''^a1b2c3d4e5f60718293a4b5c6d7e8f90$''', # tests/HyFib.HealthCare360.Integrations.Tests/Payments/CashfreeGatewayTests.cs (a made-up HC360 refund key, sent to Cashfree as refund_id)
   '''^Lnk_0123456789abcdefgh$''', # src/web/apps/portal/src/modules/signIn/linkPage.test.tsx (a made-up portal link token)
+  '''^wJalrXUtnFEMI/K7MDENG$''', # src/web/apps/staff/src/modules/admin/settingsForms.test.ts (the start of the example secret key in AWS's documentation, standing in for an off-site store key)
 ]
 
 [[allowlists]]

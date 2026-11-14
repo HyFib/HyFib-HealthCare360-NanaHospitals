@@ -19,6 +19,11 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// message goes out, see <see cref="WhatsAppOptOutPolicy"/>). Deceased patients' numbers are not messaged, and neither is
 /// the number of a record in a protected category that another patient shares (<see cref="SharedNumbers"/>).
 /// </para>
+/// <para>
+/// The bill is a document, so it goes only to a verified number (<see cref="VerifiedNumbers"/>): its template carries the
+/// PDF and can't go without it. A payment that settles the bill of a patient whose number nobody has verified sends the
+/// receipt on WhatsApp instead, and the desk is told to verify the number or print the bill.
+/// </para>
 /// </summary>
 public sealed class BillSharing(
     HospitalDbContext db, INotificationService notifications, WhatsAppConsent whatsApp, ISettingsService settings, NotificationTemplateRenderer templates)
@@ -27,6 +32,9 @@ public sealed class BillSharing(
 
     /// <summary>Send the bill on WhatsApp when a payment settles it (bool, default true).</summary>
     public const string SendOnPaymentSetting = "billing.bills.sendOnWhatsApp";
+
+    /// <summary>The desk's refusal to send the bill to a number nobody has verified.</summary>
+    public const string NumberUnverifiedCode = "billing.bill_number_unverified";
 
     /// <summary>An issued bill: a draft is only an estimate, and a cancelled bill is not one the patient owes.</summary>
     public static bool CanShare(BillStatus status) => status is BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid;
@@ -44,7 +52,7 @@ public sealed class BillSharing(
         // Only where the bill's WhatsApp template is in use: otherwise the delivery handler would skip the bill, and the
         // receipt, which leaves WhatsApp to the bill, would not go there either.
         if (await RecipientAsync(bill.PatientId, ct) is { } patient && !await SharedNumbers.HiddenFromNumberAsync(db, bill.PatientId, ct)
-            && await TemplateInUseAsync(bill, patient, ct))
+            && await VerifiedNumbers.CarriesDocumentsAsync(db, bill.PatientId, ct) && await TemplateInUseAsync(bill, patient, ct))
         {
             Queue(bill, patient);
             return true;
@@ -89,6 +97,12 @@ public sealed class BillSharing(
         {
             return Error.Rule("billing.whatsapp_template_off",
                 "The bill's WhatsApp template is not in use, so the bill can't be sent there. Switch it on in Administration › Notification templates, or print the bill.");
+        }
+
+        if (!await VerifiedNumbers.CarriesDocumentsAsync(db, bill.PatientId, ct))
+        {
+            return Error.Rule(NumberUnverifiedCode,
+                "The patient's mobile number is not verified, so the bill can't be sent to it. Verify the number on the patient's record (Verify mobile), or print the bill.");
         }
 
         Queue(bill, patient);

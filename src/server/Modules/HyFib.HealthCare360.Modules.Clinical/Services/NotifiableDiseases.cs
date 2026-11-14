@@ -116,6 +116,8 @@ internal sealed class IdspAlertOutboxHandler(INotificationService notifications)
 {
     public string Type => NotifiableDiseases.AlertType;
 
+    public OutboxLane Lane => OutboxLane.Local;
+
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var alert = message.Read<IdspAlert>();

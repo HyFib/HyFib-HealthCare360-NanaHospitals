@@ -169,4 +169,13 @@ describe('OfflineBanner', () => {
 
     expect(screen.getByText(/Check this computer's network cable or WiFi/)).toBeInTheDocument();
   });
+
+  it('says that the same save made again is not saved twice, and to check first after changing anything', () => {
+    useConnection.setState({ wifi: null });
+    renderShell(<OfflineBanner />);
+
+    expect(screen.getByText(/Saving it again with the same details will not save it twice/)).toBeInTheDocument();
+    expect(screen.getByText(/if you change anything, first check whether it was saved/)).toBeInTheDocument();
+    expect(screen.queryByText(/nothing will be duplicated/)).not.toBeInTheDocument();
+  });
 });

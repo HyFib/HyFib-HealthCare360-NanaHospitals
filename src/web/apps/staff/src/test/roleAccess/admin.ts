@@ -351,6 +351,10 @@ const BACKUPS: BackupRunDto[] = [
     documentCount: 18_204,
     verifiedAt: hoursAgo(2.9),
     recoveryKeyId: 'rk-2026-01',
+    offsiteUploadedAt: hoursAgo(2.7),
+    offsiteKey: 'hc360/hc360-20261024-0200.hc360bak',
+    offsiteAttempts: 1,
+    offsiteError: null,
   },
   {
     id: id('bk02'),
@@ -367,6 +371,10 @@ const BACKUPS: BackupRunDto[] = [
     documentCount: null,
     verifiedAt: null,
     recoveryKeyId: null,
+    offsiteUploadedAt: null,
+    offsiteKey: null,
+    offsiteAttempts: 0,
+    offsiteError: null,
   },
   {
     id: id('bk03'),
@@ -383,6 +391,10 @@ const BACKUPS: BackupRunDto[] = [
     documentCount: 17_960,
     verifiedAt: null,
     recoveryKeyId: 'rk-2026-01',
+    offsiteUploadedAt: null,
+    offsiteKey: null,
+    offsiteAttempts: 0,
+    offsiteError: null,
   },
 ];
 
@@ -393,6 +405,7 @@ const RECOVERY_KEY: RecoveryKeyStatus = {
   by: null,
   originalShown: true,
   originalKeyId: 'rk-2026-01',
+  custodians: null,
 };
 
 // ---------------------------------------------------------------------------------------------------- integrations

@@ -138,7 +138,8 @@ internal static class PatientEndpoints
             p.RegisteredFacilityId, p.RegisteredAt, p.IsVip, p.IsDeceased, p.DeceasedAt, p.MergedIntoPatientId, p.Notes, p.IsActive, p.Version,
             ContactsMasked: !full,
             PendingChanges: pending.Count == 0 ? null : pending,
-            IdentityCorrectableUntil: await records.CorrectableUntilAsync(p, ct)));
+            IdentityCorrectableUntil: await records.CorrectableUntilAsync(p, ct),
+            PhoneVerifiedAt: p.IsPhoneVerified ? p.PhoneVerifiedAt : null));
     }
 
     private static Task<IResult> GetSummary(

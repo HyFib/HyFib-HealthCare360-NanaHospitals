@@ -190,8 +190,11 @@ public sealed partial class PortalMessageTests(ITestOutputHelper output)
     [Fact]
     public void The_answers_every_portal_request_can_get_are_in_every_patient_language()
     {
-        // The title of each kind of refusal, the messages of a record that is not found or was changed meanwhile, and the
-        // answers of a switched-off feature (while the portal or video consultations are off, every patient request gets one).
+        // The title of each kind of refusal, the messages of a record that is not found or was changed meanwhile, the
+        // answers of a switched-off feature (while the portal or video consultations are off, every patient request gets one),
+        // and the answers to a write sent again with its Idempotency-Key, which every portal write carries.
+        var idempotency = IdempotencyReplies().ToList();
+        idempotency.ShouldContain(IdempotencyMiddleware.OutcomeUnknownDetail, "the idempotency middleware's replies must be found, or none is checked");
         string?[] texts =
         [
             .. Enum.GetValues<ErrorType>().Select(type => TitleOf(new Error("any", "Any message.", type).ToProblem())),
@@ -201,6 +204,7 @@ public sealed partial class PortalMessageTests(ITestOutputHelper output)
             .. FeatureCatalog.All.SelectMany(feature => new[] { feature.OffTitle, feature.OffDetailForPatients }),
             ValidationProblemTitle,
             MissingBodyTitle,
+            .. idempotency,
         ];
 
         var untranslated = texts.OfType<string>()
@@ -216,6 +220,16 @@ public sealed partial class PortalMessageTests(ITestOutputHelper output)
     private const string ValidationProblemTitle = "Please correct the highlighted fields.";
 
     private const string MissingBodyTitle = "A request body is required.";
+
+    /// <summary>
+    /// The titles and details the idempotency middleware answers a write with (Platform/Http/Idempotency.cs): each of its
+    /// constants named *Title or *Detail, so a reply added there is checked here without being listed.
+    /// </summary>
+    private static IEnumerable<string> IdempotencyReplies() =>
+        typeof(IdempotencyMiddleware).GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(field => field.IsLiteral && field.FieldType == typeof(string)
+                && (field.Name.EndsWith("Title", StringComparison.Ordinal) || field.Name.EndsWith("Detail", StringComparison.Ordinal)))
+            .Select(field => (string)field.GetRawConstantValue()!);
 
     private static List<RouteEndpoint> PortalEndpoints()
     {

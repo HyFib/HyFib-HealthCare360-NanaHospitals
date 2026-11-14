@@ -147,13 +147,15 @@ describe('irnAnswer', () => {
     const offline = new ApiError({
       status: 0,
       title: 'Cannot reach the HealthCare360 server',
-      detail: 'Check the WiFi connection and try again. It is safe to retry — nothing will be duplicated.',
+      detail:
+        'Check the WiFi connection, then try again. Saving again with the same details will not save it twice; if you change anything, first check whether it was saved.',
       code: 'network',
     });
     expect(irnAnswer('record', offline)).toEqual({
       intent: 'warning',
       title: 'Cannot reach the HealthCare360 server',
-      detail: 'Check the WiFi connection and try again. It is safe to retry — nothing will be duplicated.',
+      detail:
+        'Check the WiFi connection, then try again. Saving again with the same details will not save it twice; if you change anything, first check whether it was saved.',
     });
     const stale = new ApiError({
       status: 409,

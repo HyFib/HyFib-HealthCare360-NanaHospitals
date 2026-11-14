@@ -394,6 +394,8 @@ internal sealed class AbdmTransferOutboxHandler(AbdmDataFlowService flow) : IOut
 {
     public string Type => AbdmDataFlowService.TransferType;
 
+    public string Provider => AbdmAutoLinking.OutboxProvider;
+
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken) =>
         flow.TransferAsync(message.Read<AbdmTransferJob>().TransferId, cancellationToken);
 }

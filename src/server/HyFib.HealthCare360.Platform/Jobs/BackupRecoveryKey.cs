@@ -206,12 +206,21 @@ internal sealed record CurrentRecoveryKey(string KeyId, byte[] Key, bool Origina
 /// nobody holds a key that opens the backups.
 /// </param>
 /// <param name="OriginalKeyId">The original key's id, which the backups made with it name.</param>
-public sealed record RecoveryKeyStatus(string KeyId, bool Original, DateTimeOffset? Since, string? By, bool OriginalShown, string OriginalKeyId);
+/// <param name="Custodians">
+/// Who has shown they hold the key, by typing it in, each once, the most recent first (<see cref="RecoveryKeyCustody"/>):
+/// two different people should, and someone at least every 90 days.
+/// </param>
+public sealed record RecoveryKeyStatus(
+    string KeyId, bool Original, DateTimeOffset? Since, string? By, bool OriginalShown, string OriginalKeyId,
+    IReadOnlyList<RecoveryKeyCustodian>? Custodians = null);
 
 /// <summary>A new recovery key, shown this once. It replaces the current key only when it is typed back by <see cref="ExpiresAt"/>.</summary>
 public sealed record NewRecoveryKey(string KeyId, string Key, DateTimeOffset ExpiresAt);
 
-/// <summary>The new recovery key, typed back from the copy the administrator made.</summary>
+/// <summary>
+/// A recovery key typed back from a copy: the new key, by the administrator it was shown to, to put it to use; or the
+/// current key, by any administrator who holds a copy, to show they do.
+/// </summary>
 public sealed record ConfirmRecoveryKeyRequest(string Key);
 
 /// <summary>The key as typed back: given, and no longer than its grouped form; whether it is right is the store's to say.</summary>
@@ -294,6 +303,39 @@ internal sealed class RecoveryKeyStore(DataDirectories directories, IDataProtect
 
         var original = Original();
         return new CurrentRecoveryKey(BackupRecoveryKey.Id(original), original, Original: true, Since: null);
+    }
+
+    /// <summary>The id of the key new backups use, without keeping the key itself in memory.</summary>
+    public string CurrentKeyId()
+    {
+        var current = Current();
+        CryptographicOperations.ZeroMemory(current.Key);
+        return current.KeyId;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="typed"/> is the key new backups use: its id when it is (the person typing it holds a copy),
+    /// a field error on <c>key</c> otherwise. Nothing changes either way, and the key is never shown.
+    /// </summary>
+    public Result<string> Prove(string? typed)
+    {
+        if (!BackupRecoveryKey.TryParse(typed, out var key, out var problem))
+        {
+            return Error.Field("key", problem);
+        }
+
+        var current = Current();
+        try
+        {
+            return CryptographicOperations.FixedTimeEquals(key, current.Key)
+                ? current.KeyId
+                : Error.Field("key", $"This is not the recovery key backups use now, whose ID is {current.KeyId}. Check that your copy is of that key, then type it again.");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+            CryptographicOperations.ZeroMemory(current.Key);
+        }
     }
 
     /// <summary>The original key's id, which the backups made with it name.</summary>
@@ -466,12 +508,18 @@ internal sealed class RecoveryKeyStore(DataDirectories directories, IDataProtect
 /// <summary>
 /// Making a new recovery key from the Backups page (ASVS V11.1.1, V13.3.2), by a holder of <c>admin.system.manage</c> who
 /// gives their password again. The key is shown once, to them alone, and becomes current only once they type it back from
-/// their copy. Each step is audited.
+/// their copy. Later, any administrator who holds a copy types the current key in to show they do; the key is never shown
+/// again. Each typing-in is recorded as a proof of who holds the key (<see cref="RecoveryKeyCustody"/>), and each step is
+/// audited.
 /// </summary>
-internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService auth, ICurrentUser user, IAuditLogger audit, HospitalDbContext db)
+internal sealed class RecoveryKeyService(
+    RecoveryKeyStore store, AuthService auth, ICurrentUser user, IAuditLogger audit, HospitalDbContext db, TimeProvider time)
 {
     public const string Shown = "backup.recovery_key_shown";
     public const string Replaced = "backup.recovery_key_replaced";
+
+    /// <summary>Recorded each time an administrator types in the current key to show they hold a copy.</summary>
+    public const string Proven = "backup.recovery_key_proven";
 
     /// <summary>Recorded each time the original key was displayed, when any holder of the backups permission could.</summary>
     public const string OriginalDisplayed = "backup.recovery_key_exported";
@@ -487,10 +535,11 @@ internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService aut
     {
         var current = store.Current();
         CryptographicOperations.ZeroMemory(current.Key);
+        var custodians = await RecoveryKeyCustody.OfAsync(db, current.KeyId, ct);
         if (current.Original)
         {
             var shown = await OriginalWasDisplayedAsync(db, ct);
-            return new RecoveryKeyStatus(current.KeyId, Original: true, Since: null, By: null, shown, current.KeyId);
+            return new RecoveryKeyStatus(current.KeyId, Original: true, Since: null, By: null, shown, current.KeyId, custodians);
         }
 
         var by = await db.Set<AuditEvent>().AsNoTracking()
@@ -498,7 +547,7 @@ internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService aut
             .OrderByDescending(e => e.OccurredAt)
             .Select(e => e.UserName)
             .FirstOrDefaultAsync(ct);
-        return new RecoveryKeyStatus(current.KeyId, Original: false, current.Since, by, OriginalShown: false, store.OriginalKeyId());
+        return new RecoveryKeyStatus(current.KeyId, Original: false, current.Since, by, OriginalShown: false, store.OriginalKeyId(), custodians);
     }
 
     public async Task<Result<NewRecoveryKey>> CreateAsync(ReauthenticateRequest request, CancellationToken ct)
@@ -538,12 +587,41 @@ internal sealed class RecoveryKeyService(RecoveryKeyStore store, AuthService aut
             return replaced.Error!;
         }
 
+        // Typing it back is the first proof that someone holds the new key; a second person proves it later.
+        await RecordProofAsync(keyId);
         await audit.WriteAsync(new AuditEntry(AuditCategories.Security, Replaced,
             $"Backups now use recovery key {keyId} instead of {replaced.Value}, which still opens the backups made before")
         {
             Severity = AuditSeverity.Critical,
         }, CancellationToken.None);
         return await StatusAsync(ct);
+    }
+
+    /// <summary>
+    /// Records that the signed-in administrator holds the current key, once they have typed it in from their copy: a field
+    /// error on <c>key</c> when it is not the current key. Nothing else changes, and the key is never shown.
+    /// </summary>
+    public async Task<Result<RecoveryKeyStatus>> ProveAsync(ConfirmRecoveryKeyRequest request, CancellationToken ct)
+    {
+        var proven = store.Prove(request.Key);
+        if (proven.IsFailure)
+        {
+            return proven.Error!;
+        }
+
+        await RecordProofAsync(proven.Value);
+        await audit.WriteAsync(new AuditEntry(AuditCategories.Security, Proven,
+            $"Recovery key {proven.Value} was typed in from a copy: its holder has shown they keep one")
+        {
+            Severity = AuditSeverity.Warning,
+        }, CancellationToken.None);
+        return await StatusAsync(ct);
+    }
+
+    private async Task RecordProofAsync(string keyId)
+    {
+        db.Add(new RecoveryKeyProof { KeyId = keyId, UserId = user.UserId!.Value, UserName = user.UserName, ProvenAt = time.GetUtcNow() });
+        await db.SaveChangesAsync(CancellationToken.None);
     }
 
     /// <summary>

@@ -112,6 +112,7 @@ public sealed class CareMessageTests(HospitalServer server)
     {
         var frontOffice = await server.SignInAsync(Users.FrontOffice);
         var (patientId, phone) = await RegisterAsync(frontOffice, "हिन्दी");
+        await server.VerifyPatientPhonesAsync(phone); // the bill goes only to a verified number
         var admin = await server.SignInAsync(Users.HospitalAdmin);
         var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
             $"SV-{Digits(8)}", "Dressing (receipt messages)", null, ServiceCategory.Procedure, null, 450m, 0m, null, true, false, null, true, null));

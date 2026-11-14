@@ -15,8 +15,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { adminQueries, backupContents, backupKeyText, formatBytes } from '@/modules/admin/api';
+import { adminQueries, backupContents, backupKeyText, formatBytes, offsiteText } from '@/modules/admin/api';
 import { RecoveryKeyDialog } from '@/modules/admin/RecoveryKeyDialog';
+import { SettingsForm } from '@/modules/admin/SettingsForm';
+import { BACKUP_OFFSITE_SETTINGS } from '@/modules/admin/settingsForms';
 
 export const Route = createFileRoute('/_app/admin/backups')({
   component: BackupsPage,
@@ -24,9 +26,14 @@ export const Route = createFileRoute('/_app/admin/backups')({
 
 const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
+  error: { color: tokens.colorPaletteRedForeground1 },
+  note: { color: tokens.colorPaletteMarigoldForeground1 },
 });
 
-/** Encrypted database backups of the server machine (SRS DED-16) and the offline recovery key that opens them. */
+/**
+ * Encrypted database backups of the server machine (SRS DED-16): each one, its copy on the second disk or NAS and its
+ * copy off site; the off-site bucket's settings; and the offline recovery key that opens them.
+ */
 function BackupsPage() {
   const styles = useStyles();
   const notify = useNotify();
@@ -49,7 +56,7 @@ function BackupsPage() {
     <Page>
       <PageHeader
         title="Backups"
-        subtitle="Encrypted copies of the database. Keep a copy on a second disk or NAS, and the recovery key offline."
+        subtitle="Encrypted copies of the database. Keep a copy on a second disk or NAS and one off site, and the recovery key offline with two people."
         actions={
           <>
             <Button icon={<KeyRegular />} onClick={() => setKeyOpen(true)}>
@@ -117,19 +124,46 @@ function BackupsPage() {
               render: (b) => (b.status === 'Succeeded' ? (b.secondaryCopied ? 'Yes' : 'No') : '—'),
             },
             {
+              key: 'offsite',
+              header: 'Off site',
+              width: 170,
+              priority: 'low',
+              render: (b) => (
+                <span>
+                  {offsiteText(b)}
+                  {b.offsiteUploadedAt && (
+                    <Caption1 block className={styles.muted}>
+                      {formatDateTime(b.offsiteUploadedAt)}
+                    </Caption1>
+                  )}
+                  {!b.offsiteUploadedAt && b.offsiteError && (
+                    <Caption1 block className={styles.error}>
+                      {b.offsiteError}
+                    </Caption1>
+                  )}
+                </span>
+              ),
+            },
+            {
               key: 'file',
               header: 'File / error',
               width: 300,
               priority: 'low',
               render: (b) =>
-                b.error ? (
-                  <Caption1 style={{ color: tokens.colorPaletteRedForeground1 }}>{b.error}</Caption1>
+                b.status !== 'Succeeded' && b.error ? (
+                  <Caption1 className={styles.error}>{b.error}</Caption1>
                 ) : (
                   <span>
                     <Text font="monospace">{b.fileName ?? '—'}</Text>
                     {b.sha256 && (
                       <Caption1 block className={styles.muted}>
                         SHA-256 {b.sha256.slice(0, 16)}…
+                      </Caption1>
+                    )}
+                    {/* A backup that was made can still carry a note: its copy failed, or older copies were kept. */}
+                    {b.error && (
+                      <Caption1 block className={styles.note}>
+                        {b.error}
                       </Caption1>
                     )}
                   </span>
@@ -140,6 +174,10 @@ function BackupsPage() {
           emptyDescription="Run the first backup now, then check that it succeeds."
           size="small"
         />
+      </Section>
+
+      <Section title={BACKUP_OFFSITE_SETTINGS.title} description={BACKUP_OFFSITE_SETTINGS.intro}>
+        <SettingsForm spec={BACKUP_OFFSITE_SETTINGS} />
       </Section>
 
       <RecoveryKeyDialog open={keyOpen} onClose={() => setKeyOpen(false)} />

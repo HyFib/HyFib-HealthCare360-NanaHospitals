@@ -48,6 +48,7 @@ public sealed class MessageTemplateCoverageTests(HospitalServer server)
         ("pharmacy.refill_ready", [NotificationChannel.Sms, NotificationChannel.WhatsApp]),
         ("portal.link", [NotificationChannel.Sms, NotificationChannel.WhatsApp]),
         ("system.alert", [NotificationChannel.Sms, NotificationChannel.WhatsApp]),
+        (PatientPhoneVerificationService.Template, PatientPhoneVerificationService.Channels),
     ];
 
     [Fact]

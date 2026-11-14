@@ -401,8 +401,8 @@ clearance check, so the final bill is complete.
 * Notifications (platform templates, by SMS and on WhatsApp once each WhatsApp template is switched on; in the patient's
   language): `admission.admitted` {name, ward, bed, doctor}; `discharge.completed` {name} (SMS, and on WhatsApp text only);
   `discharge.summary` {name} on WhatsApp instead of it, with the stay's signed discharge summary as the template's
-  document header, when the stay has a signed summary and that template is in use (a discharge without a summary gets
-  `discharge.completed` on WhatsApp). A record in a protected category gets
+  document header, when the stay has a signed summary, that template is in use and the patient's mobile number is
+  verified (`VerifiedNumbers`, ASVS V6.6.1); any other discharge gets `discharge.completed` on WhatsApp. A record in a protected category gets
   neither on a number another patient shares (`SharedNumbers`): they name the ward and the doctor.
 * Job: `CountersignOverdueJob` — every 15 minutes when `PlatformOptions.RunsJobs`: tells the doctor and the nurses in charge of each verbal or telephone order, and each nurse's stop, past its countersign time (once each); and the nurses in charge of each urgent transfer not accepted within the hour (once each).
 * Job: `EarlyWarningReminderJob` — every 5 minutes when `PlatformOptions.RunsJobs`: reminds the consultant and the nurses in charge, once, of each NEWS2 escalation unanswered after 30 minutes, urgent or emergency.
