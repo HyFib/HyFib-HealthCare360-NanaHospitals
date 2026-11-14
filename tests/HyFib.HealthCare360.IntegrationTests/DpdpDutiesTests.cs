@@ -15,12 +15,16 @@ using HyFib.HealthCare360.Modules.Privacy.Features.Settings;
 using HyFib.HealthCare360.Modules.Privacy.Services;
 using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Auditing;
+using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -329,7 +333,7 @@ public sealed class DpdpDutiesTests(HospitalServer server)
             new SdfSettings(true, server.Today, new DpoContact("Dr Meena DPO", "Data Protection Officer", "dpo@hospital.example.in", "9" + Digits(9), "Chennai", true), current.Version));
         var notice = await server.Anonymous().GetAsync<PublicPrivacyInfo>("/api/v1/public/privacy");
         notice.Dpo.ShouldNotBeNull().Name.ShouldBe("Dr Meena DPO");
-        notice.BackupWindowDays.ShouldBe(ErasureService.BackupWindowDays(30));
+        notice.BackupWindowDays.ShouldBe(await BackupWindowDaysAsync());
 
         var audit = await admin.PostAsync<DataAuditDto>("/api/v1/privacy/sdf/audits", new SaveDataAuditRequest(
             server.Today.AddYears(-1), server.Today.AddDays(-1), "Independent Auditors LLP", "All processing of patients' data", null, null, server.Today, null, null, null));
@@ -344,7 +348,7 @@ public sealed class DpdpDutiesTests(HospitalServer server)
         var (patient, phone, requestId) = await ErasureRequestWithNomineeAsync();
         var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var outcome = await officer.PostAsync<ErasureOutcome>($"/api/v1/privacy/requests/{requestId}/erasure", new EraseDataRequest([ErasureService.NomineeItem]));
-        outcome.Summary.ShouldContain($"within {ErasureService.BackupWindowDays(30)} days");
+        outcome.Summary.ShouldContain($"within {await BackupWindowDaysAsync()} days");
 
         var ledger = server.Services.GetRequiredService<ErasureLedger>();
         var entry = ledger.Read().Entries.Where(e => e.RequestId == requestId).ShouldHaveSingleItem();
@@ -498,6 +502,18 @@ public sealed class DpdpDutiesTests(HospitalServer server)
             Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false, Notes: null,
             ConfirmedNotDuplicate: true));
         return (patient, phone);
+    }
+
+    /// <summary>
+    /// How long erased data stays in the backups, in days, as the server counts it for the erasure answer and the privacy
+    /// notice: the longest any copy of a backup is kept under the run's retention settings, and the day until the next clean-up.
+    /// </summary>
+    private async Task<int> BackupWindowDaysAsync()
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var days = await BackupRetention.DaysAsync(scope.ServiceProvider.GetRequiredService<ISettingsService>(),
+            scope.ServiceProvider.GetRequiredService<IOptions<PlatformOptions>>().Value, Ct);
+        return ErasureService.BackupWindowDays(days);
     }
 
     private static string Digits(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('0' + Random.Shared.Next(10))));
