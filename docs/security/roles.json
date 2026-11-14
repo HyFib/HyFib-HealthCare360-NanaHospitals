@@ -4,7 +4,7 @@
   "totals": {
     "roles": 32,
     "permissions": 289,
-    "guardedEndpoints": 1756,
+    "guardedEndpoints": 1757,
     "approvalKinds": 84
   },
   "security": {
@@ -24,7 +24,7 @@
       "defaultPermissions": [
         "*"
       ],
-      "endpoints": 1756,
+      "endpoints": 1757,
       "mfa": "required-by-role",
       "canBeTurnedOff": false
     },
@@ -237,7 +237,7 @@
         "visits.manage",
         "visits.read"
       ],
-      "endpoints": 1262,
+      "endpoints": 1263,
       "mfa": "required-by-role",
       "canBeTurnedOff": true
     },
@@ -604,7 +604,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 212,
+      "endpoints": 213,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
