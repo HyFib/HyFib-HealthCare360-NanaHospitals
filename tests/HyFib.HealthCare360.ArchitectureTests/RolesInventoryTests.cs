@@ -126,7 +126,8 @@ public sealed class RolesInventoryTests
             text.AppendLine(CultureInfo.InvariantCulture, $"| `{definition.Name}` | {Cell(definition.Group)} | {Cell(definition.Description)} | {opens} |");
         }
 
-        return text.ToString();
+        // AppendLine ends lines with the platform's newline, \r\n on Windows; the page is kept with \n (.gitattributes).
+        return text.ToString().ReplaceLineEndings("\n");
     }
 
     /// <summary>
