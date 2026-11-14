@@ -190,11 +190,20 @@ public sealed class PosUnconfirmedSaleTests(HospitalServer server)
             .SingleOrDefaultAsync(d => d.Kind == DiscrepancyKind.UnrecordedPayment && d.Key == transactionId, Ct);
     }
 
+    /// <summary>
+    /// How many times the accountants were told the sale on <paramref name="terminalId"/> was never confirmed: the most any
+    /// one of them was. Each holder of the reconciliation permission gets an alert of their own (the accountant, the
+    /// hospital administrator and the super administrator here), so one alert is a row for each.
+    /// </summary>
     private async Task<int> AlertsAsync(DateTimeOffset since, string terminalId)
     {
         await using var scope = server.Services.CreateAsyncScope();
-        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserNotification>().AsNoTracking()
-            .CountAsync(n => n.Title == "Card/UPI sale never confirmed" && n.CreatedAt >= since && n.Body!.Contains(terminalId), Ct);
+        var perHolder = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserNotification>().AsNoTracking()
+            .Where(n => n.Title == "Card/UPI sale never confirmed" && n.CreatedAt >= since && n.Body!.Contains(terminalId))
+            .GroupBy(n => n.UserId)
+            .Select(holder => holder.Count())
+            .ToListAsync(Ct);
+        return perHolder.Count == 0 ? 0 : perHolder.Max();
     }
 
     private async Task<int> AuditCountAsync(string action, Guid saleId)
