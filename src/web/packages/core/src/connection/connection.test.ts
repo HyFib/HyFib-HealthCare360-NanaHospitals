@@ -153,15 +153,19 @@ describe('a database that is down', () => {
     expect(serverStatus(useConnection.getState())).toBe('unreachable');
   });
 
-  it('asks the server once for many failures at once, not once each', async () => {
+  it('asks the server once for many failures at once, not once each, and not again while it is known to be down', async () => {
     const asked = server(unhealthy);
 
     for (let i = 0; i < 20; i++) {
       noteServerFailure();
     }
     await checkServerReady();
+    // Later failures, while the database is down: the monitor's own check every 15 s is enough.
+    vi.setSystemTime(Date.now() + 60_000);
+    noteServerFailure();
 
     expect(asked.filter((path) => path === '/health/ready')).toHaveLength(1);
+    expect(useConnection.getState().databaseDown).toBe(true);
   });
 
   it('is checked again with the connection while it lasts, and over once the server is ready again', async () => {

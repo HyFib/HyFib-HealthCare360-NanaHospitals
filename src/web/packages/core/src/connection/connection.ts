@@ -148,10 +148,11 @@ export function checkServerReady(): Promise<void> {
 /**
  * The server answered a request with a failure of its own that names no reason (a 500, or a 502 to 504 no problem code
  * of its explains), as it answers every request while its database is down: asks whether it is ready, at most every
- * few seconds however many such answers come.
+ * few seconds however many such answers come. Once the database is known to be down, the monitor asks every 15 s
+ * whether it is back, and such answers say nothing new.
  */
 export function noteServerFailure(): void {
-  if (Date.now() - readinessAskedAt >= READINESS_EVERY_MS) {
+  if (!useConnection.getState().databaseDown && Date.now() - readinessAskedAt >= READINESS_EVERY_MS) {
     void checkServerReady();
   }
 }
