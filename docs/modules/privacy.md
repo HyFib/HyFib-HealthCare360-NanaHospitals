@@ -298,8 +298,8 @@ the consent manager. The secret is kept encrypted with the data key.
 **The protocol.** The Board has not published a wire format yet, so HC360 speaks a small one of its own
 (`ConsentManagerProtocol`), and an adapter translates once the Board's is out:
 
-- The consent manager POSTs events to `/api/v1/consent-managers/{code}/events` (anonymous, rate-limited as a partner)
-  with `X-CM-Timestamp` (Unix seconds) and `X-CM-Signature`, the hex HMAC-SHA256 of `{timestamp}.{body}` under the
+- The consent manager POSTs events to `/api/v1/consent-managers/{code}/events` (anonymous, rate-limited as a partner),
+  on the patient portal's public address (it answers on the staff app's too; DEPLOYMENT.md, "Network checklist"), with `X-CM-Timestamp` (Unix seconds) and `X-CM-Signature`, the hex HMAC-SHA256 of `{timestamp}.{body}` under the
   shared secret. A bad signature, or a timestamp more than five minutes from the server's clock, is 401. Bodies are at
   most 32 KB. Each `eventId` is acted on once (a repeat answers `duplicate`).
 - `consent.granted`: `{eventId, kind, artefact {id, principal {uhid, mobile}, purpose, dataItems[], validFrom,

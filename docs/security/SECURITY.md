@@ -1436,6 +1436,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     (renewing and ending a session, public links, report and prescription checks, the server's name and switches,
     video consultations, health probes and provider webhooks). Nothing else answers there: no staff sign-in, page or
     endpoint. An architecture test fails if an endpoint needing a staff permission ever does.
+  - It is the one address a hospital opens to the internet, so what services outside the hospital call answers there
+    too: provider webhooks, the ABDM gateway's callbacks and the records other providers push (`/api/v3`), and consent
+    managers' events (`/api/v1/consent-managers`). Each is anonymous and proves its sender with a signature or the
+    gateway's token. The FHIR API and SMART on FHIR's OAuth endpoints stay on the staff app's address: an app's
+    authorization hands the browser to the staff sign-in, and the FHIR API reads as a staff account. Partners outside
+    the hospital reach them over a VPN (DEPLOYMENT.md, "Network checklist").
   - The staff app's address sends `/portal/...` to the same page on the portal's address, so links in messages sent,
     and QR codes printed, before the portal moved keep working. It does not serve the portal's own API or sign-in.
   - The API reference, while it is on: port 7362 (`HealthCare360:ApiReferencePort`), listening on the server machine

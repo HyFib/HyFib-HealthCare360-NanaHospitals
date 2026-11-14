@@ -26,12 +26,49 @@ public sealed class ListenerPathsTests
     [InlineData("/api/v1/public/rate-list/0199b0c4-4b1c-7c3e-9d2f-2a1b3c4d5e6f")]
     [InlineData("/api/v1/radiology/reports/verify/ABC123")]
     [InlineData("/api/v1/system/info")]
-    [InlineData("/api/v1/billing/webhooks/payment-gateway")]
-    [InlineData("/api/v1/integrations/webhooks/whatsapp/")]
     [InlineData("/hubs/telehealth/negotiate")]
     [InlineData("/health/live")]
     public void The_portals_address_serves_the_portal_and_what_it_shares_with_the_staff_app(string path) =>
         ListenerPaths.Decide(Listener.Portal, path).ShouldBe(ListenerRoute.Serve);
+
+    // The portal's address is the one a hospital opens to the internet (DEPLOYMENT.md), so what services outside it call
+    // answers there: the ABDM gateway, providers pushing records, consent managers and the webhooks.
+    [Theory]
+    [InlineData("/api/v3/hip/token/on-generate-token")]
+    [InlineData("/api/v3/link/on_carecontext")]
+    [InlineData("/api/v3/hip/patient/care-context/discover")]
+    [InlineData("/api/v3/consent/request/hip/notify")]
+    [InlineData("/api/v3/hip/health-information/request")]
+    [InlineData("/api/v3/hiu/consent/request/on-init")]
+    [InlineData("/api/v3/hiu/health-information/transfer")]
+    [InlineData("/api/v1/consent-managers/cm-one/events")]
+    [InlineData("/api/v1/billing/webhooks/payment-gateway")]
+    [InlineData("/api/v1/integrations/webhooks/whatsapp/")]
+    public void What_services_outside_the_hospital_call_answers_on_the_portals_address_and_the_staff_apps(string path)
+    {
+        ListenerPaths.Decide(Listener.Portal, path).ShouldBe(ListenerRoute.Serve);
+        ListenerPaths.Decide(Listener.Staff, path).ShouldBe(ListenerRoute.Serve);
+    }
+
+    // An app's SMART authorization hands the staff member to the staff app's sign-in, and the FHIR API reads as a staff
+    // account: neither may answer where the portal's third-party script runs. Nor may the staff screens behind ABDM and
+    // consent managers.
+    [Theory]
+    [InlineData("/oauth2/authorize")]
+    [InlineData("/oauth2/token")]
+    [InlineData("/oauth2/introspect")]
+    [InlineData("/fhir/r4/.well-known/smart-configuration")]
+    [InlineData("/fhir/r4/Patient")]
+    [InlineData("/smart/authorize")]
+    [InlineData("/api/v1/smart/authorize")]
+    [InlineData("/api/v1/abdm/links")]
+    [InlineData("/api/v1/privacy/consent-managers")]
+    [InlineData("/api/v3x/hip/token/on-generate-token")]
+    public void The_fhir_api_smart_sign_in_and_the_staff_screens_of_abdm_and_consent_managers_answer_on_the_staff_apps_address_only(string path)
+    {
+        ListenerPaths.Decide(Listener.Portal, path).ShouldBe(ListenerRoute.NotFound);
+        ListenerPaths.Decide(Listener.Staff, path).ShouldBe(ListenerRoute.Serve);
+    }
 
     [Theory]
     [InlineData("/index.html")]
@@ -171,6 +208,16 @@ public sealed class ListenerPathsTests
         (await RunAsync(context)).ShouldBeFalse();
 
         context.Response.StatusCode.ShouldBe(StatusCodes.Status404NotFound);
+    }
+
+    [Fact]
+    public async Task The_abdm_gateways_callback_on_the_portals_address_goes_on_to_the_server()
+    {
+        var context = Request(7361, "hc360-server:7361", "/api/v3/hip/token/on-generate-token");
+
+        (await RunAsync(context)).ShouldBeTrue();
+
+        Listeners.Of(context).ShouldBe(Listener.Portal);
     }
 
     [Fact]

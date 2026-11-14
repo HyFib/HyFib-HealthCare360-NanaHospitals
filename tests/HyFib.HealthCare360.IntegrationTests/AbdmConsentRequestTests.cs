@@ -286,11 +286,14 @@ public sealed class AbdmConsentRequestTests(HospitalServer server)
         },
     };
 
-    /// <summary>Posts a page as another provider does: anonymous, no gateway token.</summary>
+    /// <summary>
+    /// Posts a page as another provider does: anonymous, no gateway token, from the internet, so on the address the hospital
+    /// opens to it, the patient portal's (ListenerPaths).
+    /// </summary>
     private async Task<HttpStatusCode> PushAsync(object page)
     {
         using var content = new StringContent(JsonSerializer.Serialize(page), Encoding.UTF8, "application/json");
-        using var response = await server.Anonymous(ownAddress: true).Http.PostAsync(AbdmGatewayCallbackEndpoints.DataPushPath, content, TestContext.Current.CancellationToken);
+        using var response = await server.AnonymousOnPortal(ownAddress: true).Http.PostAsync(AbdmGatewayCallbackEndpoints.DataPushPath, content, TestContext.Current.CancellationToken);
         return response.StatusCode;
     }
 

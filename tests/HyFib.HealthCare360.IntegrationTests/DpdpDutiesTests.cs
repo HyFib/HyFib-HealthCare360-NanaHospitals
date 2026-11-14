@@ -440,7 +440,10 @@ public sealed class DpdpDutiesTests(HospitalServer server)
             },
         });
 
-    /// <summary>A consent manager's call, signed as the protocol says.</summary>
+    /// <summary>
+    /// A consent manager's call, signed as the protocol says. It comes from the internet, so on the address the hospital opens
+    /// to it, the patient portal's (ListenerPaths).
+    /// </summary>
     private async Task<HttpResponseMessage> SendEventAsync(string code, string secret, string json, DateTimeOffset? at = null)
     {
         var body = Encoding.UTF8.GetBytes(json);
@@ -451,7 +454,7 @@ public sealed class DpdpDutiesTests(HospitalServer server)
         };
         request.Headers.Add(ConsentManagerProtocol.TimestampHeader, timestamp);
         request.Headers.Add(ConsentManagerProtocol.SignatureHeader, ConsentManagerProtocol.Sign(secret, timestamp, body));
-        return await server.Anonymous(ownAddress: true).Http.SendAsync(request, Ct);
+        return await server.AnonymousOnPortal(ownAddress: true).Http.SendAsync(request, Ct);
     }
 
     // Record sharing is limited to the next month: sharing the whole record with no signed form needs a witness (slice 14),

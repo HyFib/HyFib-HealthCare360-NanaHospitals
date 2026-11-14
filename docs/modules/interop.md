@@ -94,6 +94,8 @@ the `oauth-uris` extension).
 * **Consent still applies on every read**: a token signs the request in as its account, so the account's
   `fhir.read`, its facility and each patient's record-sharing consent (who may read, purpose, kinds, dates, until)
   decide exactly as for a session; scopes only narrow.
+* **Where**: on the staff app's address only, never the patient portal's: an app's authorization signs a staff member in
+  on the staff app, and the FHIR API reads as a staff account. A partner outside the hospital connects over a VPN.
 * **Tokens**: opaque, 15 minutes, stored as SHA-256, accepted by the FHIR API only. `POST /oauth2/introspect` (RFC 7662)
   and `POST /oauth2/revoke` (RFC 7009) answer the client the token was issued to (an assertion, or a public app's
   `client_id` for revocation). No refresh tokens are issued: an app asks again, a service mints a new assertion.
@@ -1185,7 +1187,7 @@ They are anonymous at the HTTP level and checked by the gateway's signed bearer 
 401 when it is missing, forged or expired. They answer 503 `feature.disabled` while the ABDM switch is off, 404 while
 the gateway is off or not set up, 422 for a body that is not the expected JSON, and 202 otherwise, also for an answer to no request of this hospital's,
 which is logged and ignored. Bodies are limited to 64 KB and requests to the partners' rate limit per client address
-(1,200 a minute by default, `HealthCare360:RateLimits:Partner`), apart from the public limit on QR codes and links. The hospital's public address for these paths is registered with NHA as the HIP's callback URL.
+(1,200 a minute by default, `HealthCare360:RateLimits:Partner`), apart from the public limit on QR codes and links. The hospital's public address for these paths is registered with NHA as the HIP's callback URL: the patient portal's, the one address a hospital opens to the internet, where they answer as on the staff app's (`ListenerPaths`; DEPLOYMENT.md, "Network checklist").
 
 `HttpAbdmGatewayClientTests` checks each call against NHA's wrapper (paths, headers, bodies, the session's reuse and
 renewal, both error shapes, no retry) and what each writes to the integration log (no token, ABHA detail or name);

@@ -46,8 +46,8 @@ public enum ListenerRoute
 /// checkout, and the API reference is a third-party app. On the staff app's origin either could use a staff member's
 /// session in the same browser, so each has an origin of its own, and each origin serves only its own app:
 /// <list type="bullet">
-/// <item>The portal's address serves the portal's pages and API and the endpoints it shares with the staff app; nothing
-/// else, so no staff sign-in or staff endpoint answers there.</item>
+/// <item>The portal's address serves the portal's pages and API, the endpoints it shares with the staff app, and the
+/// calls services outside the hospital make on it; nothing else, so no staff sign-in or staff endpoint answers there.</item>
 /// <item>The staff app's address sends portal pages to the portal's address, so links made before the portal moved keep
 /// working, and does not serve the portal's own API.</item>
 /// <item>The API reference's address, on the server machine only, serves the reference and the API it describes.</item>
@@ -61,8 +61,7 @@ public static class ListenerPaths
     /// <summary>
     /// Shared by the staff app and the portal: renewing and ending a session (on each address its own app's), the public
     /// endpoints of patient links, report and prescription checks from printed QR codes, the server's name and switches,
-    /// video consultations, health probes, and the webhooks outside services call, whichever address a hospital opens to
-    /// them.
+    /// video consultations and health probes.
     /// </summary>
     private static readonly string[] Shared =
     [
@@ -73,10 +72,28 @@ public static class ListenerPaths
         "/api/v1/radiology/reports/verify",
         "/api/v1/cardiology/reports/verify",
         "/api/v1/system/info",
-        "/api/v1/billing/webhooks",
-        "/api/v1/integrations/webhooks",
         "/hubs/telehealth",
         "/health",
+    ];
+
+    /// <summary>
+    /// What services outside the hospital call it on: the payment gateway's, SMS and WhatsApp webhooks, the ABDM gateway's
+    /// callbacks and the records other providers push (everything under <c>/api/v3</c>, which holds nothing else), and
+    /// consent managers' events. A hospital opens only the portal's address to the internet, so they answer there as well as
+    /// on the staff app's. None takes a session: each call proves who sent it with a signature or the gateway's token.
+    /// <para>
+    /// Not the FHIR API or SMART on FHIR's OAuth endpoints (<c>/fhir</c>, <c>/oauth2</c>). An app's authorization hands the
+    /// staff member to the staff app's sign-in and its Authorize an app screen, which must never answer here, and the FHIR
+    /// API reads as a staff account, with a staff member's session or a token issued for one. A partner outside the hospital
+    /// reaches them on the staff app's address over a VPN, never by opening that address to the internet.
+    /// </para>
+    /// </summary>
+    private static readonly string[] Callbacks =
+    [
+        "/api/v1/billing/webhooks",
+        "/api/v1/integrations/webhooks",
+        "/api/v3",
+        "/api/v1/consent-managers",
     ];
 
     /// <summary>The portal's own: its pages, its API, and its sign-in with a one-time code.</summary>
@@ -88,7 +105,7 @@ public static class ListenerPaths
     public static ListenerRoute Decide(Listener listener, PathString path) => listener switch
     {
         Listener.Portal => IsRoot(path) ? ListenerRoute.ToPortalHome
-            : Under(path, PortalOnly) || Under(path, Shared) ? ListenerRoute.Serve
+            : Under(path, PortalOnly) || Under(path, Shared) || Under(path, Callbacks) ? ListenerRoute.Serve
             : ListenerRoute.NotFound,
         Listener.ApiReference => IsRoot(path) ? ListenerRoute.ToApiReferenceHome
             : Under(path, ApiReference) || path.StartsWithSegments("/api") ? ListenerRoute.Serve

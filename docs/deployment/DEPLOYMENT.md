@@ -79,6 +79,14 @@ use the report for one hospital.
 - The server gets a **DHCP reservation** (fixed IP) and keeps a fixed computer name, e.g. `HC360-SRV`.
 - The network profile on the server must be **Private**; the installer warns if it is Public.
 - Guest / patient WiFi must not be able to reach the server.
+- **From the internet, forward only the patient portal's port (7361)**, and only once patients or outside services need
+  it. Besides the portal, that address answers what services outside the hospital call: the payment gateway's, SMS and
+  WhatsApp webhooks, the ABDM gateway's callbacks and the records other providers push (`/api/v3/...`), and consent
+  managers' events (`/api/v1/consent-managers/...`). Register its public https address with each: with NHA as the HIP's
+  callback URL, as `dataPushUrl` in `abdm.gateway`, and with each consent manager. **Never forward the staff app's port
+  (7360)**: it serves staff sign-in and the staff API. Partners that read the FHIR API (SMART on FHIR apps and backend
+  services) use it from the hospital network or over a VPN to 7360, limited to their addresses: an app's authorization
+  signs a staff member in on the staff app, which the portal's address never serves.
 - Multicast DNS (UDP 5353) should pass between the hospital's switches and access points so HC360 Desktop can find the
   server automatically. If it can't, staff type the server name once, or IT pre-configures it (step 5).
 
@@ -1197,6 +1205,10 @@ sent and on QR codes already printed, keep working: the staff app's address send
   for the portal: an analyser or worklist set to it is not listened for, and shows as failing with the reason.
   Move it to another port, in HC360 and on the analyser or the modalities, or run the installer with
   `-PortalHttpsPort` and a free port, and use that port wherever this section says 7361.
+The ABDM gateway's callbacks, the records other providers push and consent managers' events answer on the portal's
+address too (section 1, "Network checklist"). A hospital that forwarded the staff app's port (7360) to the internet for
+them registers the portal's public address instead (with NHA as the HIP's callback URL, as `dataPushUrl` in
+`abdm.gateway`, and with each consent manager), then stops forwarding 7360.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.
