@@ -146,6 +146,46 @@ public sealed class GrantApprovalTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task Nobody_approves_permissions_added_to_a_role_they_hold()
+    {
+        // The hospital administrator holds a role of the hospital's own besides their own.
+        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var desk = await server.CreateRoleAsync(admin, new SaveRoleRequest(
+            "IT held desk " + Suffix(), "Reads masters", [PlatformPermissions.MastersRead], Version: null));
+        var me = (await FindUserAsync(hospitalAdmin, HospitalServer.Users.HospitalAdmin)).Id;
+        var mine = await hospitalAdmin.GetAsync<UserDetail>($"{UsersPath}/{me}");
+        await server.UpdateAndApproveAsync(hospitalAdmin, $"{UsersPath}/{me}", Update(mine, [.. mine.RoleIds, desk.Id]));
+        try
+        {
+            // The Super Administrator adds a permission to it. The hospital administrator may approve grants, but approving
+            // this one would give it to themselves: refused, the request waits for someone else, and the role is unchanged.
+            var shown = await admin.GetAsync<RoleDetail>($"{RolesPath}/{desk.Id}");
+            using var added = await admin.SendRawAsync(HttpMethod.Put, $"{RolesPath}/{desk.Id}",
+                new SaveRoleRequest(desk.Name, desk.Description, [PlatformPermissions.MastersRead, "ot.read"], shown.Version));
+            added.StatusCode.ShouldBe(HttpStatusCode.Accepted);
+            var asked = await ApiClient.ReadAsync<ApprovalRequestDto>(added, HttpMethod.Put, $"{RolesPath}/{desk.Id}");
+            using (var own = await hospitalAdmin.SendRawAsync(HttpMethod.Post, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, asked.Version)))
+            {
+                own.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+                (await own.Content.ReadAsStringAsync(Ct)).ShouldContain(GrantApprovals.SelfGrantCode);
+            }
+
+            (await admin.GetAsync<RoleDetail>($"{RolesPath}/{desk.Id}")).Permissions.ShouldBe([PlatformPermissions.MastersRead]);
+            var left = await admin.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}");
+            left.Status.ShouldBe(ApprovalStatus.Pending);
+            await admin.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/withdraw", new WithdrawApprovalRequest(left.Version));
+        }
+        finally
+        {
+            // The hospital administrator's roles as they were: taking one away is done at once.
+            var now = await hospitalAdmin.GetAsync<UserDetail>($"{UsersPath}/{me}");
+            using var restored = await hospitalAdmin.SendRawAsync(HttpMethod.Put, $"{UsersPath}/{me}", Update(now, [.. now.RoleIds.Where(r => r != desk.Id)]));
+            restored.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
     public async Task An_approver_gives_only_what_they_could_give_themselves()
     {
         // Someone who may approve grants and holds nothing else administrative.

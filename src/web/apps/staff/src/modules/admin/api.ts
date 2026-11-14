@@ -119,6 +119,21 @@ export interface RoleListItem {
   isSystem: boolean;
   permissionCount: number;
   userCount: number;
+  /** Whether the role is in use. A role turned off gives its holders nothing, while it stays theirs. */
+  isActive: boolean;
+  /** Active staff for whom it is the only role in use: turning it off leaves them able to do nothing. */
+  soleRoleHolders: number;
+  /** False for the Super Administrator and Patient roles, which are never turned off. */
+  canTurnOff: boolean;
+  /** Sent back when the role is turned on or off: the server refuses a switch shown before someone changed the role. */
+  version: number;
+}
+
+/** Turning a role back on, waiting for a second administrator who may approve grants. */
+export interface PendingRoleActivation {
+  approvalId: string;
+  requestedBy: string;
+  requestedAt: string;
 }
 
 export interface RoleDetail {
@@ -130,6 +145,70 @@ export interface RoleDetail {
   version: number;
   /** Permissions asked for the role, waiting for a second administrator. */
   pendingGrant?: PendingRoleGrant | null;
+  /** Whether the role is in use. */
+  isActive: boolean;
+  /** Turning the role back on, waiting for a second administrator. */
+  pendingActivation?: PendingRoleActivation | null;
+}
+
+/**
+ * Turns a role off, at once, or asks for it to be turned back on: 204 when done, 202 with the approval request when it
+ * waits for a second administrator (`askedForApproval` of the answer). `version` is the one the role was shown at.
+ */
+export function setRoleActive(roleId: string, active: boolean, version: number, reason: string | null) {
+  return api.put<AskedForApproval | undefined>(`/api/v1/admin/roles/${roleId}/active`, { active, version, reason });
+}
+
+/** "1 person", "3 people". */
+function people(count: number): string {
+  return count === 1 ? '1 person' : `${count} people`;
+}
+
+/**
+ * The question asked before a role is turned off: who loses what, who is left with nothing, what still applies, and that
+ * turning it back on needs a second administrator.
+ */
+export function turnOffRoleQuestion(role: Pick<RoleListItem, 'name' | 'userCount' | 'soleRoleHolders'>): {
+  title: string;
+  body: string;
+  confirmLabel: string;
+} {
+  const holders =
+    role.userCount === 0
+      ? 'Nobody holds it now.'
+      : `${people(role.userCount)} ${role.userCount === 1 ? 'holds' : 'hold'} it and will lose what it gives at once.`;
+  const whom =
+    role.userCount === 1
+      ? 'them'
+      : role.soleRoleHolders === role.userCount
+        ? 'all of them'
+        : `${role.soleRoleHolders} of them`;
+  const alone =
+    role.soleRoleHolders > 0
+      ? ` For ${whom} it is the only role in use: they will not be able to do anything until it is turned back on or they are given another role.`
+      : '';
+  return {
+    title: `Turn off the role ${role.name}?`,
+    body:
+      `${holders}${alone} The role stays theirs, and what it requires of them, such as two-step verification, still applies. ` +
+      'Turning it back on waits for another administrator who may approve grants.',
+    confirmLabel: 'Turn off',
+  };
+}
+
+/** The question asked before a role is turned back on, which gives its holders back what it gives. */
+export function turnOnRoleQuestion(role: Pick<RoleListItem, 'name' | 'userCount'>): {
+  title: string;
+  body: string;
+  confirmLabel: string;
+} {
+  return {
+    title: `Turn the role ${role.name} back on?`,
+    body:
+      `${role.userCount === 0 ? 'Nobody holds it now.' : `${people(role.userCount)} ${role.userCount === 1 ? 'holds' : 'hold'} it and will get back what it gives.`} ` +
+      'Another administrator who may approve grants decides it; until then it stays off.',
+    confirmLabel: 'Ask to turn on',
+  };
 }
 
 export interface PermissionGroup {

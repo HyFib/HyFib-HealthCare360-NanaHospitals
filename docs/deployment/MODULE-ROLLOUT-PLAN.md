@@ -85,7 +85,7 @@ department. Section 3 extends that mechanism. It does not add a second one.
 | Question | Layer | Today | Changed by |
 |---|---|---|---|
 | Is this department on HC360 yet, at this hospital or this branch? | **Department switch** | Three switches | The hospital's decision at each wave; then rarely |
-| Who may use it? | Roles and permissions | Built | Hospital administrator, any day |
+| Who may use it? | Roles and permissions | Built; a whole role can also be turned off, and back on by two people ([ROLES.md](../security/ROLES.md)) | Hospital administrator, any day |
 | How does it behave here? | Settings, masters, number formats, print templates | Built | The department, during set-up |
 | What is it connected to? | Integrations: SMS, WhatsApp, payment gateway, POS, Tally, PACS, analysers | Built; a live server refuses the simulators | IT, once per device or provider |
 

@@ -19,6 +19,7 @@ import {
   OverlayDrawer,
   SearchBox,
   Spinner,
+  Switch,
   Text,
   Textarea,
   tokens,
@@ -43,7 +44,16 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
-import { adminQueries, askedForApproval, type PermissionGroup, type RoleDetail } from '@/modules/admin/api';
+import {
+  adminQueries,
+  askedForApproval,
+  setRoleActive,
+  turnOffRoleQuestion,
+  turnOnRoleQuestion,
+  type PermissionGroup,
+  type RoleDetail,
+  type RoleListItem,
+} from '@/modules/admin/api';
 import { PendingGrantNotice } from '@/modules/admin/PendingGrantNotice';
 
 export const Route = createFileRoute('/_app/admin/roles')({
@@ -55,18 +65,20 @@ const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px' },
   permission: { display: 'flex', flexDirection: 'column', paddingLeft: '4px' },
   groupHeader: { display: 'flex', justifyContent: 'space-between', width: '100%', gap: '8px', alignItems: 'center' },
+  dialogBody: { display: 'flex', flexDirection: 'column', gap: '12px' },
 });
 
 function RolesPage() {
   const canManage = usePermission('admin.roles.manage');
   const roles = useQuery(adminQueries.roles());
   const [editing, setEditing] = useState<string | 'new' | null>(null);
+  const [switching, setSwitching] = useState<{ role: RoleListItem; on: boolean } | null>(null);
 
   return (
     <Page>
       <PageHeader
         title="Roles and permissions"
-        subtitle="A role is a named set of permissions. Give users roles, not individual permissions."
+        subtitle="A role is a named set of permissions. Give users roles, not individual permissions. Turn a role off to take what it gives from everyone who holds it."
         actions={
           canManage && (
             <Button appearance="primary" icon={<AddRegular />} onClick={() => setEditing('new')}>
@@ -102,6 +114,23 @@ function RolesPage() {
             { key: 'description', header: 'Description', priority: 'low', render: (r) => r.description ?? '—' },
             { key: 'permissions', header: 'Permissions', width: 120, render: (r) => r.permissionCount },
             { key: 'users', header: 'Users', width: 90, render: (r) => r.userCount },
+            {
+              key: 'active',
+              header: 'In use',
+              width: 110,
+              render: (r) => (
+                // The switch is in a row that opens the role: using it changes the switch only.
+                <span onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                  <Switch
+                    checked={r.isActive}
+                    disabled={!canManage || !r.canTurnOff}
+                    label={r.isActive ? 'On' : 'Off'}
+                    aria-label={`${r.name} in use`}
+                    onChange={(_, data) => setSwitching({ role: r, on: data.checked })}
+                  />
+                </span>
+              ),
+            },
           ]}
         />
       </Section>
@@ -112,7 +141,70 @@ function RolesPage() {
           onClose={() => setEditing(null)}
         />
       )}
+      {switching && <RoleSwitchDialog role={switching.role} on={switching.on} onClose={() => setSwitching(null)} />}
     </Page>
+  );
+}
+
+/**
+ * Asks before a role is turned off (who loses what, and who is left with nothing) or back on (which another administrator
+ * who may approve grants decides), with a reason for the audit trail and the approver. Off applies at once; on waits.
+ */
+function RoleSwitchDialog({ role, on, onClose }: { role: RoleListItem; on: boolean; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+  const question = on ? turnOnRoleQuestion(role) : turnOffRoleQuestion(role);
+
+  const change = useMutation({
+    mutationFn: () => setRoleActive(role.id, on, role.version, reason.trim() || null),
+    onSuccess: (result) => {
+      const asked = askedForApproval(result);
+      if (asked) {
+        notify.success(
+          'Asked for approval',
+          `${asked.summary}. Another administrator who may approve grants decides it.`,
+        );
+      } else if (on) {
+        notify.success('Role turned on', `${role.name} gives the people who hold it what it holds again.`);
+      } else {
+        notify.success(
+          'Role turned off',
+          `${role.name} gives the people who hold it nothing until it is turned back on.`,
+        );
+      }
+      void queryClient.invalidateQueries({ queryKey: ['admin'] });
+      void queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      onClose();
+    },
+    onError: (error) => {
+      notify.error(error, on ? 'Could not turn the role on' : 'Could not turn the role off');
+      if (isApiError(error) && error.isConflict) {
+        // Someone changed the role meanwhile, or already asked to turn it on: show the roles as they are now.
+        void queryClient.invalidateQueries({ queryKey: ['admin'] });
+      }
+      onClose();
+    },
+  });
+
+  return (
+    <ConfirmDialog
+      open
+      title={question.title}
+      confirmLabel={question.confirmLabel}
+      destructive={!on}
+      busy={change.isPending}
+      onConfirm={() => change.mutate()}
+      onCancel={onClose}
+    >
+      <div className={styles.dialogBody}>
+        <Text block>{question.body}</Text>
+        <Field label={on ? 'Reason, for the approver' : 'Reason'} hint="Kept in the audit trail.">
+          <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={2} maxLength={500} />
+        </Field>
+      </div>
+    </ConfirmDialog>
   );
 }
 
@@ -301,6 +393,22 @@ function RoleForm({
               maxLength={500}
             />
           </Field>
+          {role && !role.isActive && (
+            <MessageBar intent="warning">
+              <MessageBarBody>
+                This role is turned off: it gives the people who hold it nothing, while it stays theirs. Turn it back on
+                from the list of roles.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {role?.pendingActivation && (
+            <PendingGrantNotice
+              approvalId={role.pendingActivation.approvalId}
+              what="Turning the role back on"
+              requestedBy={role.pendingActivation.requestedBy}
+              requestedAt={role.pendingActivation.requestedAt}
+            />
+          )}
           {pending && (
             <PendingGrantNotice
               approvalId={pending.approvalId}

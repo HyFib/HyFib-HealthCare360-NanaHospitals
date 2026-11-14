@@ -289,16 +289,12 @@ public sealed class DataRequestService(
     }
 
     /// <summary>
-    /// Who a request can be given to: active staff holding <c>privacy.requests.manage</c> (or all access) through a role,
-    /// who work in the current facility or in all of them.
+    /// Who a request can be given to: active staff holding <c>privacy.requests.manage</c> (or all access) through a role
+    /// in use, who work in the current facility or in all of them.
     /// </summary>
     public async Task<IReadOnlyList<PrivacyOfficer>> OfficersAsync(CancellationToken ct)
     {
-        var roleIds = db.Set<RolePermission>()
-            .Where(rp => rp.Permission == PrivacyPermissions.RequestsManage || rp.Permission == PermissionRegistry.Wildcard)
-            .Select(rp => rp.RoleId);
-        var users = db.Set<User>().AsNoTracking()
-            .Where(u => u.IsActive && u.Type == UserType.Staff && u.Roles.Any(r => roleIds.Contains(r.RoleId)));
+        var users = PermissionHolders.Of(db, PrivacyPermissions.RequestsManage).AsNoTracking();
         if (currentUser.FacilityId is { } facilityId)
         {
             users = users.Where(u => u.Facilities.Count == 0 || u.Facilities.Any(f => f.FacilityId == facilityId));

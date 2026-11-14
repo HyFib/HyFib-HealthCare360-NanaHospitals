@@ -125,11 +125,12 @@ internal sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
 
+        // Only an active account's roles in use give anything (Role.IsActive): a role turned off gives no permission.
         var active = await db.Set<User>().AnyAsync(u => u.Id == userId && u.IsActive, cancellationToken);
         IReadOnlySet<string> permissions = active
             ? (await (from ur in db.Set<UserRole>()
                       join rp in db.Set<RolePermission>() on ur.RoleId equals rp.RoleId
-                      where ur.UserId == userId
+                      where ur.UserId == userId && ur.Role!.IsActive
                       select rp.Permission)
                 .Distinct()
                 .ToListAsync(cancellationToken))

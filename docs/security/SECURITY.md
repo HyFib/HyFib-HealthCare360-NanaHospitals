@@ -339,11 +339,19 @@ and grants nothing.
 - **Access is given by two people**. What widens someone's access waits for a second person who holds
   `admin.grants.approve` (hospital administrators by default; the Super Administrator holds everything):
   - roles or facilities added to a user, a new user's included, and a user reactivated (`identity.user_grant`);
-  - permissions added to a role, a new role's included (`identity.role_grant`).
+  - permissions added to a role, a new role's included (`identity.role_grant`);
+  - a role turned off, turned back on (`identity.role_activation`), approved by someone who does not hold the role.
 
-  What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted.
+  What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted, a role
+  turned off (`role.deactivated`, by a holder of `admin.roles.manage`).
+  - A role turned off gives nothing, wherever a role becomes access: no permission for any endpoint or hub, no notification
+    or work sent to its holders (`PermissionHolders`), no part in approving grants. It stays assigned, and what it
+    requires of its holders (two-step verification, an enrolled workstation, its idle lock, the protection of accounts
+    that hold it) still applies. The Super Administrator and Patient roles are never off, and nobody turns off a role they
+    hold ([ROLES.md](ROLES.md)).
   - Only someone who holds an administrative permission approves a grant of it, as only they may give it.
-  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`). A grant to
+  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`): roles or
+    facilities given to their own account, or permissions added to or the turning back on of a role they hold. A grant to
     yourself, your own account or a role you hold, waits for someone else, and is refused when nobody else may approve it.
   - The approver gives what was asked, if it may still be given: the user still active (unless the grant reactivates
     them), the roles and facilities still there, and the approver allowed to manage the user and to give those roles.
