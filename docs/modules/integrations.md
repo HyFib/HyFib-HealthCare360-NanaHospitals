@@ -140,7 +140,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.labels` | `provider` (`printers`, the default: each workstation's printers \| `simulator`) | none |
 | `integrations.icd` | `enabled`, `provider` (`who` \| `simulator` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
 | `integrations.lab` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `maxMessageKilobytes` (1024), `idleTimeoutSeconds` (300), `maxConnectionsPerInstrument` (4), `timeZone` | none |
-| `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), transport (Tcp \| Serial \| Simulator), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery, astmDialect (ASTM: none \| YumizenC150) }` | none |
+| `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), transport (Tcp \| Serial \| Simulator), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery, astmDialect (ASTM: none \| YumizenC150 \| YumizenH500) }` | none |
 
 ## Channels
 
@@ -1104,6 +1104,27 @@ acknowledgements are never acknowledged in turn.
     `SERUM` when unknown, and any other specimen as HC360 names it, for the analyser to refuse), O.26 `O` also in a query
     answer, H.13 `E 1394-97`, and `L|1|N` in every message. The header time is read from H.13 when it holds a full
     timestamp (any analyser).
+  * **HORIBA Yumizen H500 / H500E** (`YumizenH500`, OT and CT, haematology with ESR; HORIBA's *Output Format for Host
+    Connection*, RAA085BEN, software 4.0.x). Use its **ASTM** format: over RS-232 (38400 baud 8N1 by default, through a
+    lab agent) or the network, where it connects to HC360's port (*Host Settings* in Settings › System › General
+    Communication › Host). Its HL7 format needs `OML^O33` orders on a second socket, which HC360 does not send. It is
+    ordered by panel: O.5 is `^^^CBC`, `^^^DIF` (which also measures the CBC) or `^^^ESR`, and any other test name
+    makes it refuse the order, so HC360 turns the channels pending on the tube into panels (DIF when a differential
+    parameter such as LYM# or NEU% is pending, else CBC; ESR when ESR is), while each result still comes back under its
+    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). Map the haematology tests' analytes in
+    Lab setup to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT,
+    PDW, P-LCC, P-LCR, LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, ALY#/%, LIC#/%, MIC, MAC, ESR…). It takes orders
+    **only in answer to its own query** and ignores any other, so no orders are sent unasked (queued ones are closed as
+    skipped with that reason), and a queried sample with nothing pending is answered with an empty order (`P|1|`,
+    `O|1|id||^^^|||||||N||||||||||||||Y`), exactly as its manual does. The answer's H.5 is a copy of the query's H.10,
+    H.13 is `LIS2-A2`, O.6 is `R` or `S` (urgent goes as stat), O.16 is `BLOOD`, the name is cut to 20 characters and
+    the sample id must fit its 16. QC and technician runs (H.12 `Q` or `D`) and control samples (O.16 `CONTROL`) are
+    acknowledged but not stored as patient results; R.4 `---` (no result) and `+++` (beyond the reportable range) are
+    passed on as results not obtained with that note; R.7 flags (`L`, `H`, `LL`, `HH`, `<`, `>`, `A`, `N`) and R.9
+    `W` (suspect) pass as sent. Its text is UTF-8 (the default for this model unless the connection names an
+    encoding), with control characters escaped as `&Xhhhh&`, which HC360 decodes for every ASTM analyser. Alarms sent
+    after a result record become that result's comment; curves and matrices (M records) and run-level alarms are not
+    stored.
 
 #### Order download
 
