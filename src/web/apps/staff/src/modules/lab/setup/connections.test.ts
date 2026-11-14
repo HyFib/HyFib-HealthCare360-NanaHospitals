@@ -115,6 +115,7 @@ describe('the form', () => {
       port: null,
       encoding: 'latin1',
       orderMessage: 'OML^O21',
+      astmDialect: '',
     });
     expect(form).toMatchObject({ portName: 'COM1', baudRate: '9600', dataBits: '8', parity: 'None', stopBits: 'One' });
     expect(form).toMatchObject({ handshake: 'None', dtrEnable: true, rtsEnable: true });
@@ -189,11 +190,25 @@ describe('the save request', () => {
       encoding: null,
       sampleIdFields: null,
       orderMessage: null,
+      astmDialect: null,
       agentDeviceId: null,
       serial: null,
       listVersion: 7,
       deviceAuthentication: 'None',
     });
+  });
+
+  it('sends the model of an ASTM analyser that departs from the standard, and none for an HL7 one', () => {
+    const values = {
+      ...toConnectionForm(undefined),
+      port: 5200,
+      allowedIps: '10.0.5.21',
+      astmDialect: 'YumizenC150' as const,
+    };
+
+    expect(toSaveRequest(values, false, 1).astmDialect).toBe('YumizenC150');
+    expect(toSaveRequest({ ...values, astmDialect: '' }, false, 1).astmDialect).toBeNull();
+    expect(toSaveRequest(values, true, 1).astmDialect).toBeNull();
   });
 
   it('sends the agent and the port settings for a serial analyser, leaving RTS to an RTS handshake', () => {

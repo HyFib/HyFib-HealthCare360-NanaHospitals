@@ -35,6 +35,7 @@ import { useState } from 'react';
 import { useForm, useWatch, type Control } from 'react-hook-form';
 import { LabDevicesPanel } from './LabDevicesPanel';
 import {
+  ASTM_DIALECTS,
   HL7_ORDER_MESSAGES,
   labApi,
   labKeys,
@@ -42,6 +43,7 @@ import {
   SERIAL_HANDSHAKES,
   SERIAL_PARITIES,
   SERIAL_STOP_BITS,
+  type AstmDialect,
   type LabAgentDto,
   type LabConnectionsDto,
   type LabInstrumentDto,
@@ -77,6 +79,8 @@ const HANDSHAKE_LABELS: Record<ConnectionForm['handshake'], string> = {
   RequestToSend: 'RTS/CTS (hardware)',
   RequestToSendXOnXOff: 'RTS/CTS and XON/XOFF',
 };
+
+const ASTM_DIALECT_LABELS: Record<AstmDialect, string> = { YumizenC150: 'HORIBA Yumizen C150' };
 
 const STOP_BIT_LABELS: Record<ConnectionForm['stopBits'], string> = { One: '1', OnePointFive: '1.5', Two: '2' };
 
@@ -262,6 +266,19 @@ export function ConnectionFields({
             { value: 'utf-8', label: 'UTF-8' },
           ]}
         />
+        {!isHl7 && (
+          <SelectField
+            control={control}
+            name="astmDialect"
+            label="Analyser model"
+            disabled={disabled}
+            hint="Choose the model when its ASTM differs from the standard, as the HORIBA Yumizen C150's does."
+            options={[
+              { value: '', label: 'Standard ASTM (most analysers)' },
+              ...ASTM_DIALECTS.map((value) => ({ value, label: ASTM_DIALECT_LABELS[value] })),
+            ]}
+          />
+        )}
         {isHl7 && (
           <SelectField
             control={control}
