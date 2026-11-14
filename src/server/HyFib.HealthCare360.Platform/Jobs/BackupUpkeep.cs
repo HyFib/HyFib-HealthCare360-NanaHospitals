@@ -75,6 +75,7 @@ internal sealed class BackupUpkeep(
 
         var now = time.GetUtcNow();
         var present = BackupFile.In(secondary);
+        string? disk = null;
         var missing = runs
             .Where(r => r is { Status: BackupStatus.Succeeded, FileName: not null, Sha256: not null } && !File.Exists(Path.Combine(secondary, r.FileName)))
             .Select(r => (Run: r, File: BackupFile.From(Path.Combine(directories.Backups, r.FileName!))))
@@ -113,7 +114,9 @@ internal sealed class BackupUpkeep(
                 continue;
             }
 
+            disk ??= BackupDisk.Identify(secondary, now, logger);
             run.SecondaryCopied = true;
+            run.SecondaryCopies = BackupCopies.With(run.SecondaryCopies, new BackupCopy(disk, time.GetUtcNow()));
             run.Error = CopiedLater(run.Error, now, Zone);
             await save(CancellationToken.None);
             copied++;

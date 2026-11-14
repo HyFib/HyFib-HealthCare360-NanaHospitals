@@ -87,6 +87,13 @@ public sealed class BackupRun
     /// taken, so a large backup on a slow uplink goes on where it stopped, across failures and restarts. Null otherwise.
     /// </summary>
     public string? OffsiteUpload { get; set; }
+
+    /// <summary>
+    /// Its copies on the second disk or NAS (JSON, a list of <see cref="BackupCopy"/>): the disk each is on, by the id it
+    /// was given on first use (<see cref="BackupDisk"/>), and when it was made. Two disks that are swapped each get their
+    /// copies; null before any copy, and for backups made before disks were told apart.
+    /// </summary>
+    public string? SecondaryCopies { get; set; }
 }
 
 internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRun>
@@ -102,6 +109,7 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
         b.Property(x => x.OffsiteKey).HasMaxLength(1024);
         b.Property(x => x.OffsiteError).HasMaxLength(2000);
         b.Property(x => x.OffsiteUpload).HasColumnType("jsonb");
+        b.Property(x => x.SecondaryCopies).HasColumnType("jsonb");
         b.HasIndex(x => x.StartedAt);
     }
 }
@@ -110,9 +118,11 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
 /// <param name="OffsiteKey">Its object key in the off-site bucket, once an upload was tried.</param>
 /// <param name="OffsiteAttempts">How many times its upload was tried.</param>
 /// <param name="OffsiteError">Why the last upload attempt failed.</param>
+/// <param name="SecondaryCopies">Its copies on the second disk or NAS, each with the disk it is on; empty when none is known.</param>
 public sealed record BackupRunDto(Guid Id, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, BackupKind Kind, BackupStatus Status, string? FileName,
     long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt,
-    string? RecoveryKeyId, DateTimeOffset? OffsiteUploadedAt = null, string? OffsiteKey = null, int OffsiteAttempts = 0, string? OffsiteError = null);
+    string? RecoveryKeyId, DateTimeOffset? OffsiteUploadedAt = null, string? OffsiteKey = null, int OffsiteAttempts = 0, string? OffsiteError = null,
+    IReadOnlyList<BackupCopy>? SecondaryCopies = null);
 
 /// <summary>The backup start-up takes before it changes the schema (<see cref="Persistence.DatabaseInitializer"/>).</summary>
 internal interface IPreMigrationBackup
@@ -125,6 +135,7 @@ internal interface IPreMigrationBackup
 }
 
 /// <summary>A finished, verified backup file.</summary>
+/// <param name="SecondaryDisk">The id of the disk it was copied to (<see cref="BackupDisk"/>), when it was copied and the disk is known.</param>
 internal sealed record BackupResult(
     BackupKind Kind,
     DateTimeOffset StartedAt,
@@ -136,7 +147,8 @@ internal sealed record BackupResult(
     DateTimeOffset VerifiedAt,
     bool SecondaryCopied,
     string? Warning,
-    string RecoveryKeyId);
+    string RecoveryKeyId,
+    string? SecondaryDisk = null);
 
 /// <summary>
 /// Encrypted backups (DED-16). Each one is a single <see cref="BackupArchive"/> with the pg_dump of the database, an escrow
@@ -229,7 +241,9 @@ internal sealed class BackupService(
         try
         {
             var migrations = (await db.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
-            Apply(run, await CreateAsync(kind, run.StartedAt, includeDocuments: true, migrations, lowPriority, cancellationToken));
+            var result = await CreateAsync(kind, run.StartedAt, includeDocuments: true, migrations, lowPriority, cancellationToken);
+            Apply(run, result);
+            await NoteDiskSwapAsync(db, run, result.SecondaryDisk, cancellationToken);
             logger.LogInformation("Backup {File} completed and verified ({Size:N0} bytes, {Documents} documents)", run.FileName, run.SizeBytes, run.DocumentCount);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -292,14 +306,46 @@ internal sealed class BackupService(
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var run = new BackupRun { StartedAt = result.StartedAt, Kind = result.Kind };
         Apply(run, result);
+        await NoteDiskSwapAsync(db, run, result.SecondaryDisk, cancellationToken);
         db.Add(run);
         db.Add(AuditEventFor(run));
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// A copy made to another disk than the copy before it: the disks were swapped, which the audit trail records
+    /// (<c>backup.disk_swapped</c>), and System health counts each disk's time in place from (<see cref="BackupDisk"/>).
+    /// </summary>
+    private async Task NoteDiskSwapAsync(HospitalDbContext db, BackupRun run, string? disk, CancellationToken ct)
+    {
+        if (disk is null)
+        {
+            return;
+        }
+
+        var before = await db.Set<BackupRun>().AsNoTracking()
+            .Where(r => r.Id != run.Id && r.SecondaryCopies != null && r.StartedAt < run.StartedAt)
+            .OrderByDescending(r => r.StartedAt)
+            .Select(r => r.SecondaryCopies)
+            .FirstOrDefaultAsync(ct);
+        if (BackupCopies.Read(before).OrderBy(c => c.CopiedAt).LastOrDefault() is { Disk: { } previous } && previous != disk)
+        {
+            db.Add(new AuditEvent
+            {
+                OccurredAt = time.GetUtcNow(),
+                Category = AuditCategories.Admin,
+                Action = BackupDisk.SwappedAction,
+                Severity = AuditSeverity.Info,
+                Summary = $"Backup disk {disk} in place of {previous}: {run.FileName} was copied to it",
+                UserId = run.TriggeredBy,
+            });
+            logger.LogInformation("The backup disk was swapped: {Disk} in place of {Previous}", disk, previous);
+        }
+    }
+
     internal static BackupRunDto ToDto(BackupRun r) =>
         new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt,
-            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError);
+            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError, BackupCopies.Read(r.SecondaryCopies));
 
     internal Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct) =>
         CreateAsync(kind, startedAt, includeDocuments, migrations, lowPriority: false, ct);
@@ -372,9 +418,10 @@ internal sealed class BackupService(
             var verifiedAt = time.GetUtcNow();
 
             var secondaryCopied = false;
+            string? disk = null;
             if (options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary)
             {
-                (secondaryCopied, var note) = CopyToSecondary(target, secondary, RemoveOld, logger);
+                (secondaryCopied, var note, disk) = CopyToSecondary(target, secondary, RemoveOld, time.GetUtcNow(), logger);
                 if (note is not null)
                 {
                     warning = Join(warning, note);
@@ -392,7 +439,7 @@ internal sealed class BackupService(
             }
 
             return new BackupResult(kind, startedAt, time.GetUtcNow(), fileName, new FileInfo(target).Length, sha256,
-                includeDocuments ? documents.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId);
+                includeDocuments ? documents.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId, disk);
         }
         finally
         {
@@ -499,6 +546,7 @@ internal sealed class BackupService(
         run.DocumentCount = result.DocumentCount;
         run.VerifiedAt = result.VerifiedAt;
         run.RecoveryKeyId = result.RecoveryKeyId;
+        run.SecondaryCopies = result.SecondaryCopied ? BackupCopies.With(null, new BackupCopy(result.SecondaryDisk, result.CompletedAt)) : null;
     }
 
     private static AuditEvent AuditEventFor(BackupRun run) => new()
@@ -522,8 +570,12 @@ internal sealed class BackupService(
     /// says so, and that the older copies stay for the share's own retention to remove. It is never taken for a failed
     /// copy (<see cref="BackupCopies"/>), which only <see cref="CopyFailedNote"/> is.
     /// </summary>
-    /// <returns>Whether the copy was made, and the backup's note about it: why it failed, or that older copies were kept.</returns>
-    internal static (bool Copied, string? Note) CopyToSecondary(string backup, string secondary, Action<string> removeOld, ILogger logger)
+    /// <returns>
+    /// Whether the copy was made, the backup's note about it (why it failed, or that older copies were kept), and the id of
+    /// the disk it went to (<see cref="BackupDisk"/>), written there on its first copy.
+    /// </returns>
+    internal static (bool Copied, string? Note, string? Disk) CopyToSecondary(string backup, string secondary, Action<string> removeOld, DateTimeOffset now,
+        ILogger logger)
     {
         try
         {
@@ -533,18 +585,19 @@ internal sealed class BackupService(
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logger.LogWarning(ex, "Backup copy to secondary location {Directory} failed", secondary);
-            return (false, CopyFailedNote + ex.Message);
+            return (false, CopyFailedNote + ex.Message, null);
         }
 
+        var disk = BackupDisk.Identify(secondary, now, logger);
         try
         {
             removeOld(secondary);
-            return (true, null);
+            return (true, null, disk);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             logger.LogInformation("Older backup copies in {Directory} were not removed: {Reason}", secondary, ex.Message);
-            return (true, OldCopiesKeptNote + ex.Message);
+            return (true, OldCopiesKeptNote + ex.Message, disk);
         }
     }
 

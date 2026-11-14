@@ -228,6 +228,9 @@ public sealed class SystemHealthService(
             backupWarnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
         }
 
+        // How the backups are set up: switched off, no second disk or NAS, a disk left in place past its swap.
+        backupWarnings.AddRange(await SystemHealthBackups.WarningsAsync(db, options.Value, now, ct));
+
         // Whether the backups leave the server's own disk: the copy to the USB disk or NAS share.
         if (await BackupCopies.WarningAsync(db, options.Value, now, ct) is { } notCopied)
         {

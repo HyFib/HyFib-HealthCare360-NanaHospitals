@@ -447,6 +447,13 @@ public sealed class BackupOptions
     public string? SecondaryDirectory { get; set; }
 
     /// <summary>
+    /// How many days a backup disk may stay in place, where two or more take turns at <see cref="SecondaryDirectory"/>,
+    /// before System health asks for it to be swapped (default 7: a weekly swap). Each disk is known by the id it is given
+    /// on its first copy (<see cref="Jobs.BackupDisk"/>). 0 never asks.
+    /// </summary>
+    public int DiskRotationDays { get; set; } = 7;
+
+    /// <summary>
     /// Which backups are kept on the server and on the second disk or NAS, grandfather-father-son: every backup of the
     /// newest days that have one, then the last of each of the newest weeks and months (<see cref="Jobs.BackupRetention"/>).
     /// The off-site bucket keeps its copies by its own lock and lifecycle rules.

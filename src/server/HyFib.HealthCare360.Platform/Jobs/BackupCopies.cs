@@ -1,10 +1,85 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Jobs;
+
+/// <summary>A copy of a backup on the second disk or NAS (<see cref="BackupRun.SecondaryCopies"/>).</summary>
+/// <param name="Disk">The id of the disk it is on (<see cref="BackupDisk"/>); null when the disk's marker could not be read or written.</param>
+/// <param name="CopiedAt">When it was copied there: by the backup, or later, once the disk was back (<see cref="BackupUpkeep"/>).</param>
+public sealed record BackupCopy(string? Disk, DateTimeOffset CopiedAt);
+
+/// <summary>
+/// The disks the copies go to, told apart (DED-16). Two USB disks swapped every week are mounted at the same drive letter,
+/// so the folder alone does not say which is in: on its first copy, each is given an id of its own in a file it keeps
+/// (<see cref="MarkerFileName"/>), and each copy records the disk it went to. A copy made to another disk than the one
+/// before it is a swap, which the audit trail records (<see cref="SwappedAction"/>); and where two or more disks take
+/// turns, System health asks for the one in place to be swapped once it has been there longer than
+/// <see cref="BackupOptions.DiskRotationDays"/> (<see cref="Networking.SystemHealthBackups"/>). A NAS share is given an id
+/// too, and as the only disk it is never asked to be swapped.
+/// </summary>
+internal static partial class BackupDisk
+{
+    public const string MarkerFileName = "hc360-backup-disk.json";
+
+    /// <summary>The audit action of a swap.</summary>
+    public const string SwappedAction = "backup.disk_swapped";
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
+    /// <summary>
+    /// The id of the disk <paramref name="directory"/> is on, from its marker, which is written now when it has none. Null
+    /// when the marker cannot be read or written, or does not hold an id HC360 gave: one damaged or edited is left as it is.
+    /// </summary>
+    public static string? Identify(string directory, DateTimeOffset now, ILogger logger)
+    {
+        var path = Path.Combine(directory, MarkerFileName);
+        try
+        {
+            if (!File.Exists(path))
+            {
+                var marker = new Marker(Convert.ToHexString(RandomNumberGenerator.GetBytes(4)), now);
+                try
+                {
+                    using var created = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                    JsonSerializer.Serialize(created, marker, Json);
+                    logger.LogInformation("The backup disk at {Directory} was given the id {Disk}", directory, marker.DiskId);
+                    return marker.DiskId;
+                }
+                catch (IOException) when (File.Exists(path))
+                {
+                    // Another server gave it an id at the same moment: that one is the disk's.
+                }
+            }
+
+            var id = JsonSerializer.Deserialize<Marker>(File.ReadAllBytes(path), Json)?.DiskId;
+            if (id is not null && IdPattern().IsMatch(id))
+            {
+                return id;
+            }
+
+            logger.LogWarning("The backup disk's marker {Path} does not hold an id HC360 gave; its copies are recorded without one", path);
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+        {
+            logger.LogWarning(ex, "The backup disk's marker {Path} could not be read or written; its copies are recorded without an id", path);
+            return null;
+        }
+    }
+
+    /// <summary>What the marker holds: the disk's id, eight hex digits, and when it was first used.</summary>
+    private sealed record Marker(string DiskId, DateTimeOffset FirstUsedAt);
+
+    [GeneratedRegex("^[0-9A-F]{8}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex IdPattern();
+}
 
 /// <summary>
 /// What the backup history records of the full backups' copies to the secondary directory (<see cref="BackupCopies"/>).
@@ -48,6 +123,30 @@ internal static class BackupCopies
     public static readonly TimeSpan UrgentAge = TimeSpan.FromDays(3.5);
 
     private const string Fix = "Connect the backup disk, or check the NAS share, then take a backup under Administration › Backups (Back up now).";
+
+    private static readonly JsonSerializerOptions CopiesJson = new(JsonSerializerDefaults.Web);
+
+    /// <summary>A backup's copies (<see cref="BackupRun.SecondaryCopies"/>); empty when none is recorded, or the record cannot be read.</summary>
+    public static IReadOnlyList<BackupCopy> Read(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<BackupCopy>>(json, CopiesJson) ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>The record of a backup's copies (<paramref name="json"/>) with <paramref name="copy"/>, in place of any earlier copy on its disk.</summary>
+    public static string With(string? json, BackupCopy copy) =>
+        JsonSerializer.Serialize<IReadOnlyList<BackupCopy>>([.. Read(json).Where(c => c.Disk != copy.Disk), copy], CopiesJson);
 
     /// <summary>The warning, from the backup history; null when the copies are made, or there is nothing to copy them to.</summary>
     public static async Task<HealthWarning?> WarningAsync(HospitalDbContext db, PlatformOptions options, DateTimeOffset now, CancellationToken ct)

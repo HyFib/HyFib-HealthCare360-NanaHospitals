@@ -106,15 +106,32 @@ public sealed class BackupServiceTests : IDisposable
         File.WriteAllBytes(backup, RandomNumberGenerator.GetBytes(64));
         var share = Path.Combine(_root, "append-only");
 
-        var (copied, note) = BackupService.CopyToSecondary(backup, share,
+        var (copied, note, _) = BackupService.CopyToSecondary(backup, share,
             _ => throw new UnauthorizedAccessException(@"Access to the path '\\NAS\HC360-Backups\hc360-20261014-013000-scheduled.hc360bak' is denied."),
-            NullLogger.Instance);
+            DateTimeOffset.UtcNow, NullLogger.Instance);
 
         copied.ShouldBeTrue();
         File.ReadAllBytes(Path.Combine(share, Path.GetFileName(backup))).ShouldBe(File.ReadAllBytes(backup));
         note.ShouldNotBeNull().ShouldStartWith("Copied to the secondary directory; older copies there were not removed: Access to the path");
         note.ShouldNotContain(BackupService.CopyFailedNote);
         BackupCopies.Reason(note).ShouldBeNull();
+    }
+
+    /// <summary>
+    /// Each copy names the disk it went to: the disk is given an id on its first copy, in a file it keeps, so the next
+    /// backup to the same disk names the same id, and a swapped disk at the same folder another (<see cref="BackupDisk"/>).
+    /// </summary>
+    [Fact]
+    public async Task A_copy_names_the_disk_it_went_to()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow.AddMinutes(-1), includeDocuments: true, [], ct);
+        var second = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow, includeDocuments: true, [], ct);
+
+        first.SecondaryDisk.ShouldNotBeNull().ShouldMatch("^[0-9A-F]{8}$");
+        second.SecondaryDisk.ShouldBe(first.SecondaryDisk);
+        File.ReadAllText(Path.Combine(_options.Backup.SecondaryDirectory!, BackupDisk.MarkerFileName)).ShouldContain(first.SecondaryDisk);
     }
 
     [Fact]
@@ -126,9 +143,10 @@ public sealed class BackupServiceTests : IDisposable
         File.WriteAllText(unplugged, string.Empty);
         var removed = false;
 
-        var (copied, note) = BackupService.CopyToSecondary(backup, Path.Combine(unplugged, "HC360-Backups"), _ => removed = true, NullLogger.Instance);
+        var (copied, note, disk) = BackupService.CopyToSecondary(backup, Path.Combine(unplugged, "HC360-Backups"), _ => removed = true, DateTimeOffset.UtcNow,
+            NullLogger.Instance);
 
-        (copied, removed).ShouldBe((false, false));
+        (copied, removed, disk).ShouldBe((false, false, (string?)null));
         note.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
         BackupCopies.Reason(note).ShouldNotBeNullOrWhiteSpace();
     }

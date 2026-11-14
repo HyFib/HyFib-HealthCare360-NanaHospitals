@@ -71,6 +71,7 @@ public sealed class BackupUpkeepTests : IDisposable
 
         runs[^1].Error.ShouldBe("Copied to the secondary directory later, once it was back: 14 Nov 2026 03:30.");
         BackupCopies.Reason(runs[^1].Error).ShouldBeNull("no longer a failed copy");
+        BackupCopies.Read(runs[^1].SecondaryCopies).ShouldHaveSingleItem().Disk.ShouldBe(BackupDisk.Identify(_disk, Now, NullLogger.Instance), "the disk it went to");
         Directory.EnumerateFiles(_disk, "*.partial").ShouldBeEmpty();
     }
 
@@ -144,7 +145,7 @@ public sealed class BackupUpkeepTests : IDisposable
 
         await Upkeep().CatchUpCopiesAsync(_disk, runs, _ => Task.CompletedTask, Ct);
 
-        Directory.EnumerateFiles(_disk).Select(Path.GetFileName).ShouldBe(runs.Skip(1).Select(r => r.FileName), ignoreOrder: true);
+        Directory.EnumerateFiles(_disk, "*.hc360bak").Select(Path.GetFileName).ShouldBe(runs.Skip(1).Select(r => r.FileName), ignoreOrder: true);
     }
 
     [Fact]

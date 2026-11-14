@@ -51027,6 +51027,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("secondary_copied");
 
+                    b.Property<string>("SecondaryCopies")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("secondary_copies");
+
                     b.Property<string>("Sha256")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")

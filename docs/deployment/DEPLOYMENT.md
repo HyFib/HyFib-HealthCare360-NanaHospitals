@@ -1342,6 +1342,12 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   lifecycle ("The off-site copy" below).
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
+- **Backups switched off, or no second copy.** With `Backup:Enabled` false in `hc360.settings.json`, no backup is made
+  each night and none of the backup warnings below shows, so System health says so as a critical warning
+  (`backup.disabled`), told to IT on-call. With no `Backup:SecondaryDirectory` (installed without
+  `-SecondaryBackupDir`), every backup is on the server's own disk, and System health warns (`backup.no_second_copy`).
+  Run `Install-HC360Server.ps1` again with `-SecondaryBackupDir` to set it. Neither shows on a training server
+  (`SeedDemoData`).
 - **A backup missed while the server was off** (a power cut, an update, a restart over 01:30) is caught up. HC360
   looks every quarter of an hour. Back inside the backup window, the four hours after the scheduled time (01:30 to
   05:30), it takes the backup at once. Back in the day, it leaves it to tonight's backup rather than load the server
@@ -1365,7 +1371,16 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   it was unplugged, or while the other of two swapped disks was in. It copies the newest first, at most 7 a night, and
   the rest the nights after. Each is checked against the SHA-256 it was verified with as it is read, so a backup
   damaged on the server's disk is not spread to the second, and read back once written. Its **File / error** column
-  then says it was copied later, and the failed copy's warning clears. With several servers
+  then says it was copied later, and the failed copy's warning clears.
+
+  **Each disk is known by an id.** On its first copy, HC360 writes `hc360-backup-disk.json` to the folder, with an id
+  of 8 letters and digits, such as `7F3A2C1D`. The Backups list's **Second copy** column names the disk each backup was
+  copied to: write each disk's id on its label. A copy to another disk than the one before is a swap, and is recorded
+  in the audit log (`backup.disk_swapped`, Administration › Audit). Where two or more disks take turns, System health
+  warns (`backup.disk_not_swapped`) once the disk in place has taken every backup for more than 7 days
+  (`Backup:DiskRotationDays`; 0 turns this off), naming it and since when: swap it for the other disk, and keep that
+  one away from the server. A NAS share is given an id too. As the only disk, it is never asked to be swapped. Do not
+  delete or edit the file: a disk without it is given a new id, which counts as a swap. With several servers
   (section 10), give every node the same `Backup:SecondaryDirectory`, since **Back up now** runs on the node that
   answers it.
 - **At go-live, test the copy warning.** Unplug the backup disk (or point a NAS path at a share that is off) and press
