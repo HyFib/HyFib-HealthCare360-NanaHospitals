@@ -36,6 +36,13 @@ public enum UnmatchedResultReason
     /// is never put on a test.
     /// </summary>
     Withdrawn,
+
+    /// <summary>
+    /// The analyser named another patient for the sample than the tube's: another registered patient's UHID or, without a
+    /// UHID to go by, a name that cannot be the tube patient's. A misread or swapped barcode would otherwise put one
+    /// patient's values on another's tube, so nothing of the message goes on the tube.
+    /// </summary>
+    PatientMismatch,
 }
 
 public enum UnmatchedResultStatus
