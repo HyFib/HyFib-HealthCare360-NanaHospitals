@@ -1,0 +1,5103 @@
+{
+  "about": "Built-in roles and permissions of a new HealthCare360 installation, written from the code by RolesInventoryTests (tests/HyFib.HealthCare360.ArchitectureTests); do not edit by hand. ROLES.md beside this file says what each field means.",
+  "version": 1,
+  "totals": {
+    "roles": 32,
+    "permissions": 289,
+    "guardedEndpoints": 1755,
+    "approvalKinds": 84
+  },
+  "security": {
+    "enforceMfa": true,
+    "mfaForAdministration": true,
+    "mfaRequiredRoles": [
+      "SuperAdmin",
+      "HospitalAdmin",
+      "Accountant",
+      "HrManager"
+    ]
+  },
+  "roles": [
+    {
+      "name": "SuperAdmin",
+      "description": "Full access to everything, including security settings",
+      "defaultPermissions": [
+        "*"
+      ],
+      "endpoints": 1755,
+      "mfa": "required-by-role",
+      "canBeTurnedOff": false
+    },
+    {
+      "name": "HospitalAdmin",
+      "description": "Hospital administration, masters, users and reports",
+      "defaultPermissions": [
+        "abdm.export",
+        "admin.audit.read",
+        "admin.devices.manage",
+        "admin.grants.approve",
+        "admin.notifications.manage",
+        "admin.numbering.manage",
+        "admin.print.manage",
+        "admin.settings.manage",
+        "admin.system.read",
+        "admin.users.manage",
+        "admin.users.read",
+        "ai.assistant.use",
+        "ai.dictation.use",
+        "ai.settings.manage",
+        "ambulance.dispatch",
+        "ambulance.fleet",
+        "ambulance.waivers.approve",
+        "analytics.clinical.read",
+        "analytics.dashboards.manage",
+        "analytics.finance.read",
+        "analytics.kpi_targets.manage",
+        "analytics.mis.read",
+        "analytics.schedules.manage",
+        "assets.maintenance",
+        "assets.manage",
+        "assets.read",
+        "beds.housekeeping",
+        "beds.manage",
+        "billing.bills.cancel",
+        "billing.bills.finalize",
+        "billing.charges.manage",
+        "billing.charges.read",
+        "billing.deposits",
+        "billing.discounts.approve",
+        "billing.einvoice",
+        "billing.gateway.reconcile",
+        "billing.gst.returns",
+        "billing.ip.manage",
+        "billing.op.create",
+        "billing.payments.collect",
+        "billing.refunds.approve",
+        "billing.refunds.request",
+        "billing.shifts",
+        "billing.tally.configure",
+        "billing.tally.export",
+        "billing.tariffs.manage",
+        "bloodbank.reactions.approve",
+        "bloodbank.read",
+        "bmw.manage",
+        "bmw.record",
+        "canteen.cancellations.approve",
+        "canteen.credit.manage",
+        "canteen.menu.manage",
+        "canteen.reports.read",
+        "canteen.sales.cancel",
+        "clinical.drug_safety.approve",
+        "clinical.er.board",
+        "clinical.templates.manage",
+        "crm.campaigns.approve",
+        "crm.campaigns.manage",
+        "crm.campaigns.send",
+        "crm.followups.manage",
+        "crm.leads.manage",
+        "crm.patient360.read",
+        "crm.referrals.manage",
+        "cssd.masters.manage",
+        "cssd.process",
+        "cssd.read",
+        "cssd.recalls",
+        "cssd.release",
+        "cssd.requests",
+        "dialysis.machines.manage",
+        "dialysis.read",
+        "dietary.masters.manage",
+        "dietary.meals.manage",
+        "dietary.orders.read",
+        "doctorfees.payouts.manage",
+        "doctorfees.rules.manage",
+        "feedback.complaints.escalations",
+        "feedback.complaints.manage",
+        "feedback.manage",
+        "feedback.read",
+        "fhir.clients.manage",
+        "fhir.read",
+        "files.read",
+        "files.write",
+        "frontoffice.dashboard",
+        "frontoffice.enquiries",
+        "frontoffice.visitors",
+        "healthcheck.manage",
+        "housekeeping.manage",
+        "housekeeping.request",
+        "housekeeping.verify",
+        "housekeeping.work",
+        "hr.attendance.manage",
+        "hr.credentials.manage",
+        "hr.employees.manage",
+        "hr.employees.read",
+        "hr.leave.approve",
+        "hr.payroll.approve",
+        "hr.payroll.process",
+        "hr.roster.manage",
+        "hr.self",
+        "inpatient.admissions.admit",
+        "inpatient.admissions.discharge",
+        "inpatient.admissions.read",
+        "inpatient.admissions.transfer",
+        "inpatient.masters.manage",
+        "insurance.claims.manage",
+        "insurance.claims.writeoff.approve",
+        "insurance.payers.manage",
+        "insurance.policies.manage",
+        "insurance.preauth.manage",
+        "integrations.lab.connections",
+        "integrations.lab.status",
+        "integrations.labels.print",
+        "integrations.printers.setup",
+        "inventory.adjustments.approve",
+        "inventory.cold_chain.manage",
+        "inventory.cold_chain.record",
+        "inventory.counts",
+        "inventory.drug_class.approve",
+        "inventory.indents.issue",
+        "inventory.indents.raise",
+        "inventory.items.manage",
+        "inventory.recall.release",
+        "inventory.stock.read",
+        "inventory.transfers",
+        "lab.masters.manage",
+        "linen.manage",
+        "linen.ward",
+        "masters.manage",
+        "masters.prices.approve",
+        "masters.read",
+        "mortuary.configure",
+        "mortuary.manage",
+        "mrd.catalogue.import",
+        "mrd.mlc.register",
+        "mrd.records",
+        "mrd.vital.register",
+        "nursing.in_charge",
+        "ot.materials.approve",
+        "ot.read",
+        "ot.reports.read",
+        "ot.theatres.manage",
+        "patients.back_entry",
+        "patients.back_entry.approve",
+        "patients.consents",
+        "patients.contact.read",
+        "patients.documents",
+        "patients.downtime",
+        "patients.downtime_pack",
+        "patients.identity.approve",
+        "patients.identity.verify",
+        "patients.merge",
+        "patients.read",
+        "patients.register",
+        "patients.restricted.read",
+        "pharmacy.adr.manage",
+        "pharmacy.dispense",
+        "pharmacy.ip.indent",
+        "pharmacy.ip.issue",
+        "pharmacy.queue.read",
+        "pharmacy.refills",
+        "pharmacy.registers",
+        "pharmacy.returns",
+        "pharmacy.sales",
+        "physio.read",
+        "privacy.breaches.approve",
+        "privacy.breaches.manage",
+        "privacy.consent_managers.manage",
+        "privacy.requests.log",
+        "privacy.requests.manage",
+        "privacy.requests.read",
+        "privacy.retention.manage",
+        "privacy.sdf.approve",
+        "privacy.sdf.manage",
+        "privacy.settings.manage",
+        "purchase.approve",
+        "purchase.grn.approve",
+        "purchase.grn.receive",
+        "purchase.manage",
+        "quality.audits.manage",
+        "quality.capa.manage",
+        "quality.downtime.manage",
+        "quality.hai.devices",
+        "quality.hai.manage",
+        "quality.incidents.approve",
+        "quality.incidents.manage",
+        "quality.incidents.report",
+        "quality.indicators.manage",
+        "quality.risks.manage",
+        "queue.display",
+        "queue.manage",
+        "radiology.form_f.register",
+        "rpm.manage",
+        "scheduling.appointments.book",
+        "scheduling.appointments.manage",
+        "scheduling.appointments.read",
+        "scheduling.schedules.manage",
+        "telehealth.sessions.read",
+        "visits.cancel.approve",
+        "visits.manage",
+        "visits.read"
+      ],
+      "endpoints": 1261,
+      "mfa": "required-by-role",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Doctor",
+      "description": "Consultants and residents: EMR, orders, e-prescriptions",
+      "defaultPermissions": [
+        "abdm.records.request",
+        "ai.assistant.use",
+        "ai.dictation.use",
+        "bloodbank.reactions.report",
+        "bloodbank.read",
+        "bloodbank.requests.create",
+        "bloodbank.transfuse",
+        "cardiology.studies.read",
+        "clinical.alerts.manage",
+        "clinical.allergies.manage",
+        "clinical.ams.read",
+        "clinical.discharge_summary.write",
+        "clinical.emr.read",
+        "clinical.emr.write",
+        "clinical.encounters.sign",
+        "clinical.er.board",
+        "clinical.er.disposition",
+        "clinical.er.mlc",
+        "clinical.er.triage",
+        "clinical.flags.read",
+        "clinical.immunizations.record",
+        "clinical.orders.place",
+        "clinical.prescriptions.refill",
+        "clinical.prescriptions.sign",
+        "clinical.prescriptions.write",
+        "clinical.templates.manage",
+        "clinical.vitals.record",
+        "diagnostics.critical.alerts",
+        "dialysis.infection_status.approve",
+        "dialysis.patients.manage",
+        "dialysis.read",
+        "dialysis.sessions.manage",
+        "dietary.orders.manage",
+        "dietary.orders.read",
+        "files.read",
+        "files.write",
+        "housekeeping.request",
+        "hr.self",
+        "inpatient.admissions.admit",
+        "inpatient.admissions.discharge",
+        "inpatient.admissions.read",
+        "inpatient.admissions.transfer",
+        "integrations.labels.print",
+        "lab.orders.read",
+        "masters.read",
+        "mrd.births.record",
+        "mrd.deaths.certify",
+        "mrd.deaths.confirm",
+        "nursing.chart",
+        "nursing.mar",
+        "nursing.restraint.order",
+        "ot.anaesthesia.record",
+        "ot.bookings.manage",
+        "ot.checklists.record",
+        "ot.materials.record",
+        "ot.read",
+        "ot.surgery.perform",
+        "patients.back_entry",
+        "patients.break_glass",
+        "patients.consents",
+        "patients.contact.read",
+        "patients.documents",
+        "patients.downtime_pack",
+        "patients.read",
+        "patients.sensitive.hiv",
+        "patients.sensitive.manage",
+        "patients.sensitive.mental_health",
+        "patients.sensitive.sexual_violence",
+        "pharmacy.adr.report",
+        "physio.read",
+        "physio.referrals.manage",
+        "quality.hai.devices",
+        "quality.incidents.report",
+        "queue.manage",
+        "radiology.images.view",
+        "radiology.studies.read",
+        "rpm.alerts.manage",
+        "rpm.manage",
+        "rpm.read",
+        "scheduling.appointments.book",
+        "scheduling.appointments.read",
+        "telehealth.consult",
+        "telehealth.sessions.manage",
+        "telehealth.sessions.read",
+        "visits.cancel.approve",
+        "visits.manage",
+        "visits.read"
+      ],
+      "endpoints": 522,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Nurse",
+      "description": "Nursing care, vitals, ward operations",
+      "defaultPermissions": [
+        "ai.assistant.use",
+        "ambulance.dispatch",
+        "assets.read",
+        "beds.housekeeping",
+        "beds.manage",
+        "bloodbank.reactions.report",
+        "bloodbank.read",
+        "bloodbank.requests.create",
+        "bloodbank.transfuse",
+        "bmw.record",
+        "cardiology.studies.read",
+        "clinical.alerts.manage",
+        "clinical.allergies.manage",
+        "clinical.ams.read",
+        "clinical.emr.read",
+        "clinical.er.board",
+        "clinical.er.triage",
+        "clinical.flags.read",
+        "clinical.immunizations.record",
+        "clinical.vitals.record",
+        "cssd.read",
+        "cssd.recalls",
+        "cssd.requests",
+        "diagnostics.critical.alerts",
+        "dialysis.patients.manage",
+        "dialysis.read",
+        "dialysis.sessions.manage",
+        "dietary.meals.manage",
+        "dietary.orders.manage",
+        "dietary.orders.read",
+        "files.read",
+        "files.write",
+        "frontoffice.visitors",
+        "housekeeping.request",
+        "housekeeping.verify",
+        "housekeeping.work",
+        "hr.self",
+        "inpatient.admissions.admit",
+        "inpatient.admissions.discharge",
+        "inpatient.admissions.read",
+        "inpatient.admissions.transfer",
+        "integrations.labels.print",
+        "inventory.cold_chain.record",
+        "inventory.indents.raise",
+        "lab.orders.read",
+        "lab.samples.collect",
+        "linen.ward",
+        "masters.read",
+        "mortuary.manage",
+        "mrd.births.record",
+        "nursing.chart",
+        "nursing.mar",
+        "ot.checklists.record",
+        "ot.materials.record",
+        "ot.read",
+        "patients.back_entry",
+        "patients.break_glass",
+        "patients.consents",
+        "patients.contact.read",
+        "patients.documents",
+        "patients.downtime_pack",
+        "patients.read",
+        "patients.register",
+        "patients.sensitive.hiv",
+        "patients.sensitive.mental_health",
+        "patients.sensitive.sexual_violence",
+        "pharmacy.adr.report",
+        "pharmacy.ip.indent",
+        "pharmacy.ndps.count",
+        "physio.read",
+        "quality.hai.devices",
+        "quality.incidents.report",
+        "queue.manage",
+        "radiology.studies.read",
+        "rpm.alerts.manage",
+        "rpm.manage",
+        "rpm.read",
+        "scheduling.appointments.book",
+        "scheduling.appointments.manage",
+        "scheduling.appointments.read",
+        "telehealth.sessions.manage",
+        "telehealth.sessions.read",
+        "visits.manage",
+        "visits.read"
+      ],
+      "endpoints": 550,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "FrontOffice",
+      "description": "Registration, visits, queue and enquiries",
+      "defaultPermissions": [
+        "ai.assistant.use",
+        "ambulance.dispatch",
+        "beds.manage",
+        "billing.op.create",
+        "billing.payments.collect",
+        "billing.shifts",
+        "clinical.er.board",
+        "crm.leads.manage",
+        "files.read",
+        "files.write",
+        "frontoffice.dashboard",
+        "frontoffice.enquiries",
+        "frontoffice.visitors",
+        "healthcheck.manage",
+        "hr.self",
+        "inpatient.admissions.admit",
+        "inpatient.admissions.read",
+        "inpatient.admissions.transfer",
+        "integrations.labels.print",
+        "lab.orders.create",
+        "masters.read",
+        "patients.back_entry",
+        "patients.consents",
+        "patients.contact.read",
+        "patients.documents",
+        "patients.identity.verify",
+        "patients.read",
+        "patients.register",
+        "privacy.requests.log",
+        "quality.incidents.report",
+        "queue.display",
+        "queue.manage",
+        "scheduling.appointments.book",
+        "scheduling.appointments.manage",
+        "scheduling.appointments.read",
+        "scheduling.schedules.manage",
+        "telehealth.sessions.manage",
+        "telehealth.sessions.read",
+        "visits.manage",
+        "visits.read"
+      ],
+      "endpoints": 313,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Billing",
+      "description": "OP/IP billing and charge management",
+      "defaultPermissions": [
+        "billing.bills.finalize",
+        "billing.charges.manage",
+        "billing.charges.read",
+        "billing.deposits",
+        "billing.einvoice",
+        "billing.ip.manage",
+        "billing.op.create",
+        "billing.payments.collect",
+        "billing.refunds.request",
+        "billing.shifts",
+        "billing.tariffs.manage",
+        "dietary.orders.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "inpatient.admissions.read",
+        "insurance.policies.manage",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.back_entry",
+        "patients.contact.read",
+        "patients.read",
+        "patients.register",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 224,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Cashier",
+      "description": "Payments, receipts and day-end closing",
+      "defaultPermissions": [
+        "billing.bills.finalize",
+        "billing.charges.read",
+        "billing.deposits",
+        "billing.op.create",
+        "billing.payments.collect",
+        "billing.refunds.request",
+        "billing.shifts",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "inpatient.admissions.read",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.back_entry",
+        "patients.contact.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 172,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "InsuranceDesk",
+      "description": "Insurance verification, pre-authorisation and claims",
+      "defaultPermissions": [
+        "billing.charges.read",
+        "billing.ip.manage",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "inpatient.admissions.read",
+        "insurance.claims.manage",
+        "insurance.payers.manage",
+        "insurance.policies.manage",
+        "insurance.preauth.manage",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.contact.read",
+        "patients.documents",
+        "patients.read",
+        "patients.register",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 200,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Pharmacist",
+      "description": "OP/IP pharmacy dispensing and pharmacy stock",
+      "defaultPermissions": [
+        "billing.einvoice",
+        "clinical.ams.read",
+        "clinical.drug_safety.approve",
+        "clinical.flags.read",
+        "clinical.prescriptions.refill",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "inpatient.admissions.read",
+        "integrations.labels.print",
+        "inventory.cold_chain.manage",
+        "inventory.cold_chain.record",
+        "inventory.drug_class.approve",
+        "inventory.indents.raise",
+        "inventory.recall.release",
+        "inventory.stock.read",
+        "inventory.transfers",
+        "masters.read",
+        "patients.read",
+        "pharmacy.adr.manage",
+        "pharmacy.adr.report",
+        "pharmacy.dispense",
+        "pharmacy.ip.indent",
+        "pharmacy.ip.issue",
+        "pharmacy.ndps.count",
+        "pharmacy.queue.read",
+        "pharmacy.refills",
+        "pharmacy.registers",
+        "pharmacy.returns",
+        "pharmacy.sales",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 211,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "LabTechnician",
+      "description": "Sample collection, processing and result entry",
+      "defaultPermissions": [
+        "bmw.record",
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.lab.status",
+        "integrations.labels.print",
+        "lab.orders.create",
+        "lab.orders.read",
+        "lab.qc.manage",
+        "lab.results.enter",
+        "lab.samples.collect",
+        "lab.samples.receive",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 140,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Pathologist",
+      "description": "Laboratory result verification and sign-off",
+      "defaultPermissions": [
+        "clinical.ams.approve",
+        "clinical.ams.read",
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.lab.status",
+        "integrations.labels.print",
+        "lab.masters.manage",
+        "lab.orders.read",
+        "lab.qc.manage",
+        "lab.results.enter",
+        "lab.results.verify",
+        "lab.samples.receive",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 151,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Radiographer",
+      "description": "Imaging acquisition and modality worklist",
+      "defaultPermissions": [
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "radiology.form_f.record",
+        "radiology.images.view",
+        "radiology.studies.read",
+        "radiology.worklist",
+        "visits.read"
+      ],
+      "endpoints": 111,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Radiologist",
+      "description": "Imaging reporting and sign-off",
+      "defaultPermissions": [
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "radiology.form_f.record",
+        "radiology.form_f.register",
+        "radiology.form_f.sign",
+        "radiology.images.view",
+        "radiology.reports.verify",
+        "radiology.reports.write",
+        "radiology.studies.read",
+        "radiology.worklist",
+        "visits.read"
+      ],
+      "endpoints": 127,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "CardiologyTechnician",
+      "description": "ECG/Echo/TMT acquisition",
+      "defaultPermissions": [
+        "cardiology.studies.manage",
+        "cardiology.studies.read",
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 98,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Cardiologist",
+      "description": "Cardiology reporting and sign-off (give cardiologists the Doctor role as well)",
+      "defaultPermissions": [
+        "cardiology.reports.verify",
+        "cardiology.studies.read",
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 95,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "StoreKeeper",
+      "description": "Stores, stock issues and receipts",
+      "defaultPermissions": [
+        "assets.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "inventory.cold_chain.manage",
+        "inventory.cold_chain.record",
+        "inventory.counts",
+        "inventory.indents.issue",
+        "inventory.indents.raise",
+        "inventory.items.manage",
+        "inventory.stock.read",
+        "inventory.transfers",
+        "linen.manage",
+        "masters.read",
+        "purchase.grn.receive",
+        "purchase.manage",
+        "quality.incidents.report"
+      ],
+      "endpoints": 177,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "PurchaseOfficer",
+      "description": "Purchase requisitions, orders and vendors",
+      "defaultPermissions": [
+        "assets.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "inventory.items.manage",
+        "inventory.stock.read",
+        "masters.read",
+        "purchase.grn.approve",
+        "purchase.manage",
+        "quality.incidents.report"
+      ],
+      "endpoints": 146,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "MrdOfficer",
+      "description": "Medical records, coding and record requests",
+      "defaultPermissions": [
+        "abdm.export",
+        "analytics.clinical.read",
+        "clinical.emr.read",
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "inpatient.admissions.read",
+        "integrations.labels.print",
+        "masters.read",
+        "mrd.births.record",
+        "mrd.coding",
+        "mrd.idsp.report",
+        "mrd.mlc.register",
+        "mrd.records",
+        "mrd.vital.register",
+        "mtp.read",
+        "mtp.register",
+        "patients.back_entry",
+        "patients.back_entry.approve",
+        "patients.contact.read",
+        "patients.documents",
+        "patients.downtime",
+        "patients.downtime_pack",
+        "patients.identity.approve",
+        "patients.merge",
+        "patients.read",
+        "patients.sensitive.hiv",
+        "patients.sensitive.mental_health",
+        "patients.sensitive.mtp",
+        "patients.sensitive.sexual_violence",
+        "privacy.requests.log",
+        "privacy.requests.manage",
+        "privacy.requests.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 287,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "OtCoordinator",
+      "description": "Operation theatre scheduling and records",
+      "defaultPermissions": [
+        "bmw.record",
+        "clinical.flags.read",
+        "cssd.read",
+        "cssd.recalls",
+        "cssd.requests",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "ot.bookings.manage",
+        "ot.checklists.record",
+        "ot.materials.approve",
+        "ot.materials.record",
+        "ot.read",
+        "ot.reports.read",
+        "ot.theatres.manage",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 137,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "DialysisTechnician",
+      "description": "Dialysis sessions and machines",
+      "defaultPermissions": [
+        "clinical.flags.read",
+        "dialysis.machines.manage",
+        "dialysis.patients.manage",
+        "dialysis.read",
+        "dialysis.sessions.manage",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 105,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Physiotherapist",
+      "description": "Physiotherapy assessment and sessions",
+      "defaultPermissions": [
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "physio.read",
+        "physio.referrals.manage",
+        "physio.treatment.manage",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 95,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "BloodBankOfficer",
+      "description": "Blood donors, inventory and issue",
+      "defaultPermissions": [
+        "bloodbank.crossmatch.perform",
+        "bloodbank.donors.manage",
+        "bloodbank.inventory.manage",
+        "bloodbank.reactions.investigate",
+        "bloodbank.reactions.report",
+        "bloodbank.read",
+        "bloodbank.requests.create",
+        "bloodbank.units.issue",
+        "clinical.flags.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 115,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Dietitian",
+      "description": "Diet orders and meal planning",
+      "defaultPermissions": [
+        "clinical.flags.read",
+        "dietary.masters.manage",
+        "dietary.meals.manage",
+        "dietary.orders.manage",
+        "dietary.orders.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "inpatient.admissions.read",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 117,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "CanteenManager",
+      "description": "Canteen menu and sales",
+      "defaultPermissions": [
+        "canteen.cancellations.approve",
+        "canteen.credit.manage",
+        "canteen.menu.manage",
+        "canteen.reports.read",
+        "canteen.sales.cancel",
+        "canteen.sales.create",
+        "dietary.meals.manage",
+        "dietary.orders.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "quality.incidents.report"
+      ],
+      "endpoints": 91,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "CssdTechnician",
+      "description": "Sterilisation cycles and instrument sets",
+      "defaultPermissions": [
+        "bmw.record",
+        "cssd.masters.manage",
+        "cssd.process",
+        "cssd.read",
+        "cssd.recalls",
+        "cssd.release",
+        "cssd.requests",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "quality.incidents.report"
+      ],
+      "endpoints": 99,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "BiomedicalEngineer",
+      "description": "Assets, maintenance and calibration",
+      "defaultPermissions": [
+        "assets.maintenance",
+        "assets.manage",
+        "assets.read",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "quality.incidents.report"
+      ],
+      "endpoints": 98,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "HrManager",
+      "description": "Employees, attendance, leave and payroll",
+      "defaultPermissions": [
+        "canteen.credit.manage",
+        "files.read",
+        "files.write",
+        "hr.attendance.manage",
+        "hr.credentials.manage",
+        "hr.employees.manage",
+        "hr.employees.read",
+        "hr.leave.approve",
+        "hr.payroll.approve",
+        "hr.payroll.process",
+        "hr.roster.manage",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "quality.incidents.report"
+      ],
+      "endpoints": 170,
+      "mfa": "required-by-role",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "CrmExecutive",
+      "description": "Leads, follow-ups, campaigns and feedback",
+      "defaultPermissions": [
+        "admin.notifications.manage",
+        "crm.campaigns.manage",
+        "crm.campaigns.send",
+        "crm.followups.manage",
+        "crm.leads.manage",
+        "crm.patient360.read",
+        "crm.referrals.manage",
+        "feedback.complaints.manage",
+        "feedback.manage",
+        "feedback.read",
+        "files.read",
+        "files.write",
+        "frontoffice.enquiries",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "patients.contact.read",
+        "patients.read",
+        "quality.incidents.report",
+        "scheduling.appointments.book",
+        "scheduling.appointments.manage",
+        "scheduling.appointments.read",
+        "visits.read"
+      ],
+      "endpoints": 155,
+      "mfa": "required-to-administer",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "QualityManager",
+      "description": "Incidents, risk register and quality indicators",
+      "defaultPermissions": [
+        "admin.audit.read",
+        "analytics.clinical.read",
+        "bmw.manage",
+        "bmw.record",
+        "clinical.ams.read",
+        "cssd.read",
+        "cssd.recalls",
+        "feedback.complaints.escalations",
+        "feedback.complaints.manage",
+        "feedback.manage",
+        "feedback.read",
+        "files.read",
+        "files.write",
+        "housekeeping.manage",
+        "housekeeping.verify",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "mrd.idsp.report",
+        "patients.read",
+        "pharmacy.adr.manage",
+        "privacy.breaches.manage",
+        "privacy.requests.log",
+        "privacy.requests.manage",
+        "privacy.requests.read",
+        "privacy.sdf.manage",
+        "quality.audits.manage",
+        "quality.capa.manage",
+        "quality.downtime.manage",
+        "quality.hai.devices",
+        "quality.hai.manage",
+        "quality.incidents.approve",
+        "quality.incidents.manage",
+        "quality.incidents.report",
+        "quality.indicators.manage",
+        "quality.risks.manage",
+        "visits.read"
+      ],
+      "endpoints": 286,
+      "mfa": "required-to-administer",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Accountant",
+      "description": "Accounts hand-off, doctor fees and Tally",
+      "defaultPermissions": [
+        "ambulance.waivers.approve",
+        "analytics.finance.read",
+        "analytics.mis.read",
+        "billing.bills.cancel",
+        "billing.charges.read",
+        "billing.discounts.approve",
+        "billing.einvoice",
+        "billing.gateway.reconcile",
+        "billing.gst.returns",
+        "billing.refunds.approve",
+        "billing.shifts",
+        "billing.tally.configure",
+        "billing.tally.export",
+        "canteen.cancellations.approve",
+        "canteen.reports.read",
+        "doctorfees.payouts.manage",
+        "doctorfees.rules.manage",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "insurance.claims.manage",
+        "insurance.claims.writeoff.approve",
+        "integrations.labels.print",
+        "masters.prices.approve",
+        "masters.read",
+        "patients.read",
+        "quality.incidents.report",
+        "visits.read"
+      ],
+      "endpoints": 238,
+      "mfa": "required-by-role",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "MisAnalyst",
+      "description": "MIS reports and BI dashboards",
+      "defaultPermissions": [
+        "analytics.dashboards.manage",
+        "analytics.mis.read",
+        "analytics.schedules.manage",
+        "files.read",
+        "files.write",
+        "hr.self",
+        "integrations.labels.print",
+        "masters.read",
+        "ot.reports.read",
+        "quality.incidents.report"
+      ],
+      "endpoints": 90,
+      "mfa": "optional",
+      "canBeTurnedOff": true
+    },
+    {
+      "name": "Patient",
+      "description": "Patient portal user",
+      "defaultPermissions": [
+        "portal.access"
+      ],
+      "endpoints": 61,
+      "mfa": "optional",
+      "canBeTurnedOff": false
+    }
+  ],
+  "permissions": [
+    {
+      "name": "abdm.export",
+      "area": "Interoperability",
+      "description": "Export discharge summaries, lab reports, radiology and cardiology reports, consultation notes, prescriptions and bills as ABDM health records, and link them to the patient's ABHA (every export and link is audited). Staff only: it does not check the record-sharing consent, so never give it to an integration service account",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 14
+    },
+    {
+      "name": "abdm.records.request",
+      "area": "Interoperability",
+      "description": "Ask a patient, through ABDM, to let the hospital see their records at other providers, in their name as the requesting doctor (the patient decides in their ABHA app; every request is audited)",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "admin.audit.read",
+      "area": "Administration",
+      "description": "View and verify the audit trail",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": true,
+      "endpoints": 3
+    },
+    {
+      "name": "admin.backups.manage",
+      "area": "Administration",
+      "description": "Run backups and see which recovery key opens each",
+      "defaultRoles": [],
+      "administrative": true,
+      "endpoints": 6
+    },
+    {
+      "name": "admin.devices.manage",
+      "area": "Administration",
+      "description": "Enrol and revoke workstations",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 7
+    },
+    {
+      "name": "admin.grants.approve",
+      "area": "Administration",
+      "description": "Approve roles, facilities and permissions another administrator gives",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 0
+    },
+    {
+      "name": "admin.integrations.manage",
+      "area": "Administration",
+      "description": "Configure integrations and credentials",
+      "defaultRoles": [],
+      "administrative": true,
+      "endpoints": 8
+    },
+    {
+      "name": "admin.notifications.manage",
+      "area": "Administration",
+      "description": "Edit SMS/WhatsApp/e-mail templates",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 4
+    },
+    {
+      "name": "admin.numbering.manage",
+      "area": "Administration",
+      "description": "Configure number series (UHID, bill numbers)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 2
+    },
+    {
+      "name": "admin.print.manage",
+      "area": "Administration",
+      "description": "Set up print templates (letterhead, logo, closing notes)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 3
+    },
+    {
+      "name": "admin.roles.manage",
+      "area": "Administration",
+      "description": "Create roles and assign permissions",
+      "defaultRoles": [],
+      "administrative": true,
+      "endpoints": 4
+    },
+    {
+      "name": "admin.settings.manage",
+      "area": "Administration",
+      "description": "Change system settings",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 5
+    },
+    {
+      "name": "admin.system.manage",
+      "area": "Administration",
+      "description": "Change the server's database password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it (with a second person)",
+      "defaultRoles": [],
+      "administrative": true,
+      "endpoints": 15
+    },
+    {
+      "name": "admin.system.read",
+      "area": "Administration",
+      "description": "View server health, WiFi link and backups",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 18
+    },
+    {
+      "name": "admin.users.manage",
+      "area": "Administration",
+      "description": "Create, edit, lock and reset users",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 6
+    },
+    {
+      "name": "admin.users.read",
+      "area": "Administration",
+      "description": "View users and their roles",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": true,
+      "endpoints": 5
+    },
+    {
+      "name": "ai.assistant.use",
+      "area": "AI assistant",
+      "description": "Use voice or typed commands (open patients, appointments, follow-ups, notes)",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "ai.dictation.use",
+      "area": "AI assistant",
+      "description": "Dictate clinical notes and get AI-structured SOAP drafts for review",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "ai.settings.manage",
+      "area": "AI assistant",
+      "description": "View AI provider status and usage",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "ambulance.dispatch",
+      "area": "Ambulance",
+      "description": "Take ambulance calls, send vehicles and record each trip",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "ambulance.fleet",
+      "area": "Ambulance",
+      "description": "Keep the ambulance fleet and its certificates",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "ambulance.waivers.approve",
+      "area": "Ambulance",
+      "description": "Approve the waiver of a completed trip's charge another asked for",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "analytics.clinical.read",
+      "area": "Analytics",
+      "description": "View clinical quality reports, including reports that list individual patients (audited)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "analytics.dashboards.manage",
+      "area": "Analytics",
+      "description": "Build, share and edit BI dashboards",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MisAnalyst"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "analytics.finance.read",
+      "area": "Analytics",
+      "description": "View revenue, collections, dues, discounts, refunds and doctor-fee reports",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "analytics.kpi_targets.manage",
+      "area": "Analytics",
+      "description": "Set each KPI's target and amber and red thresholds for the facility, and who is told when it is missed",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "analytics.mis.read",
+      "area": "Analytics",
+      "description": "View MIS reports: census, occupancy, diagnostics, pharmacy stock, quality and HR",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin",
+        "MisAnalyst"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "analytics.schedules.manage",
+      "area": "Analytics",
+      "description": "Schedule reports to be e-mailed as Excel, CSV or PDF files, and BI extracts for tools such as Power BI",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MisAnalyst"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "assets.maintenance",
+      "area": "Assets",
+      "description": "Preventive maintenance, breakdown tickets and calibration",
+      "defaultRoles": [
+        "BiomedicalEngineer",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 27
+    },
+    {
+      "name": "assets.manage",
+      "area": "Assets",
+      "description": "Register assets and contracts; decide condemnation and disposal",
+      "defaultRoles": [
+        "BiomedicalEngineer",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 25
+    },
+    {
+      "name": "assets.read",
+      "area": "Assets",
+      "description": "View the asset register and report equipment breakdowns",
+      "defaultRoles": [
+        "BiomedicalEngineer",
+        "HospitalAdmin",
+        "Nurse",
+        "PurchaseOfficer",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 14
+    },
+    {
+      "name": "beds.housekeeping",
+      "area": "Beds",
+      "description": "Work the housekeeping queue and release cleaned beds",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "beds.manage",
+      "area": "Beds",
+      "description": "Reserve and block beds, send beds for maintenance or cleaning",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "billing.bills.cancel",
+      "area": "Billing",
+      "description": "Approve and perform the cancellation of finalized bills",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "billing.bills.finalize",
+      "area": "Billing",
+      "description": "Finalize bills (allocates the bill number)",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "billing.charges.manage",
+      "area": "Billing",
+      "description": "Post manual charges and cancel unbilled charges",
+      "defaultRoles": [
+        "Billing",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "billing.charges.read",
+      "area": "Billing",
+      "description": "View charges, bills, receipts, IP accounts and billing reports",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "Cashier",
+        "HospitalAdmin",
+        "InsuranceDesk"
+      ],
+      "administrative": false,
+      "endpoints": 33
+    },
+    {
+      "name": "billing.deposits",
+      "area": "Billing",
+      "description": "Collect in-patient advances (deposits)",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "billing.discounts.approve",
+      "area": "Billing",
+      "description": "Approve discounts above a user's limit, a stay billed on another plan than its payer's, a visit's payer changed to another kind or a lower price, and discharges with dues; set discount limits",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "billing.einvoice",
+      "area": "Billing",
+      "description": "Keep the GST e-invoice register: the e-invoice JSON of B2B invoices, their IRNs (asked of the portal or recorded), IRN cancellations and e-way bills",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "billing.gateway.reconcile",
+      "area": "Billing",
+      "description": "Reconcile online, card and UPI payments with the gateway's and the acquirer's settlements: record missed receipts, send failed refunds again, resolve exceptions",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 28
+    },
+    {
+      "name": "billing.gst.returns",
+      "area": "Billing",
+      "description": "Read the GST returns of the facility's GSTIN: GSTR-1 with its GSTN offline-tool JSON, and GSTR-3B",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "billing.ip.manage",
+      "area": "Billing",
+      "description": "Manage IP accounts: packages, interim and final bills, settlement",
+      "defaultRoles": [
+        "Billing",
+        "HospitalAdmin",
+        "InsuranceDesk"
+      ],
+      "administrative": false,
+      "endpoints": 40
+    },
+    {
+      "name": "billing.op.create",
+      "area": "Billing",
+      "description": "Create and edit draft OP bills (services, discounts within the user's limit)",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 32
+    },
+    {
+      "name": "billing.payments.collect",
+      "area": "Billing",
+      "description": "Collect payments, POS and payment-link payments, pay out approved refunds",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 23
+    },
+    {
+      "name": "billing.refunds.approve",
+      "area": "Billing",
+      "description": "Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included), credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "billing.refunds.request",
+      "area": "Billing",
+      "description": "Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out)",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "billing.shifts",
+      "area": "Billing",
+      "description": "Open and close cashier shifts; day-end collection report",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "Cashier",
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "billing.tally.configure",
+      "area": "Billing",
+      "description": "Set the Tally ledger names the day book posts to",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "billing.tally.export",
+      "area": "Billing",
+      "description": "Post and export the Tally day book, mark it imported and reconcile it with Tally",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "billing.tariffs.manage",
+      "area": "Billing",
+      "description": "Maintain tariff plans, prices and packages",
+      "defaultRoles": [
+        "Billing",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 20
+    },
+    {
+      "name": "bloodbank.crossmatch.perform",
+      "area": "Blood Bank",
+      "description": "Group patient samples and record cross-matches",
+      "defaultRoles": [
+        "BloodBankOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "bloodbank.donors.manage",
+      "area": "Blood Bank",
+      "description": "Register and screen blood donors and record donations (donor data is confidential)",
+      "defaultRoles": [
+        "BloodBankOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "bloodbank.inventory.manage",
+      "area": "Blood Bank",
+      "description": "Prepare components, record grouping/TTI results and discard units",
+      "defaultRoles": [
+        "BloodBankOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "bloodbank.reactions.approve",
+      "area": "Blood Bank",
+      "description": "Blood bank medical officer: approve a transfusion reaction's severity or imputability lowered (which can take it out of haemovigilance reporting)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "bloodbank.reactions.investigate",
+      "area": "Blood Bank",
+      "description": "Investigate and close transfusion reaction reports",
+      "defaultRoles": [
+        "BloodBankOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "bloodbank.reactions.report",
+      "area": "Blood Bank",
+      "description": "Report transfusion reactions",
+      "defaultRoles": [
+        "BloodBankOfficer",
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "bloodbank.read",
+      "area": "Blood Bank",
+      "description": "View blood stock, blood requests and transfusion records",
+      "defaultRoles": [
+        "BloodBankOfficer",
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "bloodbank.requests.create",
+      "area": "Blood Bank",
+      "description": "Request blood for a patient",
+      "defaultRoles": [
+        "BloodBankOfficer",
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "bloodbank.transfuse",
+      "area": "Blood Bank",
+      "description": "Check a unit of blood at the bedside, start and end its transfusion, and witness another's check",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "bloodbank.units.issue",
+      "area": "Blood Bank",
+      "description": "Issue blood units and accept returns",
+      "defaultRoles": [
+        "BloodBankOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "bmw.manage",
+      "area": "Bio-medical waste",
+      "description": "Hand waste over to the treatment facility, the register and the annual report (Form IV)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 13
+    },
+    {
+      "name": "bmw.record",
+      "area": "Bio-medical waste",
+      "description": "Weigh and bar-code bags of bio-medical waste where it is generated",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin",
+        "LabTechnician",
+        "Nurse",
+        "OtCoordinator",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "canteen.cancellations.approve",
+      "area": "Canteen",
+      "description": "Approve a canteen bill's cancellation another asked for, never one's own sale (the money goes back)",
+      "defaultRoles": [
+        "Accountant",
+        "CanteenManager",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "canteen.credit.manage",
+      "area": "Canteen",
+      "description": "Staff credit balances, statements, payroll export and settlement",
+      "defaultRoles": [
+        "CanteenManager",
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "canteen.menu.manage",
+      "area": "Canteen",
+      "description": "Maintain the canteen menu, prices and stock",
+      "defaultRoles": [
+        "CanteenManager",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "canteen.reports.read",
+      "area": "Canteen",
+      "description": "View canteen sales reports",
+      "defaultRoles": [
+        "Accountant",
+        "CanteenManager",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "canteen.sales.cancel",
+      "area": "Canteen",
+      "description": "Ask for today's canteen bills to be cancelled",
+      "defaultRoles": [
+        "CanteenManager",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "canteen.sales.create",
+      "area": "Canteen",
+      "description": "Bill canteen sales (POS) and take staff credit repayments",
+      "defaultRoles": [
+        "CanteenManager"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "cardiology.reports.verify",
+      "area": "Cardiology",
+      "description": "Report and sign off cardiology studies",
+      "defaultRoles": [
+        "Cardiologist"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "cardiology.studies.manage",
+      "area": "Cardiology",
+      "description": "Perform ECG/Echo/TMT/Holter/ABPM studies and upload device output",
+      "defaultRoles": [
+        "CardiologyTechnician"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "cardiology.studies.read",
+      "area": "Cardiology",
+      "description": "View cardiology studies and released reports",
+      "defaultRoles": [
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "clinical.alerts.manage",
+      "area": "EMR / Physician Desktop",
+      "description": "Set and clear patient alerts (DNR, fall risk, isolation, pregnancy…)",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "clinical.allergies.manage",
+      "area": "EMR / Physician Desktop",
+      "description": "Record and update allergies",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "clinical.ams.approve",
+      "area": "Antimicrobial Stewardship",
+      "description": "Approve or reject restricted antibiotics and review antibiotic courses",
+      "defaultRoles": [
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "clinical.ams.read",
+      "area": "Antimicrobial Stewardship",
+      "description": "The antimicrobial stewardship queue and report",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse",
+        "Pathologist",
+        "Pharmacist",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "clinical.discharge_summary.write",
+      "area": "E-Prescribing",
+      "description": "Write, sign and amend discharge summaries",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "clinical.drug_safety.approve",
+      "area": "E-Prescribing",
+      "description": "Approve a drug interaction switched off or made less severe, or a maximum dose raised or switched off, that someone else asked for (pharmacy and therapeutics committee)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "clinical.emr.read",
+      "area": "EMR / Physician Desktop",
+      "description": "View the clinical record: encounters, vitals, allergies, problems, orders, prescriptions and timeline",
+      "defaultRoles": [
+        "Doctor",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 51
+    },
+    {
+      "name": "clinical.emr.write",
+      "area": "EMR / Physician Desktop",
+      "description": "Write encounters (SOAP), diagnoses, clinical notes, procedures, referrals and health-checkup summaries",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 20
+    },
+    {
+      "name": "clinical.encounters.sign",
+      "area": "EMR / Physician Desktop",
+      "description": "Sign and amend encounters and clinical notes",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "clinical.er.board",
+      "area": "Emergency",
+      "description": "The ER board: patients in the emergency department, most urgent first, with their waits",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "clinical.er.disposition",
+      "area": "Emergency",
+      "description": "See emergency patients and decide where they go: discharge, admit, refer, LAMA",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "clinical.er.mlc",
+      "area": "Emergency",
+      "description": "Enter medico-legal cases in the MLC register and record the police intimation, and a sexual-assault victim's examination and its report",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 13
+    },
+    {
+      "name": "clinical.er.triage",
+      "area": "Emergency",
+      "description": "Triage emergency patients on the Emergency Severity Index",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "clinical.flags.read",
+      "area": "EMR / Physician Desktop",
+      "description": "See the patient's allergies and alerts (DNR, isolation, infection control…) on the patient banner",
+      "defaultRoles": [
+        "BloodBankOfficer",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "LabTechnician",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "clinical.immunizations.record",
+      "area": "EMR / Physician Desktop",
+      "description": "Record immunisations",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "clinical.orders.place",
+      "area": "EMR / Physician Desktop",
+      "description": "Place and cancel lab, imaging, cardiology and procedure orders",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "clinical.prescriptions.refill",
+      "area": "E-Prescribing",
+      "description": "Issue an authorised refill of a signed prescription",
+      "defaultRoles": [
+        "Doctor",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "clinical.prescriptions.sign",
+      "area": "E-Prescribing",
+      "description": "Sign and cancel e-prescriptions (sends them to the pharmacy)",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "clinical.prescriptions.write",
+      "area": "E-Prescribing",
+      "description": "Draft e-prescriptions",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "clinical.templates.manage",
+      "area": "EMR / Physician Desktop",
+      "description": "Maintain clinical templates, order sets and the drug-safety tables",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 13
+    },
+    {
+      "name": "clinical.vitals.record",
+      "area": "EMR / Physician Desktop",
+      "description": "Record vital signs",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "crm.campaigns.approve",
+      "area": "CRM",
+      "description": "Approve a bulk campaign someone else asked to schedule (never one's own)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "crm.campaigns.manage",
+      "area": "CRM",
+      "description": "Draft SMS/WhatsApp campaigns, preview consented audiences and view delivery",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "crm.campaigns.send",
+      "area": "CRM",
+      "description": "Ask to schedule campaigns, hold and cancel their sending",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "crm.followups.manage",
+      "area": "CRM",
+      "description": "Follow-up call worklist: create, assign, record calls and send reminders",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "crm.leads.manage",
+      "area": "CRM",
+      "description": "Capture and work leads; convert them into patients and appointments",
+      "defaultRoles": [
+        "CrmExecutive",
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "crm.patient360.read",
+      "area": "CRM",
+      "description": "Patient 360° view: visits, spend, feedback, complaints and communication consent",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "crm.referrals.manage",
+      "area": "CRM",
+      "description": "Referring doctors and referral analytics",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "cssd.masters.manage",
+      "area": "CSSD",
+      "description": "Maintain instrument sets and count sheets",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "cssd.process",
+      "area": "CSSD",
+      "description": "Receive soiled trays, run wash cycles and sterilizer loads, and issue sterile packs",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "cssd.read",
+      "area": "CSSD",
+      "description": "View instrument sets, loads, packs, issues and CSSD reports",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin",
+        "Nurse",
+        "OtCoordinator",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "cssd.recalls",
+      "area": "CSSD",
+      "description": "Receive CSSD recall and count-discrepancy alerts and acknowledge recalled packs",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin",
+        "Nurse",
+        "OtCoordinator",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "cssd.release",
+      "area": "CSSD",
+      "description": "Release loads and record biological indicator results (triggers recalls)",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "cssd.requests",
+      "area": "CSSD",
+      "description": "Request sterile sets for a department and record packs used on patients",
+      "defaultRoles": [
+        "CssdTechnician",
+        "HospitalAdmin",
+        "Nurse",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "diagnostics.critical.alerts",
+      "area": "Diagnostics",
+      "description": "Receive critical lab value and critical finding alerts",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "dialysis.infection_status.approve",
+      "area": "Dialysis",
+      "description": "Approve a dialysis patient taken off a positive infection status (HBV, HCV, HIV) another asked for, on the lab result",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "dialysis.machines.manage",
+      "area": "Dialysis",
+      "description": "Add and edit dialysis machines and stations",
+      "defaultRoles": [
+        "DialysisTechnician",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "dialysis.patients.manage",
+      "area": "Dialysis",
+      "description": "Enrol dialysis patients and edit their dialysis profile",
+      "defaultRoles": [
+        "DialysisTechnician",
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "dialysis.read",
+      "area": "Dialysis",
+      "description": "View the dialysis board, patients, machines and sessions",
+      "defaultRoles": [
+        "DialysisTechnician",
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "dialysis.sessions.manage",
+      "area": "Dialysis",
+      "description": "Schedule and record dialysis sessions, dialyzers and machine disinfection",
+      "defaultRoles": [
+        "DialysisTechnician",
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "dietary.masters.manage",
+      "area": "Dietary",
+      "description": "Maintain the diet master",
+      "defaultRoles": [
+        "Dietitian",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "dietary.meals.manage",
+      "area": "Dietary",
+      "description": "Generate meal plans, view kitchen production lists and record meal deliveries",
+      "defaultRoles": [
+        "CanteenManager",
+        "Dietitian",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "dietary.orders.manage",
+      "area": "Dietary",
+      "description": "Write, stop and review diet orders",
+      "defaultRoles": [
+        "Dietitian",
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "dietary.orders.read",
+      "area": "Dietary",
+      "description": "View diet orders and ward meal plans",
+      "defaultRoles": [
+        "Billing",
+        "CanteenManager",
+        "Dietitian",
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "doctorfees.payouts.manage",
+      "area": "Doctor fees",
+      "description": "View accruals and statements; prepare, approve and pay doctor payouts",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "doctorfees.rules.manage",
+      "area": "Doctor fees",
+      "description": "Maintain doctor revenue-sharing rules",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "feedback.complaints.escalations",
+      "area": "Feedback",
+      "description": "Receive the alert when a complaint passes its resolution deadline unresolved",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "feedback.complaints.manage",
+      "area": "Feedback",
+      "description": "Handle patient complaints; receives new-complaint alerts",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "feedback.manage",
+      "area": "Feedback",
+      "description": "Maintain feedback forms and QR codes, record feedback and send feedback links",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "feedback.read",
+      "area": "Feedback",
+      "description": "View feedback responses and analytics",
+      "defaultRoles": [
+        "CrmExecutive",
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "fhir.clients.manage",
+      "area": "Interoperability",
+      "description": "Register partner applications that read the FHIR API with SMART on FHIR tokens, and suspend them (a registration waits for a second administrator's approval; every token still reads only what patients' consents allow)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "fhir.read",
+      "area": "Interoperability",
+      "description": "Read and search patient records through the HL7 FHIR R4 API (patients with record-sharing consent only; every access is audited)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "files.read",
+      "area": "Documents",
+      "description": "Download stored documents",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BiomedicalEngineer",
+        "BloodBankOfficer",
+        "CanteenManager",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "CssdTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "HrManager",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MisAnalyst",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "PurchaseOfficer",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "files.write",
+      "area": "Documents",
+      "description": "Upload documents",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BiomedicalEngineer",
+        "BloodBankOfficer",
+        "CanteenManager",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "CssdTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "HrManager",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MisAnalyst",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "PurchaseOfficer",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "frontoffice.dashboard",
+      "area": "Front Office",
+      "description": "View the front-office dashboard",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "frontoffice.enquiries",
+      "area": "Front Office",
+      "description": "Record and resolve enquiries",
+      "defaultRoles": [
+        "CrmExecutive",
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "frontoffice.visitors",
+      "area": "Front Office",
+      "description": "Issue and close visitor passes",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "healthcheck.manage",
+      "area": "Health Checkups",
+      "description": "Maintain health packages, book and run health checkups (including corporate batches)",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 21
+    },
+    {
+      "name": "housekeeping.manage",
+      "area": "Housekeeping",
+      "description": "Set up the areas cleaned on a schedule, their frequency and checklists",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "housekeeping.request",
+      "area": "Housekeeping",
+      "description": "Ask housekeeping for a spill, terminal or routine cleaning",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "housekeeping.verify",
+      "area": "Housekeeping",
+      "description": "Verify cleaning someone else did, and see the housekeeping report",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "housekeeping.work",
+      "area": "Housekeeping",
+      "description": "Do the scheduled and asked-for cleaning against the checklists",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "hr.attendance.manage",
+      "area": "HR",
+      "description": "Biometric terminals, attendance, holidays and regularisation approvals",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 22
+    },
+    {
+      "name": "hr.credentials.manage",
+      "area": "HR",
+      "description": "Maintain staff licences and certifications; receives expiry alerts",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "hr.employees.manage",
+      "area": "HR",
+      "description": "Add and edit employees, bank details, designations, leave policies; separate employees",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "hr.employees.read",
+      "area": "HR",
+      "description": "View the employee master and credentials",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "hr.leave.approve",
+      "area": "HR",
+      "description": "Approve leave for any employee; credit and adjust leave balances",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "hr.payroll.approve",
+      "area": "HR",
+      "description": "Approve payroll, export the bank transfer file and edit professional-tax slabs",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 37
+    },
+    {
+      "name": "hr.payroll.process",
+      "area": "HR",
+      "description": "Prepare payroll: salary structures, inputs and processing",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 30
+    },
+    {
+      "name": "hr.roster.manage",
+      "area": "HR",
+      "description": "Shifts and duty rosters",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "HrManager"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "hr.self",
+      "area": "HR",
+      "description": "Employee self-service: own profile, attendance, leave and payslips",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BiomedicalEngineer",
+        "BloodBankOfficer",
+        "CanteenManager",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "CssdTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "HrManager",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MisAnalyst",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "PurchaseOfficer",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 24
+    },
+    {
+      "name": "inpatient.admissions.admit",
+      "area": "In-patients",
+      "description": "Admit patients, edit and cancel admissions",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "inpatient.admissions.discharge",
+      "area": "In-patients",
+      "description": "Initiate, revoke and complete discharges",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "inpatient.admissions.read",
+      "area": "In-patients",
+      "description": "View admissions, the bed board, discharges and census statistics",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "InsuranceDesk",
+        "MrdOfficer",
+        "Nurse",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 22
+    },
+    {
+      "name": "inpatient.admissions.transfer",
+      "area": "In-patients",
+      "description": "Transfer patients between beds and wards",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "inpatient.masters.manage",
+      "area": "In-patients",
+      "description": "Set up wards, rooms and beds",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "insurance.claims.manage",
+      "area": "Insurance",
+      "description": "Submit claims, record queries and settlements, view receivable ageing",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin",
+        "InsuranceDesk"
+      ],
+      "administrative": false,
+      "endpoints": 22
+    },
+    {
+      "name": "insurance.claims.writeoff.approve",
+      "area": "Insurance",
+      "description": "Approve an insurance write-off someone else asked for: the insurer's deductions, or a rejected claim's unpaid balance",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "insurance.payers.manage",
+      "area": "Insurance",
+      "description": "Maintain insurers, TPAs, corporates, schemes and non-payable items",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "InsuranceDesk"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "insurance.policies.manage",
+      "area": "Insurance",
+      "description": "Record and verify patient insurance policies",
+      "defaultRoles": [
+        "Billing",
+        "HospitalAdmin",
+        "InsuranceDesk"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "insurance.preauth.manage",
+      "area": "Insurance",
+      "description": "Manage cashless pre-authorisations and enhancements",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "InsuranceDesk"
+      ],
+      "administrative": false,
+      "endpoints": 21
+    },
+    {
+      "name": "integrations.lab.connections",
+      "area": "Integrations",
+      "description": "Set up analyser connections: network ports, allowed addresses, serial ports and lab agents",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "integrations.lab.status",
+      "area": "Integrations",
+      "description": "See whether lab analysers and their agents are connected",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "LabTechnician",
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "integrations.labels.print",
+      "area": "Integrations",
+      "description": "Print barcode/QR labels (UHID cards, wristbands, sample, pharmacy and asset tags)",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BiomedicalEngineer",
+        "BloodBankOfficer",
+        "CanteenManager",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "CssdTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "HrManager",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MisAnalyst",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "PurchaseOfficer",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "integrations.printers.setup",
+      "area": "Integrations",
+      "description": "Choose the printers a workstation uses for labels, wristbands, receipts and documents, and its serial barcode scanner",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "inventory.adjustments.approve",
+      "area": "Inventory",
+      "description": "Approve stock adjustments and write-offs (not your own)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 13
+    },
+    {
+      "name": "inventory.cold_chain.manage",
+      "area": "Inventory",
+      "description": "Set up refrigerators and freezers, their allowed temperatures and their data loggers",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "inventory.cold_chain.record",
+      "area": "Inventory",
+      "description": "Record refrigerator and freezer temperatures and the action taken on an excursion",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse",
+        "Pharmacist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "inventory.counts",
+      "area": "Inventory",
+      "description": "Run physical stock counts and raise stock adjustments",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 19
+    },
+    {
+      "name": "inventory.drug_class.approve",
+      "area": "Inventory",
+      "description": "Approve a drug made less strictly handled: no longer controlled or high-alert, or a lower schedule (not your own)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "inventory.indents.issue",
+      "area": "Inventory",
+      "description": "Approve, reserve and issue indents from a store",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 17
+    },
+    {
+      "name": "inventory.indents.raise",
+      "area": "Inventory",
+      "description": "Raise indents (stock requests) to a store",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse",
+        "Pharmacist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "inventory.items.manage",
+      "area": "Inventory",
+      "description": "Maintain the item master, categories and stores",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "PurchaseOfficer",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 18
+    },
+    {
+      "name": "inventory.recall.release",
+      "area": "Inventory",
+      "description": "Approve a recalled batch released for use (not your own request)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "inventory.stock.read",
+      "area": "Inventory",
+      "description": "View stock, batches, the stock ledger and inventory reports",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist",
+        "PurchaseOfficer",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 30
+    },
+    {
+      "name": "inventory.transfers",
+      "area": "Inventory",
+      "description": "Dispatch and receive stock transfers between stores",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 14
+    },
+    {
+      "name": "lab.masters.manage",
+      "area": "Laboratory",
+      "description": "Manage the test master, reference ranges, analysers and reference labs",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "lab.orders.create",
+      "area": "Laboratory",
+      "description": "Register walk-in and outside-referral lab orders; cancel tests",
+      "defaultRoles": [
+        "FrontOffice",
+        "LabTechnician"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "lab.orders.read",
+      "area": "Laboratory",
+      "description": "View lab orders, samples, results and reports",
+      "defaultRoles": [
+        "Doctor",
+        "LabTechnician",
+        "Nurse",
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "lab.qc.manage",
+      "area": "Laboratory",
+      "description": "Manage QC lots, record and review QC runs",
+      "defaultRoles": [
+        "LabTechnician",
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 19
+    },
+    {
+      "name": "lab.results.enter",
+      "area": "Laboratory",
+      "description": "Enter results and record external reports",
+      "defaultRoles": [
+        "LabTechnician",
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "lab.results.verify",
+      "area": "Laboratory",
+      "description": "Verify, release and amend lab reports; document critical-value calls; override QC lockouts",
+      "defaultRoles": [
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 17
+    },
+    {
+      "name": "lab.samples.collect",
+      "area": "Laboratory",
+      "description": "Collect samples and print barcode labels",
+      "defaultRoles": [
+        "LabTechnician",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "lab.samples.receive",
+      "area": "Laboratory",
+      "description": "Receive samples in the lab, reject them and send tests to reference labs",
+      "defaultRoles": [
+        "LabTechnician",
+        "Pathologist"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "linen.manage",
+      "area": "Linen",
+      "description": "Issue, receive, wash and condemn linen, and set ward par levels",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "linen.ward",
+      "area": "Linen",
+      "description": "Send a ward's soiled linen to the laundry and report what it has lost",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "masters.manage",
+      "area": "Masters",
+      "description": "Edit facilities, departments, doctors and services",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 17
+    },
+    {
+      "name": "masters.prices.approve",
+      "area": "Masters",
+      "description": "Approve the changes another person makes to a service's price, GST and use, to tariff plans, packages and payers' terms, and to the PM-JAY HBP master",
+      "defaultRoles": [
+        "Accountant",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "masters.read",
+      "area": "Masters",
+      "description": "View facilities, departments, doctors and services",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BiomedicalEngineer",
+        "BloodBankOfficer",
+        "CanteenManager",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "CssdTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "HrManager",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MisAnalyst",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "PurchaseOfficer",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "mortuary.configure",
+      "area": "Mortuary",
+      "description": "Set the mortuary's cold-storage slots",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "mortuary.manage",
+      "area": "Mortuary",
+      "description": "Receive bodies into the mortuary, release them and keep the register",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "mrd.births.record",
+      "area": "Medical Records",
+      "description": "Record births in the hospital (Form 1, and Form 3 for a still birth)",
+      "defaultRoles": [
+        "Doctor",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "mrd.catalogue.import",
+      "area": "Medical Records",
+      "description": "Import the WHO ICD-10 and CMS ICD-10-PCS catalogue files (changes every user's code lists)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "mrd.coding",
+      "area": "Medical Records",
+      "description": "Clinical coding (ICD-10 / ICD-10-PCS) and verification",
+      "defaultRoles": [
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 15
+    },
+    {
+      "name": "mrd.deaths.certify",
+      "area": "Medical Records",
+      "description": "Certify the cause of death (MCCD, Form 4)",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "mrd.deaths.confirm",
+      "area": "Medical Records",
+      "description": "Confirm, as a second doctor, a death certificate another doctor certified, before it is reported",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "mrd.idsp.report",
+      "area": "Disease Surveillance",
+      "description": "Notifiable diseases (IDSP): the cases, the weekly P and L forms to IHIP, and the outbreak alerts",
+      "defaultRoles": [
+        "MrdOfficer",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "mrd.mlc.register",
+      "area": "Medical Records",
+      "description": "The medico-legal case register",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "mrd.records",
+      "area": "Medical Records",
+      "description": "Chart tracking, deficiencies, record requests, archival and morbidity reports",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 20
+    },
+    {
+      "name": "mrd.vital.register",
+      "area": "Medical Records",
+      "description": "The births and deaths registers, and reporting them to the Registrar within 21 days",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "mtp.certify",
+      "area": "Termination of pregnancy",
+      "description": "Record the woman's consent (Form C), the doctors' opinion (Form I) and the termination (Form III)",
+      "defaultRoles": [],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "mtp.read",
+      "area": "Termination of pregnancy",
+      "description": "View termination of pregnancy cases (confidential under the MTP Act)",
+      "defaultRoles": [
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "mtp.register",
+      "area": "Termination of pregnancy",
+      "description": "View and export the MTP admission register (Form III) and the monthly report (Form II)",
+      "defaultRoles": [
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "nursing.chart",
+      "area": "Nursing",
+      "description": "Nursing notes, handovers, intake/output, risk assessments and consultant visits",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 38
+    },
+    {
+      "name": "nursing.in_charge",
+      "area": "Nursing",
+      "description": "Ward nurse in charge: see the verbal and telephone medication orders and nurses' stops not countersigned in time, and be told of each",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "nursing.mar",
+      "area": "Nursing",
+      "description": "Medication chart and medication administration record (MAR)",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "nursing.restraint.order",
+      "area": "Nursing",
+      "description": "Order, renew and end a patient's restraint (a doctor's order, for at most four hours at a time)",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "ot.anaesthesia.record",
+      "area": "Operation Theatre",
+      "description": "Write the anaesthesia record",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "ot.bookings.manage",
+      "area": "Operation Theatre",
+      "description": "Book, schedule, postpone and cancel surgeries",
+      "defaultRoles": [
+        "Doctor",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "ot.checklists.record",
+      "area": "Operation Theatre",
+      "description": "Record the pre-operative and WHO surgical safety checklists",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "ot.materials.approve",
+      "area": "Operation Theatre",
+      "description": "OT in-charge: approve a correction of an implant or consumable line after the operation has started (its charge and stock follow)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "ot.materials.record",
+      "area": "Operation Theatre",
+      "description": "Record implants and consumables used in surgery (billed to the patient)",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "ot.read",
+      "area": "Operation Theatre",
+      "description": "View theatres, the OT calendar and surgery records",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "ot.reports.read",
+      "area": "Operation Theatre",
+      "description": "View OT utilisation reports",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MisAnalyst",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "ot.surgery.perform",
+      "area": "Operation Theatre",
+      "description": "Start and complete surgery, write operation notes and post-op orders",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "ot.theatres.manage",
+      "area": "Operation Theatre",
+      "description": "Add and edit operation theatres",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "OtCoordinator"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "patients.back_entry",
+      "area": "Downtime",
+      "description": "Ask for a late back-entry of paper records older than their window",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "patients.back_entry.approve",
+      "area": "Downtime",
+      "description": "Approve someone else's late back-entry of paper records",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "patients.break_glass",
+      "area": "Patients",
+      "description": "Emergency access to restricted records (audited)",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "patients.consents",
+      "area": "Patients",
+      "description": "Capture and revoke patient consents",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "patients.contact.read",
+      "area": "Patients",
+      "description": "See patients' phone numbers, email and address in full (others see them masked); needed to edit a patient",
+      "defaultRoles": [
+        "Billing",
+        "Cashier",
+        "CrmExecutive",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "InsuranceDesk",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "patients.documents",
+      "area": "Patients",
+      "description": "Attach and view patient documents",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "InsuranceDesk",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "patients.downtime",
+      "area": "Patients",
+      "description": "Issue downtime UHID, visit, bill and receipt blocks for paper work, follow their entry and return them",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "patients.downtime_pack",
+      "area": "Downtime",
+      "description": "Print the pre-downtime pack and read the nightly one (census, medication sheets, pending orders, OT list)",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "patients.identity.approve",
+      "area": "Patients",
+      "description": "Approve a change someone else asked for to a patient's name, sex, date of birth, ABHA, Aadhaar or deceased status",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "patients.identity.verify",
+      "area": "Patients",
+      "description": "Check a patient's identity with their Aadhaar fingerprint (UIDAI) or their ABHA (a code from ABDM)",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "patients.merge",
+      "area": "Patients",
+      "description": "Merge duplicate patient records",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "patients.read",
+      "area": "Patients",
+      "description": "Search and view patient demographics",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BloodBankOfficer",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "patients.register",
+      "area": "Patients",
+      "description": "Register patients and edit demographics",
+      "defaultRoles": [
+        "Billing",
+        "FrontOffice",
+        "HospitalAdmin",
+        "InsuranceDesk",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 14
+    },
+    {
+      "name": "patients.restricted.read",
+      "area": "Patients",
+      "description": "Open restricted (VIP/confidential) records without break-the-glass",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "patients.sensitive.hiv",
+      "area": "Patients",
+      "description": "Open the clinical record of patients in the HIV category",
+      "defaultRoles": [
+        "Doctor",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "patients.sensitive.manage",
+      "area": "Patients",
+      "description": "Put a patient's record in a sensitive category (HIV, mental health, MTP, sexual violence) or take it out",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "patients.sensitive.mental_health",
+      "area": "Patients",
+      "description": "Open the clinical record of patients in the mental health category",
+      "defaultRoles": [
+        "Doctor",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "patients.sensitive.mtp",
+      "area": "Patients",
+      "description": "Open the clinical record of patients in the termination-of-pregnancy (MTP) category",
+      "defaultRoles": [
+        "MrdOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "patients.sensitive.sexual_violence",
+      "area": "Patients",
+      "description": "Open the clinical record of patients in the sexual-violence category",
+      "defaultRoles": [
+        "Doctor",
+        "MrdOfficer",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "pharmacy.adr.manage",
+      "area": "Pharmacy",
+      "description": "Pharmacovigilance: assess suspected adverse drug reactions and send them to the ADR monitoring centre",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "pharmacy.adr.report",
+      "area": "Pharmacy",
+      "description": "Report suspected adverse drug reactions (PvPI)",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "pharmacy.dispense",
+      "area": "Pharmacy",
+      "description": "Dispense prescriptions (FEFO batches, substitution, counselling)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "pharmacy.ip.indent",
+      "area": "Pharmacy",
+      "description": "Raise ward indents for admitted patients",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Nurse",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "pharmacy.ip.issue",
+      "area": "Pharmacy",
+      "description": "Issue medicines to admitted patients, accept ward returns, and approve another pharmacist's ward return not restocked",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 13
+    },
+    {
+      "name": "pharmacy.ndps.count",
+      "area": "Pharmacy",
+      "description": "Count the narcotic drugs at a change of shift, and witness another's count",
+      "defaultRoles": [
+        "Nurse",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "pharmacy.queue.read",
+      "area": "Pharmacy",
+      "description": "View the e-prescription queue and pharmacy stock",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "pharmacy.refills",
+      "area": "Pharmacy",
+      "description": "Authorise, approve and reject prescription refills",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "pharmacy.registers",
+      "area": "Pharmacy",
+      "description": "View and export the Schedule H/H1/X and narcotic registers",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "pharmacy.returns",
+      "area": "Pharmacy",
+      "description": "Sales returns and same-day invoice cancellation (a cancellation, and a return paying money out or writing stock off, waits for someone who approves refunds)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "pharmacy.sales",
+      "area": "Pharmacy",
+      "description": "Counter sales, GST invoices and collection of dues",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Pharmacist"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "physio.read",
+      "area": "Physiotherapy",
+      "description": "View physiotherapy referrals, plans and sessions",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse",
+        "Physiotherapist"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "physio.referrals.manage",
+      "area": "Physiotherapy",
+      "description": "Refer patients to physiotherapy and cancel referrals",
+      "defaultRoles": [
+        "Doctor",
+        "Physiotherapist"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "physio.treatment.manage",
+      "area": "Physiotherapy",
+      "description": "Assess patients, plan treatment and record sessions",
+      "defaultRoles": [
+        "Physiotherapist"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "portal.access",
+      "area": "Patient Portal",
+      "description": "Use the patient portal (own and family records only)",
+      "defaultRoles": [
+        "Patient"
+      ],
+      "administrative": false,
+      "endpoints": 61
+    },
+    {
+      "name": "privacy.breaches.approve",
+      "area": "Privacy",
+      "description": "Approve closing a personal data breach and taking patients off its notification list, asked for by someone else (the Data Protection Officer)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "privacy.breaches.manage",
+      "area": "Privacy",
+      "description": "Record personal data breaches, report them to the Board and notify the people affected",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 14
+    },
+    {
+      "name": "privacy.consent_managers.manage",
+      "area": "Privacy",
+      "description": "Register the consent managers the hospital accepts patients' consent from",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "privacy.requests.log",
+      "area": "Privacy",
+      "description": "Record privacy requests and nominees for patients at the desk",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin",
+        "MrdOfficer",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "privacy.requests.manage",
+      "area": "Privacy",
+      "description": "Verify requesters, answer privacy requests, and correct or erase data for them",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "privacy.requests.read",
+      "area": "Privacy",
+      "description": "View patients' privacy requests (access, correction, erasure, grievance)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "MrdOfficer",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "privacy.retention.manage",
+      "area": "Privacy",
+      "description": "Set how long each kind of data is kept, and run the clean-up",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "privacy.sdf.approve",
+      "area": "Privacy",
+      "description": "Approve data protection impact assessments written by someone else (the Data Protection Officer)",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "privacy.sdf.manage",
+      "area": "Privacy",
+      "description": "Keep the Significant Data Fiduciary records: the Data Protection Officer, impact assessments and data audits",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "privacy.settings.manage",
+      "area": "Privacy",
+      "description": "Set the grievance officer's contact details and the response period",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "purchase.approve",
+      "area": "Purchase",
+      "description": "Approve purchase requisitions and purchase orders",
+      "defaultRoles": [
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 16
+    },
+    {
+      "name": "purchase.grn.approve",
+      "area": "Purchase",
+      "description": "Check goods receipts against the supplier's invoice and post them into stock (not your own)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "PurchaseOfficer"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "purchase.grn.receive",
+      "area": "Purchase",
+      "description": "Receive goods against vendor invoices (GRN)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 26
+    },
+    {
+      "name": "purchase.manage",
+      "area": "Purchase",
+      "description": "Vendors, purchase requisitions and purchase orders",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "PurchaseOfficer",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 37
+    },
+    {
+      "name": "quality.audits.manage",
+      "area": "Quality",
+      "description": "Keep the NABH audit checklists, schedule internal audits and close them",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "quality.capa.manage",
+      "area": "Quality",
+      "description": "Plan corrective/preventive actions and verify their effectiveness",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "quality.downtime.manage",
+      "area": "Quality",
+      "description": "Record downtime of HC360 and drills of the downtime procedure, and sign off the back-entry of paper records",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "quality.hai.devices",
+      "area": "Quality",
+      "description": "Record central lines, urinary catheters and ventilation put in and taken out (device days for infection surveillance)",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "quality.hai.manage",
+      "area": "Quality",
+      "description": "Review possible hospital-acquired infections against the NHSN definitions and see the HAI rates; receive positive-culture alerts",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "quality.incidents.approve",
+      "area": "Quality",
+      "description": "Approve closing a sentinel or never event, and re-grading one out of sentinel, asked for by someone else (never one's own report)",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "quality.incidents.manage",
+      "area": "Quality",
+      "description": "Review, grade and investigate incidents; receive sentinel-event alerts; report device adverse events to MvPI",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 20
+    },
+    {
+      "name": "quality.incidents.report",
+      "area": "Quality",
+      "description": "Report incidents and near misses (optionally anonymously); work on own corrective actions",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BiomedicalEngineer",
+        "BloodBankOfficer",
+        "CanteenManager",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "CssdTechnician",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "HrManager",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MisAnalyst",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "PurchaseOfficer",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist",
+        "StoreKeeper"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "quality.indicators.manage",
+      "area": "Quality",
+      "description": "Define quality indicators and record their values",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 12
+    },
+    {
+      "name": "quality.risks.manage",
+      "area": "Quality",
+      "description": "Maintain the risk register",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "QualityManager"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    },
+    {
+      "name": "queue.display",
+      "area": "Visits",
+      "description": "Show the queue display board (kiosk/TV)",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 1
+    },
+    {
+      "name": "queue.manage",
+      "area": "Visits",
+      "description": "Call, start and complete queue tokens",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 6
+    },
+    {
+      "name": "radiology.form_f.record",
+      "area": "Radiology",
+      "description": "Record the woman's PCPNDT Form F details and declaration before an ultrasound in pregnancy",
+      "defaultRoles": [
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "radiology.form_f.register",
+      "area": "Radiology",
+      "description": "View and export the monthly PCPNDT Form F register for the Appropriate Authority",
+      "defaultRoles": [
+        "HospitalAdmin",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "radiology.form_f.sign",
+      "area": "Radiology",
+      "description": "Complete PCPNDT Form F with the result and the performing doctor's declaration",
+      "defaultRoles": [
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "radiology.images.view",
+      "area": "Radiology",
+      "description": "View radiology images from PACS, in HC360 and in the PACS viewer",
+      "defaultRoles": [
+        "Doctor",
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "radiology.reports.verify",
+      "area": "Radiology",
+      "description": "Sign off, release and add addenda to radiology reports; manage templates",
+      "defaultRoles": [
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 17
+    },
+    {
+      "name": "radiology.reports.write",
+      "area": "Radiology",
+      "description": "Write radiology reports",
+      "defaultRoles": [
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 13
+    },
+    {
+      "name": "radiology.studies.read",
+      "area": "Radiology",
+      "description": "View imaging studies and released radiology reports",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse",
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 10
+    },
+    {
+      "name": "radiology.worklist",
+      "area": "Radiology",
+      "description": "Schedule and perform imaging studies; modality worklist and PACS reconciliation",
+      "defaultRoles": [
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 14
+    },
+    {
+      "name": "rpm.alerts.manage",
+      "area": "Remote Monitoring",
+      "description": "Receive, acknowledge and resolve remote monitoring alerts",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 2
+    },
+    {
+      "name": "rpm.manage",
+      "area": "Remote Monitoring",
+      "description": "Enrol patients, set thresholds, register devices and record readings",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 11
+    },
+    {
+      "name": "rpm.read",
+      "area": "Remote Monitoring",
+      "description": "View monitored patients, readings, trends and alerts",
+      "defaultRoles": [
+        "Doctor",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "scheduling.appointments.book",
+      "area": "Scheduling",
+      "description": "Book appointments and add patients to a doctor's waitlist",
+      "defaultRoles": [
+        "CrmExecutive",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "scheduling.appointments.manage",
+      "area": "Scheduling",
+      "description": "Confirm, reschedule, cancel, check in and mark no-shows; overbook full slots",
+      "defaultRoles": [
+        "CrmExecutive",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 8
+    },
+    {
+      "name": "scheduling.appointments.read",
+      "area": "Scheduling",
+      "description": "View appointment calendars, slots and waitlists",
+      "defaultRoles": [
+        "CrmExecutive",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "scheduling.schedules.manage",
+      "area": "Scheduling",
+      "description": "Set up doctor OPD sessions, leave, blocks and extra sessions",
+      "defaultRoles": [
+        "FrontOffice",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 9
+    },
+    {
+      "name": "telehealth.consult",
+      "area": "Telehealth",
+      "description": "Run video consultations (admit patients, start, end, record consent)",
+      "defaultRoles": [
+        "Doctor"
+      ],
+      "administrative": false,
+      "endpoints": 5
+    },
+    {
+      "name": "telehealth.sessions.manage",
+      "area": "Telehealth",
+      "description": "Create and cancel video consultations and resend join links",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "telehealth.sessions.read",
+      "area": "Telehealth",
+      "description": "View video consultations, their participants and chat",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 4
+    },
+    {
+      "name": "visits.cancel.approve",
+      "area": "Visits",
+      "description": "Approve cancelling a visit the doctor has started, asked for by someone else (a doctor approves only the visits they treat)",
+      "defaultRoles": [
+        "Doctor",
+        "HospitalAdmin"
+      ],
+      "administrative": false,
+      "endpoints": 0
+    },
+    {
+      "name": "visits.manage",
+      "area": "Visits",
+      "description": "Create, cancel and complete visits",
+      "defaultRoles": [
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "Nurse"
+      ],
+      "administrative": false,
+      "endpoints": 3
+    },
+    {
+      "name": "visits.read",
+      "area": "Visits",
+      "description": "View visits and queues",
+      "defaultRoles": [
+        "Accountant",
+        "Billing",
+        "BloodBankOfficer",
+        "Cardiologist",
+        "CardiologyTechnician",
+        "Cashier",
+        "CrmExecutive",
+        "DialysisTechnician",
+        "Dietitian",
+        "Doctor",
+        "FrontOffice",
+        "HospitalAdmin",
+        "InsuranceDesk",
+        "LabTechnician",
+        "MrdOfficer",
+        "Nurse",
+        "OtCoordinator",
+        "Pathologist",
+        "Pharmacist",
+        "Physiotherapist",
+        "QualityManager",
+        "Radiographer",
+        "Radiologist"
+      ],
+      "administrative": false,
+      "endpoints": 7
+    }
+  ],
+  "approvals": [
+    {
+      "kind": "ambulance.charge_waiver",
+      "title": "Ambulance charge waiver",
+      "approvePermission": "ambulance.waivers.approve"
+    },
+    {
+      "kind": "audit.purge",
+      "title": "Audit trail purge",
+      "approvePermission": "admin.system.manage"
+    },
+    {
+      "kind": "audit.retention",
+      "title": "Audit trail retention",
+      "approvePermission": "admin.system.manage"
+    },
+    {
+      "kind": "billing.charge_cancel",
+      "title": "Charge cancelled",
+      "approvePermission": "billing.discounts.approve"
+    },
+    {
+      "kind": "billing.credit_note",
+      "title": "Credit note",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.debit_note",
+      "title": "Debit note",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.discount_limit",
+      "title": "Discount limit raised",
+      "approvePermission": "billing.discounts.approve"
+    },
+    {
+      "kind": "billing.hbp_master",
+      "title": "PM-JAY HBP master",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "billing.ip_plan",
+      "title": "Stay billed on another plan",
+      "approvePermission": "billing.discounts.approve"
+    },
+    {
+      "kind": "billing.package",
+      "title": "Package",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "billing.pos_import_withdrawal",
+      "title": "Card and UPI report withdrawn",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.receipt_reversal",
+      "title": "Money not received",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.refund_reversal",
+      "title": "Refund not paid out",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.shift_shortage",
+      "title": "Cash shortage at a shift's close",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.tariff_plan",
+      "title": "Tariff plan",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "billing.tariff_prices",
+      "title": "Tariff plan prices",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "billing.visit_payer",
+      "title": "Visit's payer changed",
+      "approvePermission": "billing.discounts.approve"
+    },
+    {
+      "kind": "billing.write_off",
+      "title": "Write-off",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "bloodbank.reaction_lower",
+      "title": "Transfusion reaction lowered",
+      "approvePermission": "bloodbank.reactions.approve"
+    },
+    {
+      "kind": "canteen.sale_cancel",
+      "title": "Canteen bill cancellation",
+      "approvePermission": "canteen.cancellations.approve"
+    },
+    {
+      "kind": "clinical.allergy_change",
+      "title": "Allergy removed or lowered",
+      "approvePermission": "clinical.prescriptions.sign"
+    },
+    {
+      "kind": "clinical.dnr_lift",
+      "title": "Do Not Resuscitate taken off",
+      "approvePermission": "clinical.encounters.sign"
+    },
+    {
+      "kind": "clinical.dose_limit",
+      "title": "Maximum dose loosened",
+      "approvePermission": "clinical.drug_safety.approve"
+    },
+    {
+      "kind": "clinical.drug_interaction",
+      "title": "Drug interaction loosened",
+      "approvePermission": "clinical.drug_safety.approve"
+    },
+    {
+      "kind": "clinical.encounter_amend",
+      "title": "Another doctor's signed encounter amended",
+      "approvePermission": "clinical.encounters.sign"
+    },
+    {
+      "kind": "devices.enrollment",
+      "title": "Administration desktop enrolment",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "diagnostics.lab_amendment",
+      "title": "Lab report correction",
+      "approvePermission": "lab.results.verify"
+    },
+    {
+      "kind": "dialysis.infection_status",
+      "title": "Dialysis infection status change",
+      "approvePermission": "dialysis.infection_status.approve"
+    },
+    {
+      "kind": "doctorfees.rule",
+      "title": "Doctor sharing rule",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "engagement.campaign_schedule",
+      "title": "Bulk campaign scheduled",
+      "approvePermission": "crm.campaigns.approve"
+    },
+    {
+      "kind": "hr.bank_details",
+      "title": "Salary bank account or payment mode",
+      "approvePermission": "hr.payroll.approve"
+    },
+    {
+      "kind": "hr.leave_adjust",
+      "title": "Leave balance credited",
+      "approvePermission": "hr.leave.approve"
+    },
+    {
+      "kind": "hr.leave_encash",
+      "title": "Leave encashed",
+      "approvePermission": "hr.payroll.approve"
+    },
+    {
+      "kind": "hr.payroll_import",
+      "title": "Imported payroll inputs",
+      "approvePermission": "hr.payroll.approve"
+    },
+    {
+      "kind": "hr.payroll_input",
+      "title": "Payroll earning or override",
+      "approvePermission": "hr.payroll.approve"
+    },
+    {
+      "kind": "hr.payroll_input_remove",
+      "title": "Payroll deduction removed",
+      "approvePermission": "hr.payroll.approve"
+    },
+    {
+      "kind": "hr.salary_structure",
+      "title": "Salary structure revision",
+      "approvePermission": "hr.payroll.approve"
+    },
+    {
+      "kind": "identity.contact_change",
+      "title": "Contact details of an account",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "identity.mfa_reset",
+      "title": "Two-step verification reset",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "identity.password_reset",
+      "title": "Temporary password given in person",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "identity.practitioner_link",
+      "title": "Account linked to a practitioner",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "identity.role_activation",
+      "title": "A role turned back on",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "identity.role_grant",
+      "title": "Permissions added to a role",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "identity.user_grant",
+      "title": "Access given to a user",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "inpatient.absconded",
+      "title": "Stay closed as absconded",
+      "approvePermission": "nursing.in_charge"
+    },
+    {
+      "kind": "inpatient.expired_pending_postmortem",
+      "title": "Death closed pending post-mortem",
+      "approvePermission": "mrd.deaths.confirm"
+    },
+    {
+      "kind": "inpatient.mlc_clear",
+      "title": "Medico-legal flag cleared",
+      "approvePermission": "mrd.mlc.register"
+    },
+    {
+      "kind": "insurance.claim_writeoff",
+      "title": "Insurance write-off",
+      "approvePermission": "insurance.claims.writeoff.approve"
+    },
+    {
+      "kind": "insurance.non_payable",
+      "title": "Non-payable item",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "insurance.payer_terms",
+      "title": "Payer terms",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "insurance.preauth_amount",
+      "title": "Pre-authorised amount",
+      "approvePermission": "insurance.preauth.manage"
+    },
+    {
+      "kind": "interop.smart_client",
+      "title": "SMART on FHIR client",
+      "approvePermission": "fhir.clients.manage"
+    },
+    {
+      "kind": "inventory.drug_class",
+      "title": "Drug classification",
+      "approvePermission": "inventory.drug_class.approve"
+    },
+    {
+      "kind": "inventory.item_price",
+      "title": "Item ceiling price or GST rate",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "inventory.recall_release",
+      "title": "Recalled batch released",
+      "approvePermission": "inventory.recall.release"
+    },
+    {
+      "kind": "inventory.transfer_shortfall",
+      "title": "Transfer received short",
+      "approvePermission": "inventory.adjustments.approve"
+    },
+    {
+      "kind": "lab.device",
+      "title": "Analyser device",
+      "approvePermission": "integrations.lab.connections"
+    },
+    {
+      "kind": "lab.qc_override",
+      "title": "Override of failed lab QC",
+      "approvePermission": "lab.results.verify"
+    },
+    {
+      "kind": "lab.safety_limits",
+      "title": "Lab safety limit loosened",
+      "approvePermission": "lab.results.verify"
+    },
+    {
+      "kind": "masters.practitioner_fee",
+      "title": "Doctor's consultation fee",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "masters.practitioner_identity",
+      "title": "Practitioner's registration and signature",
+      "approvePermission": "admin.grants.approve"
+    },
+    {
+      "kind": "masters.service_price",
+      "title": "Price of a service",
+      "approvePermission": "masters.prices.approve"
+    },
+    {
+      "kind": "mrd.death_certificate",
+      "title": "Death certificate",
+      "approvePermission": "mrd.deaths.confirm"
+    },
+    {
+      "kind": "mrd.death_certificate_void",
+      "title": "Confirmed death certificate voided",
+      "approvePermission": "mrd.deaths.confirm"
+    },
+    {
+      "kind": "ot.material_correction",
+      "title": "Implant or consumable corrected",
+      "approvePermission": "ot.materials.approve"
+    },
+    {
+      "kind": "patients.deceased",
+      "title": "Patient deceased status",
+      "approvePermission": "patients.identity.approve"
+    },
+    {
+      "kind": "patients.identity",
+      "title": "Patient identity change",
+      "approvePermission": "patients.identity.approve"
+    },
+    {
+      "kind": "patients.late_back_entry",
+      "title": "Late back-entry of paper records",
+      "approvePermission": "patients.back_entry.approve"
+    },
+    {
+      "kind": "patients.merge",
+      "title": "Patient merge",
+      "approvePermission": "patients.merge"
+    },
+    {
+      "kind": "patients.restriction_lift",
+      "title": "VIP restriction lifted",
+      "approvePermission": "patients.restricted.read"
+    },
+    {
+      "kind": "patients.sensitive_remove",
+      "title": "Sensitive category removed",
+      "approvePermission": "patients.sensitive.manage"
+    },
+    {
+      "kind": "patients.visit_cancel",
+      "title": "Visit cancelled after the doctor started it",
+      "approvePermission": "visits.cancel.approve"
+    },
+    {
+      "kind": "pharmacy.sale_cancel",
+      "title": "Pharmacy invoice cancellation",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "pharmacy.sale_return",
+      "title": "Pharmacy return",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "pharmacy.ward_return",
+      "title": "Ward return not restocked",
+      "approvePermission": "pharmacy.ip.issue"
+    },
+    {
+      "kind": "privacy.breach_affected_remove",
+      "title": "Patients taken off a breach's notification list",
+      "approvePermission": "privacy.breaches.approve"
+    },
+    {
+      "kind": "privacy.breach_close",
+      "title": "Personal data breach closed",
+      "approvePermission": "privacy.breaches.approve"
+    },
+    {
+      "kind": "privacy.dpia",
+      "title": "Data protection impact assessment",
+      "approvePermission": "privacy.sdf.approve"
+    },
+    {
+      "kind": "purchase.debit_note",
+      "title": "Purchase return (debit note)",
+      "approvePermission": "purchase.grn.approve"
+    },
+    {
+      "kind": "purchase.grn",
+      "title": "Goods receipt into stock",
+      "approvePermission": "purchase.grn.approve"
+    },
+    {
+      "kind": "purchase.payable_adjustment",
+      "title": "Supplier payable adjustment",
+      "approvePermission": "purchase.approve"
+    },
+    {
+      "kind": "quality.sentinel_close",
+      "title": "Sentinel event closed",
+      "approvePermission": "quality.incidents.approve"
+    },
+    {
+      "kind": "quality.sentinel_downgrade",
+      "title": "Sentinel event re-graded out of sentinel",
+      "approvePermission": "quality.incidents.approve"
+    },
+    {
+      "kind": "settings.change",
+      "title": "Change to a setting",
+      "approvePermission": "admin.settings.manage"
+    }
+  ]
+}

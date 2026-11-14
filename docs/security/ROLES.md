@@ -4,7 +4,8 @@ Who signs in to HealthCare360, the built-in roles and what each one is for, what
 and how an administrator turns a person, a role or a part of HC360 off and on again.
 
 The tables under [Built-in roles and their defaults](#built-in-roles-and-their-defaults) are written from the code by
-`RolesInventoryTests` (ArchitectureTests), which fails when they no longer say what the code does. What a hospital has
+`RolesInventoryTests` (ArchitectureTests), which fails when they no longer say what the code does. The same test writes
+the same data to [roles.json](roles.json) ([The same data as JSON](#the-same-data-as-json)). What a hospital has
 changed since a new installation (roles of its own, permissions given or taken back, roles turned off) is on its own
 **Administration › Roles and permissions** screen, and every change is in the audit trail.
 
@@ -766,3 +767,25 @@ Only the Super Administrator has them on a new installation, until an administra
 | `mtp.certify` | Termination of pregnancy | Record the woman's consent (Form C), the doctors' opinion (Form I) and the termination (Form III) | 9 |
 
 <!-- roles-inventory:end -->
+
+## The same data as JSON
+
+[roles.json](roles.json), beside this page, holds the same inventory as data, for tools and for the shareable roles page.
+`RolesInventoryTests` writes it from the same reading of the code as the tables above, and fails when it no longer
+matches the code, so never edit it by hand. It lists no routes. It has no date or commit in it, so it changes only when
+what a role may do changes: a pull request that changes default access shows that change as a short diff of this file.
+
+| Field | What it holds |
+|---|---|
+| `version` | 1. It goes up when a field is removed or changes meaning |
+| `totals` | How many `roles`, `permissions` and `approvalKinds` there are, and `guardedEndpoints`: the API endpoints that ask for a permission |
+| `security` | The defaults of the `HealthCare360:Security` settings that decide two-step verification: `enforceMfa`, `mfaForAdministration` and `mfaRequiredRoles` |
+| `roles` | Each built-in role, in HC360's order: `name`, `description`, `defaultPermissions` (`*` is every permission), `endpoints` (the API endpoints those permissions open), `mfa` (`required-by-role`, `required-to-administer`, `optional` or `not-enforced`) and `canBeTurnedOff` |
+| `permissions` | Each permission, by name: `area`, `description`, `defaultRoles`, `administrative` (an `admin.` permission: only those who hold it may give it out, and its holders must use two-step verification) and `endpoints` (the API endpoints whose rule names it) |
+| `approvals` | Each kind of change a second person approves, by `kind`: its `title`, and `approvePermission`, the permission its approver must hold. The test fails when a kind is registered twice with different titles or approvers, or names a permission the code does not declare |
+
+The shareable roles page is built from this file by `dotnet run tools/build-roles-page.cs`, run from the repository
+root. It writes `artifacts/roles.html`, one file with the data inside it, which names the commit that last changed
+roles.json; `-- <file> --fragment` writes the page content alone, for a publisher that adds its own document around it.
+The template is `tools/roles-page.html` and reads version 1 of this file. The build refuses a roles.json with
+uncommitted changes, and a version the template does not read.
