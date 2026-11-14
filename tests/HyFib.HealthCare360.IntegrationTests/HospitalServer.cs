@@ -1382,12 +1382,39 @@ public sealed class HospitalServer : IAsyncLifetime
     /// time, on the portal's address (<see cref="PortalAddress"/>). The test server sends no SMS: the code is read from the
     /// delivery waiting in the outbox. The requests come from the test's own address: one-time codes allow only 5 requests
     /// per address in 15 minutes.
+    /// <para>
+    /// The portal shows a record on the number only once the number is verified on it (ASVS V6.6.1): unless
+    /// <paramref name="numberVerified"/> is false, the patients registered with the number are verified first, as the
+    /// front desk does with a code (<see cref="VerifyPatientPhonesAsync"/>).
+    /// </para>
     /// </summary>
-    public async Task<ApiClient> SignInToPortalAsync(string phone) => (await SignInToPortalWithCookieAsync(phone)).Client;
+    public async Task<ApiClient> SignInToPortalAsync(string phone, bool numberVerified = true) =>
+        (await SignInToPortalWithCookieAsync(phone, numberVerified)).Client;
+
+    /// <summary>
+    /// Takes the mobile number of every patient registered with <paramref name="phone"/> as verified now, as the front desk
+    /// does when the patient reads out the code sent to it (<see cref="Modules.Patients.Services.PatientPhoneVerificationService"/>):
+    /// the portal shows their records to the number, and messages to it carry their documents.
+    /// </summary>
+    public async Task VerifyPatientPhonesAsync(string phone)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var number = Phone.Normalize(phone) ?? phone;
+        await using var scope = Services.CreateAsyncScope();
+        var now = DateTimeOffset.UtcNow;
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Modules.Patients.Domain.Patient>()
+            .Where(p => p.Phone == number)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.PhoneVerifiedAt, now).SetProperty(p => p.PhoneVerifiedNumber, number), ct);
+    }
 
     /// <summary><see cref="SignInToPortalAsync"/>, with the portal's refresh cookie the sign-in set (<c>name=value</c>).</summary>
-    public async Task<(ApiClient Client, string RefreshCookie)> SignInToPortalWithCookieAsync(string phone)
+    public async Task<(ApiClient Client, string RefreshCookie)> SignInToPortalWithCookieAsync(string phone, bool numberVerified = true)
     {
+        if (numberVerified)
+        {
+            await VerifyPatientPhonesAsync(phone);
+        }
+
         var ct = TestContext.Current.CancellationToken;
         var http = CreateHttpClient(ownAddress: true, portal: true);
         OtpChallengeResponse challenge;

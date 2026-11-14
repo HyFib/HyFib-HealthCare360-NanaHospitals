@@ -38,7 +38,8 @@ public sealed class TemplateSwitchTests
         DefaultNotificationTemplates.SeededNotInUse.ShouldAllBe(t => t.Channel == NotificationChannel.WhatsApp);
         DefaultNotificationTemplates.SeededNotInUse.ShouldAllBe(t => DefaultNotificationTemplates.All.Any(d => d.Key == t.Key && d.Channel == t.Channel));
         DefaultNotificationTemplates.SeededNotInUse.Select(t => t.Key).ShouldBe(
-            ["visit.token", "bill.receipt", "admission.admitted", "discharge.completed", "discharge.summary", "feedback.request", "followup.reminder"], ignoreOrder: true);
+            ["visit.token", "bill.receipt", "admission.admitted", "discharge.completed", "discharge.summary", "feedback.request", "followup.reminder",
+                "patients.verify_code"], ignoreOrder: true);
     }
 
     [Fact]

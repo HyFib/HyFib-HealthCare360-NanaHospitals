@@ -156,6 +156,8 @@ public sealed class PatientsModule : IModule
         services.AddWitnessPurpose(FrontOfficeEndpoints.RecordSharingWitness);
         services.AddScoped<PortalLinkService>();
         services.AddScoped<PatientPhoneChangeService>();
+        services.AddScoped<PatientPhoneVerificationService>();
+        services.AddScoped<PortalRecordConfirmationService>();
         services.AddScoped<IPortalAccountResolver, PortalAccountResolver>();
         services.AddScoped<IPatientLanguageSource, PatientLanguageSource>();
         services.AddScoped<IdentityCheckService>();
@@ -178,6 +180,8 @@ public sealed class PatientsModule : IModule
         PortalFamilyEndpoints.Map(endpoints);
         PortalLinkEndpoints.Map(endpoints);
         PatientPhoneChangeEndpoints.Map(endpoints);
+        PatientPhoneVerificationEndpoints.Map(endpoints);
+        PortalRecordConfirmationEndpoints.Map(endpoints);
         IdentityCheckEndpoints.Map(endpoints);
         DowntimeUhidEndpoints.Map(endpoints);
         DowntimeNumberEndpoints.Map(endpoints);

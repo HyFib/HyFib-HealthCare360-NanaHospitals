@@ -52,6 +52,20 @@ public sealed class Patient : AuditableEntity
     /// <summary>Primary mobile in E.164 (+919876543210).</summary>
     public string? Phone { get; set; }
 
+    /// <summary>
+    /// When someone last showed that <see cref="Phone"/> reaches this patient (ASVS V6.6.1): the desk entered a code sent to
+    /// it as the patient read it out, the number was changed with a code to the new number, or the portal account of the
+    /// number gave the patient's date of birth or UHID. Null until then. See <see cref="IsPhoneVerified"/>.
+    /// </summary>
+    public DateTimeOffset? PhoneVerifiedAt { get; set; }
+
+    /// <summary>
+    /// The number (E.164) that was verified at <see cref="PhoneVerifiedAt"/>. The verification holds only while the record
+    /// still has this number, so any change of the number, by whatever route, leaves the new one unverified until it is
+    /// verified in turn.
+    /// </summary>
+    public string? PhoneVerifiedNumber { get; set; }
+
     public string? AlternatePhone { get; set; }
     public string? Email { get; set; }
     public Address Address { get; set; } = new();
@@ -112,6 +126,25 @@ public sealed class Patient : AuditableEntity
     }
 
     public string? AgeDisplay(DateOnly today) => DateOfBirth is { } dob ? Age.Format(dob, today) : null;
+
+    /// <summary>
+    /// The record's mobile number is known to reach the patient: it was verified, and it is still the number verified. Only
+    /// then does the patient portal show the record to whoever signs in with the number, and do messages to it carry a
+    /// report, a prescription, a bill or a discharge summary (VerifiedNumbers).
+    /// </summary>
+    public bool IsPhoneVerified => Phone is not null && PhoneVerifiedAt is not null && PhoneVerifiedNumber == Phone;
+
+    /// <summary>Records that <see cref="Phone"/>, as it is now, was shown to reach the patient at <paramref name="now"/>. Nothing to verify without a number.</summary>
+    public void MarkPhoneVerified(DateTimeOffset now)
+    {
+        if (Phone is null)
+        {
+            return;
+        }
+
+        PhoneVerifiedAt = now;
+        PhoneVerifiedNumber = Phone;
+    }
 
     /// <summary>Call once the UHID is allocated; notifies other modules in the same transaction.</summary>
     public void MarkRegistered() => Raise(new PatientRegistered(Id, Uhid, RegisteredFacilityId));

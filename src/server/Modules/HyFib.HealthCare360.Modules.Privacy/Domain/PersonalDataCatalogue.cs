@@ -49,7 +49,7 @@ public static class PersonalDataCatalogue
             [
                 new("patients.patients", "Duplicate registrations merged into yours", Counted: false, Column: "merged_into_patient_id"),
                 new("patients.patient_identity_checks", "Identity checks with your Aadhaar fingerprint"),
-                new("patients.patient_phone_changes", "Changes of your mobile number, each confirmed with a code sent to the new number"),
+                new("patients.patient_phone_changes", "Changes and checks of your mobile number, each confirmed with a code sent to the number"),
                 new("patients.downtime_uhids", "Your registration on paper while the system was down"),
                 // The visit, bill or receipt is listed under its own heading: this says it was written on paper first.
                 new("patients.downtime_numbers", "Your visits, bills and receipts written on paper while the system was down", Counted: false),
