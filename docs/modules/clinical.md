@@ -1118,7 +1118,9 @@ Real-time (ids only): `clinical.order.placed` / `clinical.order.changed` (facili
 ## Notification templates
 
 Uses the platform template `prescription.shared` (WhatsApp) for OP prescriptions after signing (where the hospital
-requires the doctor's DSC, once signed with it; once per prescription). No new templates.
+requires the doctor's DSC, once signed with it; once per prescription). The message names the prescription's PDF only
+when the patient's mobile number is verified (`VerifiedNumbers`, ASVS V6.6.1); to any other number it goes without it.
+No new templates.
 
 Documents that messages can carry (`INotificationDocumentSource`, made when the message is sent):
 

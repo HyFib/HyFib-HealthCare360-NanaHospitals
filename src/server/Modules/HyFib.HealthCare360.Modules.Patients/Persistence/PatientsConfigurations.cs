@@ -33,6 +33,8 @@ internal sealed class PatientConfiguration : IEntityTypeConfiguration<Patient>
         b.Property(x => x.LastName).HasMaxLength(100);
         b.Property(x => x.FullName).HasMaxLength(302);
         b.Property(x => x.Phone).HasMaxLength(20);
+        b.Property(x => x.PhoneVerifiedNumber).HasMaxLength(20);
+        b.Ignore(x => x.IsPhoneVerified);
         b.Property(x => x.AlternatePhone).HasMaxLength(20);
         b.Property(x => x.Email).HasMaxLength(256);
         b.Property(x => x.GuardianName).HasMaxLength(200);

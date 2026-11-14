@@ -125,7 +125,7 @@ export interface DowntimePackSection {
 
 export interface DowntimePack {
   id: string;
-  kind: 'Nightly' | 'OnDemand';
+  kind: 'Nightly' | 'OnDemand' | 'Refreshed';
   generatedAt: string;
   windowEndsAt: string;
   facilityName: string;

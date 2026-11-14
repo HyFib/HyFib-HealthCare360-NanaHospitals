@@ -39,6 +39,13 @@ internal sealed record PosSettings : IIntegrationSettings
 
     /// <summary>Simulator only: seconds after which a pushed sale is approved.</summary>
     public int SimulatorApproveAfterSeconds { get; init; } = 8;
+
+    /// <summary>
+    /// Simulator only: lose the answer to the sale upload. The sale is put on the "terminal" and then the call reports a
+    /// timeout, as a cable pulled during an upload would, so the unconfirmed-sale flow can be tried end to end. The sale
+    /// still waits for its customer and is approved as usual, which is the case the guard exists for.
+    /// </summary>
+    public bool SimulatorLoseUploadAnswer { get; init; }
 }
 
 internal sealed record PosTerminalSettings
@@ -77,6 +84,12 @@ internal interface IPosProvider
 /// </summary>
 internal static partial class PosTransactionIds
 {
+    /// <summary>The start of the generated id of a sale that never reached a terminal.</summary>
+    public const string DeclinedPrefix = "declined-";
+
+    /// <summary>The start of the generated id of a sale whose upload answer was lost: it may be on the terminal.</summary>
+    public const string UnconfirmedPrefix = "unconfirmed-";
+
     public static string Format(string terminalId, long providerReference, long amountPaise) =>
         string.Create(CultureInfo.InvariantCulture, $"{terminalId}:{providerReference}:{amountPaise}");
 

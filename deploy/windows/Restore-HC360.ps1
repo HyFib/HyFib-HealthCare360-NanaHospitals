@@ -20,13 +20,19 @@
        creates a fresh one and runs pg_restore into it. Where the installer made the two database accounts (hc360_owner
        owns the schema, hc360_app is the account the server works as), the restored tables are hc360_owner's and
        hc360_app gets its rights again (hc360-database-roles.sql); otherwise hc360_app owns them, as before the split.
+       pg_trgm is made in the fresh database as that owner, so the owner owns it: pg_restore runs as the owner (--role),
+       and the dump's COMMENT ON EXTENSION pg_trgm needs the extension's owner.
        Then clears, and names, the rows of the servers the backup knew (System health's part of each server): a backup
        made before HC360 left them out holds those of the machines that made it, which on new hardware would show as
        servers that stopped reporting, told to IT every day. Each server here writes its own as it starts.
     4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
        key already here is kept under a new name, never deleted. On new hardware, later backups open with the recovery
        key entered here.
-    5. Starts the service again.
+    5. Leaves the restore marker (restored.json) in the data folder, for HC360's next start. As it starts, HC360 moves
+       every number series (UHIDs, visits, bills, receipts, GST invoices) past the numbers issued after the backup was
+       made, by their high-water mark kept outside the database; holds outgoing messages, some of which went after the
+       backup was made, until an administrator checks and releases them; and says so in System health.
+    6. Starts the service again.
 
     Backups made before HC360 archive backups hold the database only. To restore one of those on new hardware, copy
     the old data folder's "keys" directory back first, or the encrypted identifiers cannot be read.
@@ -88,12 +94,33 @@ function Clear-ServerRows([string] $Database) {
     return $cleared
 }
 
-# Runs a server CLI command and returns its exit code. The recovery key is in the environment only during the call.
+# Runs a server CLI command and returns its exit code. What it prints is shown, and kept in $script:CliOutput for the
+# restore marker. The recovery key is in the environment only during the call.
+$script:CliOutput = @()
 function Invoke-ServerCli([string[]] $Arguments) {
     $env:HC360_RECOVERY_KEY = [System.Net.NetworkCredential]::new('', $RecoveryKey).Password
-    try { & $server @Arguments | Out-Host }
+    $lines = [System.Collections.Generic.List[string]]::new()
+    try { & $server @Arguments | ForEach-Object { $lines.Add([string] $_); $_ } | Out-Host }
     finally { Remove-Item Env:\HC360_RECOVERY_KEY -ErrorAction SilentlyContinue }
+    $script:CliOutput = $lines.ToArray()
     return $LASTEXITCODE
+}
+
+# Leaves the restore marker (restored.json) for HC360's next start, which acts on it once: it moves every number series
+# past the numbers issued before the restore (their high-water mark), holds outgoing messages until an administrator
+# releases them, and says so in System health (docs/deployment/DEPLOYMENT.md, "After a restore"). The backup's time is
+# what 'backup restore' printed ("... taken 2026-09-25 01:30 UTC by HC360 ..."), or null when it did not say.
+function Write-RestoreMarker([string] $Path, [string] $Backup, [string[]] $CliOutput, [datetime] $RestoredAt) {
+    $takenAt = $null
+    foreach ($line in @($CliOutput)) {
+        if ($line -match ' taken (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) UTC') { $takenAt = "$($Matches[1])T$($Matches[2]):00Z"; break }
+    }
+    $marker = [ordered]@{
+        restoredAt    = $RestoredAt.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", [System.Globalization.CultureInfo]::InvariantCulture)
+        backupFile    = $Backup
+        backupTakenAt = $takenAt
+    }
+    [System.IO.File]::WriteAllText($Path, ($marker | ConvertTo-Json), [System.Text.UTF8Encoding]::new($false))
 }
 
 $stopped = $false
@@ -130,7 +157,10 @@ try {
     $owner = if ($split) { 'hc360_owner' } else { 'hc360_app' }
     if (-not (Invoke-Sql 'postgres' @("CREATE DATABASE $DatabaseName OWNER $owner ENCODING 'UTF8'"))) { throw 'Could not create the database.' }
     $created = $true
-    if (-not (Invoke-Sql $DatabaseName @('CREATE EXTENSION IF NOT EXISTS pg_trgm'))) { throw 'Could not enable the pg_trgm extension.' }
+    # pg_trgm is a trusted extension, which the database's owner may make: made as the owner, it is the owner's. pg_restore
+    # runs as the owner (--role), and the dump's COMMENT ON EXTENSION pg_trgm needs the extension's owner; made as the
+    # superuser, every restore stopped there ("must be owner of extension pg_trgm") and put the previous database back.
+    if (-not (Invoke-Sql $DatabaseName @("SET ROLE $owner; CREATE EXTENSION IF NOT EXISTS pg_trgm"))) { throw 'Could not enable the pg_trgm extension.' }
     & (Join-Path $pgBin 'pg_restore.exe') @pgArgs -d $DatabaseName --no-owner --role=$owner --exit-on-error $dump
     if ($LASTEXITCODE -ne 0) { throw 'pg_restore failed.' }
     if ($split) {
@@ -183,11 +213,22 @@ finally {
     Remove-Item $dump -Force -ErrorAction SilentlyContinue
 }
 
+# Not worth undoing the restore for: without the marker HC360 still moves the number series past the numbers issued
+# before the restore (their high-water mark), but neither holds the outgoing messages nor says so in System health.
+Write-Step 'Leaving the restore marker for HC360'
+try {
+    Write-RestoreMarker (Join-Path $DataDir 'restored.json') (Resolve-Path -LiteralPath $BackupFile).ProviderPath $script:CliOutput (Get-Date)
+}
+catch {
+    Write-Warning "The restore marker could not be written in $DataDir ($($_.Exception.Message)). HC360 does not hold the outgoing messages: some went after the backup was made and may go again. Check the outbox in System health."
+}
+
 Write-Step 'Starting HC360'
 Start-Service -Name $ServiceName
+$afterRestore = 'As it starts, HC360 moves the number series past the numbers issued before the restore and holds outgoing messages until an administrator checks and releases them; System health says so.'
 if ($renamed) {
-    Write-Host "Restore complete. Sign in and check recent records. When satisfied, drop $keptName." -ForegroundColor Green
+    Write-Host "Restore complete. $afterRestore Sign in and check recent records. When satisfied, drop $keptName." -ForegroundColor Green
 }
 else {
-    Write-Host 'Restore complete. Sign in and check recent records.' -ForegroundColor Green
+    Write-Host "Restore complete. $afterRestore Sign in and check recent records." -ForegroundColor Green
 }

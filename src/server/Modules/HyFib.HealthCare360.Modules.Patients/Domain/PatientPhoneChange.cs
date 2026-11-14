@@ -16,12 +16,30 @@ public enum PatientPhoneChangeStatus
     Expired,
 }
 
+/// <summary>What a code sent to a patient's mobile number is for (<see cref="PatientPhoneChange.Purpose"/>).</summary>
+public enum PhoneCodePurpose
+{
+    /// <summary>To change the record's number to the one the code went to.</summary>
+    Change = 0,
+
+    /// <summary>
+    /// To verify the number the record has already (ASVS V6.6.1): the code goes to that number, and the record keeps it,
+    /// marked verified (<see cref="Patient.PhoneVerifiedAt"/>), when staff enter the code.
+    /// </summary>
+    Verify,
+}
+
 /// <summary>
 /// A change of the patient's registered mobile number, which the patient portal signs in with (PP-01): staff cannot make
 /// it alone. A 6-digit code goes by SMS to the new number and the change is made only when staff enter it, as the patient
 /// reads it out at the desk, within <see cref="Lifetime"/> and <see cref="MaxAttempts"/> tries, and only while the record
 /// still has the number it had when the code was sent (<see cref="PreviousPhone"/>). Nothing goes to the old number. Only
 /// the SHA-256 of the code, salted with the change's id, is kept. Who asked is <see cref="AuditableEntity.CreatedBy"/>.
+/// <para>
+/// The same code, with the same limits, verifies the number the record has already (<see cref="PhoneCodePurpose.Verify"/>):
+/// <see cref="Phone"/> and <see cref="PreviousPhone"/> are then that number. Both kinds count towards a number's
+/// <see cref="MaxCodesPerNumber"/>.
+/// </para>
 /// </summary>
 public sealed class PatientPhoneChange : AuditableEntity
 {
@@ -46,6 +64,9 @@ public sealed class PatientPhoneChange : AuditableEntity
     public Guid FacilityId { get; set; }
 
     public Guid PatientId { get; set; }
+
+    /// <summary>A change of the number, or a verification of the one the record has.</summary>
+    public PhoneCodePurpose Purpose { get; set; }
 
     /// <summary>The number asked for (E.164): the one the code went to.</summary>
     public string Phone { get; set; } = string.Empty;
@@ -87,7 +108,8 @@ public sealed class PatientPhoneChange : AuditableEntity
         return Status switch
         {
             PatientPhoneChangeStatus.Pending => null,
-            PatientPhoneChangeStatus.Confirmed => Error.Rule(ExpiredCode, "This number change is already done."),
+            PatientPhoneChangeStatus.Confirmed => Error.Rule(ExpiredCode,
+                Purpose == PhoneCodePurpose.Verify ? "This number is verified already." : "This number change is already done."),
             PatientPhoneChangeStatus.Superseded => Error.Rule(ExpiredCode, "A newer code was sent for this patient, or the number changed since. Enter the latest code, or send a new one."),
             _ => Error.Rule(ExpiredCode, "This code can no longer be used: it expired, or was entered wrong too many times. Send a new code."),
         };

@@ -49,7 +49,8 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
             }
             catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
             {
-                return await FailAsync("template", message.Reference, started, "Upload failed: " + IntegrationErrors.Describe(ex, "WhatsApp"), summary);
+                return await FailAsync("template", message.Reference, started, "Upload failed: " + IntegrationErrors.Describe(ex, "WhatsApp"), summary,
+                    IntegrationErrors.IsUnreachable(ex));
             }
 
             if (mediaId is null)
@@ -86,7 +87,8 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         }
         catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
         {
-            return await FailAsync("document", message.Reference, started, "Upload failed: " + IntegrationErrors.Describe(ex, "WhatsApp"), summary);
+            return await FailAsync("document", message.Reference, started, "Upload failed: " + IntegrationErrors.Describe(ex, "WhatsApp"), summary,
+                IntegrationErrors.IsUnreachable(ex));
         }
 
         if (mediaId is null)
@@ -205,7 +207,7 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         }
         catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
         {
-            return await FailAsync(operation, reference, started, IntegrationErrors.Describe(ex, "WhatsApp"), summary);
+            return await FailAsync(operation, reference, started, IntegrationErrors.Describe(ex, "WhatsApp"), summary, IntegrationErrors.IsUnreachable(ex));
         }
     }
 
@@ -274,10 +276,11 @@ internal sealed partial class MetaWhatsAppProvider(HttpClient http, IntegrationT
         return string.IsNullOrEmpty(cleaned) ? "document.pdf" : IntegrationTrace.Truncate(cleaned, 120)!;
     }
 
-    private async Task<SendResult> FailAsync(string operation, string? reference, long started, string error, string? summary = null)
+    /// <param name="unreachable">The Graph API could not be reached or did not answer (<see cref="SendResult.ProviderUnreachable"/>).</param>
+    private async Task<SendResult> FailAsync(string operation, string? reference, long started, string error, string? summary = null, bool unreachable = false)
     {
         await trace.LogAsync(IntegrationNames.WhatsApp, Key, operation, false, started, reference, summary, error: error);
-        return SendResult.Fail(error);
+        return unreachable ? SendResult.Unreachable(error) : SendResult.Fail(error);
     }
 
     [GeneratedRegex(@"\s+")]

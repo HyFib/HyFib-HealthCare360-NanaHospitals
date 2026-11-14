@@ -87,7 +87,8 @@ generate them after all modules compile.
 * Results: return `IResult`; map `Result`/`Error` with `.ToOk()`, `.ToNoContent()`, `.ToCreated(...)`, `error.ToProblem()`.
   Error types: `Error.NotFound`, `Error.Field` (400), `Error.Conflict` (409), `Error.Rule` (422), `Error.Forbidden` (403).
 * Updates carry `uint Version` and call `db.SetExpectedVersion(entity, request.Version)` (409 on conflict).
-* Idempotency (`Idempotency-Key`) is handled by middleware — nothing to do.
+* Idempotency (`Idempotency-Key`) is handled by middleware — nothing to do. A write with a key runs to its end even if
+  the client goes: its `ct` is not cancelled by a disconnect, so its outcome can be recorded and replayed to the retry.
 * PHI: when returning clinical/patient data call `await audit.PatientRecordAccessedAsync(patientId, "what", ct)` once
   per request, and guard restricted records with `PatientAccessGuard.EnsureCanOpenAsync(patientId, ct)`.
 * Patient-portal endpoints live under `/api/v1/portal/<area>`, require `PatientsPermissions.Portal` and must scope

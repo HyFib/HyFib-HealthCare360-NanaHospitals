@@ -98,4 +98,27 @@ public sealed class IntegrationsModuleTests
         // The worklist itself comes from Diagnostics through the platform contract, never from this module.
         services.ShouldNotContain(d => d.ServiceType == typeof(IModalityWorklistSource));
     }
+
+    [Theory]
+    [InlineData(nameof(Msg91SmsProvider))]
+    [InlineData(nameof(MetaWhatsAppProvider))]
+    [InlineData(nameof(TallyPrimeExporter))]
+    public void Calls_to_a_provider_give_up_on_a_connection_that_does_not_open_within_five_seconds(string client)
+    {
+        // On a link that drops packets an SMS fails in 5 s, not after its whole 15 s attempt.
+        var services = Services();
+        services.AddLogging();
+        services.AddTransient<HyFib.HealthCare360.Platform.Http.CorrelationIdForwardingHandler>();
+        using var provider = services.BuildServiceProvider();
+
+        var handler = provider.GetRequiredService<IHttpMessageHandlerFactory>().CreateHandler(client);
+        while (handler is DelegatingHandler delegating)
+        {
+            handler = delegating.InnerHandler!;
+        }
+
+        var connections = handler.ShouldBeOfType<SocketsHttpHandler>();
+        connections.ConnectTimeout.ShouldBe(TimeSpan.FromSeconds(5));
+        connections.AllowAutoRedirect.ShouldBeFalse();
+    }
 }

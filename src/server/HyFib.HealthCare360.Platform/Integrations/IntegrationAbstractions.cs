@@ -6,9 +6,18 @@ namespace HyFib.HealthCare360.Platform.Integrations;
 
 public sealed record SendResult(bool Success, string? ProviderMessageId = null, string? Error = null)
 {
+    /// <summary>
+    /// The send failed for want of an answer: the provider could not be reached, or did not answer in time. The outbox
+    /// counts these towards the provider's cool-down (<see cref="Messaging.ProviderUnreachableException"/>).
+    /// </summary>
+    public bool ProviderUnreachable { get; init; }
+
     public static SendResult Ok(string? providerMessageId = null) => new(true, providerMessageId);
 
     public static SendResult Fail(string error) => new(false, null, error);
+
+    /// <summary>A failure for want of an answer (<see cref="ProviderUnreachable"/>).</summary>
+    public static SendResult Unreachable(string error) => new(false, null, error) { ProviderUnreachable = true };
 }
 
 // ---------- SMS ----------
@@ -191,6 +200,16 @@ public enum PosTransactionStatus
     Declined,
     Cancelled,
     TimedOut,
+
+    /// <summary>
+    /// The terminal's answer to the sale upload was lost (a timeout, a dropped connection, a server error): the sale may
+    /// be on the terminal and the customer may still pay. It carries a generated <c>unconfirmed-…</c> id, because the
+    /// provider's reference was in the lost answer, so the outcome cannot be asked for.
+    /// </summary>
+    Unconfirmed,
+
+    /// <summary>An unconfirmed sale whose window on the terminal has passed: the outcome stays unknown and the accountants check it.</summary>
+    Lapsed,
 }
 
 public sealed record PosTransactionResult(string TransactionId, PosTransactionStatus Status, string? ApprovalCode, string? CardLast4, string? Rrn, string? Message);

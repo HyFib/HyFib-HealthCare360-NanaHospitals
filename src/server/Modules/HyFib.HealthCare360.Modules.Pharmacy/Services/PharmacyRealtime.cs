@@ -39,6 +39,8 @@ internal sealed class PharmacyQueueChangedHandler(IRealtimePublisher realtime) :
 {
     public string Type => PharmacyRealtime.QueueChangedOutboxType;
 
+    public OutboxLane Lane => OutboxLane.Local;
+
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var change = message.Read<PharmacyQueueChanged>();

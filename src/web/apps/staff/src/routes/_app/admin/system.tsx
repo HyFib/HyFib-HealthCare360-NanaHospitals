@@ -32,6 +32,7 @@ import { DatabasePassword } from '@/modules/admin/DatabasePassword';
 import { EncryptionKeys } from '@/modules/admin/EncryptionKeys';
 import { encryptionSummary } from '@/modules/admin/diskEncryption';
 import { healthDisplay } from '@/modules/admin/integrationsApi';
+import { OutboxHoldNotice } from '@/modules/admin/OutboxHoldNotice';
 import {
   clockText,
   expiryTone,
@@ -255,12 +256,16 @@ function SystemHealthPage() {
           </div>
         </Section>
         <Section title="Messages waiting to send">
+          {h.outbox.hold && <OutboxHoldNotice hold={h.outbox.hold} held={h.outbox.heldMessages ?? 0} />}
           <div className={styles.rows}>
             <Row label="Pending" tone={h.outbox.pending > 100 ? 'warn' : undefined}>
               {h.outbox.pending}
             </Row>
             <Row label="Failed (24 h)" tone={h.outbox.failedLast24Hours > 0 ? 'warn' : undefined}>
               {h.outbox.failedLast24Hours}
+            </Row>
+            <Row label="Expired unsent (24 h)" tone={(h.outbox.expiredLast24Hours ?? 0) > 0 ? 'warn' : undefined}>
+              {h.outbox.expiredLast24Hours ?? 0}
             </Row>
             <Row label="Oldest">{h.outbox.oldestPendingAt ? formatRelative(h.outbox.oldestPendingAt) : 'None'}</Row>
           </div>

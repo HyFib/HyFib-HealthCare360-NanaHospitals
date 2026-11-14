@@ -60,6 +60,68 @@ public sealed class PineLabsPosTerminalTests
     }
 
     [Fact]
+    public async Task An_upload_that_timed_out_is_unconfirmed_not_declined()
+    {
+        _http.Throw(new TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout.", new TimeoutException()));
+
+        var result = await Terminal.StartSaleAsync(new PosSaleRequest("OPD-1", 100m, "BILL-44"), Settings, Secrets, Ct);
+
+        // The terminal may have the sale and the customer may still tap: the counter must not offer to push a new one.
+        result.Status.ShouldBe(PosTransactionStatus.Unconfirmed);
+        result.TransactionId.ShouldBeEmpty();
+        result.Message.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task An_upload_whose_connection_was_reset_is_unconfirmed()
+    {
+        _http.Throw(new HttpRequestException("connection reset"));
+
+        var result = await Terminal.StartSaleAsync(new PosSaleRequest("OPD-1", 100m, "BILL-45"), Settings, Secrets, Ct);
+
+        result.Status.ShouldBe(PosTransactionStatus.Unconfirmed);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task An_upload_answered_with_a_server_error_is_unconfirmed(HttpStatusCode status)
+    {
+        _http.Respond(status, "upstream failure", "text/plain");
+
+        var result = await Terminal.StartSaleAsync(new PosSaleRequest("OPD-1", 100m, "BILL-46"), Settings, Secrets, Ct);
+
+        result.Status.ShouldBe(PosTransactionStatus.Unconfirmed);
+        result.Message.ShouldNotBeNull().ShouldContain($"HTTP {(int)status}");
+    }
+
+    [Fact]
+    public async Task An_upload_answered_with_unreadable_success_is_unconfirmed()
+    {
+        _http.Respond(HttpStatusCode.OK, "<html>maintenance</html>", "text/html");
+
+        var result = await Terminal.StartSaleAsync(new PosSaleRequest("OPD-1", 100m, "BILL-47"), Settings, Secrets, Ct);
+
+        result.Status.ShouldBe(PosTransactionStatus.Unconfirmed);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.BadRequest)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    public async Task An_upload_refused_with_a_client_error_stays_declined(HttpStatusCode status)
+    {
+        _http.Respond(status, "refused", "text/plain");
+
+        var result = await Terminal.StartSaleAsync(new PosSaleRequest("OPD-1", 100m, "BILL-48"), Settings, Secrets, Ct);
+
+        result.Status.ShouldBe(PosTransactionStatus.Declined);
+    }
+
+    [Fact]
     public async Task Declines_unknown_terminals_and_invalid_amounts_without_calling_the_service()
     {
         (await Terminal.StartSaleAsync(new PosSaleRequest("IPD-9", 100m, "BILL-1"), Settings, Secrets, Ct)).Message!.ShouldContain("not configured");

@@ -64,7 +64,7 @@ internal sealed class Msg91SmsProvider(HttpClient http, ISmsTemplateCatalog temp
         {
             var error = IntegrationErrors.Describe(ex, "MSG91");
             await trace.LogAsync(IntegrationNames.Sms, Key, "send", false, started, message.Reference, summary, error: error);
-            return SendResult.Fail(error);
+            return IntegrationErrors.Failed(ex, error);
         }
     }
 

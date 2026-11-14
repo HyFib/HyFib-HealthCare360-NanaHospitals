@@ -224,7 +224,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | POST | `/{id}/finalize` | `billing.bills.finalize` | `BillVersionRequest` → `BillDetail`; allocates `{FAC}OB{YY}{SEQ:7}` / `{FAC}IB{YY}{SEQ:7}`; adjusts the visit's online prepayment |
 | POST | `/{id}/cancel` | `billing.bills.cancel` | `CancelBillRequest(reason, version)` → `BillDetail`; charges released, advances restored, cash refunds requested |
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
-| POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
+| POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP), `billing.bill_number_unverified` (the number is not verified on the patient's record); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
 | POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason, lines?)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. A credit note names the services it corrects (`lines`: `billLineId` and `amount`, GST included; `amount` is their sum, 400 otherwise), and must on a bill with GST (400 `lines`); 422 `billing.credit_exceeds_line` past what is left of a service after earlier credit notes, or on a return; a write-off names none (400 `lines`). The approver sees the GST each service gives back ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)). An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
 | POST | `/{id}/debit-notes` | `refunds.request` / `refunds.approve` | `IssueDebitNoteRequest(party, reason, lines)` → 202 `ApprovalRequestDto` (kind `billing.debit_note`): asks for a debit note ([Debit notes](#debit-notes)); `lines` are `billLineId` and the `taxableAmount` each service is raised by (GST at its rate is added); `party` `Patient` or `Payer`. 422 `billing.bill_not_debitable` (not finalized, or cancelled), `billing.no_payer`, `billing.debit_on_return`, `billing.debit_not_payer_payable`. An approver, never the person who asked, issues it (`{FAC}DB{YY}{SEQ:6}`), on the bill's version it was asked against (422 `approval.stale`) |
 | GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it (until then, for a note due one, a notice that it has none); guarded and audited ("Printed credit note …") |
@@ -311,7 +311,7 @@ case, and its Tally journal reads "taken back by a chargeback" rather than "mone
 |---|---|---|---|
 | POST | `/pos/sales` | `payments.collect` / `deposits` | `StartPosSaleRequest(billId? \| ipAccountId?, amount?, terminalId, channel)` → `PosSaleDto` |
 | GET | `/pos/sales/{id}` | same | → `PosSaleDto` (polls the terminal; an approved sale records the receipt once, keyed on the terminal transaction id). A sale the counter stops polling is followed by `PosRecheckJob` (below) |
-| POST | `/pos/sales/{id}/cancel` | same | → `PosSaleDto` |
+| POST | `/pos/sales/{id}/cancel` | same | optional body `CancelPosSaleRequest(note)` → `PosSaleDto`. For a sale whose upload answer was lost (`Unconfirmed`) it is the cashier's confirmation that the terminal shows no sale: `note` is required (400) and audited (below) |
 | POST | `/payment-links` | `payments.collect` / `deposits` | `CreatePaymentLinkRequest` → 201 `GatewayOrderDto` (SMS/WhatsApp template `payment.link`) |
 | GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` (`paidAt` = when the gateway took the payment; `lastError` = why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet; `paymentId`) |
 | POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status: records a captured payment, or marks the order `Failed`, `Expired` or `Cancelled`; for a paid order whose receipt could not be recorded, it tries again) |
@@ -324,6 +324,40 @@ The pharmacy's and the canteen's card and UPI sales use the same lifecycle throu
 `/api/v1/canteen/terminal-sales`). Billing keeps those sales in `pos_transactions` too, with `owner` (`pharmacy` or
 `canteen`), no receipt and, for a walk-in, no patient; the counter's invoice or bill records the sale
 (`owner_payment_id`, `owner_document`) once, in its own transaction.
+
+#### Card and UPI sales whose upload answer was lost
+
+When the answer to a Pine Labs upload is lost (a timeout, a dropped connection, an HTTP 5xx), the terminal may have the
+sale and the customer may still pay on it for the terminal's `autoCancelMinutes` (the `integrations.pos` setting, default
+5, at most 30), and Pine Labs' reference to it was in the lost answer, so HC360 cannot ask about it. HC360 therefore never
+shows it as declined:
+
+* **Save first.** `PosService` saves the `pos_transactions` row before it calls the terminal (status `Initiated`,
+  transaction id `pending-…`, provider `pending`) and updates it with the answer. A crash or an aborted request after
+  the push leaves a visible row rather than money on a terminal HC360 knows nothing about. A pending row the server
+  dropped is made `Unconfirmed` by the re-check once it is five minutes old.
+* **`Unconfirmed`.** The sale keeps a generated `unconfirmed-…` transaction id. It is not complete and cannot be polled:
+  a poll returns it as it is. `PosSaleDto` and `CounterTerminalSale` carry `retryAfter`, the end of its window. No column
+  holds the window: it is the row's creation time plus the facility's auto-cancel minutes plus a two-minute margin
+  (`PosUnconfirmed.Window`), and the status is stored as a string, so there is no migration.
+* **A second push is refused** while an unconfirmed sale (or a pending one) on the same terminal (any letter case, same
+  facility) is inside its window: 422 `pos.terminal_unconfirmed`, "The last sale of ₹X at HH:MM may still be on the
+  terminal. Check the terminal's screen. If the customer paid, record the payment from the slip; otherwise wait until
+  HH:MM, or confirm that the terminal shows no sale." It applies to Billing's counter and, through `ICounterTerminal`, to
+  the pharmacy and the canteen, because both go through `PosService.PushAsync`.
+* **The cashier can clear it early** by confirming that the terminal shows no sale: `POST …/cancel` with a `note`
+  (required, at most 200 characters). The sale becomes `Cancelled`, the terminal is free, and an audit entry
+  `billing.pos.unconfirmed_cleared` (warning) keeps the note and the cashier. The terminal is not called: there is no
+  reference to cancel. An approval is never downgraded.
+* **After the window** the re-check (`PosRecheckJob`, or a poll from the counter) marks the sale `Lapsed`, outcome
+  unknown, and raises an `UnrecordedPayment` exception keyed on the `unconfirmed-…` id, with the amount, the terminal, the
+  time sent and the reference, so the accountants check it against the acquirer's settlement. Holders of
+  `billing.gateway.reconcile` get one alert, "Card/UPI sale never confirmed". A counter's own sale (pharmacy, canteen) is
+  kept the same way and names the counter. If the settlement shows the money, the accountants record the payment; if not,
+  they resolve the exception with a note. A lapsed sale cannot be put on an invoice (`pos.sale_not_paid`), and an
+  unconfirmed one is refused with `pos.sale_unconfirmed`.
+* **Training.** The simulator's `simulatorLoseUploadAnswer` setting takes the sale and then reports a timeout, so all of
+  the above can be tried without pulling a cable (`PosUnconfirmedSaleTests`).
 
 ### Cash counter — `/api/v1/billing/shifts`, day-end
 | Method | Path | Permission | Request → response |
@@ -1021,7 +1055,7 @@ which lets go a document dated before `gst.einvoice.from`): a bill as it is fina
 payer with a GSTIN), a bill's credit note or debit note to the payer as the approver issues it, a pharmacy counter sale
 to a buyer with a GSTIN, and the return of such a sale while its GST can still be reduced. The outbox delivers it once
 that transaction commits (`EInvoiceGenerateHandler`, in a scope of its own, so a conflict on the register fails that
-message alone and not the outbox's batch), and `EInvoiceService.GenerateQueuedAsync` decides what follows
+message alone), and `EInvoiceService.GenerateQueuedAsync` decides what follows
 (`EInvoiceAutomation`):
 * **Nothing more** when the document needs no IRN now: it is no longer a B2B e-invoice of e-invoicing's days, it is
   cancelled, it has an IRN (live, or cancelled on the portal), or the facility is not connected (the IRN is recorded by
@@ -1351,7 +1385,7 @@ only the one that clashed is merely refreshed.
 
 | Rank | Kind | Raised when | Clears itself when |
 |---|---|---|---|
-| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert); or a counter's approved terminal sale that no invoice or bill records within `billing.pos.recheck` (the message starts "Paid on the terminal, but no invoice records it yet"; holders of `billing.gateway.reconcile` get one alert, "Card/UPI payment not recorded at the pharmacy/canteen") | the receipt is recorded, or the counter's invoice or bill records the sale |
+| 1 | `UnrecordedPayment` | a card/UPI sale whose upload answer was lost and that lapsed with its outcome unknown (keyed on its `unconfirmed-…` id; one alert, "Card/UPI sale never confirmed"); a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert); or a counter's approved terminal sale that no invoice or bill records within `billing.pos.recheck` (the message starts "Paid on the terminal, but no invoice records it yet"; holders of `billing.gateway.reconcile` get one alert, "Card/UPI payment not recorded at the pharmacy/canteen") | the receipt is recorded, or the counter's invoice or bill records the sale |
 | 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 2 | `FailedSettlement` | a settlement paid out fails afterwards; its journal is reversed in the books of the day it is learnt (accountants get an alert) | the gateway pays the settlement out after all (its journal is restored); "Read the settlements again" reads its day |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
@@ -1694,7 +1728,9 @@ the bill's day again, never to delete it.
 * `PosRecheckJob` — every minute where `PlatformOptions.RunsJobs` is set, follows the terminal sales the counter
   stopped polling (the screen closed, the browser crashed, the cashier moved on while the customer paid). Sales started
   more than a minute and less than two days ago that are still `Initiated` or `AwaitingCustomer`, or `Approved` without
-  their receipt, are asked about with their own facility's terminal settings: an approval records the receipt (once,
+  their receipt, are asked about with their own facility's terminal settings (one `Unconfirmed`, or still pending, has no
+  reference to ask about: it is only settled by time, see
+  [Card and UPI sales whose upload answer was lost](#card-and-upi-sales-whose-upload-answer-was-lost)): an approval records the receipt (once,
   keyed on the transaction id, as when the counter polls), and a sale still waiting after the facility's
   `billing.pos.recheck` timeout is cancelled on the terminal and marked `TimedOut` ("Nobody completed the payment
   within 15 minutes; HC360 cancelled the sale on the terminal."), so a later approval cannot leave money unrecorded.
@@ -1735,6 +1771,11 @@ estimate) or a cancelled bill gives no document and is never sent.
   not in use.
 * **When the billing desk sends it** from the bill (`POST /bills/{id}/send-whatsapp`), for any finalised, part-paid or
   paid bill.
+* **Only to a verified number.** The bill is a document, so it goes only to a mobile number verified on the patient's
+  record (`VerifiedNumbers`, ASVS V6.6.1; see portal.md, *A number nobody has verified*). A payment that settles the bill
+  of a patient whose number is not verified sends the receipt on WhatsApp instead, and the desk's send answers 422
+  `billing.bill_number_unverified` ("Verify the number on the patient's record, or print the bill"), after the checks on
+  STOP and the template.
 * **Consent.** A bill is a service message about the patient's own care, so, like a report, it needs no WhatsApp
   opt-in (see [integrations.md](integrations.md#opt-in-tracking)): it goes to the patient's registered number unless
   that number replied STOP, which the delivery handler checks when it goes out. The desk is told about a STOP up

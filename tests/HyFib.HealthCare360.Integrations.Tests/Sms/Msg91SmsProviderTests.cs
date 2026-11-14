@@ -120,5 +120,31 @@ public sealed class Msg91SmsProviderTests
 
         result.Success.ShouldBeFalse();
         result.Error!.ShouldContain("Could not reach MSG91");
+
+        // No answer at all: the outbox counts it towards the gateway's cool-down.
+        result.ProviderUnreachable.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_gateway_that_does_not_answer_in_time_could_not_be_reached()
+    {
+        // As a connection that does not open within its 5 s, on a link that drops packets.
+        _http.Throw(new TaskCanceledException("The connection attempt timed out.", new TimeoutException()));
+
+        var result = await Provider.SendAsync(new SmsMessage("+919876543210", Text, "1107160000000012345"), Settings, Secrets, Ct);
+
+        result.Error.ShouldBe("MSG91 did not respond in time.");
+        result.ProviderUnreachable.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_refusal_is_an_answer_and_not_a_gateway_out_of_reach()
+    {
+        _http.Respond(HttpStatusCode.BadRequest, """{"type":"error","message":"Template not approved"}""");
+
+        var result = await Provider.SendAsync(new SmsMessage("+919876543210", Text, "1107160000000012345"), Settings, Secrets, Ct);
+
+        result.Error.ShouldBe("MSG91: Template not approved");
+        result.ProviderUnreachable.ShouldBeFalse();
     }
 }

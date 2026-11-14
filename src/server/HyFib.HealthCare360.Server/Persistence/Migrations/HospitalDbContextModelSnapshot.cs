@@ -29033,6 +29033,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("phone");
 
+                    b.Property<DateTimeOffset?>("PhoneVerifiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("phone_verified_at");
+
+                    b.Property<string>("PhoneVerifiedNumber")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("phone_verified_number");
+
                     b.Property<Guid?>("PhotoFileId")
                         .HasColumnType("uuid")
                         .HasColumnName("photo_file_id");
@@ -29608,6 +29617,12 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(20)")
                         .HasColumnName("previous_phone");
 
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("purpose");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -29914,6 +29929,74 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_portal_links_patient_id_created_at");
 
                     b.ToTable("portal_links", "patients");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.PortalRecordConfirmation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccountPhone")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("account_phone");
+
+                    b.Property<int>("Confirmed")
+                        .HasColumnType("integer")
+                        .HasColumnName("confirmed");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("DeletedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_deleted");
+
+                    b.Property<string>("Method")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("method");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid?>("UpdatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("updated_by");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_portal_record_confirmations");
+
+                    b.HasIndex("IsDeleted")
+                        .HasDatabaseName("ix_portal_record_confirmations_is_deleted");
+
+                    b.HasIndex("AccountPhone", "CreatedAt")
+                        .HasDatabaseName("ix_portal_record_confirmations_account_phone_created_at");
+
+                    b.ToTable("portal_record_confirmations", "patients");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Modules.Patients.Domain.QueueToken", b =>
@@ -50892,6 +50975,32 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("kind");
 
+                    b.Property<int>("OffsiteAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("offsite_attempts");
+
+                    b.Property<string>("OffsiteError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("offsite_error");
+
+                    b.Property<string>("OffsiteKey")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("offsite_key");
+
+                    b.Property<long?>("OffsiteSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("offsite_size_bytes");
+
+                    b.Property<string>("OffsiteUpload")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("offsite_upload");
+
+                    b.Property<DateTimeOffset?>("OffsiteUploadedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("offsite_uploaded_at");
+
                     b.Property<string>("RecoveryKeyId")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
@@ -50935,6 +51044,41 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_backup_runs_started_at");
 
                     b.ToTable("backup_runs", "platform");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Jobs.RecoveryKeyProof", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("key_id");
+
+                    b.Property<DateTimeOffset>("ProvenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proven_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("user_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_backup_key_proofs");
+
+                    b.HasIndex("KeyId", "ProvenAt")
+                        .HasDatabaseName("ix_backup_key_proofs_key_id_proven_at");
+
+                    b.ToTable("backup_key_proofs", "platform");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Messaging.OutboxMessage", b =>

@@ -3,6 +3,7 @@ import { appointmentMessages } from './messages/appointments';
 import { authMessages } from './messages/auth';
 import { billMessages } from './messages/bills';
 import { common } from './messages/common';
+import { confirmMessages } from './messages/confirm';
 import { doctorMessages } from './messages/doctors';
 import { dpdpMessages } from './messages/dpdp';
 import { familyMessages } from './messages/family';
@@ -37,6 +38,7 @@ export const MESSAGE_SETS = {
   feedback: feedbackMessages,
   profile: profileMessages,
   family: familyMessages,
+  confirm: confirmMessages,
   myPrivacy: myPrivacyMessages,
   dpdp: dpdpMessages,
   verify: verifyMessages,

@@ -22,8 +22,10 @@ import { PaymentRegular } from '@fluentui/react-icons';
 import { formatInr } from '@hc360/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { isTerminalSalePending } from '@/lib/terminal/labels';
+import { isTerminalBusy, isTerminalSalePending, isTerminalSaleUnconfirmed } from '@/lib/terminal/labels';
 import { TerminalSaleStatus } from '@/lib/terminal/TerminalSaleStatus';
+import { ClearUnconfirmedSale } from '@/lib/terminal/UnconfirmedSale';
+import { useNow } from '@/lib/terminal/useNow';
 import { billingApi, billingQueries, type PosSaleDto } from './api';
 import { saveCounterPrefs, useCounterPrefs } from './counterPrefs';
 import { useAttemptKey, useRefreshBilling } from './hooks';
@@ -106,13 +108,21 @@ export function PosSaleDialog({
   const sale = useQuery({
     ...billingQueries.posSale(saleId ?? ''),
     enabled: saleId !== null,
-    refetchInterval: (query) => (query.state.data && isTerminalSalePending(query.state.data.status) ? 2_000 : false),
+    // An unconfirmed sale cannot be asked of the terminal; the server settles it once its wait is over.
+    refetchInterval: (query) =>
+      query.state.data && isTerminalSalePending(query.state.data.status)
+        ? 2_000
+        : query.state.data && isTerminalSaleUnconfirmed(query.state.data.status)
+          ? 30_000
+          : false,
   });
   const current = sale.data;
   const pending = current ? isTerminalSalePending(current.status) : false;
+  const now = useNow();
+  const busy = current ? isTerminalBusy(current, now) : false;
 
   const cancel = useMutation({
-    mutationFn: () => billingApi.cancelPosSale(saleId!),
+    mutationFn: (note?: string) => billingApi.cancelPosSale(saleId!, note),
     onSuccess: (cancelled) => queryClient.setQueryData(billingQueries.posSale(cancelled.id).queryKey, cancelled),
   });
 
@@ -181,6 +191,9 @@ export function PosSaleDialog({
                 lostContact={!!sale.error}
                 footer={<ActionError error={cancel.error} />}
               >
+                {isTerminalSaleUnconfirmed(current.status) && (
+                  <ClearUnconfirmedSale onClear={(note) => cancel.mutate(note)} pending={cancel.isPending} />
+                )}
                 {current.status === 'Approved' && current.receiptId && (
                   <Caption1 className={styles.muted}>The receipt has been recorded.</Caption1>
                 )}
@@ -214,11 +227,15 @@ export function PosSaleDialog({
               </>
             )}
             {current && pending && (
-              <Button onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+              <Button onClick={() => cancel.mutate(undefined)} disabled={cancel.isPending}>
                 Cancel on the terminal
               </Button>
             )}
-            {current && !pending && current.status !== 'Approved' && <Button onClick={tryAgain}>Try again</Button>}
+            {current && !pending && current.status !== 'Approved' && (
+              <Button onClick={tryAgain} disabled={busy}>
+                Try again
+              </Button>
+            )}
             {current && !pending && (
               <Button appearance="primary" onClick={finish}>
                 {current.status === 'Approved' ? 'Done' : 'Close'}

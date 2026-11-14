@@ -228,6 +228,7 @@ public sealed class SettingApprovalTests(HospitalServer server)
             AiSettingKeys.Provider, AiSettingKeys.OpenAi, AiSettingKeys.Speech, AiSettingKeys.AnthropicSecret, AiSettingKeys.OpenAiSecret, AiSettingKeys.SpeechSecret,
             AlertHeartbeat.UrlSetting, AlertHeartbeat.MinutesSetting, AlertEscalation.SecondContactSetting, AlertEscalation.SupportSetting,
             AlertEscalation.EscalateMinutesSetting, AlertEscalation.SupportMinutesSetting, "alerts.oncallPhone", "alerts.oncallWhatsApp",
+            Platform.Jobs.BackupOffsite.SettingKey, Platform.Jobs.BackupOffsite.SecretKey,
             .. IntegrationNames.All.SelectMany(name => new[] { IntegrationNames.SettingsKey(name), IntegrationNames.SecretKey(name) }),
         ];
         redirects.ShouldAllBe(key => SettingGuard.RuleFor(key) is SettingRedirect);

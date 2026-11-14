@@ -58,16 +58,18 @@ internal sealed class SmtpEmailProvider(IntegrationTrace trace) : IEmailProvider
         }
         catch (SmtpException ex)
         {
-            // Server replies can quote the recipient; the platform logger masks addresses before persisting.
-            return await FailAsync(message, started, summary, $"The mail server refused the message ({ex.StatusCode}): {IntegrationTrace.Truncate(ex.Message, 200)}");
+            // Server replies can quote the recipient; the platform logger masks addresses before persisting. A general
+            // failure is no reply at all: the server could not be reached (the outbox lets it cool down).
+            return await FailAsync(message, started, summary, $"The mail server refused the message ({ex.StatusCode}): {IntegrationTrace.Truncate(ex.Message, 200)}",
+                unreachable: ex.StatusCode == SmtpStatusCode.GeneralFailure);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return await FailAsync(message, started, summary, "The mail server did not respond in time.");
+            return await FailAsync(message, started, summary, "The mail server did not respond in time.", unreachable: true);
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or System.Security.Authentication.AuthenticationException)
         {
-            return await FailAsync(message, started, summary, $"The e-mail could not be sent ({ex.GetType().Name}).");
+            return await FailAsync(message, started, summary, $"The e-mail could not be sent ({ex.GetType().Name}).", unreachable: ex is not InvalidOperationException);
         }
     }
 
@@ -119,9 +121,10 @@ internal sealed class SmtpEmailProvider(IntegrationTrace trace) : IEmailProvider
         return mail;
     }
 
-    private async Task<SendResult> FailAsync(EmailMessage message, long started, string summary, string error)
+    /// <param name="unreachable">The mail server could not be reached or did not answer (<see cref="SendResult.ProviderUnreachable"/>).</param>
+    private async Task<SendResult> FailAsync(EmailMessage message, long started, string summary, string error, bool unreachable = false)
     {
         await trace.LogAsync(IntegrationNames.Email, Key, "send", false, started, message.Reference, summary, error: error);
-        return SendResult.Fail(error);
+        return unreachable ? SendResult.Unreachable(error) : SendResult.Fail(error);
     }
 }

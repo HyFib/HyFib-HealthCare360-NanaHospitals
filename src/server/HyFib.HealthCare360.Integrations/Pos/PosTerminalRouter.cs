@@ -7,7 +7,9 @@ namespace HyFib.HealthCare360.Integrations.Pos;
 /// <para>
 /// Callers store sales keyed by (<see cref="Provider"/>, transaction id), so <see cref="Provider"/> reports the
 /// provider that handled the last call in this scope (<c>none</c> when nothing is configured), and a sale that never
-/// reached a terminal gets a unique <c>declined-…</c> id instead of an empty one.
+/// reached a terminal gets a unique <c>declined-…</c> id instead of an empty one. A sale whose upload answer was lost
+/// (<see cref="PosTransactionStatus.Unconfirmed"/>) gets an <c>unconfirmed-…</c> id, so it can be told apart: it may be
+/// on the terminal.
 /// </para>
 /// </summary>
 internal sealed class PosTerminalRouter(IEnumerable<IPosProvider> providers, IntegrationSettingsReader settings) : IPosTerminal
@@ -24,7 +26,7 @@ internal sealed class PosTerminalRouter(IEnumerable<IPosProvider> providers, Int
             ? Declined(string.Empty, error)
             : await provider.StartSaleAsync(request, config!.Settings!, config.Secrets, cancellationToken);
         return string.IsNullOrEmpty(result.TransactionId)
-            ? result with { TransactionId = "declined-" + Guid.CreateVersion7().ToString("N") }
+            ? result with { TransactionId = (result.Status == PosTransactionStatus.Unconfirmed ? PosTransactionIds.UnconfirmedPrefix : PosTransactionIds.DeclinedPrefix) + Guid.CreateVersion7().ToString("N") }
             : result;
     }
 
@@ -49,6 +51,9 @@ internal sealed class PosTerminalRouter(IEnumerable<IPosProvider> providers, Int
 
     internal static PosTransactionResult Declined(string transactionId, string? message) =>
         new(transactionId, PosTransactionStatus.Declined, null, null, null, message);
+
+    internal static PosTransactionResult Unconfirmed(string? message) =>
+        new(string.Empty, PosTransactionStatus.Unconfirmed, null, null, null, message);
 
     private async Task<(IPosProvider? Provider, IntegrationConfig<PosSettings, PosSecrets>? Config, string? Error)> ResolveAsync(
         Guid? facilityId, CancellationToken cancellationToken)

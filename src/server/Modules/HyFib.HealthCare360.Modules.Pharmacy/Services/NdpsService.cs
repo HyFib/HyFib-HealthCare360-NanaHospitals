@@ -270,6 +270,8 @@ internal sealed class NdpsAlertOutboxHandler(INotificationService notifications)
 {
     public string Type => NdpsService.AlertType;
 
+    public OutboxLane Lane => OutboxLane.Local;
+
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var alert = message.Read<NdpsAlert>();
