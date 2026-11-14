@@ -13,6 +13,12 @@ internal static class Hl7OrderMessages
     public const string Oml = "OML^O21";
     public const string Orm = "ORM^O01";
 
+    /// <summary>
+    /// PID-3's assigning authority on the UHID HC360 sends (2.5.1: <c>UHID^^^HC360^MR</c>), by which the result mapper
+    /// knows the UHID among the patient ids an analyser sends back.
+    /// </summary>
+    public const string AssigningAuthority = "HC360";
+
     private const string CodingSystem = "99HC360";
 
     public static bool IsKnown(string? messageType) => messageType is null or Oml or Orm;
@@ -47,7 +53,9 @@ internal static class Hl7OrderMessages
     /// <summary>PID and one order group per channel code (also the body of an RSP^K11 query answer).</summary>
     public static IEnumerable<string> Segments(InstrumentOrder order, InstrumentOrderAction action, bool v251, TimeZoneInfo zone, Hl7Encoding e)
     {
-        var uhid = order.PatientId is { Length: > 0 } id ? e.Encode(id) + (v251 ? $"{e.Component}{e.Component}{e.Component}HC360{e.Component}MR" : string.Empty) : string.Empty;
+        var uhid = order.PatientId is { Length: > 0 } id
+            ? e.Encode(id) + (v251 ? $"{e.Component}{e.Component}{e.Component}{AssigningAuthority}{e.Component}MR" : string.Empty)
+            : string.Empty;
         yield return Join(e, "PID", "1", string.Empty, uhid, string.Empty, e.Encode(order.PatientName),
             string.Empty, order.DateOfBirth?.ToString("yyyyMMdd", CultureInfo.InvariantCulture) ?? string.Empty, Sex(order.Gender));
 

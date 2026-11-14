@@ -13,7 +13,8 @@ internal sealed record Hl7MappingResult(IReadOnlyList<InstrumentResultMessage> M
 /// OBR-2) because analysers disagree about where they put it. Results of a block with no sample id in any of them come
 /// under an empty sample id, which the LIS keeps for a person to assign. An OBX the analyser withdraws (OBX-11 D or W)
 /// or could not obtain (X) is passed on as such, with or without a value, so the LIS acts on it instead of keeping the
-/// value it had.
+/// value it had. The patient the PID before a block names goes with its results (<see cref="Patient"/>), for the LIS
+/// to check against the tube's; a sample sent under two patients makes two messages.
 /// </summary>
 internal static class Hl7ResultMapper
 {
@@ -37,16 +38,16 @@ internal static class Hl7ResultMapper
 
         var fields = sampleIdFields is { Count: > 0 } ? sampleIdFields : DefaultSampleIdFields;
         var messageTime = LabTime.Parse(message.Header.Value(7), zone);
-        var bySample = new Dictionary<string, List<InstrumentResult>>(StringComparer.Ordinal);
+        var bySample = new Dictionary<(string SampleId, InstrumentPatient? Patient), List<InstrumentResult>>();
         foreach (var block in blocks.Where(b => b.Observations.Count > 0))
         {
             // No sample id in any of the fields: the results are still the analyser's, kept for a person to assign.
-            var sampleId = SampleId(block, fields) ?? string.Empty;
+            var sample = (SampleId(block, fields) ?? string.Empty, Patient(block.Patient, fields));
             var blockTime = LabTime.Parse(block.Order?.Value(7), zone) ?? messageTime;
-            if (!bySample.TryGetValue(sampleId, out var results))
+            if (!bySample.TryGetValue(sample, out var results))
             {
                 results = [];
-                bySample[sampleId] = results;
+                bySample[sample] = results;
             }
 
             foreach (var obx in block.Observations)
@@ -59,7 +60,7 @@ internal static class Hl7ResultMapper
         }
 
         var messages = bySample.Where(s => s.Value.Count > 0)
-            .Select(s => new InstrumentResultMessage(instrumentCode, s.Key, s.Value, rawMessage, receivedAt))
+            .Select(s => new InstrumentResultMessage(instrumentCode, s.Key.SampleId, s.Value, rawMessage, receivedAt) { Patient = s.Key.Patient })
             .ToList();
         return messages.Count == 0 ? Hl7MappingResult.Failed("The message contains no usable results.") : new Hl7MappingResult(messages, null);
     }
@@ -133,13 +134,12 @@ internal static class Hl7ResultMapper
     {
         foreach (var field in fields)
         {
-            var parts = field.Split('-', 2, StringSplitOptions.TrimEntries);
-            if (parts.Length != 2 || !int.TryParse(parts[1], out var number))
+            if (!TryField(field, out var segmentId, out var number))
             {
                 continue;
             }
 
-            var segment = parts[0].ToUpperInvariant() switch
+            var segment = segmentId switch
             {
                 "SPM" => block.Specimen,
                 "SAC" => block.Container,
@@ -151,6 +151,70 @@ internal static class Hl7ResultMapper
             if (!string.IsNullOrEmpty(value))
             {
                 return value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A sample-id field as configured (<c>SPM-2</c>): its segment, in capitals, and field number.</summary>
+    private static bool TryField(string field, out string segment, out int number)
+    {
+        var parts = field.Split('-', 2, StringSplitOptions.TrimEntries);
+        segment = parts[0].ToUpperInvariant();
+        number = 0;
+        return parts.Length == 2 && int.TryParse(parts[1], out number);
+    }
+
+    /// <summary>
+    /// The patient a PID names: PID-3's patient id and PID-5's name; null without a PID, or when it names no one. A PID
+    /// field the connection lists among its sample-id fields holds the analyser's sample id, not the patient's, so it is
+    /// not read as the patient's.
+    /// </summary>
+    internal static InstrumentPatient? Patient(Hl7Segment? pid, IReadOnlyList<string> sampleIdFields)
+    {
+        if (pid is null)
+        {
+            return null;
+        }
+
+        bool HoldsSampleId(int number) =>
+            sampleIdFields.Any(field => TryField(field, out var segment, out var n) && segment == "PID" && n == number);
+        return InstrumentPatient.Of(HoldsSampleId(3) ? null : PatientId(pid), HoldsSampleId(5) ? null : PersonName(pid, 5));
+    }
+
+    /// <summary>
+    /// PID-3, the patient identifier list (CX: id ^ check digit ^ check digit scheme ^ assigning authority ^ identifier
+    /// type code, repeated): the id HC360 assigned (assigning authority HC360, as its 2.5.1 orders send the UHID), else
+    /// a medical record number (type MR) that no other authority assigned, else the only id there is when it names
+    /// neither, as analysers send back the bare UHID of a 2.3.1 order or the one typed in. Another authority's or type's
+    /// id (the analyser's own patient number), or one of several bare ids, is not taken for the UHID: null.
+    /// </summary>
+    private static string? PatientId(Hl7Segment pid)
+    {
+        var ids = Enumerable.Range(0, pid.Repetitions(3).Count)
+            .Select(i => (Id: pid.Component(3, 1, i).Trim(), Authority: pid.Component(3, 4, i).Trim(), Type: pid.Component(3, 5, i).Trim()))
+            .Where(x => x.Id.Length > 0)
+            .ToList();
+        var assigned = ids.Where(x => string.Equals(x.Authority, Hl7OrderMessages.AssigningAuthority, StringComparison.OrdinalIgnoreCase))
+            .Concat(ids.Where(x => x.Authority.Length == 0 && string.Equals(x.Type, "MR", StringComparison.OrdinalIgnoreCase)))
+            .Select(x => x.Id)
+            .FirstOrDefault();
+        return assigned ?? (ids is [{ Authority.Length: 0, Type.Length: 0 } only] ? only.Id : null);
+    }
+
+    /// <summary>
+    /// A name field (XPN), its first repetition with a name: family name, given name and further given names as the
+    /// analyser wrote them, joined by spaces. The suffix, prefix (Mr, Dr) and degree are not name parts; null for none.
+    /// </summary>
+    private static string? PersonName(Hl7Segment segment, int field)
+    {
+        for (var repetition = 0; repetition < segment.Repetitions(field).Count; repetition++)
+        {
+            var parts = Enumerable.Range(1, 3).Select(c => segment.Component(field, c, repetition).Trim()).Where(p => p.Length > 0).ToList();
+            if (parts.Count > 0)
+            {
+                return string.Join(' ', parts);
             }
         }
 
