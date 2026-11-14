@@ -349,7 +349,7 @@ internal sealed class NotificationService(
         var users = db.Set<User>().Where(u => u.IsActive && u.Type == UserType.Staff && u.Roles.Any(r => roleIds.Contains(r.RoleId)));
         if (facilityId is { } fid)
         {
-            users = users.Where(u => u.Facilities.Count == 0 || u.Facilities.Any(f => f.FacilityId == fid));
+            users = users.Where(u => u.AllFacilities || u.Facilities.Any(f => f.FacilityId == fid));
         }
 
         var ids = await users.Select(u => u.Id).ToListAsync(cancellationToken);

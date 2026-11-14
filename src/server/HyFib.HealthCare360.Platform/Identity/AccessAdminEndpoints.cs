@@ -32,12 +32,15 @@ public sealed record UserDetail(
     Guid? PractitionerId,
     Guid? DefaultFacilityId,
     IReadOnlyList<Guid> RoleIds,
+    bool AllFacilities,
     IReadOnlyList<Guid> FacilityIds,
     uint Version,
     PendingUserGrant? PendingGrant = null,
     IReadOnlyList<PendingAccountChange>? PendingChanges = null);
 
+/// <param name="FacilityIds">The facilities the user works in; none gives none. Left empty with <paramref name="AllFacilities"/>.</param>
 /// <param name="Reason">Why the user needs the roles and facilities, for the administrator who approves them.</param>
+/// <param name="AllFacilities">Every facility, those added later included: access given, like the roles.</param>
 public sealed record CreateUserRequest(
     string UserName,
     string DisplayName,
@@ -48,8 +51,14 @@ public sealed record CreateUserRequest(
     Guid? DefaultFacilityId,
     Guid? PractitionerId,
     string? TemporaryPassword,
-    string? Reason = null);
+    string? Reason = null,
+    bool AllFacilities = false);
 
+/// <param name="FacilityIds">The facilities the user works in; none gives none. Left empty with <paramref name="AllFacilities"/>.</param>
+/// <param name="AllFacilities">
+/// Every facility, those added later included. Given, it waits for a second administrator, as any widening does; taken
+/// back to <paramref name="FacilityIds"/>, it applies at once.
+/// </param>
 public sealed record UpdateUserRequest(
     string DisplayName,
     string? Email,
@@ -60,7 +69,8 @@ public sealed record UpdateUserRequest(
     Guid? PractitionerId,
     bool IsActive,
     uint Version,
-    string? Reason = null);
+    string? Reason = null,
+    bool AllFacilities = false);
 
 /// <param name="ExpiresAt">When the temporary password stops working, unless the user has replaced it by then.</param>
 /// <param name="ApprovalId">The request for the user's roles and facilities, when they wait for a second administrator.</param>
@@ -100,6 +110,7 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
         RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.RoleIds).NotEmpty().WithMessage("Assign at least one role.");
+        RuleFor(x => x.FacilityIds).Must(f => f is null || f.Count == 0).When(x => x.AllFacilities).WithMessage(FacilityGrant.AllOrSomeMessage);
         RuleFor(x => x.TemporaryPassword).MaximumLength(PasswordPolicy.MaxLength).WithMessage(IdentityRules.PasswordTooLongMessage);
         RuleFor(x => x.Reason).MaximumLength(500);
     }
@@ -113,6 +124,7 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
         RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
         RuleFor(x => x.Phone).PhoneNumber();
         RuleFor(x => x.RoleIds).NotEmpty().WithMessage("Assign at least one role.");
+        RuleFor(x => x.FacilityIds).Must(f => f is null || f.Count == 0).When(x => x.AllFacilities).WithMessage(FacilityGrant.AllOrSomeMessage);
         RuleFor(x => x.Reason).MaximumLength(500);
     }
 }
@@ -267,7 +279,8 @@ internal static class AccessAdminEndpoints
         }
 
         var roleIds = request.RoleIds.Distinct().ToList();
-        var facilityIds = (request.FacilityIds ?? []).Distinct().ToList();
+        var allFacilities = request.AllFacilities;
+        var facilityIds = allFacilities ? [] : (request.FacilityIds ?? []).Distinct().ToList();
         var ask = decision.Value == GrantDecision.Ask;
         var user = new User
         {
@@ -287,6 +300,7 @@ internal static class AccessAdminEndpoints
         {
             user.Roles.AddRange(roleIds.Select(r => new UserRole { UserId = user.Id, RoleId = r }));
             user.Facilities.AddRange(facilityIds.Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+            user.AllFacilities = allFacilities;
         }
 
         db.Add(user);
@@ -299,12 +313,14 @@ internal static class AccessAdminEndpoints
             {
                 roles = names.Roles(user.Roles.Select(r => r.RoleId)),
                 facilities = names.Facilities(user.Facilities.Select(f => f.FacilityId)),
-                asked = ask ? new { roles = names.Roles(roleIds), facilities = names.Facilities(facilityIds) } : null,
+                allFacilities = user.AllFacilities,
+                asked = ask ? new { roles = names.Roles(roleIds), facilities = names.Facilities(facilityIds), allFacilities } : null,
             },
         });
         if (!ask)
         {
-            grants.AuditGivenAlone(decision.Value, nameof(User), user.Id, $"{user.UserName}, created with the roles {string.Join(", ", names.Roles(roleIds).Select(r => r.Name))}");
+            grants.AuditGivenAlone(decision.Value, nameof(User), user.Id,
+                $"{user.UserName}, created with the roles {string.Join(", ", names.Roles(roleIds).Select(r => r.Name))}{(allFacilities ? " in all facilities" : string.Empty)}");
         }
 
         if (linkNow)
@@ -317,7 +333,7 @@ internal static class AccessAdminEndpoints
         Guid? approvalId = null;
         if (ask)
         {
-            var asked = await grants.AskForUserAsync(user, roleIds, facilityIds, activate: false, request.Reason, ct);
+            var asked = await grants.AskForUserAsync(user, roleIds, facilityIds, allFacilities, activate: false, request.Reason, ct);
             if (asked.IsFailure)
             {
                 return asked.Error!.ToProblem();
@@ -436,24 +452,29 @@ internal static class AccessAdminEndpoints
             grants.AuditMadeAlone(accountDecision, nameof(User), user.Id, $"{user.UserName} linked to a practitioner");
         }
 
-        // What narrows access applies at once: roles and facilities taken away, the account deactivated.
+        // What narrows access applies at once: roles and facilities taken away (all facilities taken back to some, or a
+        // last facility to none), the account deactivated. What widens it (roles and facilities added, all facilities, the
+        // account reactivated) waits for a second person who may approve grants. What already waits is not asked for again.
+        var pending = await grants.PendingForUserAsync(user.Id, ct);
         var wasActive = user.IsActive;
         user.IsActive = wasActive && request.IsActive;
         var rolesBefore = user.Roles.Select(r => r.RoleId).ToList();
         var roleIds = request.RoleIds.Distinct().ToHashSet();
         user.Roles.RemoveAll(r => !roleIds.Contains(r.RoleId));
+        var allBefore = user.AllFacilities;
         var facilitiesBefore = user.Facilities.Select(f => f.FacilityId).ToList();
-        var facilityIds = (request.FacilityIds ?? []).Distinct().ToHashSet();
-        user.Facilities.RemoveAll(f => !facilityIds.Contains(f.FacilityId));
+        var facilityIds = (request.FacilityIds ?? []).Distinct().ToList();
+        var facilities = FacilityGrant.Split(allBefore, facilitiesBefore, request.AllFacilities, facilityIds, pending);
+        user.AllFacilities = facilities.AllNow;
+        user.Facilities.RemoveAll(f => !facilities.Now.Contains(f.FacilityId));
+        user.Facilities.AddRange(facilities.Now.Where(f => !facilitiesBefore.Contains(f)).Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
 
-        // What widens it (roles and facilities added, the account reactivated) waits for a second person who may approve
-        // grants. What already waits is not asked for again.
-        var pending = await grants.PendingForUserAsync(user.Id, ct);
         var addRoles = roleIds.Where(r => !rolesBefore.Contains(r) && pending?.RoleIds.Contains(r) != true).ToList();
-        var addFacilities = facilityIds.Where(f => !facilitiesBefore.Contains(f) && pending?.FacilityIds.Contains(f) != true).ToList();
+        var addFacilities = facilities.Add;
+        var addAll = facilities.AddAll;
         var activate = !wasActive && request.IsActive && pending?.Activate != true;
         var decision = GrantDecision.Ask;
-        var widens = addRoles.Count > 0 || addFacilities.Count > 0 || activate;
+        var widens = addRoles.Count > 0 || addFacilities.Count > 0 || addAll || activate;
         if (widens)
         {
             // Reactivating gives back what the account's roles hold.
@@ -472,6 +493,12 @@ internal static class AccessAdminEndpoints
         {
             user.Roles.AddRange(addRoles.Select(r => new UserRole { UserId = user.Id, RoleId = r }));
             user.Facilities.AddRange(addFacilities.Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+            if (addAll)
+            {
+                user.AllFacilities = true;
+                user.Facilities.Clear();
+            }
+
             user.IsActive = user.IsActive || activate;
         }
 
@@ -492,13 +519,14 @@ internal static class AccessAdminEndpoints
             {
                 roles = new { granted = names.Roles(rolesNow.Except(rolesBefore)), withdrawn = names.Roles(rolesBefore.Except(rolesNow)) },
                 facilities = new { granted = names.Facilities(facilitiesNow.Except(facilitiesBefore)), withdrawn = names.Facilities(facilitiesBefore.Except(facilitiesNow)) },
-                asked = asking ? new { roles = names.Roles(addRoles), facilities = names.Facilities(addFacilities), reactivate = activate } : null,
+                allFacilities = new { before = allBefore, now = user.AllFacilities },
+                asked = asking ? new { roles = names.Roles(addRoles), facilities = names.Facilities(addFacilities), allFacilities = addAll, reactivate = activate } : null,
             },
         });
         if (giveNow)
         {
             grants.AuditGivenAlone(decision, nameof(User), user.Id,
-                $"{user.UserName}: roles {string.Join(", ", names.Roles(addRoles).Select(r => r.Name))}; {addFacilities.Count} facilities{(activate ? "; reactivated" : string.Empty)}");
+                $"{user.UserName}: roles {string.Join(", ", names.Roles(addRoles).Select(r => r.Name))}; {(addAll ? "all facilities" : $"{addFacilities.Count} facilities")}{(activate ? "; reactivated" : string.Empty)}");
         }
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -506,7 +534,7 @@ internal static class AccessAdminEndpoints
         ApprovalRequestDto? asked = null;
         if (asking)
         {
-            var requested = await grants.AskForUserAsync(user, addRoles, addFacilities, activate, request.Reason, ct);
+            var requested = await grants.AskForUserAsync(user, addRoles, addFacilities, addAll, activate, request.Reason, ct);
             if (requested.IsFailure)
             {
                 return requested.Error!.ToProblem();
@@ -1049,7 +1077,7 @@ internal static class AccessAdminEndpoints
     private static UserDetail ToDetail(User user) => new(
         user.Id, user.UserName, user.DisplayName, user.Email, user.Phone, user.IsActive, user.MfaEnabled, user.MustChangePassword,
         user.LastLoginAt, user.LockoutEndsAt, user.PractitionerId, user.DefaultFacilityId,
-        user.Roles.Select(r => r.RoleId).ToList(), user.Facilities.Select(f => f.FacilityId).ToList(), user.Version);
+        user.Roles.Select(r => r.RoleId).ToList(), user.AllFacilities, user.Facilities.Select(f => f.FacilityId).ToList(), user.Version);
 
     /// <summary>When a temporary password given out now stops working (ASVS V6.4.1).</summary>
     private static DateTimeOffset TemporaryPasswordExpiry(IOptions<PlatformOptions> options, TimeProvider time) =>

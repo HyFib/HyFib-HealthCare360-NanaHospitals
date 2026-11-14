@@ -48,7 +48,7 @@ Integration partners (a referral hospital, a health information exchange) get th
 3. Assign the user to **one** facility: the partner reads that facility's records and patients only (#251, decided
    by the hospital), whatever a patient's consent says. A request from an account assigned to no facility, or from a
    session at a facility it is not assigned to, is refused with 403 `facility-required` before anything is looked up
-   (an account assigned to none may sign in at any facility, so it is no facility's partner). What "the facility's"
+   (an account given all facilities may sign in at any facility, so it is no facility's partner). What "the facility's"
    means for each kind of record:
    * visits, encounters, orders, lab results and reports, imaging and cardiology reports, prescriptions, discharge
      summaries, clinical notes, procedures, home readings, wards, rooms and beds: recorded there (platform facility

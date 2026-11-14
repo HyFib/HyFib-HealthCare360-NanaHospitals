@@ -76,7 +76,7 @@ internal sealed class KpiTargetMonitor(HospitalDbContext db, KpiService kpis, IN
         var owners = await db.Set<User>().AsNoTracking()
             .Where(u => u.IsActive && u.Type == UserType.Staff
                         && u.Roles.Any(r => r.Role != null && r.Role.Name == role)
-                        && (u.Facilities.Count == 0 || u.Facilities.Any(f => f.FacilityId == facilityId)))
+                        && (u.AllFacilities || u.Facilities.Any(f => f.FacilityId == facilityId)))
             .Select(u => u.Id)
             .ToListAsync(ct);
         if (owners.Count == 0)

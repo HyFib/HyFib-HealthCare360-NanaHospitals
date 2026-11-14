@@ -1209,6 +1209,10 @@ The ABDM gateway's callbacks, the records other providers push and consent manag
 address too (section 1, "Network checklist"). A hospital that forwarded the staff app's port (7360) to the internet for
 them registers the portal's public address instead (with NHA as the HIP's callback URL, as `dataPushUrl` in
 `abdm.gateway`, and with each consent manager), then stops forwarding 7360.
+A user with no facility chosen worked in every facility; now every facility is a choice of its own (SECURITY.md, "Access
+is given by two people"), and an empty list is none. The upgrade gives **All facilities** to each user whose list was
+empty, so nobody loses access. Afterwards check them in Administration › Users and choose the facilities each works in:
+taking all facilities back to some applies at once, while giving all facilities waits for a second administrator.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.

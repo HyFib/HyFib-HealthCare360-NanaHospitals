@@ -301,7 +301,7 @@ public sealed class DataRequestService(
             .Where(u => u.IsActive && u.Type == UserType.Staff && u.Roles.Any(r => roleIds.Contains(r.RoleId)));
         if (currentUser.FacilityId is { } facilityId)
         {
-            users = users.Where(u => u.Facilities.Count == 0 || u.Facilities.Any(f => f.FacilityId == facilityId));
+            users = users.Where(u => u.AllFacilities || u.Facilities.Any(f => f.FacilityId == facilityId));
         }
 
         return await users.OrderBy(u => u.DisplayName).Select(u => new PrivacyOfficer(u.Id, u.DisplayName)).Take(200).ToListAsync(ct);

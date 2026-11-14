@@ -63,12 +63,13 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
+import { mastersQueries } from '@/modules/masters/api';
 import {
   adminQueries,
   askedForApproval,
@@ -601,6 +602,8 @@ const userSchema = z.object({
     .trim()
     .refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid phone number.'),
   roleIds: z.array(z.string()).min(1, 'Give the user at least one role.'),
+  allFacilities: z.boolean(),
+  facilityIds: z.array(z.string()),
   practitionerId: z.string().nullable(),
   temporaryPassword: z.string().max(128),
   isActive: z.boolean(),
@@ -698,6 +701,8 @@ function UserDrawerForm({
 }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
+  const facilityId = useSession((s) => s.user?.facilityId ?? null);
+  const facilities = useQuery(mastersQueries.facilities());
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -705,8 +710,15 @@ function UserDrawerForm({
       displayName: user?.displayName ?? '',
       email: user?.email ?? '',
       phone: user?.phone ?? '',
-      // Roles waiting for approval are shown as given: saving the form again asks for nothing twice.
+      // Roles and facilities waiting for approval are shown as given: saving the form again asks for nothing twice.
       roleIds: [...new Set([...(user?.roleIds ?? []), ...(user?.pendingGrant?.roleIds ?? [])])],
+      allFacilities: Boolean(user?.allFacilities || user?.pendingGrant?.allFacilities),
+      // A new user starts with the facility this administrator works in.
+      facilityIds: user
+        ? [...new Set([...user.facilityIds, ...(user.pendingGrant?.facilityIds ?? [])])]
+        : facilityId
+          ? [facilityId]
+          : [],
       practitionerId: user?.practitionerId ?? null,
       temporaryPassword: '',
       isActive: user?.isActive ?? true,
@@ -715,6 +727,7 @@ function UserDrawerForm({
   });
   const pending = user?.pendingGrant;
   const changes = user?.pendingChanges ?? [];
+  const allFacilities = useWatch({ control: form.control, name: 'allFacilities' });
 
   const save = useMutation({
     mutationFn: (values: UserForm) => {
@@ -723,7 +736,8 @@ function UserDrawerForm({
         email: values.email || null,
         phone: values.phone || null,
         roleIds: values.roleIds,
-        facilityIds: user?.facilityIds ?? null,
+        allFacilities: values.allFacilities,
+        facilityIds: values.allFacilities ? [] : values.facilityIds,
         defaultFacilityId: user?.defaultFacilityId ?? null,
         practitionerId: values.practitionerId,
         reason: values.reason || null,
@@ -792,6 +806,7 @@ function UserDrawerForm({
                 what={[
                   pending.roleIds.length > 0 &&
                     `Roles ${pending.roleIds.map((id) => roles.find((r) => r.id === id)?.name ?? 'a removed role').join(', ')}`,
+                  pending.allFacilities && 'All facilities',
                   pending.facilityIds.length > 0 &&
                     `${pending.facilityIds.length} ${pending.facilityIds.length === 1 ? 'facility' : 'facilities'}`,
                   pending.activate && 'Reactivating the account',
@@ -877,6 +892,54 @@ function UserDrawerForm({
                 </CheckboxGroup>
               )}
             />
+            <div>
+              <Controller
+                control={form.control}
+                name="allFacilities"
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="All facilities, those added later included"
+                  />
+                )}
+              />
+              <Caption1 block className={styles.muted}>
+                Facilities given, or all of them, wait for another administrator who may approve grants; those taken
+                away go at once.
+              </Caption1>
+            </div>
+            {!allFacilities && (
+              <Controller
+                control={form.control}
+                name="facilityIds"
+                render={({ field }) => (
+                  <CheckboxGroup
+                    label="Works in"
+                    hint={field.value.length === 0 ? 'No facility: they cannot sign in until given one.' : undefined}
+                  >
+                    <div className={styles.roles}>
+                      {(facilities.data ?? [])
+                        .filter((f) => f.isActive || field.value.includes(f.id))
+                        .map((facility) => (
+                          <Checkbox
+                            key={facility.id}
+                            label={facility.name}
+                            checked={field.value.includes(facility.id)}
+                            onChange={(_, d) =>
+                              field.onChange(
+                                d.checked
+                                  ? [...field.value, facility.id]
+                                  : field.value.filter((id) => id !== facility.id),
+                              )
+                            }
+                          />
+                        ))}
+                    </div>
+                  </CheckboxGroup>
+                )}
+              />
+            )}
             <LookupField
               control={form.control}
               name="practitionerId"

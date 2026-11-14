@@ -31,6 +31,9 @@ export interface UserDetail {
   practitionerId: string | null;
   defaultFacilityId: string | null;
   roleIds: string[];
+  /** Every facility, those added later included; `facilityIds` is then empty. */
+  allFacilities: boolean;
+  /** The facilities the user works in, when not all of them; none means none. */
   facilityIds: string[];
   version: number;
   /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator. */
@@ -66,6 +69,8 @@ export interface PasswordResetResponse {
 export interface PendingUserGrant {
   approvalId: string;
   roleIds: string[];
+  /** Every facility asked for the user, those added later included. */
+  allFacilities: boolean;
   facilityIds: string[];
   activate: boolean;
   requestedBy: string;
@@ -101,7 +106,10 @@ export interface SaveUserRequest {
   email: string | null;
   phone: string | null;
   roleIds: string[];
-  facilityIds: string[] | null;
+  /** Every facility, those added later included: a widening, which waits for a second administrator. */
+  allFacilities: boolean;
+  /** The facilities, when not all; an empty list gives none. */
+  facilityIds: string[];
   defaultFacilityId: string | null;
   practitionerId: string | null;
   temporaryPassword?: string | null;

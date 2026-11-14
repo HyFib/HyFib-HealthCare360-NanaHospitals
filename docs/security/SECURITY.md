@@ -362,6 +362,13 @@ and grants nothing.
   - permissions added to a role, a new role's included (`identity.role_grant`).
 
   What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted.
+  - **All facilities is a grant of its own** (`User.AllFacilities`). A user works in every facility, those added later
+    included, only when given all facilities, which waits for a second person like any widening; an empty list of
+    facilities is none. Taking every facility away applies at once, and the user then cannot sign in (403
+    `auth.no_facility`): a session without a facility is not limited to one. Taking all facilities back to some keeps
+    those, at once. Before, an empty list meant every facility, so removing a user's last facility gave them all of
+    them with nobody's approval; the upgrade gives all facilities to the users whose list was empty, so nobody loses
+    access then (migration `UserAllFacilities`).
   - Only someone who holds an administrative permission approves a grant of it, as only they may give it.
   - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`). A grant to
     yourself, your own account or a role you hold, waits for someone else, and is refused when nobody else may approve it.

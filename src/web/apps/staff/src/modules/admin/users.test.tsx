@@ -4,7 +4,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
+import { FACILITY_ID, fakeServer, openScreen, paged, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
 import type { RoleListItem } from './api';
 
 // Adding a user on the users screen, whole with the shell, against a fake server: the roles are a group of checkboxes,
@@ -28,6 +28,13 @@ const role = (suffix: string, name: string): RoleListItem => ({
 
 const ROLES = [role('001', 'Accountant'), role('002', 'Billing'), role('003', 'FrontOffice'), role('004', 'Nurse')];
 
+const ANNEXE_ID = id('502');
+
+const FACILITIES = [
+  { id: FACILITY_ID, code: 'NHP', name: 'Nana Hospitals, Pune', isActive: true },
+  { id: ANNEXE_ID, code: 'NHA', name: 'Nana Hospitals, Annexe', isActive: true },
+];
+
 let server: ReturnType<typeof fakeServer>;
 
 beforeEach(() => {
@@ -36,6 +43,7 @@ beforeEach(() => {
     'GET /api/v1/admin/users': paged([]),
     'GET /api/v1/admin/roles': ROLES,
     'GET /api/v1/masters/lookups/practitioners': [],
+    'GET /api/v1/masters/facilities': FACILITIES,
     'POST /api/v1/admin/users': {
       userId: id('100'),
       temporaryPassword: 'Kite-Lamp-42',
@@ -93,6 +101,29 @@ describe('adding a user', SCREEN_TESTS, () => {
       body: { userName: 'priya.s', displayName: 'Priya Sharma', roleIds: [id('004'), id('002')] },
     });
   });
+
+  it('starts a new user in this facility, and gives all facilities only when asked, explicitly', async () => {
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByRole('button', { name: 'Add user' }, SLOW));
+    const drawer = await screen.findByRole('dialog', { name: /Add user/ });
+    const all = within(drawer).getByRole('switch', { name: 'All facilities, those added later included' });
+    expect(all).not.toBeChecked();
+    const worksIn = await within(drawer).findByRole('group', { name: 'Works in' }, SLOW);
+    expect(await within(worksIn).findByRole('checkbox', { name: 'Nana Hospitals, Pune' })).toBeChecked();
+    expect(within(worksIn).getByRole('checkbox', { name: 'Nana Hospitals, Annexe' })).not.toBeChecked();
+
+    // All facilities is a choice of its own: the list goes, and nothing is sent for it.
+    await user.click(all);
+    expect(within(drawer).queryByRole('group', { name: 'Works in' })).not.toBeInTheDocument();
+    await user.type(within(drawer).getByRole('textbox', { name: /User name/ }), 'priya.s');
+    await user.type(within(drawer).getByRole('textbox', { name: /Full name/ }), 'Priya Sharma');
+    await user.click(within(drawer).getByRole('checkbox', { name: 'Nurse' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Create user' }));
+
+    await waitFor(() => expect(created()).toHaveLength(1));
+    expect(created()[0]?.body).toMatchObject({ allFacilities: true, facilityIds: [] });
+  });
 });
 
 // Access is given by two people: what an edit adds waits for another administrator who may approve grants.
@@ -101,6 +132,7 @@ describe('access that waits for a second administrator', SCREEN_TESTS, () => {
   const waiting = {
     approvalId: id('901'),
     roleIds: [id('004')],
+    allFacilities: false,
     facilityIds: [],
     activate: false,
     requestedBy: 'Hospital Admin',
@@ -112,6 +144,7 @@ describe('access that waits for a second administrator', SCREEN_TESTS, () => {
       'GET /api/v1/admin/users': paged([]),
       'GET /api/v1/admin/roles': ROLES,
       'GET /api/v1/masters/lookups/practitioners': [],
+      'GET /api/v1/masters/facilities': FACILITIES,
       'POST /api/v1/admin/users': {
         userId: id('100'),
         temporaryPassword: 'Kite-Lamp-42',
@@ -166,12 +199,14 @@ describe('access that waits for a second administrator', SCREEN_TESTS, () => {
         practitionerId: null,
         defaultFacilityId: null,
         roleIds: [],
-        facilityIds: [],
+        allFacilities: false,
+        facilityIds: [FACILITY_ID],
         version: 3,
         pendingGrant: waiting,
       },
       'GET /api/v1/admin/roles': ROLES,
       'GET /api/v1/masters/lookups/practitioners': [],
+      'GET /api/v1/masters/facilities': FACILITIES,
       [`PUT /api/v1/admin/users/${userId}`]: {
         id: id('902'),
         kind: 'identity.user_grant',
@@ -193,7 +228,76 @@ describe('access that waits for a second administrator', SCREEN_TESTS, () => {
     await user.click(within(drawer).getByRole('button', { name: 'Save' }));
     expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
     const put = server.requests.find((request) => request.method === 'PUT');
-    expect(put?.body).toMatchObject({ roleIds: [id('004'), id('002')], version: 3 });
+    expect(put?.body).toMatchObject({
+      roleIds: [id('004'), id('002')],
+      allFacilities: false,
+      facilityIds: [FACILITY_ID],
+      version: 3,
+    });
+  });
+
+  it('shows all facilities explicitly, waiting or given, and an empty list as no facility', async () => {
+    const account = {
+      id: userId,
+      userName: 'priya.s',
+      displayName: 'Priya Sharma',
+      email: null,
+      phone: null,
+      isActive: true,
+      mfaEnabled: false,
+      mustChangePassword: false,
+      lastLoginAt: null,
+      lockoutEndsAt: null,
+      practitionerId: null,
+      defaultFacilityId: null,
+      roleIds: [id('004')],
+      allFacilities: false,
+      facilityIds: [],
+      version: 4,
+      pendingGrant: { ...waiting, roleIds: [], allFacilities: true },
+    };
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([
+        {
+          id: userId,
+          userName: 'priya.s',
+          displayName: 'Priya Sharma',
+          email: null,
+          phone: null,
+          isActive: true,
+          isLocked: false,
+          mfaEnabled: false,
+          lastLoginAt: null,
+          roles: ['Nurse'],
+        },
+      ]),
+      [`GET /api/v1/admin/users/${userId}`]: account,
+      'GET /api/v1/admin/roles': ROLES,
+      'GET /api/v1/masters/lookups/practitioners': [],
+      'GET /api/v1/masters/facilities': FACILITIES,
+      [`PUT /api/v1/admin/users/${userId}`]: null,
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByText('Priya Sharma', {}, SLOW));
+    const drawer = await screen.findByRole('dialog', { name: /Priya Sharma/ }, SLOW);
+
+    // All facilities waits for approval: the notice names it, and the switch shows it as given, so it is not asked twice.
+    expect(await within(drawer).findByText(/All facilities, asked for by Hospital Admin/)).toBeInTheDocument();
+    const all = within(drawer).getByRole('switch', { name: 'All facilities, those added later included' });
+    expect(all).toBeChecked();
+
+    // Turned off, the list is explicit: with none ticked, the user works in no facility.
+    await user.click(all);
+    const worksIn = await within(drawer).findByRole('group', { name: 'Works in' });
+    expect(worksIn).toHaveAccessibleDescription('No facility: they cannot sign in until given one.');
+    await user.click(await within(worksIn).findByRole('checkbox', { name: 'Nana Hospitals, Annexe' }, SLOW));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(server.requests.filter((r) => r.method === 'PUT')).toHaveLength(1));
+    expect(server.requests.find((r) => r.method === 'PUT')?.body).toMatchObject({
+      allFacilities: false,
+      facilityIds: [ANNEXE_ID],
+    });
   });
 });
 

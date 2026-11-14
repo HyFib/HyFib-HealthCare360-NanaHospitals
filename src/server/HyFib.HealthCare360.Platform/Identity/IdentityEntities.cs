@@ -65,7 +65,16 @@ public sealed class User : AuditableEntity
     public Guid? PractitionerId { get; set; }
     public Guid? PatientId { get; set; }
 
+    /// <summary>
+    /// The user works in every facility, those added later included, and <see cref="Facilities"/> is empty. Otherwise only
+    /// in <see cref="Facilities"/>, and none is none: taking a user's last facility away never gives them every one.
+    /// Given like any other access (<see cref="GrantApprovals"/>).
+    /// </summary>
+    public bool AllFacilities { get; set; }
+
     public List<UserRole> Roles { get; set; } = [];
+
+    /// <summary>The facilities the user works in, unless <see cref="AllFacilities"/>.</summary>
     public List<UserFacility> Facilities { get; set; } = [];
 
     public static string Normalize(string userName) => userName.Trim().ToLowerInvariant();
