@@ -336,7 +336,18 @@ internal sealed class BackupService(
             {
                 await using var file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
-                await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, ct);
+                if (includeDocuments)
+                {
+                    await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, ct);
+                }
+                else
+                {
+                    // The backup before an update has no documents, and is restored by the version updated from when the
+                    // update is undone (DEPLOYMENT.md section 7, "Going back"): format 2, which every earlier version reads.
+                    await BackupArchive.WriteAsync(encryptor, manifest with { DocumentCount = 0, DocumentBytes = 0 }, masterKey, ring.Keys, sealKey, dump,
+                        directories.Files, [], ct);
+                }
+
                 await encryptor.CompleteAsync(ct);
                 sha256 = encryptor.Sha256!;
                 Checkpoint?.Invoke("archive written");
