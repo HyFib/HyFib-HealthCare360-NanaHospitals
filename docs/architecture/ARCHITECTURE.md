@@ -317,7 +317,7 @@ answers are not touched.
 
 * CI (`.github/workflows/ci.yml`) runs on every pull request and on main, and a pull request cannot merge until its jobs pass:
   * **.NET:** the C# formatting check (`dotnet format whitespace`, from `.editorconfig`); restore, whose NuGet audit fails on any known-vulnerable package, direct or transitive; `dotnet build` with warnings as errors and every security analyzer rule on; `dotnet test` (unit, integration and architecture).
-  * **Web:** a gitleaks secret scan of every commit, `pnpm audit`, the Prettier check (`pnpm format:check`), `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
+  * **Web:** a gitleaks secret scan of every commit in the change's history, `pnpm audit`, the Prettier check (`pnpm format:check`), `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`.
   * **Accessibility in a browser (SRS UX-10):** `pnpm test:a11y` on Ubuntu with Playwright's Chromium: the staff app's and the portal's key screens, built and with canned data, in the light, dark and high-contrast themes, checked with axe-core (every WCAG 2.2 A/AA rule, contrast and target size included) and a walk with Tab. A failure keeps the HTML report, with screenshots and traces, as a build artifact.
 * **CodeQL** code scanning analyses the C# apps, the web apps and the workflows on every pull request, on main and weekly.
 * The weekly **Security audit** workflow runs both package audits on main, and Dependabot proposes updates every week. `docs/security/SECURITY.md` ("Dependencies, secrets and code scanning") explains how an advisory is accepted and how a finding is handled.
