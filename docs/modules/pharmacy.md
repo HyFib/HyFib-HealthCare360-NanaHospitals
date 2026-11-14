@@ -48,7 +48,8 @@ Detail views that show a patient (`/queue/{id}`, `/sales/{id}`, `/ward-indents/{
 | GET | `/queue?page&status&inpatient&includeClosed` | any of `pharmacy.queue.read`, `pharmacy.dispense`, `pharmacy.ip.issue` | → paged `QueueListItem` (oldest first; waiting minutes, controlled flag, refill flag, `hasUnacknowledgedOverride`) |
 | GET | `/queue/{id}?storeId` | same | → `QueueEntryDetail` (lines with availability, MRP and nearest expiry in `storeId`; prescriber and registration number; refill status; `safetyOverrideReason`, and on each line its `safetyOverride` and who acknowledged it, when, and their note) |
 | POST | `/queue/{id}/lines/{lineId}/acknowledge-override` | `pharmacy.dispense` | `AcknowledgeOverrideRequest` (note?, up to 500) → 204. 422 `pharmacy.no_override`, `pharmacy.override_acknowledged`, `queue.closed`; 403 `pharmacy.override_own_prescription` for the account that signed the prescription |
-| POST | `/queue/{id}/dispense` | `pharmacy.dispense` | `DispenseRequest` (storeId, lines[queueLineId, itemId, quantity, batchId?, substitutionReason, prescriberConsent], counsellingNotes, discountPercent, payments[mode Cash/Card/Upi/Credit, amount, reference, terminalSaleId?], confirmControlledDrugs) → 201 `PharmacySaleCreated` (id, invoiceNumber, netAmount, paidAmount, dueAmount, status) |
+| POST | `/queue/{id}/dispense` | `pharmacy.dispense` | `DispenseRequest` (storeId, lines[queueLineId, itemId, quantity, batchId?, substitutionReason, prescriberConsent], counsellingNotes, discountPercent, payments[mode Cash/Card/Upi/Credit, amount, reference, terminalSaleId?], confirmControlledDrugs, paper? {number, at}) → 201 `PharmacySaleCreated` (id, invoiceNumber, netAmount, paidAmount, dueAmount, status) |
+| POST | `/queue/{id}/dispensed-on-paper` | `pharmacy.dispense` | `DispensedOnPaperRequest` (at: the time on the paper, not in the future; invoiceNumber? of the paper sale entered from paper, for the same patient; note? where the paper sale is kept; one of the two) → 204. Closes an OP prescription that was handed over on paper during a downtime, as dispensed, so it leaves the queue and cannot be dispensed again (`queue.closed`). 400 on `invoiceNumber` or `at`; 422 `queue.closed`, `pharmacy.inpatient_prescription`, `backentry.late`. Audited (`pharmacy.dispensed_on_paper`, Warning). `QueueEntryDetail` carries `dispensedOnPaperAt` and `paperSaleNumber` |
 | POST | `/queue/{id}/close` | `pharmacy.dispense` or `pharmacy.ip.issue` | `PharmacyReasonRequest` → 204. Partly dispensed lines count as dispensed, untouched lines are cancelled |
 | POST | `/queue/{id}/refills` | `pharmacy.refills` | `AuthorizeRefillsRequest` (refills 1–12, validUntil > today, note) → 204 |
 
@@ -132,7 +133,7 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 | GET | `/stock/batches?storeId&itemId&includeEmpty` | Counter staff | → `BatchStock[]` (FEFO order) |
 | GET | `/sales?page&from&to&status&type&storeId&withDues` | `pharmacy.sales` or `pharmacy.returns` | → paged `PharmacySaleListItem` |
 | GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments, each refund with the payment it paid back; `pending`: a cancellation or return waiting for approval; `ownSale`: the reader sold it or took its payment) · `SaleReturnDto[]` |
-| POST | `/sales/counter` | `pharmacy.sales` | `CounterSaleRequest` (storeId, patientId? or customerName/customerPhone, prescription? {prescriberName, prescriberRegistrationNumber, prescriptionDate, reference}, lines[itemId, quantity, batchId?], discountPercent, payments, confirmControlledDrugs, buyer? {gstin, legalName, deliveryState?, address?}) → 201 `PharmacySaleCreated`. The outside prescription is kept as presented, its date with it (`PharmacySaleDetail.prescriptionDate`, printed on the invoice beside its reference), so the sale is matched to the paper it was made against; a date after today is refused (400 `prescription.prescriptionDate`). Cash is held to the Income-tax Act's limit with the billing counters' (422 `payments.cash_limit`, see `docs/modules/billing.md`): an invoice is one transaction, and a patient's cash counts with what they paid at billing that day |
+| POST | `/sales/counter` | `pharmacy.sales` | `CounterSaleRequest` (storeId, patientId? or customerName/customerPhone, prescription? {prescriberName, prescriberRegistrationNumber, prescriptionDate, reference}, lines[itemId, quantity, batchId?], discountPercent, payments, confirmControlledDrugs, buyer? {gstin, legalName, deliveryState?, address?}, paper? {number, at}) → 201 `PharmacySaleCreated`. The outside prescription is kept as presented, its date with it (`PharmacySaleDetail.prescriptionDate`, printed on the invoice beside its reference), so the sale is matched to the paper it was made against; a date after today is refused (400 `prescription.prescriptionDate`). Cash is held to the Income-tax Act's limit with the billing counters' (422 `payments.cash_limit`, see `docs/modules/billing.md`): an invoice is one transaction, and a patient's cash counts with what they paid at billing that day |
 | POST | `/sales/{id}/payments` | `pharmacy.sales` | `CollectPaymentRequest` (mode, amount, reference, terminalSaleId?) → 204 (`payment.exceeds_due`, `payments.cash_limit`) |
 | POST | `/terminal-sales` | `pharmacy.dispense` or `pharmacy.sales` | `{amount, terminalId, mode Card/Upi, patientId?}` → `CounterTerminalSale` (id, counter, provider, terminalId, transactionId, amount, mode, status, approvalCode, cardLast4, rrn, message, usedFor, createdAt, completedAt). Pushes the amount to the terminal |
 | GET | `/terminal-sales/{id}` | same | → `CounterTerminalSale` (polls the terminal; the screen asks every 2 seconds) |
@@ -140,6 +141,22 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 | GET | `/terminal-sales/unused` | same | → `CounterTerminalSale[]`: approved, no invoice records it yet and the accountants have not closed it, within 2 days, newest first |
 | POST | `/sales/{id}/returns` | `pharmacy.returns` | `SaleReturnRequest` (lines[saleItemId, quantity, restock], reason; each sale line once) → 201 `SaleReturnCreated` (returnNumber, refundAmount, adjustedAgainstDue, cashRefund) when restocked and set wholly against the balance due; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.sale_return`). 403 `pharmacy.return_own_sale` for whoever sold it or took its payment |
 | POST | `/sales/{id}/cancel` | `pharmacy.returns` | `PharmacyReasonRequest` → 202 `ApprovalRequestDto` (kind `pharmacy.sale_cancel`). Same local day only and no returns (`sale.cancel_window`, `sale.has_returns`), no IRN (`einvoice.active`); 403 `pharmacy.cancel_own_sale` for whoever sold it or took its payment. Approved, every payment is paid back the way it was paid, the stock goes back to the original batches and the queue entry reopens |
+
+**Sales written on paper during a downtime** (docs/modules/downtime.md, *Pharmacy sales on paper*). Both ways of selling
+(`/queue/{id}/dispense` and `/sales/counter`) take an optional `paper {number, at}`. The number is a downtime pharmacy sale
+number issued ahead to the counter (`DowntimeNumberKind.PharmacySale`, reserved from the `pharmacy.invoice` series by the
+Patients module's `DowntimeNumberService`, which the pharmacy registers the series with) and `at` the time on the paper.
+`DowntimeNumberService.ClaimAsync` refuses a number that is not an unused pharmacy sale number of this facility (400 on
+`paper.number`; 409 `downtime.number_entered` when used), a time before the block was issued, in another year of the
+series, out of order within the block, or in the future (400 on `paper.at`), and one past the *Pharmacy sale from paper*
+back-entry window (`downtime.backEntryHours.pharmacySale`, 72 hours, at most 14 days) with no late back-entry approval
+(422 `backentry.late`). The invoice then takes the number as its invoice number and the time as `soldAt`, its payments,
+the controlled-drug register lines and the day book are dated at the time on the paper, and `enteredFromPaperAt` records
+when it was entered (`PharmacySaleDetail.enteredFromPaperAt`; the entry is audited as `patients.entered_from_paper`
+against the sale). Stock moves when the sale is entered, from the batches handed over: the stock ledger shows the entry
+time, not the paper's. A counter sale made on paper whose prescription reference is the number of an open OP queue entry
+of the same patient closes that entry as dispensed on paper (the entry's `paperSaleNumber` names the invoice), so the
+prescription does not come back in the queue. Nothing is changed when any check fails.
 
 OTC blocking (`SchedulePolicy`, Drugs & Cosmetics Rules): Schedule H, H1, X and NDPS medicines are never sold
 without a prescription (`pharmacy.prescription_required`, with the offending items in `data.items`). H1/X also
@@ -382,7 +399,7 @@ while SMS/WhatsApp consent is active.
 
 | Series key | Format |
 |---|---|
-| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` (OP dispensing and counter sales; a GST series, at most 16 characters) |
+| `pharmacy.invoice` | `{FAC}PH{YY}{SEQ:6}` (OP dispensing and counter sales, and the downtime pharmacy sale numbers reserved ahead in blocks; a GST series, at most 16 characters) |
 | `pharmacy.return` | `{FAC}SR{YY}{SEQ:6}` (a credit note; a GST series, at most 16 characters) |
 | `pharmacy.ward_indent` · `pharmacy.ip_issue` · `pharmacy.ward_return` | `{FAC}WI{YY}{SEQ:6}` · `{FAC}IPI{YY}{SEQ:6}` · `{FAC}WR{YY}{SEQ:6}` |
 | `pharmacy.refill` | `{FAC}RF{YY}{SEQ:6}` |
@@ -391,6 +408,9 @@ while SMS/WhatsApp consent is active.
 
 `pharmacy.discount.max_percent`: per facility (decimal, default 10). Neither a dispense nor a counter sale can
 exceed it.
+
+`downtime.backEntryHours.pharmacySale`: how far back the time on a pharmacy paper sale may be when it is entered, in
+hours (default 72, 1 to 336; lengthening it waits for a second administrator). See docs/modules/downtime.md.
 
 ## Seed data (`PharmacySeeder`, order 160, idempotent)
 
@@ -402,8 +422,8 @@ exceed it.
 ## Tables (schema `pharmacy`)
 
 `queue_entries` (unique `prescription_id` where `refill_of_entry_id IS NULL`; `safety_override_reason`,
-`signed_by_user_id`), `queue_lines` (`safety_override` and who acknowledged it, when, with their note), `sales` (unique
-`invoice_number`), `sale_items`, `sale_payments` (a refund's `refund_of_payment_id`; `approval_code`, `card_last4` and
+`signed_by_user_id`; `dispensed_on_paper_at` and `paper_sale_number` for a prescription dispensed on paper during a downtime), `queue_lines` (`safety_override` and who acknowledged it, when, with their note), `sales` (unique
+`invoice_number`; `entered_from_paper_at` for a sale written on paper during a downtime), `sale_items`, `sale_payments` (a refund's `refund_of_payment_id`; `approval_code`, `card_last4` and
 `terminal_sale_id` of a payment taken on the terminal), `sale_returns` (unique `return_number`), `sale_return_items`,
 `ward_indents`, `ward_indent_lines`, `ip_issues`, `ip_issue_lines`, `ward_returns`, `ward_return_lines`,
 `controlled_drug_register` (unique `ledger_entry_id`), `refill_requests`, `narcotic_counts`, `narcotic_count_lines`,
