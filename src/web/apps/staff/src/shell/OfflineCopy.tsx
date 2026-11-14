@@ -15,7 +15,7 @@ import {
   tokens,
 } from '@fluentui/react-components';
 import { DocumentTableRegular } from '@fluentui/react-icons';
-import { formatDateTime, onSessionKey, useConnection, useSession } from '@hc360/core';
+import { formatDateTime, onSessionKey, serverOutage, useConnection, useSession } from '@hc360/core';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import {
@@ -48,19 +48,20 @@ const fetchJson = (path: string) => api.get<unknown>(path);
 
 /**
  * Keeps the offline copy (read-only offline mode): once the user's key comes it takes the latest pack and worklists,
- * again every 15 minutes while HC360 can be reached; when it cannot, it opens the copy kept on this computer. A session
- * that ends while HC360 can be reached wipes it (a sign-out wipes it in any case: `signOut`).
+ * again every 15 minutes while HC360 can work; when it cannot (unreachable, or its database down), it opens the copy
+ * kept on this computer. A session that ends while HC360 can be reached wipes it (a sign-out wipes it in any case:
+ * `signOut`).
  */
 export function OfflineCopyKeeper() {
   const userId = useSession((s) => s.user?.id ?? null);
   const status = useSession((s) => s.status);
-  const offline = useConnection((s) => !s.browserOnline || !s.serverReachable);
+  const offline = useConnection(serverOutage);
 
   useEffect(
     () =>
       onSessionKey((user, key) => {
         void openOfflineCopy(user, key).then(() =>
-          useConnection.getState().serverReachable ? takeOfflineCopy({ backend, fetchJson }) : false,
+          serverOutage(useConnection.getState()) ? false : takeOfflineCopy({ backend, fetchJson }),
         );
       }),
     [],
@@ -90,12 +91,12 @@ export function OfflineCopyKeeper() {
 }
 
 /**
- * While HC360 cannot be reached: how old the offline copy is, and the copy itself, read only. Nothing can be written
- * from it; the ward records on paper and enters it when HC360 is back.
+ * While HC360 cannot be reached, or answers but its database is down: how old the offline copy is, and the copy itself,
+ * read only. Nothing can be written from it; the ward records on paper and enters it when HC360 is back.
  */
 export function OfflineCopyBanner({ now = Date.now }: { now?: () => number }) {
   const styles = useStyles();
-  const offline = useConnection((s) => !s.browserOnline || !s.serverReachable);
+  const offline = useConnection(serverOutage);
   const copy = useOfflineCopy();
   const [open, setOpen] = useState(false);
 

@@ -54,7 +54,7 @@ beforeAll(() => {
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => {
-  useConnection.setState({ browserOnline: true, serverReachable: true });
+  useConnection.setState({ browserOnline: true, serverReachable: true, databaseDown: false });
   useOfflineCopy.setState({ takenAt: null, pack: null, worklists: [] });
 });
 
@@ -261,6 +261,14 @@ describe('the read-only offline copy', () => {
     useOfflineCopy.setState({ takenAt: Date.now(), pack: PACK, worklists: [] });
     render(wrap(<OfflineCopyBanner />));
     expect(screen.queryByText(/Read-only copy/)).not.toBeInTheDocument();
+  });
+
+  it('is offered when the server answers but its database is down, as when it cannot be reached', async () => {
+    useOfflineCopy.setState({ takenAt: Date.now(), pack: PACK, worklists: [] });
+    act(() => useConnection.setState({ serverReachable: true, databaseDown: true }));
+    render(wrap(<OfflineCopyBanner />));
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' })).toBeInTheDocument();
   });
 
   it('says how old the copy is when the server cannot be reached, and opens it with nothing to save', async () => {

@@ -212,6 +212,34 @@ describe('api client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  // While its database is down the server still answers every request, with a 500 that names no reason, so the app
+  // must be told: an answer alone counts as the server being reachable.
+  it('tells the app of a server failure that names no reason, and not of one the server explains or a refusal', async () => {
+    const unexplained = new Response(
+      JSON.stringify({ title: 'Something went wrong', status: 500, referenceId: 'r1' }),
+      { status: 500, headers: { 'content-type': 'application/problem+json' } },
+    );
+    const explained = new Response(JSON.stringify({ title: 'PDF unavailable', status: 503, code: 'pdf.unavailable' }), {
+      status: 503,
+      headers: { 'content-type': 'application/problem+json' },
+    });
+    const responses = [unexplained, explained, jsonResponse(404, { title: 'Not found' })];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => responses.shift()),
+    );
+    const onServerFailure = vi.fn();
+    const onReachability = vi.fn();
+    const client = createApiClient({ ...baseConfig, onServerFailure, onReachability });
+
+    await expect(client.get('/api/v1/inpatient/census')).rejects.toMatchObject({ status: 500 });
+    expect(onServerFailure).toHaveBeenCalledTimes(1);
+    expect(onReachability).toHaveBeenLastCalledWith(true);
+    await expect(client.get('/api/v1/documents/1/pdf')).rejects.toMatchObject({ code: 'pdf.unavailable' });
+    await expect(client.get('/api/v1/patients/none')).rejects.toMatchObject({ status: 404 });
+    expect(onServerFailure).toHaveBeenCalledTimes(1);
+  });
+
   it('reads the file name a download was given', () => {
     expect(
       fileNameFromDisposition(`attachment; filename="stock.csv"; filename*=UTF-8''Stock%20report%20%E2%82%B9.csv`),

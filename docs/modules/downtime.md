@@ -234,9 +234,17 @@ sections[{key, title, note, pagePerTable, tables[{heading, note, alert, columns[
 ## Read-only offline mode (staff app)
 
 While the staff app can reach HC360 it keeps an **offline copy**: the latest pack and the user's worklists (OPD, lab,
-radiology reporting, those the user may open), taken at sign-in and every 15 minutes. When the server cannot be reached
-the app says so, with *Open the offline copy*, which shows the pack and the worklists. Nothing can be saved from it: the
-ward records on paper.
+radiology reporting, those the user may open), taken at sign-in and every 15 minutes. When the server cannot be reached,
+or answers but its database is down, the app says so, with *Open the offline copy*, which shows the pack and the
+worklists. Nothing can be saved from it: the ward records on paper.
+
+A **database that is down** is an outage too, though the server still answers every request, with an error, so the app
+does not take an answer alone as "online". A request that fails with a server error naming no reason (a 500, or a 502
+to 504 the server did not explain) makes it ask `/health/ready`: a 503 there, or no answer in time while `/health/live`
+answers, marks the database down. The connection pill then says *HealthCare360 database down*, the offline banner says
+the server cannot reach its database, and the offline copy is offered. While that lasts the app asks `/health/ready`
+again every 15 seconds; otherwise it asks only `/health/live`, since the server opens a new database connection to
+answer `/health/ready`.
 
 The banner labels each part by its own age, not by when the app last fetched. The ward sheets and medicines are as old as
 the **pack** (its `generatedAt`): **"Read-only copy: ward sheets and medicines as of <pack time>"**, then how old that
