@@ -14,6 +14,8 @@ public sealed class ReleaseWorkflowTests
 
         ci.ShouldContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
         ci.ShouldNotContain("cancel-in-progress: true");
+        // One group per main commit: GitHub replaces a pending run in a shared group, which would leave a commit with no verdict.
+        ci.ShouldContain("group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}");
     }
 
     [Fact]
