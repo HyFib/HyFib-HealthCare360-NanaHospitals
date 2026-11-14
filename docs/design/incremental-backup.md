@@ -303,7 +303,23 @@ Failure rows for these destinations:
    catches faults, each of these changes to the code was made on purpose and failed it: the sweep not deleting (16 of
    16 sequences fail), the hash cache ignoring file times (16 of 16), and append-only copies taken without checking
    their length (3 of 8 append-only sequences fail; `BackupStoreTests` covers it directly).
-6. A growth benchmark over 60 simulated nights, asserting size ≈ `R × (D + I) + Docs + Docs_R`.
+6. A growth benchmark (`BackupGrowthBenchmarkTests`, done). It runs 60 nights of real backup runs: 2 to 4 documents of 5
+   to 40 kB added each night, the data key rotated on night 20 (every document written again), and the 30-day backup
+   period reached on night 31. Every night, in both the server's folder and the USB disk, the folder's size equals
+   exactly the kept archives and their lists, plus one copy of each document version they list, plus the folder's
+   marker, lock and hash cache. It also matches `R × (D + I) + Docs + Docs_R` within 2%. Measured on the server folder:
+
+   | Night | Backups kept | Documents now | Earlier versions kept | Folder | Every document in every backup |
+   |---|---|---|---|---|---|
+   | 19 | 19 | 1.2 MB | 0 | 1.7 MB | 23.7 MB |
+   | 20 | 20 | 1.3 MB | 1.2 MB | 3.0 MB | 26.0 MB |
+   | 31 | 31 | 2.1 MB | 1.2 MB | 4.1 MB | 65.9 MB |
+   | 49 | 31 | 3.1 MB | 1.2 MB | 5.3 MB | 96.1 MB |
+   | 50 | 31 | 3.2 MB | 0 | 4.1 MB | 98.7 MB |
+   | 60 | 31 | 3.8 MB | 0 | 4.9 MB | 119.8 MB |
+
+   After the rotation the earlier versions stay exactly as long as a backup made before it is kept (to night 49). The
+   folder then grows by the new documents and one backup a night. The full table is in the test's output.
 7. Docs: DEPLOYMENT.md §7 (downgrade note), §8, §9 step 3, the readiness doc's sizing. A restore-drill script for a
    clean Windows VM from one USB disk (row counts plus per-document hashes, timed).
 
