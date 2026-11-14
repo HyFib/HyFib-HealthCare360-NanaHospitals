@@ -51,8 +51,9 @@ public sealed class PeakMixTests(HospitalServer server)
         var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
 
-        // What the test server needs for the steps, made through the API as staff make it.
-        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
+        // What the test server needs for the steps, made through the API as staff make it. The medicine comes first by name: the
+        // runner reads the first 100 the store can sell, and the other tests stock the same shelf.
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist, name: $"Aaa peak mix tablet {Letters(6)}");
         var sample = await ReceivedLabSampleAsync(frontOffice, doctor, billing, lab);
         var (wardId, dose) = await DueDoseAsync(frontOffice, doctor, admin);
         var portalPhone = "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10))));
@@ -86,6 +87,9 @@ public sealed class PeakMixTests(HospitalServer server)
 
         notRun.ShouldBeEmpty(log + Environment.NewLine + string.Join(Environment.NewLine, notRun));
         fixtures.PharmacyItems.ShouldContain(i => i.ItemId == medicine.ItemId, "the medicine on the shelf sells over the counter");
+
+        // The counter sells the test's own medicine: other tests sell from the same shelf at the same time (OwnMedicine).
+        fixtures.PharmacyItems = [.. fixtures.PharmacyItems.Where(i => i.ItemId == medicine.ItemId)];
 
         var patients = (await frontOffice.GetAsync<JsonElement>("/api/v1/patients?pageSize=50"))
             .GetProperty("items").EnumerateArray().Where(p => !p.GetProperty("isVip").GetBoolean()).Select(p => p.GetProperty("id").GetGuid()).ToList();
