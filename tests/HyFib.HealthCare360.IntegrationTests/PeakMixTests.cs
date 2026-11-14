@@ -17,6 +17,7 @@ using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Organization;
 using HyFib.HealthCare360.SharedKernel;
@@ -238,8 +239,9 @@ public sealed class PeakMixTests(HospitalServer server)
     }
 
     /// <summary>
-    /// An admitted patient in the special ward with a dose due now that needs no witness (a drug neither controlled nor
-    /// high-alert, ordered by the doctor so it is signed at once). Returns the ward and the dose's MAR entry.
+    /// An admitted patient in the special ward with a dose due now that needs no witness: a drug of the master that is neither
+    /// controlled nor high-alert (one typed in by name is handled as high-alert, and witnessed), ordered by the doctor so it is
+    /// signed at once. Returns the ward, the admission and the dose's MAR entry.
     /// </summary>
     private async Task<(Guid WardId, Guid AdmissionId, Guid DoseId)> DueDoseAsync(ApiClient frontOffice, ApiClient doctor, ApiClient admin)
     {
@@ -253,8 +255,9 @@ public sealed class PeakMixTests(HospitalServer server)
             ProvisionalDiagnosis: "Post-operative pain", ReferredBy: null, PayerType: PayerType.Self, PayerId: null, PolicyNumber: null,
             IsMlc: false, MlcNumber: null, ExpectedDischargeDate: null, AttendantName: null, AttendantRelation: null, AttendantPhone: null,
             AdmittedAt: null, Notes: null));
+        var paracetamol = await DrugClassApprovalTests.CreateAsync(admin, "Paracetamol", DrugSchedule.Otc, controlled: false, highAlert: false);
         var order = await doctor.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders", new AddMedicationOrderRequest(
-            DrugItemId: null, DrugName: "Paracetamol 500 mg Tablet", GenericName: null, Strength: null, Dose: "1 tablet", Route: "PO", Frequency: "STAT",
+            DrugItemId: paracetamol, DrugName: "Paracetamol 500 mg Tablet", GenericName: null, Strength: null, Dose: "1 tablet", Route: "PO", Frequency: "STAT",
             DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
         var chart = await doctor.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
         return (ward.Id, admission.Id, chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due).Id);
