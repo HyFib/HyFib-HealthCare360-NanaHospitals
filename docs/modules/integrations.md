@@ -713,7 +713,8 @@ Platform contract `IInvoiceRegistrationPortal`, through `IrpRouter` and the prov
   facility, GSTIN and credential; 1005 (token not valid) signs in again, once.
 * **`simulator`** (`SimulatorIrp`), on training and test servers only: the portal's IRN hash, 2150 with the IRN it
   holds, 2270 after 24 hours, an IRN's details as `ACT` or `CNL` (with when) to its own GSTIN only, and e-way bills:
-  one per IRN (4002 after), given back by the IRN to its own GSTIN (4005 while there is none).
+  one per IRN (4002 after), given back by the IRN to its own GSTIN (4005 while there is none), numbered with 12 digits,
+  or 14 from 1 January 2027 as the portal will (GSTN advisory 687 of 4 November 2026).
 
 What HC360 relies on from the portal, and where it comes from:
 
@@ -725,7 +726,10 @@ What HC360 relies on from the portal, and where it comes from:
 | The details are given for about three days after the IRN's generation (`IrpIrn.DetailsWindow`: HC360 asks within two) | Whether an IRN recorded by hand is checked with the portal | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
 | Documents more than 30 days old are refused from taxpayers with an aggregate turnover of ₹10 crore or more (from 1 April 2025) | The register's due dates and the morning reminder | GSTN advisory of 5 November 2024 |
 | A second e-way bill asked for from an IRN is refused with 4002 ("EwayBill is already generated for this IRN") | Asking again after a lost answer never makes a second e-way bill | GSP documentation of the NIC API (Logitax, *Generate E-way bill by IRN*, a 4002 sample); to be confirmed on NIC's sandbox |
-| An IRN's e-way bill (GET `/eiewb/v1.03/ewaybill/irn/{irn}`, `NicIrpClient.GetEwayBillAsync`) answers `EwbNo`, `Status` (`ACT` or `CNL`, `IrpEwayBill.IsCancelled`), `GenGstin`, `EwbDt` and `EwbValidTill` (null on a sample cancelled one), or 4005 ("Eway Bill details are not found") when there is none | Reading back an e-way bill request that failed (`EwayBillRequests`) | GSP documentation of the NIC API (Vayana's and Logitax's *Get EWB details by IRN*, with samples; `EwbNo` comes as a number in one and a string in the other); to be confirmed on NIC's sandbox |
+| An IRN's e-way bill (GET `/eiewb/v1.03/ewaybill/irn/{irn}`, `NicIrpClient.GetEwayBillAsync`) answers `EwbNo`, `Status` (`ACT` or `CNL`, `IrpEwayBill.IsCancelled`), `GenGstin`, `EwbDt` and `EwbValidTill` (null on a sample cancelled one), or 4005 ("Eway Bill details are not found") when there is none | Reading back an e-way bill request that failed (`EwayBillRequests`); checking an e-way bill recorded by hand (`EwayBillEntries.Against`) | GSP documentation of the NIC API (Vayana's and Logitax's *Get EWB details by IRN*, with samples; `EwbNo` comes as a number in one and a string in the other); to be confirmed on NIC's sandbox |
+| An e-way bill generated on the e-way bill portal, not from the IRN, is not given back by the IRN (4005) | Recording such an e-way bill on its print instead of refusing it | GSP documentation (ClearTax: an e-way bill's state is fetched only for one generated through them with the IRN); to be confirmed on NIC's sandbox (check 5 below) |
+| E-way bill numbers have 12 digits, and 14 for those generated from 1 January 2027; no check digit or inner structure is published | Reading an e-way bill number entered by hand (`EwayBillEntries.Number`; `long` holds both) | GSTN advisory 687 of 4 November 2026, as reported (its own text could not be fetched from this session) |
+| Since 1 January 2025 an e-way bill is generated only for a document at most 180 days old (820, 4043 through the e-invoice API) and extended to at most 360 days after its generation (821) | Refusing an e-way bill entered by hand that the portal could not have generated | GSTN advisory of 17 December 2024, as reported |
 
 `IrpAnswers.Irn` reads an IRN's details whoever passed them on: a live IRN needs its acknowledgement and signed QR code,
 while a cancelled one is read for its state alone, since the portal may give it without them.
