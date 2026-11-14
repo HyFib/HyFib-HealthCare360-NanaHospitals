@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -196,6 +197,19 @@ class BranchScanTests(unittest.TestCase):
         code, out = self.run_scan(None, False, None, "--main", "refs/remotes/origin/nowhere")
         self.assertEqual(code, 2, out)
         self.assertIn("refs/remotes/origin/nowhere is not in the clone", out)
+
+
+class PinTests(unittest.TestCase):
+    def test_the_daily_scan_runs_the_gitleaks_ci_runs(self):
+        """ci.yml and security-audit.yml each download gitleaks. They must pin one release, or a branch whose pull request
+        passed the scan could fail the daily one, or pass it with rules CI no longer uses."""
+        pins = {}
+        for name in ("ci.yml", "security-audit.yml"):
+            text = (HERE.parent / "workflows" / name).read_text(encoding="utf-8")
+            pins[name] = (re.findall(r"GITLEAKS_VERSION:\s*(\S+)", text),
+                          re.findall(r"GITLEAKS_SHA256:\s*([0-9a-f]{64})", text))
+        self.assertEqual([len(found) for found in pins["ci.yml"]], [1, 1], pins)
+        self.assertEqual(pins["ci.yml"], pins["security-audit.yml"])
 
 
 if __name__ == "__main__":
