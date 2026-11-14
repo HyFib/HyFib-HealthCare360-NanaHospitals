@@ -365,6 +365,16 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<IPreMigrationBackup>(sp => sp.GetRequiredService<BackupService>());
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
+        services.AddScoped<IRecoveryKeyCustodyWarnings, RecoveryKeyCustodyWarnings>();
+
+        // Copies outside the building (DED-16): each verified backup uploaded to an S3-compatible bucket, over https only.
+        services.AddScoped<BackupOffsiteUploader>();
+        services.AddHttpClient(BackupOffsite.HttpClientName, client =>
+            {
+                client.Timeout = BackupOffsite.RequestTimeout;
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("HyFib-HC360-Backup");
+            })
+            .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
         services.AddSingleton<ServedAddresses>();
@@ -445,6 +455,12 @@ public static class PlatformServiceCollectionExtensions
                         .WithIdentity("backup-catch-up")
                         .StartAt(DateTimeOffset.UtcNow.Add(BackupCatchUpJob.Delay)));
                 }
+
+                // Every quarter of an hour, whether nightly backups are on or not: a backup taken by hand goes off site too.
+                // It does nothing until the off-site copy is switched on (backup.offsite).
+                quartz.ScheduleJob<BackupOffsiteJob>(trigger => trigger
+                    .WithIdentity("backup-offsite")
+                    .WithCronSchedule(BackupOffsiteJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
             });
             services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
         }

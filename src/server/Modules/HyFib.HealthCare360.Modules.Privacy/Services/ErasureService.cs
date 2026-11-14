@@ -7,7 +7,9 @@ using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Services;
@@ -39,7 +41,8 @@ public sealed class ErasureService(
     ICurrentUser currentUser,
     ErasureLedger ledger,
     IOptions<PlatformOptions> platform,
-    TimeProvider time)
+    TimeProvider time,
+    ISettingsService settings)
 {
     public const string Messages = "messages";
     public const string Feedback = "feedback";
@@ -93,7 +96,8 @@ public sealed class ErasureService(
         var holds = await HoldsAsync(patientId, ct);
         var keepUntil = KeepUntil(holds);
         var keepPermanently = KeepPermanently(holds);
-        var summary = Describe(chosen, holds, platform.Value.Backup.RetentionDays);
+        // How long backups are kept counts the off-site copies' lock too, while they are on.
+        var summary = Describe(chosen, holds, await BackupRetention.DaysAsync(settings, platform.Value, ct));
         var recorded = request.RecordErasure(chosen, summary, keepUntil, keepPermanently, currentUser.UserId, now);
         if (recorded.IsFailure)
         {

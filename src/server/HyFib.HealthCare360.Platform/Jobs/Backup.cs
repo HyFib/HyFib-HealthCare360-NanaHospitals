@@ -66,6 +66,27 @@ public sealed class BackupRun
     /// backups named their key, which all open with the original recovery key.
     /// </summary>
     public string? RecoveryKeyId { get; set; }
+
+    /// <summary>When its copy in the off-site bucket was read back and found to match (<see cref="BackupOffsiteUploader"/>); null until then.</summary>
+    public DateTimeOffset? OffsiteUploadedAt { get; set; }
+
+    /// <summary>The object key of its off-site copy, from its first upload attempt.</summary>
+    public string? OffsiteKey { get; set; }
+
+    /// <summary>The size of its off-site copy as the store reported it once uploaded.</summary>
+    public long? OffsiteSizeBytes { get; set; }
+
+    /// <summary>How many times its upload was tried, the one that succeeded included.</summary>
+    public int OffsiteAttempts { get; set; }
+
+    /// <summary>Why its last upload attempt failed; null once it is off site, and before any attempt.</summary>
+    public string? OffsiteError { get; set; }
+
+    /// <summary>
+    /// The upload under way (JSON, <see cref="OffsiteUploadState"/>): the multipart upload's id and the parts the store has
+    /// taken, so a large backup on a slow uplink goes on where it stopped, across failures and restarts. Null otherwise.
+    /// </summary>
+    public string? OffsiteUpload { get; set; }
 }
 
 internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRun>
@@ -78,13 +99,20 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
         b.Property(x => x.Sha256).HasMaxLength(64);
         b.Property(x => x.Error).HasMaxLength(2000);
         b.Property(x => x.RecoveryKeyId).HasMaxLength(16);
+        b.Property(x => x.OffsiteKey).HasMaxLength(1024);
+        b.Property(x => x.OffsiteError).HasMaxLength(2000);
+        b.Property(x => x.OffsiteUpload).HasColumnType("jsonb");
         b.HasIndex(x => x.StartedAt);
     }
 }
 
+/// <param name="OffsiteUploadedAt">When its off-site copy was uploaded and checked; null while it is not off site.</param>
+/// <param name="OffsiteKey">Its object key in the off-site bucket, once an upload was tried.</param>
+/// <param name="OffsiteAttempts">How many times its upload was tried.</param>
+/// <param name="OffsiteError">Why the last upload attempt failed.</param>
 public sealed record BackupRunDto(Guid Id, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, BackupKind Kind, BackupStatus Status, string? FileName,
     long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt,
-    string? RecoveryKeyId);
+    string? RecoveryKeyId, DateTimeOffset? OffsiteUploadedAt = null, string? OffsiteKey = null, int OffsiteAttempts = 0, string? OffsiteError = null);
 
 /// <summary>The backup start-up takes before it changes the schema (<see cref="Persistence.DatabaseInitializer"/>).</summary>
 internal interface IPreMigrationBackup
@@ -115,8 +143,9 @@ internal sealed record BackupResult(
 /// copy of the field encryption key and the stored documents, encrypted with the current recovery key, which
 /// administrators keep offline (<see cref="RecoveryKeyStore"/>) and the file names. The file is written under a temporary
 /// name, then read back in full and its database dump listed by pg_restore; only a backup that passes becomes the finished
-/// file, is copied to the secondary location (USB/NAS) and counts for retention. Restore with Restore-HC360.ps1, which runs
-/// the Server CLI's <c>backup restore</c>.
+/// file, is copied to the secondary location (USB/NAS), is uploaded to the off-site bucket when one is set up
+/// (<see cref="BackupOffsiteUploader"/>, within 15 minutes) and counts for retention. Restore with Restore-HC360.ps1, which
+/// runs the Server CLI's <c>backup restore</c>.
 /// </summary>
 internal sealed class BackupService(
     IDbContextFactory<HospitalDbContext> contextFactory,
@@ -139,6 +168,12 @@ internal sealed class BackupService(
     /// failed. System health reads it back to tell a failed copy from one never attempted (<see cref="BackupCopies"/>).
     /// </summary>
     internal const string CopyFailedNote = "Secondary copy failed: ";
+
+    /// <summary>
+    /// Starts the note of a backup that was copied to the secondary directory, where the older copies could not be removed
+    /// afterwards: an append-only share does not let the server delete. Not a failed copy.
+    /// </summary>
+    internal const string OldCopiesKeptNote = "Copied to the secondary directory; older copies there were not removed: ";
 
     private static readonly string ServerVersion =
         typeof(BackupService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
@@ -214,7 +249,7 @@ internal sealed class BackupService(
 
     internal static BackupRunDto ToDto(BackupRun r) =>
         new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt,
-            r.RecoveryKeyId);
+            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError);
 
     internal async Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct)
     {
@@ -285,17 +320,10 @@ internal sealed class BackupService(
             var secondaryCopied = false;
             if (options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary)
             {
-                try
+                (secondaryCopied, var note) = CopyToSecondary(target, secondary, CleanupOld, logger);
+                if (note is not null)
                 {
-                    Directory.CreateDirectory(secondary);
-                    File.Copy(target, Path.Combine(secondary, fileName), overwrite: true);
-                    secondaryCopied = true;
-                    CleanupOld(secondary);
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    logger.LogWarning(ex, "Backup copy to secondary location {Directory} failed", secondary);
-                    warning = Join(warning, CopyFailedNote + ex.Message);
+                    warning = Join(warning, note);
                 }
             }
 
@@ -424,6 +452,39 @@ internal sealed class BackupService(
 
     private static string Join(string? first, string second) => first is null ? second : first + " " + second;
 
+    /// <summary>
+    /// Copies the finished <paramref name="backup"/> to the secondary directory, then removes the copies there past their
+    /// time with <paramref name="removeOld"/>. A share that lets the server add copies but not delete them (an append-only
+    /// share, DEPLOYMENT.md section 8) refuses the second step, which is what it is for: the copy succeeded, and its note
+    /// says so, and that the older copies stay for the share's own retention to remove. It is never taken for a failed
+    /// copy (<see cref="BackupCopies"/>), which only <see cref="CopyFailedNote"/> is.
+    /// </summary>
+    /// <returns>Whether the copy was made, and the backup's note about it: why it failed, or that older copies were kept.</returns>
+    internal static (bool Copied, string? Note) CopyToSecondary(string backup, string secondary, Action<string> removeOld, ILogger logger)
+    {
+        try
+        {
+            Directory.CreateDirectory(secondary);
+            File.Copy(backup, Path.Combine(secondary, Path.GetFileName(backup)), overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Backup copy to secondary location {Directory} failed", secondary);
+            return (false, CopyFailedNote + ex.Message);
+        }
+
+        try
+        {
+            removeOld(secondary);
+            return (true, null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogInformation("Older backup copies in {Directory} were not removed: {Reason}", secondary, ex.Message);
+            return (true, OldCopiesKeptNote + ex.Message);
+        }
+    }
+
     private void CleanupOld(string directory)
     {
         var cutoff = time.GetUtcNow().UtcDateTime.AddDays(-Math.Max(options.Value.Backup.RetentionDays, 1));
@@ -545,6 +606,13 @@ internal static class BackupEndpoints
         group.MapPost("/recovery-key/{keyId}/confirm", async (string keyId, ConfirmRecoveryKeyRequest request, RecoveryKeyService keys, CancellationToken ct) =>
                 (await keys.ConfirmAsync(keyId, request, ct)).ToOk())
             .RequirePermission(PlatformPermissions.SystemManage)
+            .WithValidation<ConfirmRecoveryKeyRequest>();
+
+        // Two people should hold the key, one copy outside the building, and its copies are checked every quarter: any
+        // administrator who runs backups types the current key in from their copy to show they hold it. Nothing changes and
+        // the key is never shown; the proof (who, and when) is what System health counts (RecoveryKeyCustody).
+        group.MapPost("/recovery-key/prove", async (ConfirmRecoveryKeyRequest request, RecoveryKeyService keys, CancellationToken ct) =>
+                (await keys.ProveAsync(request, ct)).ToOk())
             .WithValidation<ConfirmRecoveryKeyRequest>();
     }
 }

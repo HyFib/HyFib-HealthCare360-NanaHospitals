@@ -1,6 +1,8 @@
 using HyFib.HealthCare360.Modules.Privacy.Domain;
 using HyFib.HealthCare360.Modules.Privacy.Services;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Jobs;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Features.Settings;
@@ -79,12 +81,12 @@ internal static class PrivacySettingsEndpoints
 
         // Public: the privacy notice names the grievance officer for everyone, signed in or not.
         app.MapGet("/api/v1/public/privacy", async (PrivacySettings privacy, RetentionService retention, SdfService sdf, IOptions<PlatformOptions> platform, HospitalDbContext db,
-                CancellationToken ct) =>
+                ISettingsService settings, CancellationToken ct) =>
             {
                 var hospital = await db.Set<Facility>().AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.CreatedAt).Select(f => f.Name).FirstOrDefaultAsync(ct);
                 return TypedResults.Ok(new PublicPrivacyInfo(hospital ?? "Hospital", await privacy.PublishedContactAsync(ct), await privacy.ResponseDaysAsync(ct),
                     await retention.ValueAsync(RetentionSchedule.Get(RetentionSchedule.Audit), ct), await sdf.PublishedDpoAsync(ct),
-                    ErasureService.BackupWindowDays(platform.Value.Backup.RetentionDays)));
+                    ErasureService.BackupWindowDays(await BackupRetention.DaysAsync(settings, platform.Value, ct))));
             })
             .WithTags("Privacy")
             .AllowAnonymous()

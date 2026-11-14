@@ -1829,6 +1829,7 @@
     "POST /api/v1/admin/audit/retention/purge admin.system.manage",
     "POST /api/v1/admin/backups admin.backups.manage",
     "POST /api/v1/admin/backups/recovery-key admin.backups.manage,admin.system.manage",
+    "POST /api/v1/admin/backups/recovery-key/prove admin.backups.manage",
     "POST /api/v1/admin/backups/recovery-key/{keyId}/confirm admin.backups.manage,admin.system.manage",
     "POST /api/v1/admin/devices/enrollment-codes admin.devices.manage",
     "POST /api/v1/admin/devices/enrollment-codes/requests/{approvalId:guid}/code admin.devices.manage",

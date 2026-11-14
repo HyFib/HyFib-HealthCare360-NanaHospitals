@@ -50975,6 +50975,32 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("kind");
 
+                    b.Property<int>("OffsiteAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("offsite_attempts");
+
+                    b.Property<string>("OffsiteError")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("offsite_error");
+
+                    b.Property<string>("OffsiteKey")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("offsite_key");
+
+                    b.Property<long?>("OffsiteSizeBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("offsite_size_bytes");
+
+                    b.Property<string>("OffsiteUpload")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("offsite_upload");
+
+                    b.Property<DateTimeOffset?>("OffsiteUploadedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("offsite_uploaded_at");
+
                     b.Property<string>("RecoveryKeyId")
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
@@ -51018,6 +51044,41 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasDatabaseName("ix_backup_runs_started_at");
 
                     b.ToTable("backup_runs", "platform");
+                });
+
+            modelBuilder.Entity("HyFib.HealthCare360.Platform.Jobs.RecoveryKeyProof", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("KeyId")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("key_id");
+
+                    b.Property<DateTimeOffset>("ProvenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("proven_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("user_name");
+
+                    b.HasKey("Id")
+                        .HasName("pk_backup_key_proofs");
+
+                    b.HasIndex("KeyId", "ProvenAt")
+                        .HasDatabaseName("ix_backup_key_proofs_key_id_proven_at");
+
+                    b.ToTable("backup_key_proofs", "platform");
                 });
 
             modelBuilder.Entity("HyFib.HealthCare360.Platform.Messaging.OutboxMessage", b =>

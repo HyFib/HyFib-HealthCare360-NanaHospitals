@@ -470,7 +470,8 @@ internal static class SettingsEndpoints
         // A setting with rules of its own is refused here, not read leniently later (a default, or the nearest value allowed).
         return (AntiAutomationSettings.Problem(key, request.Value)
                 ?? AdministrationOnDesktop.Problem(key, request.Value, request.FacilityId)
-                ?? TrainingSimulators.Problem(key, request.Value, platform)) is { } problem
+                ?? TrainingSimulators.Problem(key, request.Value, platform)
+                ?? Jobs.BackupOffsite.Problem(key, request.Value, request.FacilityId)) is { } problem
             ? Error.Field("value", problem).ToProblem()
             : null;
     }

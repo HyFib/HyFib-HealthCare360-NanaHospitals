@@ -162,7 +162,8 @@ public sealed class SystemHealthService(
     ISettingsService settings,
     IEnumerable<IOutboxHandler> outboxHandlers,
     TimeProvider time,
-    JobLeadership? jobs = null)
+    JobLeadership? jobs = null,
+    IRecoveryKeyCustodyWarnings? recoveryKeyCustody = null)
 {
     private static readonly DateTimeOffset StartedAt = DateTimeOffset.UtcNow;
 
@@ -230,6 +231,12 @@ public sealed class SystemHealthService(
             backupWarnings.Add(notCopied);
         }
 
+        // Whether the backups leave the building: the upload to the off-site bucket.
+        if (await BackupOffsite.WarningAsync(db, settings, options.Value, now, ct) is { } notOffsite)
+        {
+            backupWarnings.Add(notOffsite);
+        }
+
         // Held after a restore (how many), ended unsent (failed or expired), or queued for long.
         var messageWarnings = new List<HealthWarning>(SystemHealthOutbox.Warnings(outbox, now));
         messageWarnings.AddRange(IntegrationWarnings(integrations));
@@ -295,6 +302,11 @@ public sealed class SystemHealthService(
                     "Backups still use the original recovery key, which any administrator with the backups permission could display. Make a new one under Backups › Recovery key.")
                 : new("backup.recovery_key_missing", "critical",
                     "Nobody holds the recovery key for the backups, so they cannot be restored on new hardware. Make one under Backups › Recovery key."));
+        }
+        else if (recoveryKeyCustody is not null)
+        {
+            // Who holds the key: two people who have typed it in, and someone within the last 90 days.
+            keyWarnings.AddRange(await recoveryKeyCustody.WarningsAsync(now, ct));
         }
 
         // A single Server Node: its own warnings in the places System health has always shown them.
