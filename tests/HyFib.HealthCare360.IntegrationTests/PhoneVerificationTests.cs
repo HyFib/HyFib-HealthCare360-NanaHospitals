@@ -218,7 +218,7 @@ public sealed class PhoneVerificationTests(HospitalServer server)
         await VerifyAtDeskAsync(frontOffice, patient.Id, phone);
         since = DateTimeOffset.UtcNow.AddSeconds(-1);
         await ReportReadyAsync(patient.Id, report);
-        var verified = await DeliveriesAsync(ReportDelivery.ReportReadyTemplate, phone, since, email);
+        var verified = await DeliveriesAsync(ReportDelivery.ReportReadyTemplate, phone, since, email, except: unverified);
         verified.Single(d => d.Channel == NotificationChannel.WhatsApp).Document.ShouldBe(report);
         verified.Single(d => d.Channel == NotificationChannel.Email).Document.ShouldBe(report);
     }
@@ -238,7 +238,7 @@ public sealed class PhoneVerificationTests(HospitalServer server)
         await VerifyAtDeskAsync(frontOffice, patient.Id, phone);
         since = DateTimeOffset.UtcNow.AddSeconds(-1);
         await PrescribeAsync(patient.Id);
-        (await DeliveriesAsync("prescription.shared", phone, since)).ShouldHaveSingleItem().Document.ShouldNotBeNull();
+        (await DeliveriesAsync("prescription.shared", phone, since, except: [unverified])).ShouldHaveSingleItem().Document.ShouldNotBeNull();
     }
 
     [Fact]
@@ -353,15 +353,23 @@ public sealed class PhoneVerificationTests(HospitalServer server)
     }
 
     /// <summary>The messages of a template queued since <paramref name="since"/> to the number (or the e-mail address): the test server sends none.</summary>
-    private async Task<List<NotificationDelivery>> DeliveriesAsync(string template, string phone, DateTimeOffset since, string? email = null)
+    /// <summary>
+    /// The deliveries of <paramref name="template"/> to the patient's number or e-mail made since <paramref name="since"/>,
+    /// leaving out <paramref name="except"/>: a second round made within a second of the first finds the first's too, as
+    /// <paramref name="since"/> allows a second for the clocks.
+    /// </summary>
+    private async Task<List<NotificationDelivery>> DeliveriesAsync(
+        string template, string phone, DateTimeOffset since, string? email = null, IEnumerable<NotificationDelivery>? except = null)
     {
+        var earlier = (except ?? []).Select(d => d.LogId).ToHashSet();
         await using var scope = server.Services.CreateAsyncScope();
         var messages = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>().AsNoTracking()
             .Where(m => (m.Type == NotificationService.SmsType || m.Type == NotificationService.WhatsAppType || m.Type == NotificationService.EmailType)
                         && m.CreatedAt >= since)
             .ToListAsync(Ct);
         var number = Phone.Normalize(phone);
-        return [.. messages.Select(m => m.Read<NotificationDelivery>()).Where(d => d.TemplateKey == template && (d.To == number || (email is not null && d.To == email)))];
+        return [.. messages.Select(m => m.Read<NotificationDelivery>())
+            .Where(d => d.TemplateKey == template && (d.To == number || (email is not null && d.To == email)) && !earlier.Contains(d.LogId))];
     }
 
     private async Task<List<AuditEvent>> AuditAsync(System.Linq.Expressions.Expression<Func<AuditEvent, bool>> which)
