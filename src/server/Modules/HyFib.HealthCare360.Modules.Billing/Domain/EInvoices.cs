@@ -68,7 +68,10 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
     /// <summary>The portal's signed invoice (a JWT) when HC360 asked for the IRN itself; null when recorded by hand.</summary>
     public string? SignedInvoice { get; set; }
 
-    /// <summary>The e-way bill generated from this IRN (goods only), its date and the last moment it is valid.</summary>
+    /// <summary>
+    /// The invoice's e-way bill (goods only): generated from this IRN, or generated elsewhere and recorded by hand
+    /// (<see cref="EwayBillEntries"/>); its date, and the last moment it is valid (null while only its Part-A is filled).
+    /// </summary>
     public long? EwbNo { get; private set; }
 
     public DateTimeOffset? EwbDate { get; private set; }
@@ -81,7 +84,7 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
     public EInvoiceCancelReason? CancelReason { get; private set; }
     public string? CancelRemark { get; private set; }
 
-    /// <summary>Records the e-way bill the portal generated from this IRN.</summary>
+    /// <summary>Records the invoice's e-way bill: the one the portal generated from this IRN, or one recorded by hand.</summary>
     public Result RecordEwayBill(long number, DateTimeOffset date, DateTimeOffset? validTill)
     {
         if (Status != EInvoiceStatus.Registered)

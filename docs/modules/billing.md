@@ -590,6 +590,7 @@ invoice it reduces (`against`, `againstDate`).
 | POST | `/{source}/{id}/irn/generate` | → `EInvoiceDetail`: asks the connected portal for the IRN ([The portal connection](#the-portal-connection)). 422 `einvoice.irp_not_connected`, `einvoice.invalid` (with the problems), `einvoice.irp_refused` (the portal's code and words), `einvoice.irp_unreachable`, `einvoice.irp_mismatch` (the signed QR code is not this document's: nothing recorded), `einvoice.irp_cancelled` (the portal holds the document's number under an IRN it cancelled); 409 `einvoice.registered`, `einvoice.irn_exists`; 422 `einvoice.document_cancelled`. HC360 asks on its own once a document is final ([Automatic IRNs](#automatic-irns)) |
 | POST | `/{source}/{id}/irn/cancel` | `CancelIrnRequest(reason, remark, version, cancelledOnPortal?)` → `EInvoiceDetail`. Within 24 hours of the IRN only (422 `einvoice.cancel_window`); reasons are the portal's: `Duplicate`, `DataEntryMistake`, `OrderCancelled`, `Other`. Connected to the portal, HC360 cancels it there first (`cancelledOnPortal: true` records one cancelled there by hand). A cancellation that fails is read back from the portal before anyone is told to try again ([Checks and lost answers](#checks-and-lost-answers)): one the portal holds as cancelled is recorded, even past the 24 hours here; otherwise 422 `einvoice.irp_unreachable` (it still holds the IRN as active: nothing was cancelled), `einvoice.irp_cancel_unknown` (it did not answer the cancellation, nor say how it holds the IRN; past the 24 hours, it did not say whether it cancelled the IRN in time), `einvoice.irp_refused` or `einvoice.cancel_window` (past the 24 hours, it holds the IRN as active). An invoice's IRN is not cancelled while a credit note with an IRN names it (422 `einvoice.credited`) |
 | POST | `/{source}/{id}/ewaybill` | `GenerateEwayBillRequest(distanceKm, mode, vehicleNumber?, transporterGstin?, transporterName?, transportDocumentNumber?, transportDocumentDate?, overDimensionalCargo?)` → `EInvoiceDetail`: the e-way bill from the live IRN of an invoice of goods above `gst.ewaybill.threshold`. A request that fails is read back from the portal before anyone is told to try again ([Checks and lost answers](#checks-and-lost-answers)): a live e-way bill the portal holds for the IRN is recorded whatever the failure said; otherwise 422 `einvoice.irp_unreachable` (unanswered, and the portal holds none: none was generated), `einvoice.irp_ewaybill_unknown` (it could not be asked for the IRN's e-way bill, or says one is generated yet gives none), `einvoice.irp_ewaybill_cancelled` (the one it holds is cancelled) or `einvoice.irp_refused`. 422 `einvoice.ewaybill_goods`, `einvoice.ewaybill_not_needed`, `einvoice.not_registered`, `einvoice.irp_not_connected`; 409 `einvoice.ewaybill_exists`; 400 without a vehicle or a transporter |
+| POST | `/{source}/{id}/ewaybill/record` | `RecordEwayBillRequest(ewbNo, generatedAt, validUntil?)` → `EInvoiceDetail`: an e-way bill generated outside HC360 (on the e-way bill portal, by the transporter, or on the e-invoice portal's own screens), entered from its print, for the invoices `/ewaybill` serves (the same 422 `einvoice.ewaybill_goods`, `einvoice.ewaybill_not_needed`, `einvoice.not_registered`; 409 `einvoice.ewaybill_exists`). It must be one the e-way bill system could have generated for the invoice (422 `einvoice.ewaybill_invalid` saying what is wrong; 400 for a number that is not 12 or 14 digits) and be recorded against no other invoice (409 `einvoice.ewaybill_number_exists`). Connected, the portal is asked first ([Checks and lost answers](#checks-and-lost-answers)): 422 `einvoice.ewaybill_unconfirmed` (it holds another e-way bill for the IRN, or would not say which), `einvoice.irp_ewaybill_cancelled`, `einvoice.irp_unreachable` or `einvoice.irp_not_connected`, and nothing is recorded. Audited as `billing.einvoice.ewaybill_recorded`, saying how it was checked |
 
 ### GST returns — `/api/v1/billing/gst-returns` (`billing.gst.returns`)
 See [GST returns](#gst-returns). `?month=2026-10`; 400 `month` otherwise; 422 `gst.no_gstin` when the signed-in facility
@@ -1046,7 +1047,10 @@ after an answer lost on the way back) is fetched by its IRN and recorded the sam
 Connected, cancelling goes to the portal first, within the 24 hours. **E-way bills:** an invoice of goods (the
 pharmacy's B2B sales) above `gst.ewaybill.threshold` (₹50,000 by default; lower for movement within some states) gets
 its e-way bill from its live IRN, with the vehicle (Part-B) or the transporter's id (Part-A); its number and validity
-are kept on the registration. A request that fails is read back from the portal (below).
+are kept on the registration. A request that fails is read back from the portal (below). One generated elsewhere (on
+the e-way bill portal, by the transporter, or on the e-invoice portal's own screens) is recorded from its print
+(`POST …/ewaybill/record`, checked as below); a facility not connected to the portal records each e-way bill that way,
+and the staff app's dialog offers it there in place of generating one.
 
 ### Automatic IRNs
 Connected to the portal, a B2B document gets its IRN with nobody asking. In the transaction that makes it final, its
@@ -1099,6 +1103,20 @@ finds it and stops. IRNs asked for automatically are recorded by `HC360 (automat
   One held as cancelled (`CNL`, on the e-way bill portal) is not recorded (422 `einvoice.irp_ewaybill_cancelled`). Any
   other refusal stands (422 `einvoice.irp_refused`). The read-back is documented by GSPs, not yet confirmed on NIC's
   sandbox: [integrations.md](integrations.md) lists what to check.
+* **An e-way bill recorded by hand is checked.** First against what the e-way bill system allows (`EwayBillEntries`,
+  CGST rule 138): a number of 12 digits, or 14 for one generated from 1 January 2027 (GSTN advisory 687 of 4 November
+  2026); generated on or after the invoice's date, not in the future, and since 2025 within 180 days of the invoice
+  (the portal's error 820); valid until a time after its generation and within 360 days of it (error 821, both by the
+  GSTN advisory of 17 December 2024), or blank while only its Part-A is filled (the transporter has yet to add the
+  vehicle); and recorded against no other invoice. Then, connected, with the e-invoice portal, which gives back by the
+  IRN only an e-way bill generated from it (`GetEwayBillAsync`, `EwayBillEntries.Against`). The same number held live
+  is recorded with the portal's own dates. Another one held live is refused, naming the portal's (generating from the
+  IRN then records that one), and so is this one held cancelled. None held for the IRN (4005, as for one generated on
+  the e-way bill portal), or the portal's own one cancelled and this another, and it is recorded on its print. The
+  portal not answering, its connection unusable, or its answer giving no status, nothing is recorded (an administrator
+  can switch the connection off to record without the check). The audit trail (`billing.einvoice.ewaybill_recorded`)
+  says which; the staff app folds the form away under *Record an e-way bill generated elsewhere* for a connected
+  facility.
 * **A duplicate's IRN is checked.** The IRN fetched for a duplicate (2150) is not recorded when the portal holds it as
   cancelled (422 `einvoice.irp_cancelled`): the portal registers a number once, so the document is cancelled here and
   issued again under a new number.
@@ -1873,9 +1891,12 @@ bill line, restrict; unique number), `bills.debit_amount` and `payer_debit_amoun
   read-back: its path and answer, 4002 and 4005, and what it gives once an e-way bill is cancelled
   ([integrations.md](integrations.md) lists the checks). IRNs are asked for one document at a time, as each becomes
   final, not in a batch.
-* **An e-way bill HC360 cannot read back is not recorded.** One generated on the e-way bill portal itself rather than
-  from the IRN, or one the portal says exists but does not give back (4002 with 4005), cannot be put on the
-  registration: there is no form to record an e-way bill by hand.
+* **An e-way bill recorded by hand is confirmed only as far as the e-invoice portal can say.** The portal gives back by
+  the IRN only an e-way bill generated from it, so one generated on the e-way bill portal is recorded on its print: the
+  e-way bill system's own API, which would confirm it by its number, is not connected. Whether the e-invoice portal
+  gives back by the IRN an e-way bill generated on the e-way bill portal is not confirmed ([integrations.md](integrations.md)
+  lists the check). HC360 does not learn of an e-way bill cancelled, or its validity extended, on the e-way bill portal;
+  the registration does not say whether its e-way bill was generated here or recorded by hand (the audit trail does).
 * **A payer credit note does not come from the settlement.** The claim desk records the deduction; the billing desk
   asks for the GST credit note on the bill afterwards. A deduction that is not a price reduction (a non-payable item
   the patient pays) needs none.

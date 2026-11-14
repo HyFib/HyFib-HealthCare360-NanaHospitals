@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -15,6 +16,7 @@ using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Organization;
@@ -180,6 +182,88 @@ public sealed class GstComplianceTests(HospitalServer server)
         var retried = (await pharmacist.PostAsync<EInvoiceDetail>(path, request)).Registration!;
         (retried.EwbNo, retried.EwbValidTill).ShouldBe((made, ledger.Entries[irn].Irn.EwbValidTill));
         ledger.Entries[irn].Irn.EwbNo.ShouldBe(made, "the portal still holds the one e-way bill");
+    }
+
+    [Fact]
+    public async Task An_e_way_bill_generated_outside_hc360_is_recorded_by_hand_after_the_checks_the_portal_can_answer()
+    {
+        await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
+        await using var threshold = await SettingAsync(EInvoiceService.EwayBillThresholdSetting, 1m);
+        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
+        var now = DateTimeOffset.UtcNow;
+
+        // Generated on the e-way bill portal: the e-invoice portal holds no e-way bill for the IRN (4005), so it is recorded
+        // on its print, and the audit trail says so.
+        var (first, _) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        var printed = EwayBillNumber();
+        var recorded = (await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{first}/ewaybill/record",
+            new RecordEwayBillRequest(printed, now.AddMinutes(-30), now.AddDays(1)))).Registration!;
+        recorded.EwbNo.ShouldBe(long.Parse(printed, CultureInfo.InvariantCulture));
+        recorded.EwbValidTill!.Value.ShouldBe(now.AddDays(1), TimeSpan.FromSeconds(1));
+        (await AuditAsync("billing.einvoice.ewaybill_recorded", printed)).ShouldContain("holds no e-way bill for the invoice's IRN");
+
+        // Recorded once: not again on another invoice.
+        var (second, secondIrn) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        using (var twice = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{second}/ewaybill/record",
+                   new RecordEwayBillRequest(printed, now.AddMinutes(-30), null)))
+        {
+            (await CodeAsync(twice)).ShouldBe("einvoice.ewaybill_number_exists");
+        }
+
+        // Generated on the e-invoice portal's own screens, so the portal holds it for the IRN: a mistyped number is refused
+        // with the portal's own, and the right one is recorded with the portal's dates, whatever was typed.
+        var entry = ledger.Entries[secondIrn];
+        var made = long.Parse(EwayBillNumber(), CultureInfo.InvariantCulture);
+        var (madeAt, madeTill) = (now.AddHours(-2), now.AddDays(2));
+        ledger.Entries[secondIrn] = entry with { Irn = entry.Irn with { EwbNo = made, EwbDate = madeAt, EwbValidTill = madeTill } };
+        using (var mistyped = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{second}/ewaybill/record",
+                   new RecordEwayBillRequest((made + 1).ToString(CultureInfo.InvariantCulture), now.AddMinutes(-30), null)))
+        {
+            (await CodeAsync(mistyped)).ShouldBe("einvoice.ewaybill_unconfirmed");
+            (await mistyped.Content.ReadAsStringAsync(Ct)).ShouldContain($"The portal holds e-way bill {made} for this invoice's IRN");
+        }
+
+        var confirmed = (await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{second}/ewaybill/record",
+            new RecordEwayBillRequest(made.ToString(CultureInfo.InvariantCulture), now.AddMinutes(-30), now.AddDays(9)))).Registration!;
+        confirmed.EwbNo.ShouldBe(made);
+        confirmed.EwbDate!.Value.ShouldBe(madeAt, TimeSpan.FromSeconds(1));
+        confirmed.EwbValidTill!.Value.ShouldBe(madeTill, TimeSpan.FromSeconds(1));
+        (await AuditAsync("billing.einvoice.ewaybill_recorded", made.ToString(CultureInfo.InvariantCulture)))
+            .ShouldContain("holds it, live, for the invoice's IRN");
+
+        // The portal not answering: nothing is recorded. Not connected: it is recorded on its print, the portal not asked.
+        var (third, thirdIrn) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        var other = EwayBillNumber();
+        var record = new RecordEwayBillRequest(other, now.AddMinutes(-10), null);
+        using (ledger.Fail(SimulatorIrpOperations.GetEwayBill, SimulatorIrpFault.Down, irn: thirdIrn))
+        {
+            using var down = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{third}/ewaybill/record", record);
+            (await CodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
+        }
+
+        (await pharmacist.GetAsync<EInvoiceDetail>($"{Register}/pharmacy/{third}")).Registration!.EwbNo.ShouldBeNull();
+        await using (await server.IrpPortalAsync(enabled: false))
+        {
+            var partA = (await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{third}/ewaybill/record", record)).Registration!;
+            (partA.EwbNo, partA.EwbValidTill).ShouldBe((long.Parse(other, CultureInfo.InvariantCulture), null), "only Part-A filled: no validity yet");
+        }
+
+        (await AuditAsync("billing.einvoice.ewaybill_recorded", other)).ShouldContain("not connected to the e-invoice portal");
+
+        // Not one the portal could have generated: 14 digits before 2027, or not 12 or 14 digits at all.
+        var (fourth, _) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        using (var early = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{fourth}/ewaybill/record",
+                   new RecordEwayBillRequest("33100012345678", now.AddMinutes(-10), null)))
+        {
+            (await CodeAsync(early)).ShouldBe("einvoice.ewaybill_invalid");
+        }
+
+        using var garbled = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{fourth}/ewaybill/record",
+            new RecordEwayBillRequest("12345", now.AddMinutes(-10), null));
+        garbled.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     [Fact]
@@ -371,6 +455,30 @@ public sealed class GstComplianceTests(HospitalServer server)
                 await store.SetAsync<decimal?>(key, null, facility, cancellationToken: CancellationToken.None);
             }
         });
+    }
+
+    /// <summary>A 12-digit e-way bill number, above those the simulator gives.</summary>
+    private static string EwayBillNumber() => Random.Shared.NextInt64(500000000000L, 999999999999L).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The summary of the latest audit event <paramref name="action"/> naming <paramref name="naming"/>, once written.</summary>
+    private async Task<string> AuditAsync(string action, string naming)
+    {
+        for (var waited = TimeSpan.Zero; ; waited += TimeSpan.FromMilliseconds(250))
+        {
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var summary = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
+                    .Where(a => a.Action == action && a.Summary != null && a.Summary.Contains(naming))
+                    .OrderByDescending(a => a.Id).Select(a => a.Summary).FirstOrDefaultAsync(Ct);
+                if (summary is not null)
+                {
+                    return summary;
+                }
+            }
+
+            waited.ShouldBeLessThan(TimeSpan.FromSeconds(15), $"no {action} audit event names {naming}");
+            await Task.Delay(250, Ct);
+        }
     }
 
     private async Task WithDbAsync(Func<HospitalDbContext, Task> work)

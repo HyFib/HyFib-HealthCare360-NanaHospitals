@@ -450,30 +450,13 @@ public sealed class EInvoiceService(
         }
 
         var (document, seller, _) = found.Value;
-        if (document.Type != EInvoiceDocumentTypes.Invoice || document.Items.All(i => i.IsService))
+        var target = await EwayBillRegistrationAsync(document, "Get the invoice's IRN first: the e-way bill is generated from it.", ct);
+        if (target.IsFailure)
         {
-            return Error.Rule("einvoice.ewaybill_goods", "An e-way bill is for an invoice of goods; services move without one.");
+            return target.Error!;
         }
 
-        var threshold = await EwayBillThresholdAsync(document.FacilityId, ct);
-        if (document.Total <= threshold)
-        {
-            return Error.Rule("einvoice.ewaybill_not_needed",
-                $"Goods worth ₹{Money.FormatInr(document.Total)} move without an e-way bill (needed above ₹{Money.FormatInr(threshold)}).");
-        }
-
-        var registration = await db.Set<EInvoice>()
-            .FirstOrDefaultAsync(e => e.Source == document.Source && e.SourceId == document.Id && e.Status == EInvoiceStatus.Registered, ct);
-        if (registration is null)
-        {
-            return Error.Rule("einvoice.not_registered", "Get the invoice's IRN first: the e-way bill is generated from it.");
-        }
-
-        if (registration.EwbNo is { } existing)
-        {
-            return Error.Conflict("einvoice.ewaybill_exists", $"E-way bill {existing} is already generated for this invoice.");
-        }
-
+        var registration = target.Value;
         var connection = await portal.ConnectionAsync(document.FacilityId, ct);
         if (!connection.Connected)
         {
@@ -570,6 +553,136 @@ public sealed class EInvoiceService(
         return Error.Rule("einvoice.irp_ewaybill_unknown", request + readBack
             + " Nothing was recorded. Try again once the portal answers: HC360 then records the live e-way bill it holds, without making a second. "
             + "If it still does not say, look the e-way bill up on the e-way bill portal with the GST adviser.");
+    }
+
+    /// <summary>
+    /// The live registration an e-way bill goes on: the document is a B2B invoice of goods above
+    /// <see cref="EwayBillThresholdSetting"/>, with a live IRN (<paramref name="noIrn"/> says what to do without one) and no
+    /// e-way bill yet.
+    /// </summary>
+    private async Task<Result<EInvoice>> EwayBillRegistrationAsync(EInvoiceDocument document, string noIrn, CancellationToken ct)
+    {
+        if (document.Type != EInvoiceDocumentTypes.Invoice || document.Items.All(i => i.IsService))
+        {
+            return Error.Rule("einvoice.ewaybill_goods", "An e-way bill is for an invoice of goods; services move without one.");
+        }
+
+        var threshold = await EwayBillThresholdAsync(document.FacilityId, ct);
+        if (document.Total <= threshold)
+        {
+            return Error.Rule("einvoice.ewaybill_not_needed",
+                $"Goods worth ₹{Money.FormatInr(document.Total)} move without an e-way bill (needed above ₹{Money.FormatInr(threshold)}).");
+        }
+
+        var registration = await db.Set<EInvoice>()
+            .FirstOrDefaultAsync(e => e.Source == document.Source && e.SourceId == document.Id && e.Status == EInvoiceStatus.Registered, ct);
+        if (registration is null)
+        {
+            return Error.Rule("einvoice.not_registered", noIrn);
+        }
+
+        return registration.EwbNo is { } existing
+            ? Error.Conflict("einvoice.ewaybill_exists", $"E-way bill {existing} is already generated for this invoice.")
+            : registration;
+    }
+
+    /// <summary>
+    /// Records by hand an e-way bill generated outside HC360 (on the e-way bill portal, by the transporter, or on the
+    /// e-invoice portal's own screens), from its print, for the invoices <see cref="EwayBillAsync"/> serves. It must be one
+    /// the e-way bill system could have generated for the invoice (<see cref="EwayBillEntries.Problems"/>) and be recorded
+    /// against no other invoice. Connected, the e-invoice portal is asked first for the e-way bill it holds for the IRN
+    /// (<see cref="EwayBillEntries.Against"/>): it confirms only one it generated itself, and one it contradicts is not
+    /// recorded. The audit trail (<c>billing.einvoice.ewaybill_recorded</c>) says how it was checked.
+    /// </summary>
+    public async Task<Result<EInvoiceDetail>> RecordEwayBillAsync(string source, Guid id, RecordEwayBillRequest request, CancellationToken ct)
+    {
+        var found = await DocumentAsync(source, id, ct);
+        if (found.IsFailure)
+        {
+            return found.Error!;
+        }
+
+        var (document, seller, _) = found.Value;
+        var target = await EwayBillRegistrationAsync(document, "Record the invoice's IRN first: its e-way bill is kept with it.", ct);
+        if (target.IsFailure)
+        {
+            return target.Error!;
+        }
+
+        var problems = EwayBillEntries.Problems(request.EwbNo, request.GeneratedAt, request.ValidUntil, document.Date, time.GetUtcNow());
+        if (problems.Count > 0)
+        {
+            return Error.Rule("einvoice.ewaybill_invalid",
+                $"This is not an e-way bill the portal could have generated for this invoice: {string.Join(" ", problems)} Nothing was recorded.");
+        }
+
+        var number = EwayBillEntries.Number(request.EwbNo)!.Value;
+        if (await db.Set<EInvoice>().IgnoreQueryFilters().AnyAsync(e => e.EwbNo == number, ct))
+        {
+            return Error.Conflict("einvoice.ewaybill_number_exists", $"E-way bill {number} is already recorded against an invoice.");
+        }
+
+        var registration = target.Value;
+        var check = await CheckEwayBillWithPortalAsync(document, seller, registration.Irn, number, request, ct);
+        if (check.IsFailure)
+        {
+            return check.Error!;
+        }
+
+        var (date, validTill, how) = check.Value;
+        var recorded = registration.RecordEwayBill(number, date.ToUniversalTime(), validTill?.ToUniversalTime());
+        if (recorded.IsFailure)
+        {
+            return recorded.Error!;
+        }
+
+        audit.Add(new AuditEntry(AuditCategories.Data, "billing.einvoice.ewaybill_recorded",
+            $"E-way bill {number} of invoice {document.Number} recorded by hand: {how}.")
+        {
+            EntityType = nameof(EInvoice),
+            EntityId = registration.Id.ToString(),
+        });
+        await db.SaveChangesAsync(ct);
+        return await DetailAsync(document, [], ct);
+    }
+
+    /// <summary>
+    /// An e-way bill entered by hand, checked with the e-invoice portal when the facility is connected to it: the dates to
+    /// record (the portal's own, when it confirms the e-way bill) and how it was checked, for the audit trail; or why it is
+    /// not recorded.
+    /// </summary>
+    private async Task<Result<(DateTimeOffset Date, DateTimeOffset? ValidTill, string How)>> CheckEwayBillWithPortalAsync(
+        EInvoiceDocument document, EInvoiceSeller seller, string irn, long number, RecordEwayBillRequest request, CancellationToken ct)
+    {
+        if (!(await portal.ConnectionAsync(document.FacilityId, ct)).Connected)
+        {
+            return (request.GeneratedAt, request.ValidUntil, "the facility is not connected to the e-invoice portal, so it was recorded on its print");
+        }
+
+        var held = await portal.GetEwayBillAsync(document.FacilityId, Gstin.Normalize(seller.Gstin)!, irn, ct);
+        const string WithoutTheCheck =
+            "until then, an administrator can switch the portal connection off (Administration → Integrations) to record it without the check.";
+        return EwayBillEntries.Against(held, number) switch
+        {
+            EwayBillCheck.Confirmed => (held.Value!.EwbDate, held.Value.ValidTill,
+                "the e-invoice portal holds it, live, for the invoice's IRN, and its dates are the portal's"),
+            EwayBillCheck.NotHeld => (request.GeneratedAt, request.ValidUntil, held.Value is { } own
+                ? $"the e-invoice portal holds its own e-way bill {own.EwbNo} for the invoice's IRN as cancelled, and this one was generated elsewhere, so it was recorded on its print"
+                : "the e-invoice portal holds no e-way bill for the invoice's IRN (as for one generated on the e-way bill portal), so it was recorded on its print"),
+            EwayBillCheck.Contradicted => Error.Rule("einvoice.ewaybill_unconfirmed",
+                $"The portal holds e-way bill {held.Value!.EwbNo} for this invoice's IRN, not {number}. Nothing was recorded. If the goods move with the portal's, "
+                + "generate the e-way bill from the IRN here instead: the portal refuses a second, and HC360 records the one it holds."),
+            EwayBillCheck.Cancelled => Error.Rule("einvoice.irp_ewaybill_cancelled",
+                $"The portal holds e-way bill {number} as cancelled, so it is not recorded. Goods that still move need a new e-way bill."),
+            EwayBillCheck.Unanswered when held.Error!.Code == IrpError.NotConnected => Error.Rule("einvoice.irp_not_connected",
+                $"{held.Error.Message} The e-way bill could not be checked with the portal, and nothing was recorded. Try again once the connection works; {WithoutTheCheck}"),
+            EwayBillCheck.Unanswered => Error.Rule("einvoice.irp_unreachable",
+                $"{held.Error!.Message} The e-way bill could not be checked with the portal, and nothing was recorded. Try again once the portal answers; {WithoutTheCheck}"),
+            _ => Error.Rule("einvoice.ewaybill_unconfirmed", held.Error is { } refused
+                ? $"The portal would not say which e-way bill it holds for this invoice's IRN ({refused.Code}: {refused.Message}). Nothing was recorded: "
+                  + $"check the e-way bill on the e-way bill portal; {WithoutTheCheck}"
+                : $"The portal gave e-way bill {held.Value!.EwbNo} for this invoice's IRN without saying whether it is live or cancelled. Nothing was recorded."),
+        };
     }
 
     public async Task<Result<EInvoiceDetail>> CancelAsync(string source, Guid id, CancelIrnRequest request, CancellationToken ct)
