@@ -1797,11 +1797,18 @@ CI runs these checks on every pull request and on main. A pull request cannot me
   - A new release waits 7 days first, long enough for a hijacked release to be caught and pulled. Microsoft's .NET
     packages and the SDK do not wait, because their monthly releases carry the security fixes.
 - **CI actions** are pinned to commits, and no job keeps the checkout's token.
-- **Secret scan:** gitleaks checks every commit in the history, not only the latest files.
+- **Secret scan:** gitleaks checks every commit in the history of the change under test, not only the latest files.
+  On a pull request, that is GitHub's merge of it with main: the pull request's commits and all of main's.
+  - A commit on another branch is checked in that branch's own pull request, against that branch's `.gitleaks.toml`,
+    so a test fixture on one branch cannot fail another's checks. A commit on a branch that never has a pull request
+    is not scanned.
   - Values reviewed as not secret, such as the fixed fake tokens in the tests, are listed in `.gitleaks.toml` with
-    where they come from.
+    where they come from, in the same change as the value.
   - A real secret found in a commit must be revoked at its provider first. Removing it from the files is not enough,
     because the history keeps it.
+  - What a merge commit changes beyond the merge git makes on its own (resolving a conflict, say) is in no commit's
+    diff, so the scan does not read it. On 14 November 2026, 116 of the 547 merges in main's history had such changes,
+    and gitleaks found nothing in them (`gitleaks git --log-opts="--merges --remerge-diff HEAD"`).
 - **Static analysis:**
   - **.NET:** every security analyzer rule is an error, including those off by default: native library loading, TLS
     and certificate validation, weak cryptography, insecure randomness and SQL built from text. An accepted exception
