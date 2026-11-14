@@ -129,7 +129,9 @@ public sealed class ErasureRestoreTests(HospitalServer server)
             Directory.CreateDirectory(secondCopy);
             var copied = Path.Combine(secondCopy, Path.GetFileName(backup));
             File.Copy(backup, copied);
-            File.Copy(server.Services.GetRequiredService<ErasureLedger>().Path, Path.Combine(secondCopy, ErasureLedger.FileName));
+            var oldLedger = server.Services.GetRequiredService<ErasureLedger>();
+            File.Copy(oldLedger.Path, Path.Combine(secondCopy, ErasureLedger.FileName));
+            var erasures = oldLedger.Read().Entries.Select(e => e.Id).ToList();
 
             await using var restored = await RestoreDatabaseAsync(copied, recoveryKey, machine);
             (await CliAsync(recoveryKey, "backup", "restore", "--in", copied, "--data-dir", machine.Root)).ShouldBe(0, "backup restore");
@@ -137,10 +139,11 @@ public sealed class ErasureRestoreTests(HospitalServer server)
             // The new server's ledger, read with the audit seal key the restore installed there, as its start reads it.
             var ledger = new ErasureLedger(machine, Microsoft.Extensions.Options.Options.Create(new PlatformOptions { DataDirectory = machine.Root }),
                 new AuditSealKey(machine, HospitalDataProtection.CreateProvider(machine)), NullLogger<ErasureLedger>.Instance);
-            var (entries, rejected) = ledger.Read();
+            var entries = ledger.Read().Entries;
             entries.ShouldContain(e => e.RequestId == before.Request.Id);
             entries.ShouldContain(e => e.RequestId == after.Request.Id);
-            rejected.ShouldBe(0, "every line is sealed with the backup's audit seal key");
+            entries.Select(e => e.Id).ShouldBe(erasures, ignoreOrder: true,
+                "every erasure of the old server's ledger is in the new server's, its seal verifying with the backup's audit seal key");
 
             await using (var start = await ScopeOnAsync(restored.ConnectionString))
             {
