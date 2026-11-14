@@ -255,12 +255,21 @@ ward to the printed pack. In the opened copy the pack's time is in bold at the t
 - The copy is kept on the computer **encrypted** (AES-GCM) under a key derived (HKDF-SHA-256) from the key the server
   gives the signed-in user with the session (`AuthResult.draftKey`), with the user and the slot as associated data. The
   computer's storage (IndexedDB) holds only ciphertext.
-- The derived key is held in memory and in that tab's session storage, so reloading the tab while the server is down
-  still opens the copy; closing the tab or the app forgets it, and then the printed pack is the copy.
+- The derived key is held in memory and in that tab's session storage; closing the tab or the app forgets it, and then
+  the printed pack is the copy.
 - A **service worker** (`/sw.js`) keeps the app's own page, scripts and styles so the app still opens; it never keeps an
   API answer.
 - **Signing out wipes** the copy, the key and the kept app files, whether or not the server can be reached; a session
-  that ends while the server can be reached wipes them too.
+  that ends while the server can be reached wipes them too, and so does another user's sign-in on the computer. The
+  copy is taken for one user and shown to nobody else.
+
+**From a locked screen.** During an outage nothing can unlock the screen (unlocking needs the server), and signing out
+would wipe the copy. So the lock screen says what is down and offers *Open the offline copy*: the PIN or password is
+checked on the computer, against a verifier kept at the user's last sign-in or unlock there that the server accepted, and
+the copy opens read only over the lock, which stays: nothing is sent to the server, and the screens behind stay hidden.
+It closes on the idle lock's timer (`ui.idleLockMinutes`), or when closed, and the PIN is then asked again. It opens only
+for the user whose screen it is, and only their copy. Five wrong tries (PINs and passwords together) wipe the verifier,
+and the printed pack is then the copy until the server is back. How the verifier is kept: SECURITY.md, *Sessions*.
 
 ### Not covered
 
@@ -268,6 +277,8 @@ ward to the printed pack. In the opened copy the pack's time is in bold at the t
   on demand for the names.
 - Even refreshed every 30 minutes, the pack misses what was ordered or stopped since it was made, and the app may hold an
   older pack than the server (it fetches every 15 minutes): the banner says how old, and the paper MAR decides.
+- A tab reloaded, or HC360 Desktop started again, while the server is down opens at the sign-in page, which cannot
+  offer the copy; the locked screen's check works only in the session it locked.
 - A late back-entry approval for admissions, transfers, ward visits and nursing charting is not counted entry by entry.
 - A number issued in one period and written on paper of the next (a yearly series across 1 January, or a financial
   year) is refused: issue blocks for the new period before a planned downtime that crosses it.

@@ -6,11 +6,13 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { clientType } from './lib/api';
 import { keepFocusInOpenDialogs } from './lib/dialogFocus';
+import { startOfflineCopy } from './lib/offline/keeper';
 import { createAppRouter } from './router';
 import './styles.css';
 
 configureAuth({ clientType });
 startConnectionMonitor();
+startOfflineCopy();
 startSerialScans();
 keepFocusInOpenDialogs();
 
