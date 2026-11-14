@@ -48,6 +48,9 @@ Points we would most like checked:
   *consultant*, "செய்யப்பட்ட சிகிச்சை முறைகள்" for *procedures*, and "மீண்டும் வருகை (ஃபாலோ-அப்)" for *follow-up*.
 * "சுயமாக" for *Self* (in "Referred by: Self") and "பரிசோதனைக்கு எழுதப்பட்டது" for *Ordered* on reports.
 * "ரேடியாலஜி அறிக்கை" and "இதய பரிசோதனை அறிக்கை" as report titles, and "அக்செஷன் எண்" for *accession no.*
+* The replies to a save sent twice (rows 156 to 166) use "சேமிக்கப்பட்டது" for *saved* and "கோரிக்கை" for *request*, as
+  the other messages do. Patients see rows 159 to 166 after a weak connection; rows 156 to 158 name the Idempotency-Key
+  and reach a patient only if the app itself goes wrong.
 
 ## Document labels (bills, prescriptions, reports, discharge summaries)
 
@@ -414,6 +417,17 @@ Points we would most like checked:
 | 153 | `message.portal.confirm_nothing` | There are no records waiting to be confirmed on this mobile number. | இந்த மொபைல் எண்ணில் உறுதிசெய்ய வேண்டிய பதிவுகள் எதுவும் இல்லை. | |
 | 154 | `message.portal.confirm_details_required` | Enter the patient's date of birth, or the UHID printed on the hospital card. | நோயாளியின் பிறந்த தேதியை, அல்லது மருத்துவமனை அட்டையில் அச்சிடப்பட்டுள்ள UHID-ஐ உள்ளிடுங்கள். | |
 | 155 | `message.portal.confirm_date_of_birth` | Enter a date of birth that has passed. | கடந்துவிட்ட ஒரு பிறந்த தேதியை உள்ளிடுங்கள். | |
+| 156 | `message.idempotency.invalid_key_title` | Invalid Idempotency-Key header | கோரிக்கையின் அடையாளம் (Idempotency-Key header) சரியாக இல்லை | |
+| 157 | `message.idempotency.key_reused_title` | Idempotency key reused with a different request | இதே கோரிக்கை அடையாளம் (Idempotency-Key) வேறொரு கோரிக்கையுடன் அனுப்பப்பட்டுள்ளது | |
+| 158 | `message.idempotency.key_reused_detail` | Generate a new Idempotency-Key for a new operation. | புதிய செயலுக்குப் புதிய கோரிக்கை அடையாளத்தை (Idempotency-Key) உருவாக்குங்கள். | |
+| 159 | `message.idempotency.answer_not_kept_title` | This request was already answered | இந்தக் கோரிக்கைக்கு ஏற்கனவே பதில் அளிக்கப்பட்டுவிட்டது | |
+| 160 | `message.idempotency.answer_not_kept_detail` | Its answer is not kept, so it can't be sent again. Please ask again. | இதன் பதில் சேமிக்கப்படுவதில்லை, எனவே அதை மீண்டும் அனுப்ப முடியாது. தயவுசெய்து மீண்டும் கோரிக்கை அனுப்புங்கள். | |
+| 161 | `message.idempotency.in_progress_title` | This request is still being processed | இந்தக் கோரிக்கை இன்னும் செயல்பாட்டில் உள்ளது | |
+| 162 | `message.idempotency.in_progress_detail` | An earlier attempt of this request has not finished yet. Wait a moment, then try again with the same details: it will not be saved twice. | இந்தக் கோரிக்கையின் முந்தைய முயற்சி இன்னும் முடியவில்லை. சிறிது நேரம் காத்திருந்து, அதே விவரங்களுடன் மீண்டும் முயற்சி செய்யுங்கள்: இது இரண்டு முறை சேமிக்கப்படாது. | |
+| 163 | `message.idempotency.outcome_unknown_title` | This may already have been saved | இது ஏற்கனவே சேமிக்கப்பட்டிருக்கலாம் | |
+| 164 | `message.idempotency.outcome_unknown_detail` | An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again. | இந்தக் கோரிக்கையின் முந்தைய முயற்சி முடியவில்லை, எனவே இது சேமிக்கப்பட்டிருக்கலாம் அல்லது சேமிக்கப்படாமலும் இருக்கலாம்: மீண்டும் முயற்சி செய்வதற்கு முன் சரிபார்த்துக்கொள்ளுங்கள். | |
+| 165 | `message.idempotency.unreadable_answer_title` | This request was already processed | இந்தக் கோரிக்கை ஏற்கனவே முடிக்கப்பட்டுவிட்டது | |
+| 166 | `message.idempotency.unreadable_answer_detail` | Reload the screen to see the result. | பக்கத்தை மீண்டும் திறந்து முடிவைப் பாருங்கள். | |
 
 ## Portal text for confirming records on a number
 

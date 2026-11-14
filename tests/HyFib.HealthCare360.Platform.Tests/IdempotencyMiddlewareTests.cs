@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
+using HyFib.HealthCare360.Platform.Localization;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
@@ -29,7 +30,9 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
     private static readonly Endpoint Receipts = new(null, EndpointMetadataCollection.Empty, "HTTP: POST /api/v1/billing/receipts");
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "hc360-tests", Guid.NewGuid().ToString("N"));
-    private readonly ServiceProvider _services = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider();
+    // Problem Details as the server writes them: in a patient's language when the request has one.
+    private readonly ServiceProvider _services = new ServiceCollection().AddLogging()
+        .AddProblemDetails(problems => problems.CustomizeProblemDetails = ProblemLocalization.Localize).BuildServiceProvider();
     private readonly MemoryStore _store = new();
     private readonly Clock _clock = new(new DateTimeOffset(2026, 11, 14, 9, 0, 0, TimeSpan.Zero));
     private readonly Guid _cashier = Guid.NewGuid();
@@ -165,6 +168,27 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
         }
 
         _store.Single().State.ShouldBe(IdempotencyState.Abandoned);
+    }
+
+    [Theory]
+    [InlineData("hi")]
+    [InlineData("ta")]
+    public async Task A_patient_whose_save_may_already_have_been_made_is_told_so_in_their_language(string language)
+    {
+        _ = SendAsync(_ => new TaskCompletionSource().Task);
+        _clock.Now += TimeSpan.FromMinutes(3);
+
+        var retry = await SendAsync(SaveReceiptAsync, language: language);
+
+        var title = PatientTexts.Catalog.TranslateMessage(language, IdempotencyMiddleware.OutcomeUnknownTitle).ShouldNotBeNull();
+        var detail = PatientTexts.Catalog.TranslateMessage(language, IdempotencyMiddleware.OutcomeUnknownDetail).ShouldNotBeNull();
+        title.ShouldNotBe(IdempotencyMiddleware.OutcomeUnknownTitle);
+        var problem = ProblemOf(retry);
+        problem.GetProperty("code").GetString().ShouldBe(IdempotencyMiddleware.OutcomeUnknownCode, "the code stays as it is, for the portal to act on");
+        problem.GetProperty("title").GetString().ShouldBe(title);
+        problem.GetProperty("detail").GetString().ShouldBe(detail);
+        retry.Response.Headers.ContentLanguage.ToString().ShouldBe(language);
+        _runs.ShouldBe(0);
     }
 
     [Fact]
@@ -306,7 +330,8 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
         string body = Receipt,
         Endpoint? endpoint = null,
         string path = "/api/v1/billing/receipts",
-        ILogger<IdempotencyMiddleware>? logger = null)
+        ILogger<IdempotencyMiddleware>? logger = null,
+        string? language = null)
     {
         client ??= new CancellationTokenSource();
         var http = new DefaultHttpContext
@@ -324,6 +349,12 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
         if (endpoint is not null)
         {
             http.SetEndpoint(endpoint);
+        }
+
+        if (language is not null)
+        {
+            // A patient's request, as RequestLanguageMiddleware marks one before this middleware runs.
+            http.Features.Set(new RequestLanguage(language));
         }
 
         var middleware = new IdempotencyMiddleware(handler, logger ?? NullLogger<IdempotencyMiddleware>.Instance);

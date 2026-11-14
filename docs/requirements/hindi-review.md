@@ -36,6 +36,9 @@ Points we would most like checked:
   for those. Please confirm the word your microbiologists and patients use ("सूक्ष्मजीव", "जीव" or the English
   "ऑर्गेनिज़्म").
 * "दोबारा दिखाना (फ़ॉलो-अप)" and "छुट्टी" for discharge.
+* The replies to a save sent twice (rows 156 to 166) use "दर्ज" for *saved* and "अनुरोध" for *request*, as the other
+  messages do. Patients see rows 159 to 166 after a weak connection; rows 156 to 158 name the Idempotency-Key and reach
+  a patient only if the app itself goes wrong.
 
 ## Document labels (bills, prescriptions, reports, discharge summaries)
 
@@ -403,6 +406,17 @@ Points we would most like checked:
 | 153 | `message.portal.confirm_nothing` | There are no records waiting to be confirmed on this mobile number. | इस मोबाइल नंबर पर पुष्टि के लिए कोई रिकॉर्ड बाकी नहीं है। | |
 | 154 | `message.portal.confirm_details_required` | Enter the patient's date of birth, or the UHID printed on the hospital card. | रोगी की जन्मतिथि दर्ज करें, या अस्पताल कार्ड पर छपा UHID। | |
 | 155 | `message.portal.confirm_date_of_birth` | Enter a date of birth that has passed. | ऐसी जन्मतिथि दर्ज करें जो बीत चुकी हो। | |
+| 156 | `message.idempotency.invalid_key_title` | Invalid Idempotency-Key header | अनुरोध की पहचान (Idempotency-Key हेडर) सही नहीं है | |
+| 157 | `message.idempotency.key_reused_title` | Idempotency key reused with a different request | यही अनुरोध-पहचान (Idempotency-Key) किसी दूसरे अनुरोध के साथ भेजी गई है | |
+| 158 | `message.idempotency.key_reused_detail` | Generate a new Idempotency-Key for a new operation. | नए काम के लिए नई अनुरोध-पहचान (Idempotency-Key) बनाएँ। | |
+| 159 | `message.idempotency.answer_not_kept_title` | This request was already answered | इस अनुरोध का उत्तर पहले ही दिया जा चुका है | |
+| 160 | `message.idempotency.answer_not_kept_detail` | Its answer is not kept, so it can't be sent again. Please ask again. | इसका उत्तर रखा नहीं जाता, इसलिए इसे दोबारा नहीं भेजा जा सकता। कृपया फिर से अनुरोध करें। | |
+| 161 | `message.idempotency.in_progress_title` | This request is still being processed | इस अनुरोध पर अभी काम चल रहा है | |
+| 162 | `message.idempotency.in_progress_detail` | An earlier attempt of this request has not finished yet. Wait a moment, then try again with the same details: it will not be saved twice. | इस अनुरोध की पिछली कोशिश अभी पूरी नहीं हुई है। थोड़ा रुकें, फिर उन्हीं विवरणों के साथ दोबारा कोशिश करें: यह दो बार दर्ज नहीं होगा। | |
+| 163 | `message.idempotency.outcome_unknown_title` | This may already have been saved | हो सकता है यह पहले ही दर्ज हो चुका हो | |
+| 164 | `message.idempotency.outcome_unknown_detail` | An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again. | इस अनुरोध की पिछली कोशिश पूरी नहीं हुई, इसलिए हो सकता है यह दर्ज हुआ हो या न हुआ हो: दोबारा कोशिश करने से पहले जाँच लें। | |
+| 165 | `message.idempotency.unreadable_answer_title` | This request was already processed | यह अनुरोध पहले ही पूरा हो चुका है | |
+| 166 | `message.idempotency.unreadable_answer_detail` | Reload the screen to see the result. | नतीजा देखने के लिए पेज दोबारा खोलें। | |
 
 ## Portal text for confirming records on a number
 
