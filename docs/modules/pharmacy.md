@@ -129,7 +129,7 @@ blocked, expired or used up is warned about, not picked. Scanners that type like
 ### Counter sales, payments, returns, stock — `/sales`, `/stock` (PH-02, PH-04)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/stock?storeId&search&inStockOnly&take` | Counter staff | → `PharmacyStockRow[]` (schedule, controlled, Rx-only, cold chain, available, MRP, nearest expiry). A pharmacy tag's barcode as `search` (`PCM500#AB1234`) finds the item by its exact code and adds `scanned` (the batch it names, or why it cannot be handed out) |
+| GET | `/stock?storeId&search&inStockOnly&take` | Counter staff | → `PharmacyStockRow[]` (schedule, controlled, Rx-only, cold chain, available, MRP, nearest expiry): the first `take` matching items by name (30 unless given, at most 100); with `inStockOnly`, the first `take` the store can sell. A pharmacy tag's barcode as `search` (`PCM500#AB1234`) finds the item by its exact code and adds `scanned` (the batch it names, or why it cannot be handed out) |
 | GET | `/stock/batches?storeId&itemId&includeEmpty` | Counter staff | → `BatchStock[]` (FEFO order) |
 | GET | `/sales?page&from&to&status&type&storeId&withDues` | `pharmacy.sales` or `pharmacy.returns` | → paged `PharmacySaleListItem` |
 | GET | `/sales/{id}` · `/sales/{id}/returns` | same | → `PharmacySaleDetail` (GST invoice: HSN, batch, expiry, CGST/SGST, round-off, payments, each refund with the payment it paid back; `pending`: a cancellation or return waiting for approval; `ownSale`: the reader sold it or took its payment) · `SaleReturnDto[]` |
