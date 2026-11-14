@@ -4,12 +4,13 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fakeServer, openScreen, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
+import { fakeServer, json, openScreen, SCREEN_TESTS, SLOW, stubBrowserApis } from '@/test/appScreen';
 import type { PermissionGroup, RoleDetail, RoleListItem } from './api';
 
 // Editing a role on the roles screen, whole with the shell, against a fake server: permissions added to a role wait
 // for a second administrator. Those waiting show as given, with a notice, so saving again asks for nothing twice; a save
-// that adds one says it was asked for, not that it was saved.
+// that adds one says it was asked for, not that it was saved. A whole role is turned off from the list, after saying who
+// is left with nothing, and turning it back on is asked for; the Super Administrator's role has no switch to use.
 
 vi.mock('@hc360/core', async (importOriginal) => ({
   ...(await importOriginal<typeof Core>()),
@@ -17,6 +18,7 @@ vi.mock('@hc360/core', async (importOriginal) => ({
 }));
 
 const roleId = '0192a000-0000-7000-8000-00000000c001';
+const superAdminId = '0192a000-0000-7000-8000-00000000c002';
 
 const LISTED: RoleListItem[] = [
   {
@@ -26,6 +28,22 @@ const LISTED: RoleListItem[] = [
     isSystem: false,
     permissionCount: 1,
     userCount: 3,
+    isActive: true,
+    soleRoleHolders: 2,
+    canTurnOff: true,
+    version: 7,
+  },
+  {
+    id: superAdminId,
+    name: 'SuperAdmin',
+    description: 'Full access to everything, including security settings',
+    isSystem: true,
+    permissionCount: 1,
+    userCount: 1,
+    isActive: true,
+    soleRoleHolders: 1,
+    canTurnOff: false,
+    version: 2,
   },
 ];
 
@@ -47,6 +65,7 @@ const ROLE: RoleDetail = {
   isSystem: false,
   permissions: ['ot.read'],
   version: 7,
+  isActive: true,
   pendingGrant: {
     approvalId: '0192a000-0000-7000-8000-00000000c901',
     permissions: ['ot.book'],
@@ -120,6 +139,74 @@ describe('editing a role', SCREEN_TESTS, () => {
       permissions: ['ot.read', 'ot.book', 'ot.cancel'],
       version: 7,
       reason: 'Cancels for the surgeons.',
+    });
+  });
+});
+
+describe('turning a whole role off and on', SCREEN_TESTS, () => {
+  it('turns a role off after saying who is left with nothing, against the version it was shown at', async () => {
+    server = fakeServer({
+      'GET /api/v1/admin/roles': LISTED,
+      [`PUT /api/v1/admin/roles/${roleId}/active`]: null,
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/roles');
+
+    const theatre = await screen.findByRole('switch', { name: 'Theatre desk in use' }, SLOW);
+    expect(theatre).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'SuperAdmin in use' })).toBeDisabled();
+
+    await user.click(theatre);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Turn off the role Theatre desk?' });
+    expect(
+      within(dialog).getByText(
+        /3 people hold it and will lose what it gives at once\. For 2 of them it is the only role in use/,
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/two-step verification, still applies/)).toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    await user.type(within(dialog).getByRole('textbox', { name: /Reason/ }), 'Theatre on paper for the audit week.');
+    await user.click(within(dialog).getByRole('button', { name: 'Turn off' }));
+    expect(await screen.findByText('Role turned off', {}, SLOW)).toBeInTheDocument();
+    const put = server.requests.find((request) => request.method === 'PUT');
+    expect(put?.path).toBe(`/api/v1/admin/roles/${roleId}/active`);
+    expect(put?.body).toEqual({ active: false, version: 7, reason: 'Theatre on paper for the audit week.' });
+    // The switch is in the role's row, but using it does not open the role.
+    expect(screen.queryByRole('dialog', { name: /Theatre desk/ })).not.toBeInTheDocument();
+  });
+
+  it('asks for a role to be turned back on, and says it was asked for rather than done', async () => {
+    server = fakeServer({
+      'GET /api/v1/admin/roles': [{ ...LISTED[0], isActive: false }, LISTED[1]],
+      [`PUT /api/v1/admin/roles/${roleId}/active`]: json(
+        {
+          id: '0192a000-0000-7000-8000-00000000c903',
+          kind: 'identity.role_activation',
+          summary: 'Turn the role Theatre desk back on',
+        },
+        202,
+      ),
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/roles');
+
+    const theatre = await screen.findByRole('switch', { name: 'Theatre desk in use' }, SLOW);
+    expect(theatre).not.toBeChecked();
+    await user.click(theatre);
+    const dialog = await screen.findByRole('alertdialog', { name: 'Turn the role Theatre desk back on?' });
+    expect(within(dialog).getByText(/Another administrator who may approve grants decides it/)).toBeInTheDocument();
+
+    await user.type(
+      within(dialog).getByRole('textbox', { name: /Reason, for the approver/ }),
+      'Theatre back on HC360.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Ask to turn on' }));
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
+    expect(server.requests.find((request) => request.method === 'PUT')?.body).toEqual({
+      active: true,
+      version: 7,
+      reason: 'Theatre back on HC360.',
     });
   });
 });

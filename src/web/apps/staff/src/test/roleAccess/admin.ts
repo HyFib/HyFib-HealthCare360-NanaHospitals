@@ -45,6 +45,10 @@ const ROLES: RoleListItem[] = [
     isSystem: true,
     permissionCount: 153,
     userCount: 2,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
   {
     id: ROLE_IDS.Doctor,
@@ -53,6 +57,10 @@ const ROLES: RoleListItem[] = [
     isSystem: true,
     permissionCount: 65,
     userCount: 38,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
   {
     id: ROLE_IDS.Nurse,
@@ -61,6 +69,10 @@ const ROLES: RoleListItem[] = [
     isSystem: true,
     permissionCount: 63,
     userCount: 72,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
   {
     id: ROLE_IDS.FrontOffice,
@@ -69,6 +81,10 @@ const ROLES: RoleListItem[] = [
     isSystem: true,
     permissionCount: 37,
     userCount: 14,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
   {
     id: ROLE_IDS.QualityManager,
@@ -77,6 +93,10 @@ const ROLES: RoleListItem[] = [
     isSystem: true,
     permissionCount: 24,
     userCount: 1,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
   {
     id: ROLE_IDS.MrdOfficer,
@@ -85,6 +105,10 @@ const ROLES: RoleListItem[] = [
     isSystem: true,
     permissionCount: 21,
     userCount: 3,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
   {
     id: id('7007'),
@@ -93,6 +117,10 @@ const ROLES: RoleListItem[] = [
     isSystem: false,
     permissionCount: 18,
     userCount: 4,
+    isActive: true,
+    soleRoleHolders: 0,
+    canTurnOff: true,
+    version: 1,
   },
 ];
 
@@ -121,6 +149,7 @@ const ROLE: RoleDetail = {
   isSystem: false,
   permissions: ['quality.incidents.report', 'quality.incidents.manage'],
   version: 3,
+  isActive: true,
 };
 
 /** The first row is locked and uses two-step verification: its menu offers every action. */

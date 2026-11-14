@@ -24,6 +24,10 @@ const role = (suffix: string, name: string): RoleListItem => ({
   isSystem: true,
   permissionCount: 10,
   userCount: 1,
+  isActive: true,
+  soleRoleHolders: 0,
+  canTurnOff: true,
+  version: 1,
 });
 
 const ROLES = [role('001', 'Accountant'), role('002', 'Billing'), role('003', 'FrontOffice'), role('004', 'Nurse')];
