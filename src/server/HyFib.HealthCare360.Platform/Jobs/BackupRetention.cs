@@ -66,7 +66,7 @@ public static class BackupRetention
         var days = Math.Max(options.Backup.RetentionDays, 1);
 
         // An append-only second copy keeps every backup for the share's own retention, at least the daily backups' days and
-        // a generation (docs/design/incremental-backup.md, section 5.6).
+        // a generation (docs/design/incremental-backup.md, sections 5.6 and 5.7).
         if (options.Backup.SecondaryAppendOnly && options.Backup.SecondaryDirectory is { Length: > 0 })
         {
             days = Math.Max(days, AppendOnlyMinimumDays(options.Backup.Retention));

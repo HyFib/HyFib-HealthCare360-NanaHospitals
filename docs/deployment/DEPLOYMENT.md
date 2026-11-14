@@ -1685,8 +1685,8 @@ never has that key.
    `hc360-lifecycle.json` removes each copy as its lock passes, and the parts of uploads that never finished. Keep the
    backups' `Days` equal to `retainDays`, and the documents' (`hc360/gen-`) at `retainDays` + 7. A document uploaded
    at the start of a generation is still needed by that generation's last backup 6 days later, so a shorter rule
-   would hide it while that backup is kept. The privacy notice tells patients that erased data leaves the backups
-   within `retainDays` + 9 days (44) while the off-site copy is on, and counts on these rules (docs/modules/privacy.md).
+   would hide it while that backup is kept. The privacy notice counts on these rules: erased data leaves the off-site
+   copy within `retainDays` + 9 days (44), inside the 343 days it gives patients by default (docs/modules/privacy.md).
 
    ```json
    {

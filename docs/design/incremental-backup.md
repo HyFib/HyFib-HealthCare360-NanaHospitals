@@ -235,12 +235,13 @@ is impossible. These destinations use **generations** instead (agreed 2026-11-14
 - **Expiry.** A copy written at a generation's start is needed until the generation's last archive (made up to G − 1
   days later) expires, `retainDays` after that. In the bucket each copy is locked until generation start + G +
   `retainDays`. The lifecycle needs a second rule for `<prefix>gen-` with `Days` = `retainDays` + G (42); the archives'
-  rule stays at `retainDays`. A NAS's own retention must be at least `RetentionDays` + G days (37).
+  rule stays at `retainDays`. A NAS's own retention must be at least `Retention:Daily` + G days (21; 5.7).
 - **Storage there:** about (`retainDays` + G) / G ≈ 6 copies of the documents, plus one dump per archive, instead of
   35 full backups. At year 3 under the brief's assumptions: about 1.6 TB + 0.5 TB in the bucket, instead of about 10 TB.
-- **Erasure window.** An erased document's copy can stay until its generation expires, so the promise becomes
-  `retainDays` + G + 2 days (44) while the off-site copy is on (`BackupRetention.DaysAsync`, the erasure answer and the
-  privacy notice). No scheme does better without a key that can delete. The last archive before an erasure must stay
+- **Erasure window.** An erased document's copy can stay until its generation expires, so the off-site copy's part of
+  the promise becomes `retainDays` + G + 2 days (44) while it is on (`BackupRetention.DaysAsync`, the erasure answer and
+  the privacy notice; the promise is the longest copy's, 343 days by default, 5.7). No scheme does better without a key
+  that can delete. The last archive before an erasure must stay
   restorable for `retainDays`, and its generation's copies expire on a fixed date.
 - **Restore** does not need to know the layout. A blob is found by its id in `blobs\`, or in any `gen-*\blobs\` beside
   the archive, and checked against the SHA-256 the archive's index gives. For the bucket, download the archive and the
@@ -287,8 +288,9 @@ retention policy, with two kinds of place:
   keeps `retainDays` (35); a share's own retention must keep each file at least `Retention:Daily` + G days
   (`BackupRetention.AppendOnlyMinimumDays`, 21), so every backup of the daily window restores from it alone, and at most
   `LongestDays`. Longer history there costs a full copy of the documents a week.
-- **The erasure window** (`BackupRetention.DaysAsync`) is the longest of these: `LongestDays`, the share's minimum while it
-  is append-only, and the bucket's `retainDays` + G + 1 while it is on. 342 days by default.
+- **The backup period the erasure answer counts** (`BackupRetention.DaysAsync`) is the longest of these: `LongestDays`,
+  the share's minimum while it is append-only, and the bucket's `retainDays` + G + 1 while it is on. 342 days by
+  default, an erasure window of 343.
 
 The other features of that branch, on this design:
 
@@ -330,7 +332,7 @@ The other features of that branch, on this design:
    becomes `retainDays` + G + 2 (44 days by default).
 6. **Retention is grandfather-father-son where HC360 deletes, and a fixed age where something else does** (5.7, when the
    fix-next branch was merged): an append-only share keeps each file at least `Retention:Daily` + G days (21), and the
-   erasure window is the longest copy, 342 days by default.
+   backup period the erasure answer counts is the longest copy's, 342 days by default (a window of 343).
 
 ## 7. Implementation plan (each step its own commit)
 
