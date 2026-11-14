@@ -117,7 +117,8 @@ public sealed class BackupOffsiteTests(HospitalServer server)
             services.GetRequiredService<DataDirectories>(),
             services.GetRequiredService<IOptions<PlatformOptions>>(),
             services.GetRequiredService<TimeProvider>(),
-            services.GetRequiredService<ILogger<BackupOffsiteUploader>>())
+            services.GetRequiredService<ILogger<BackupOffsiteUploader>>(),
+            services.GetRequiredService<HyFib.HealthCare360.Platform.Security.IFieldKeyEscrow>())
         {
             Sizes = new OffsiteUploadSizes(SinglePutLimit: 256 << 10, MinPartSize: 256 << 10),
         };

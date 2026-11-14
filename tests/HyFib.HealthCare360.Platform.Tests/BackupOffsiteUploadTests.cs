@@ -5,7 +5,9 @@ using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -34,6 +36,7 @@ public sealed class BackupOffsiteUploadTests : IDisposable
     private readonly FakeS3 _store = new(Bucket, Key);
     private readonly PlatformOptions _options;
     private readonly DataDirectories _directories;
+    private FieldProtector? _escrow;
 
     public BackupOffsiteUploadTests()
     {
@@ -501,8 +504,9 @@ public sealed class BackupOffsiteUploadTests : IDisposable
         var options = new PlatformOptions();
         (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(30);
 
+        // Locked 35 days, the documents in generations of 7 (docs/design/incremental-backup.md, section 5.6), and the lifecycle a day after.
         settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(Settings());
-        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(36);
+        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(43);
         options.Backup.RetentionDays = 60;
         (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(60);
 
@@ -511,6 +515,11 @@ public sealed class BackupOffsiteUploadTests : IDisposable
         (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(30);
         settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(Settings(retainDays: 0));
         (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(30);
+
+        // An append-only second copy keeps a generation more than the backup period.
+        options.Backup.SecondaryDirectory = @"\\NAS\HC360-Backups";
+        options.Backup.SecondaryAppendOnly = true;
+        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(37);
     }
 
     [Theory]
@@ -521,14 +530,121 @@ public sealed class BackupOffsiteUploadTests : IDisposable
     public void A_backup_is_stored_under_the_prefix_and_its_file_name(string? prefix, string key) =>
         BackupOffsite.ObjectKey(prefix, "hc360-x.hc360bak").ShouldBe(key);
 
+    // ------------------------------------------------------------------------- documents in generations (section 5.6)
+
+    [Fact]
+    public async Task A_backups_documents_go_up_into_the_generation_before_it_each_locked_and_checked()
+    {
+        var run = BackupWithDocuments(daysAgo: 0, "first", "second");
+        var ids = new[] { Hash("first"), Hash("second") }.Order(StringComparer.Ordinal).ToList();
+
+        var result = await UploadAsync([run], escrow: Escrow);
+
+        result.ShouldBe(new BackupOffsiteRun(1, 0, Stopped: false));
+        var archive = "hc360/" + run.FileName;
+        _store.Requests.Select(r => (r.Method, r.Key)).ShouldBe([
+            ("PUT", BlobKey("gen-20261114", ids[0])), ("HEAD", BlobKey("gen-20261114", ids[0])),
+            ("PUT", BlobKey("gen-20261114", ids[1])), ("HEAD", BlobKey("gen-20261114", ids[1])),
+            ("PUT", archive), ("HEAD", archive)]);
+        var blob = _store.Objects[BlobKey("gen-20261114", ids[0])];
+        blob.Data.ShouldBe(File.ReadAllBytes(Path.Combine(_directories.Backups, "blobs", ids[0][..2], ids[0][2..4], ids[0] + ".blob")));
+        blob.Metadata[BackupOffsite.Sha256Metadata].ShouldBe(ids[0]);
+
+        // Locked until the generation's last backup has expired: its start, plus a generation, plus the backup period.
+        blob.Lock.ShouldNotBeNull().RetainUntil.ShouldBe("2026-12-26T00:00:00Z");
+        run.OffsiteUploadedAt.ShouldBe(_clock.Now);
+    }
+
+    [Fact]
+    public async Task Within_a_generation_only_the_new_documents_go_up_and_a_new_generation_takes_them_all_again()
+    {
+        await UploadAsync([BackupWithDocuments(daysAgo: 0, "a", "b")], escrow: Escrow);
+        _store.Requests.Clear();
+
+        _clock.Now = _clock.Now.AddDays(1);
+        await UploadAsync([BackupWithDocuments(daysAgo: 0, "a", "b", "c")], escrow: Escrow);
+        _store.Requests.Where(r => r.Method == "PUT" && r.Key!.Contains("/blobs/", StringComparison.Ordinal)).Select(r => r.Key)
+            .ShouldBe([BlobKey("gen-20261114", Hash("c"))]);
+        _store.Requests.Clear();
+
+        _clock.Now = _clock.Now.AddDays(7);
+        await UploadAsync([BackupWithDocuments(daysAgo: 0, "a", "b", "c")], escrow: Escrow);
+        _store.Requests.Where(r => r.Method == "PUT" && r.Key!.Contains("/blobs/", StringComparison.Ordinal)).Select(r => r.Key).Order()
+            .ShouldBe(new[] { "a", "b", "c" }.Select(d => BlobKey("gen-20261122", Hash(d))).Order());
+    }
+
+    [Fact]
+    public async Task A_backup_is_not_uploaded_until_all_its_documents_are_and_the_next_run_goes_on_where_it_stopped()
+    {
+        // F22.
+        var run = BackupWithDocuments(daysAgo: 0, "a", "b", "c");
+        var ids = new[] { "a", "b", "c" }.Select(Hash).Order(StringComparer.Ordinal).ToList();
+        _store.Fault = request => request.Key == BlobKey("gen-20261114", ids[1]) && request.Method == "PUT"
+            ? throw new HttpRequestException("The network connection was lost.")
+            : null;
+
+        var first = await UploadAsync([run], escrow: Escrow);
+
+        first.Stopped.ShouldBeTrue();
+        run.OffsiteUploadedAt.ShouldBeNull();
+        run.OffsiteError.ShouldNotBeNull().ShouldContain("documents of " + run.FileName);
+        _store.Objects.Keys.ShouldNotContain("hc360/" + run.FileName);
+
+        _store.Fault = null;
+        _store.Requests.Clear();
+        (await UploadAsync([run], escrow: Escrow)).Uploaded.ShouldBe(1);
+        _store.Requests.Where(r => r.Method == "PUT").Select(r => r.Key).ShouldBe([BlobKey("gen-20261114", ids[1]), BlobKey("gen-20261114", ids[2]), "hc360/" + run.FileName]);
+    }
+
+    [Fact]
+    public async Task A_backup_whose_list_of_documents_is_missing_or_changed_is_not_uploaded()
+    {
+        var missing = BackupWithDocuments(daysAgo: 0, "a");
+        File.Delete(Path.ChangeExtension(PathOf(missing), ".refs"));
+        (await UploadAsync([missing], escrow: Escrow)).Failed.ShouldBe(1);
+        missing.OffsiteError.ShouldNotBeNull().ShouldContain("has no list of the documents it needs");
+
+        var changed = BackupWithDocuments(daysAgo: 0, "b");
+        File.AppendAllText(Path.ChangeExtension(PathOf(changed), ".refs"), Hash("x") + "\n");
+        (await UploadAsync([changed], escrow: Escrow)).Failed.ShouldBe(1);
+        changed.OffsiteError.ShouldNotBeNull().ShouldContain("cannot be used");
+
+        _store.Objects.ShouldBeEmpty();
+    }
+
     // ---------------------------------------------------------------------------------------------------- helpers
+
+    private FieldProtector Escrow => _escrow ??= new FieldProtector(_directories, new EphemeralDataProtectionProvider());
+
+    private static string Hash(string content) => Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(content)));
+
+    private static string BlobKey(string generation, string id) => $"hc360/{generation}/blobs/{id[..2]}/{id[2..4]}/{id}.blob";
+
+    /// <summary>A verified format 3 backup, as the backup service leaves it: its documents in the backup folder, then its sealed list, then its file.</summary>
+    private BackupRun BackupWithDocuments(int daysAgo, params string[] documents)
+    {
+        var run = Backup(daysAgo, size: 1200);
+        var masterKey = Escrow.ExportMasterKey();
+        var referencesKey = FieldMasterKey.DeriveKey(masterKey, BackupStore.ReferencesKeyPurpose);
+        var store = BackupStore.Open(_directories.Backups, Escrow.Fingerprint, referencesKey, _clock);
+        using var held = store.Lock();
+        foreach (var document in documents)
+        {
+            var source = Path.Combine(_root, "source-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllText(source, document);
+            store.AddAsync(held, source, Hash(document), CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        store.WriteReferences(held, run.FileName!, documents.Select(Hash), referencesKey);
+        return run;
+    }
 
     private Task<BackupOffsiteRun> UploadAsync(
         IReadOnlyList<BackupRun> runs, BackupOffsiteSettings? settings = null, Action? onSave = null, S3Location? location = null,
-        S3Credentials? credentials = null)
+        S3Credentials? credentials = null, IFieldKeyEscrow? escrow = null)
     {
         var uploader = new BackupOffsiteUploader(Substitute.For<IDbContextFactory<HospitalDbContext>>(), Substitute.For<ISettingsService>(),
-            Substitute.For<IHttpClientFactory>(), _directories, Options.Create(_options), _clock, NullLogger<BackupOffsiteUploader>.Instance)
+            Substitute.For<IHttpClientFactory>(), _directories, Options.Create(_options), _clock, NullLogger<BackupOffsiteUploader>.Instance, escrow)
         {
             Sizes = Small,
         };

@@ -172,15 +172,15 @@ internal sealed partial class BackupStore
     /// The generation to keep tonight's documents in: the newest one started less than <see cref="GenerationDays"/> days
     /// ago, or a new one named for today. A generation is never taken up again after a longer gap (F25).
     /// </summary>
-    internal static string CurrentGeneration(string directory, DateTimeOffset now)
+    /// <param name="suffix">For generations recorded as files (the off-site ledger): the end of their names after the date.</param>
+    internal static string CurrentGeneration(string directory, DateTimeOffset now, string? suffix = null)
     {
         var today = DateOnly.FromDateTime(now.UtcDateTime);
-        var newest = System.IO.Directory.Exists(directory)
-            ? System.IO.Directory.EnumerateDirectories(directory, GenerationPrefix + "*")
-                .Select(d => GenerationDate(Path.GetFileName(d)))
-                .Where(d => d is not null && d <= today)
-                .Max()
-            : null;
+        var names = !System.IO.Directory.Exists(directory) ? []
+            : suffix is null
+                ? System.IO.Directory.EnumerateDirectories(directory, GenerationPrefix + "*").Select(Path.GetFileName)
+                : System.IO.Directory.EnumerateFiles(directory, GenerationPrefix + "*" + suffix).Select(f => Path.GetFileName(f)[..^suffix.Length]);
+        var newest = names.Select(GenerationDate).Where(d => d is not null && d <= today).Max();
         return newest is { } started && today.DayNumber - started.DayNumber < GenerationDays
             ? GenerationPrefix + started.ToString("yyyyMMdd", CultureInfo.InvariantCulture)
             : GenerationPrefix + today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
