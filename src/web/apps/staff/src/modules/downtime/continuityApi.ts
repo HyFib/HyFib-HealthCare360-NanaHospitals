@@ -14,16 +14,25 @@ export const PACK_PERMISSION = 'patients.downtime_pack';
 /** Issue between 1 and this many numbers in one block (`IssueDowntimeNumbersRequestValidator.MaxCount`). */
 export const MAX_NUMBERS = 500;
 
-export type DowntimeNumberKind = 'Visit' | 'OpBill' | 'IpBill' | 'Receipt';
+export type DowntimeNumberKind = 'Visit' | 'OpBill' | 'IpBill' | 'Receipt' | 'PharmacySale';
 export type DowntimeNumberStatus = 'Open' | 'Entered' | 'Voided';
 export type BackEntryRecord =
-  'Registration' | 'Visit' | 'Bill' | 'Receipt' | 'Admission' | 'Transfer' | 'ConsultantVisit' | 'NursingChart';
+  | 'Registration'
+  | 'Visit'
+  | 'Bill'
+  | 'Receipt'
+  | 'Admission'
+  | 'Transfer'
+  | 'ConsultantVisit'
+  | 'NursingChart'
+  | 'PharmacySale';
 
 export const KIND_LABELS: Record<DowntimeNumberKind, string> = {
   Visit: 'Visit numbers',
   OpBill: 'OP bill numbers',
   IpBill: 'IP bill numbers',
   Receipt: 'Receipt numbers',
+  PharmacySale: 'Pharmacy sale numbers',
 };
 
 export interface DowntimeNumberBlockSummary {
