@@ -91,6 +91,8 @@
   "doc.bill.ack_no": "पावती सं.",
   "doc.bill.ack_date": "पावती दिनांक",
   "doc.bill.einvoice_qr": "ई-इनवॉइस का हस्ताक्षरित QR कोड",
+  "doc.bill.einvoice_pending": "ई-इनवॉइस लंबित: यह अभी क्रेता के लिए वैध कर बीजक नहीं है (GST नियम 48(5))।",
+  "doc.bill.einvoice_irn_cancelled": "IRN रद्द: यह क्रेता के लिए वैध कर बीजक नहीं है (GST नियम 48(5))।",
   "doc.bill.cgst_rate": "CGST दर",
   "doc.bill.sgst_rate": "SGST दर",
   "doc.bill.payments_received": "प्राप्त भुगतान",

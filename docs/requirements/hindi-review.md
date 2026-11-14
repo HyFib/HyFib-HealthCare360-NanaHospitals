@@ -241,6 +241,8 @@ Points we would most like checked:
 | 197 | `doc.cardiology.recommendations` | Recommendations | सुझाव | |
 | 198 | `doc.cardiology.one_recording` | 1 device recording is stored with this report. | इस रिपोर्ट के साथ उपकरण की 1 रिकॉर्डिंग सुरक्षित है। | |
 | 199 | `doc.cardiology.recordings` | {count} device recordings are stored with this report. | इस रिपोर्ट के साथ उपकरण की {count} रिकॉर्डिंग सुरक्षित हैं। | |
+| 200 | `doc.bill.einvoice_pending` | E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)). | ई-इनवॉइस लंबित: यह अभी क्रेता के लिए वैध कर बीजक नहीं है (GST नियम 48(5))। | |
+| 201 | `doc.bill.einvoice_irn_cancelled` | IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)). | IRN रद्द: यह क्रेता के लिए वैध कर बीजक नहीं है (GST नियम 48(5))। | |
 
 ## Server messages shown on the patient portal
 

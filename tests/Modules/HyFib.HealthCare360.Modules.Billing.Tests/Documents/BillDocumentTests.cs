@@ -391,6 +391,61 @@ public sealed class BillDocumentTests
         writeOff.ShouldContain("&lt;script&gt;");
     }
 
+    [Fact]
+    public void A_b2b_bill_due_an_irn_says_in_its_place_that_it_is_not_a_valid_tax_invoice_for_the_buyer()
+    {
+        var pending = Render(Taxed() with { MissingIrn = MissingIrn.Pending });
+        pending.ShouldContain("<div class=\"einvoice-due keep\">E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).</div>");
+        pending.ShouldNotContain("class=\"einvoice-qr\"");
+
+        var cancelled = Render(Taxed() with { MissingIrn = MissingIrn.IrnCancelled });
+        cancelled.ShouldContain("<div class=\"einvoice-due keep\">IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).</div>");
+        cancelled.ShouldNotContain("not yet");
+
+        // The IRN, once the bill has one, prints in the notice's place; a bill that is no e-invoice says neither.
+        var registered = Render(Taxed() with { EInvoice = Stamp(), MissingIrn = MissingIrn.Pending });
+        registered.ShouldContain("<div>IRN: <span class=\"irn\">" + new string('b', 64) + "</span></div>");
+        registered.ShouldContain("class=\"einvoice-qr\"");
+        registered.ShouldNotContain("class=\"einvoice-due");
+        Render(Taxed()).ShouldNotContain("class=\"einvoice-due");
+        Render(Taxed()).ShouldNotContain("class=\"einvoice-qr\"");
+    }
+
+    [Fact]
+    public void The_notice_of_a_missing_irn_is_in_the_language_the_bill_is_made_in()
+    {
+        var bill = Taxed() with { MissingIrn = MissingIrn.Pending };
+
+        BillDocument.Build(bill, Letterhead, DocumentText.Hindi).ToHtml()
+            .ShouldContain("<div class=\"einvoice-due keep\">ई-इनवॉइस लंबित: यह अभी क्रेता के लिए वैध कर बीजक नहीं है (GST नियम 48(5))।</div>");
+        BillDocument.Build(bill with { MissingIrn = MissingIrn.IrnCancelled }, Letterhead, DocumentText.Tamil).ToHtml()
+            .ShouldContain("<div class=\"einvoice-due keep\">IRN ரத்து செய்யப்பட்டது: இது வாங்குபவருக்குச் செல்லுபடியாகும் வரி விலைப்பட்டியல் அல்ல (GST விதி 48(5)).</div>");
+    }
+
+    [Fact]
+    public void A_credit_note_due_an_irn_says_in_its_place_that_it_has_none_as_rule_48_4_requires()
+    {
+        var bill = Taxed() with { PayerType = PayerType.Corporate, PayerName = "Malabar Traders Ltd", PlaceOfSupply = "27" };
+        var recipient = new CreditNoteRecipient("Malabar Traders Ltd", "27AAACH7409R1ZB", "4/12 FC Road, Pune 411004");
+        var waiting = Note(bill) with { EInvoice = null };
+
+        var pending = CreditNoteDocument.Build(bill, waiting, recipient, Letterhead, MissingIrn.Pending).ToHtml();
+        pending.ShouldContain("<div class=\"einvoice-due keep\">E-invoice pending: this credit note has no IRN yet, which GST rule 48(4) requires.</div>");
+        pending.ShouldNotContain("IRN: <span");
+        pending.ShouldNotContain("48(5)", Case.Sensitive, "rule 48(5) voids an invoice without an IRN; it does not speak of credit notes");
+
+        CreditNoteDocument.Build(bill, waiting, recipient, Letterhead, MissingIrn.IrnCancelled).ToHtml()
+            .ShouldContain("<div class=\"einvoice-due keep\">IRN cancelled: this credit note no longer has the IRN GST rule 48(4) requires.</div>");
+
+        var registered = CreditNoteDocument.Build(bill, Note(bill), recipient, Letterhead, MissingIrn.Pending).ToHtml();
+        registered.ShouldContain("IRN: <span class=\"irn\">" + new string('c', 64) + "</span>");
+        registered.ShouldNotContain("class=\"einvoice-due");
+        CreditNoteDocument.Build(bill, waiting, recipient, Letterhead).ToHtml().ShouldNotContain("class=\"einvoice-due");
+    }
+
+    private static EInvoiceStamp Stamp() =>
+        new(new string('b', 64), "112610087654321", Created.AddMinutes(10), "eyJ.e30.c2ln", "data:image/svg+xml;base64,PHN2Zy8+");
+
     private static CreditNoteDto Note(BillDetail bill) => new(
         Guid.NewGuid(), "NHCN26000007", CreditNoteKind.CreditNote, 118m, "Charged twice", Created.AddDays(1), "Meena (accounts)", "Ravi (billing)",
         TaxableAmount: 100m, GstAmount: 18m, GstTimeBarred: false,

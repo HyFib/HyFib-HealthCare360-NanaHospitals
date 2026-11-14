@@ -766,6 +766,33 @@ public sealed class EInvoiceService(
                 && document.Total > await EwayBillThresholdAsync(document.FacilityId, ct));
     }
 
+    /// <summary>
+    /// What the print of a document says of its e-invoice, by the register's own rule: its live IRN, whatever else holds;
+    /// otherwise, for a document its source calls a B2B e-invoice (<paramref name="document"/> not null), dated on or after
+    /// the day e-invoicing applies from (<paramref name="applicableFrom"/>), the register's state of it (<see cref="StateOf"/>)
+    /// when that says it waits for an IRN or its IRN was cancelled; nothing for any other document, a cancelled one
+    /// included.
+    /// </summary>
+    internal static EInvoicePrint PrintOf(EInvoiceDocument? document, DateOnly? applicableFrom, EInvoice? latest)
+    {
+        if (latest is { Status: EInvoiceStatus.Registered })
+        {
+            return new EInvoicePrint(Stamp(latest), null);
+        }
+
+        if (document is null || applicableFrom is not { } from || document.Date < from)
+        {
+            return EInvoicePrint.None;
+        }
+
+        return StateOf(document.IsCancelled, latest) switch
+        {
+            EInvoiceState.Pending => new EInvoicePrint(null, MissingIrn.Pending),
+            EInvoiceState.IrnCancelled => new EInvoicePrint(null, MissingIrn.IrnCancelled),
+            _ => EInvoicePrint.None,
+        };
+    }
+
     private Task<DateOnly?> ApplicableFromAsync(Guid facilityId, CancellationToken ct) => ApplicableFromAsync(settings, facilityId, ct);
 
     /// <summary>The first document date e-invoicing applies to at the facility (<see cref="ApplicableFromSetting"/>); null when it does not e-invoice.</summary>
@@ -775,7 +802,8 @@ public sealed class EInvoiceService(
             ? date
             : null;
 
-    private static EInvoice? Latest(IEnumerable<EInvoice> registrations) =>
+    /// <summary>The live registration of a document if it has one, otherwise its latest cancelled one.</summary>
+    internal static EInvoice? Latest(IEnumerable<EInvoice> registrations) =>
         registrations.OrderBy(e => e.Status == EInvoiceStatus.Registered ? 0 : 1).ThenByDescending(e => e.AckDate).FirstOrDefault();
 
     private static EInvoiceState StateOf(bool documentCancelled, EInvoice? registration) => registration?.Status switch
@@ -814,7 +842,9 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
 
     public async Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken)
     {
-        var bill = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines).FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
+        // The bill and its payer first, its lines only for a B2B tax invoice: the register is asked of every bill a screen
+        // or print opens (IEInvoiceRegister.PrintAsync), and most are to patients, some with hundreds of lines.
+        var bill = await db.Set<Bill>().AsNoTracking().FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (bill is not { Status: not BillStatus.Draft, PayerId: { } payerId, FinalizedAt: { } finalizedAt } || bill.TaxAmount == 0)
         {
             return null;
@@ -826,8 +856,8 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
             return null;
         }
 
-        var items = bill.Lines
-            .OrderBy(l => l.SortOrder)
+        var lines = await db.Set<BillLine>().AsNoTracking().Where(l => l.BillId == bill.Id).OrderBy(l => l.SortOrder).ToListAsync(cancellationToken);
+        var items = lines
             .Select(l => new EInvoiceItem(
                 l.Description, IsService: true, l.SacCode, l.Quantity, l.UnitPrice, l.GrossAmount, l.GrossAmount - l.TaxableAmount, l.TaxableAmount,
                 l.TaxRate, l.IgstAmount, l.CgstAmount, l.SgstAmount, l.TaxableAmount + l.IgstAmount + l.CgstAmount + l.SgstAmount))
@@ -836,7 +866,7 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
             Source, bill.Id, bill.FacilityId, bill.BillNumber ?? string.Empty, BillingTime.LocalDate(finalizedAt),
             new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), bill.PlaceOfSupply ?? Gstin.StateCode(gstin) ?? string.Empty,
             items, bill.RoundOffAmount, bill.NetAmount, bill.Status == BillStatus.Cancelled,
-            bill.Lines.Any(l => l.Quantity < 0) ? "The bill has returned services; report it to the portal with a credit note for them." : null);
+            lines.Any(l => l.Quantity < 0) ? "The bill has returned services; report it to the portal with a credit note for them." : null);
     }
 }
 
@@ -903,13 +933,31 @@ internal sealed class CreditNoteEInvoiceSource(HospitalDbContext db) : IEInvoice
     }
 }
 
-/// <summary>The register as other modules see it: an invoice's live IRN, for its print and to keep it from being cancelled.</summary>
-internal sealed class EInvoiceRegisterLookup(HospitalDbContext db) : IEInvoiceRegister
+/// <summary>
+/// The register as other modules see it: an invoice's live IRN, to keep it from being cancelled; and what a document's
+/// print says of its e-invoice, by the rule the register itself keeps (<see cref="EInvoiceService.PrintOf"/>).
+/// </summary>
+internal sealed class EInvoiceRegisterLookup(HospitalDbContext db, IEnumerable<IEInvoiceSource> sources, ISettingsService settings) : IEInvoiceRegister
 {
     public async Task<EInvoiceStamp?> FindAsync(string source, Guid id, CancellationToken cancellationToken)
     {
         var live = await db.Set<EInvoice>().AsNoTracking()
             .FirstOrDefaultAsync(e => e.Source == source && e.SourceId == id && e.Status == EInvoiceStatus.Registered, cancellationToken);
         return live is null ? null : EInvoiceService.Stamp(live);
+    }
+
+    public async Task<EInvoicePrint> PrintAsync(string source, Guid id, CancellationToken cancellationToken)
+    {
+        var latest = EInvoiceService.Latest(await db.Set<EInvoice>().AsNoTracking()
+            .Where(e => e.Source == source && e.SourceId == id)
+            .ToListAsync(cancellationToken));
+        if (latest is { Status: EInvoiceStatus.Registered })
+        {
+            return EInvoiceService.PrintOf(null, null, latest);
+        }
+
+        var document = sources.FirstOrDefault(s => s.Source == source) is { } from ? await from.FindAsync(id, cancellationToken) : null;
+        var applicable = document is null ? null : await EInvoiceService.ApplicableFromAsync(settings, document.FacilityId, cancellationToken);
+        return EInvoiceService.PrintOf(document, applicable, latest);
     }
 }

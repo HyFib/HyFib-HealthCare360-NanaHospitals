@@ -120,11 +120,14 @@ internal static class IpEndpoints
     private static async Task<IResult> AssignPackage(Guid id, AssignPackageRequest request, IpBillingService ip, CancellationToken ct) =>
         (await ip.AssignPackageAsync(id, request, ct)).ToNoContent();
 
-    private static async Task<IResult> CreateInterimBill(Guid id, CreateInterimBillRequest request, IpBillingService ip, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
-        await CreatedBillAsync(await ip.CreateInterimBillAsync(id, request, ct), db, time, ct);
+    private static async Task<IResult> CreateInterimBill(
+        Guid id, CreateInterimBillRequest request, IpBillingService ip, HospitalDbContext db, TimeProvider time, IEInvoiceRegister einvoices,
+        CancellationToken ct) =>
+        await CreatedBillAsync(await ip.CreateInterimBillAsync(id, request, ct), db, time, einvoices, ct);
 
-    private static async Task<IResult> PrepareFinalBill(Guid id, IpBillingService ip, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
-        await CreatedBillAsync(await ip.PrepareFinalBillAsync(id, ct), db, time, ct);
+    private static async Task<IResult> PrepareFinalBill(
+        Guid id, IpBillingService ip, HospitalDbContext db, TimeProvider time, IEInvoiceRegister einvoices, CancellationToken ct) =>
+        await CreatedBillAsync(await ip.PrepareFinalBillAsync(id, ct), db, time, einvoices, ct);
 
     private static async Task<IResult> Settle(Guid id, IpBillingService ip, CancellationToken ct) => (await ip.SettleAsync(id, ct)).ToOk();
 
@@ -133,8 +136,9 @@ internal static class IpEndpoints
     private static async Task<IResult> ApproveDischargeWithDues(Guid id, ApproveDischargeWithDuesRequest request, IpBillingService ip, CancellationToken ct) =>
         (await ip.ApproveDischargeWithDuesAsync(id, request.Reason, request.Version, ct)).ToNoContent();
 
-    private static async Task<IResult> CreatedBillAsync(Result<Guid> created, HospitalDbContext db, TimeProvider time, CancellationToken ct) =>
+    private static async Task<IResult> CreatedBillAsync(
+        Result<Guid> created, HospitalDbContext db, TimeProvider time, IEInvoiceRegister einvoices, CancellationToken ct) =>
         created.IsSuccess
-            ? TypedResults.Created($"/api/v1/billing/bills/{created.Value}", await BillQueries.DetailAsync(db, created.Value, time, ct))
+            ? TypedResults.Created($"/api/v1/billing/bills/{created.Value}", await BillQueries.DetailAsync(db, created.Value, time, einvoices, ct))
             : created.Error!.ToProblem();
 }
