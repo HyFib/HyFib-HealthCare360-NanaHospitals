@@ -16,6 +16,12 @@ public sealed record UserGrantPayload(Guid UserId, IReadOnlyList<Guid> RoleIds, 
 /// <summary>Permissions added to a role, as asked for.</summary>
 public sealed record RoleGrantPayload(Guid RoleId, IReadOnlyList<string> Permissions);
 
+/// <summary>A role turned off, turned back on (<see cref="Role.IsActive"/>), as asked for.</summary>
+public sealed record RoleActivationPayload(Guid RoleId);
+
+/// <summary>Turning a role back on, waiting for a second administrator: who asked and when.</summary>
+public sealed record PendingRoleActivation(Guid ApprovalId, string RequestedBy, DateTimeOffset RequestedAt);
+
 /// <summary>Access asked for a user, waiting for a second administrator: what it gives, who asked and when.</summary>
 public sealed record PendingUserGrant(
     Guid ApprovalId, IReadOnlyList<Guid> RoleIds, IReadOnlyList<Guid> FacilityIds, bool Activate, string RequestedBy, DateTimeOffset RequestedAt);
@@ -44,8 +50,9 @@ internal sealed class GrantLatch
 
 /// <summary>
 /// Access is given by two people. Whatever widens someone's access, roles or facilities added to a user, a user
-/// reactivated, permissions added to a role, waits for a second person who holds <see cref="PlatformPermissions.GrantsApprove"/>.
-/// What narrows it (roles, facilities or permissions taken away, a user deactivated) applies at once. A hospital setting up has
+/// reactivated, permissions added to a role, a role turned back on, waits for a second person who holds
+/// <see cref="PlatformPermissions.GrantsApprove"/>. What narrows it (roles, facilities or permissions taken away, a user
+/// deactivated, a role turned off) applies at once. A hospital setting up has
 /// one such person: until it has had two, grants are given at once and audited so. Once it has had two (a one-way latch,
 /// <see cref="LatchAction"/> in the audit trail), a grant nobody else can approve is refused, except to a Super
 /// Administrator, whose grant is given at once as a break-glass and audited as critical. Nobody approves access given to
@@ -57,6 +64,12 @@ internal sealed class GrantApprovals(
 {
     public const string UserGrantKind = "identity.user_grant";
     public const string RoleGrantKind = "identity.role_grant";
+
+    /// <summary>A role turned off, turned back on: a kind of its own, so it can wait beside permissions asked for the role.</summary>
+    public const string RoleActivationKind = "identity.role_activation";
+
+    /// <summary>The audit entry of a role turned back on.</summary>
+    public const string RoleReactivatedAction = "role.reactivated";
 
     /// <summary>The audit entry written once, when the hospital first has two people who may approve grants.</summary>
     public const string LatchAction = "access.two_approvers";
@@ -216,6 +229,32 @@ internal sealed class GrantApprovals(
             ct);
     }
 
+    /// <summary>Asks a second person to turn <paramref name="role"/> back on, giving everyone who holds it what it holds.</summary>
+    public async Task<Result<ApprovalRequestDto>> AskToActivateRoleAsync(Role role, string? reason, CancellationToken ct)
+    {
+        var holders = await db.Set<UserRole>().CountAsync(ur => ur.RoleId == role.Id, ct);
+        var held = await db.Set<RolePermission>().Where(rp => rp.RoleId == role.Id).Select(rp => rp.Permission).OrderBy(p => p).ToListAsync(ct);
+        var facility = current.FacilityId ?? await db.Set<Facility>().OrderBy(f => f.CreatedAt).Select(f => f.Id).FirstOrDefaultAsync(ct);
+        return await approvals.RequestAsync(
+            RoleActivationKind,
+            new ApprovalSubject(nameof(Role), role.Id, role.Version, facility, null),
+            new RoleActivationPayload(role.Id),
+            $"Turn the role {role.Name} back on",
+            [
+                new("Role", role.Name),
+                new("Permissions it gives back", held.Count == 0 ? "None" : string.Join(", ", held.Select(Describe))),
+                new("People holding the role", holders.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ],
+            string.IsNullOrWhiteSpace(reason) ? NoReason : reason,
+            ct);
+    }
+
+    /// <summary>Turning this role back on, while it waits for approval.</summary>
+    public async Task<PendingRoleActivation?> PendingActivationAsync(Guid roleId, CancellationToken ct) =>
+        await PendingAsync(RoleActivationKind, nameof(Role), roleId, ct) is { } request
+            ? new PendingRoleActivation(request.Id, request.RequestedByName, request.RequestedAt)
+            : null;
+
     /// <summary>The grant to this user waiting for approval, if any.</summary>
     public async Task<PendingUserGrant?> PendingForUserAsync(Guid userId, CancellationToken ct)
     {
@@ -343,6 +382,50 @@ internal sealed class GrantApprovals(
         });
         db.AfterCommit(permissions.InvalidateAll);
         return $"{Count(added.Count, "permission")} added to {role.Name}";
+    }
+
+    /// <summary>
+    /// Turns an approved role back on, in the approval's transaction, if the person approving it may: they do not hold the
+    /// role (nobody approves access given to themselves), and they hold any administrative permission it gives, as only they
+    /// may give one. A role turned on meanwhile is left as it is.
+    /// </summary>
+    internal async Task<Result<string>> ApplyRoleActivationAsync(ApprovalRequest request, CancellationToken ct)
+    {
+        var asked = ApprovalPayload.Read<RoleActivationPayload>(request.Payload);
+        var role = await db.Set<Role>().Include(r => r.Permissions).FirstOrDefaultAsync(r => r.Id == asked.RoleId, ct);
+        if (role is null)
+        {
+            return Error.Rule("access.role_gone", "The role no longer exists, so nothing was turned on.");
+        }
+
+        if (current.UserId is { } approver && await db.Set<UserRole>().AnyAsync(ur => ur.UserId == approver && ur.RoleId == role.Id, ct))
+        {
+            return Error.Forbidden(SelfGrantCode,
+                "You hold this role, so turning it back on gives you access: another person who may approve grants must decide it.");
+        }
+
+        var mayGrant = await AccessAdminEndpoints.EnsureMayGrantAsync(role.Permissions.Select(p => p.Permission), current, permissions, ct);
+        if (mayGrant.IsFailure)
+        {
+            return mayGrant.Error!;
+        }
+
+        if (role.IsActive)
+        {
+            return $"{role.Name} was already in use";
+        }
+
+        role.IsActive = true;
+        audit.Add(new AuditEntry(AuditCategories.Admin, RoleReactivatedAction,
+            Fit($"Turned the role {role.Name} back on (asked for by {request.RequestedByName}, approved by {current.DisplayName ?? current.UserName})", 1000))
+        {
+            EntityType = nameof(Role),
+            EntityId = role.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { reason = request.Reason, approval = request.Id, requestedBy = request.RequestedBy },
+        });
+        db.AfterCommit(permissions.InvalidateAll);
+        return $"{role.Name} is in use again";
     }
 
     /// <summary>
@@ -503,4 +586,16 @@ internal sealed class RoleGrantApproval(GrantApprovals grants) : IApprovalAction
     public string ApprovePermission => PlatformPermissions.GrantsApprove;
 
     public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => grants.ApplyRoleGrantAsync(request, ct);
+}
+
+/// <summary>A role turned off, turned back on: one administrator asks, another approves.</summary>
+internal sealed class RoleActivationApproval(GrantApprovals grants) : IApprovalAction
+{
+    public string Kind => GrantApprovals.RoleActivationKind;
+
+    public string Title => "A role turned back on";
+
+    public string ApprovePermission => PlatformPermissions.GrantsApprove;
+
+    public Task<Result<string>> ApplyAsync(ApprovalRequest request, CancellationToken ct) => grants.ApplyRoleActivationAsync(request, ct);
 }

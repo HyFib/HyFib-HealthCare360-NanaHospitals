@@ -76,13 +76,31 @@ public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPass
 /// </param>
 public sealed record PasswordResetResponse(Guid UserId, IReadOnlyList<string> SentTo, DateTimeOffset ExpiresAt, string? TemporaryPassword = null);
 
-public sealed record RoleListItem(Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount, int UserCount);
+/// <param name="IsActive">Whether the role is in use (<see cref="Role.IsActive"/>); a role turned off gives nothing.</param>
+/// <param name="SoleRoleHolders">
+/// The active members of staff for whom it is the only role in use: turning it off leaves them able to do nothing until it
+/// is turned back on or they are given another role.
+/// </param>
+/// <param name="CanTurnOff">Whether the role can ever be turned off: never the Super Administrator's or the Patient role.</param>
+/// <param name="Version">The role's version, sent back when it is turned on or off (REL-04).</param>
+public sealed record RoleListItem(
+    Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount, int UserCount, bool IsActive = true, int SoleRoleHolders = 0,
+    bool CanTurnOff = true, uint Version = 0);
 
+/// <param name="IsActive">Whether the role is in use (<see cref="Role.IsActive"/>).</param>
+/// <param name="PendingActivation">Turning the role back on, while it waits for a second administrator.</param>
 public sealed record RoleDetail(
-    Guid Id, string Name, string? Description, bool IsSystem, IReadOnlyList<string> Permissions, uint Version, PendingRoleGrant? PendingGrant = null);
+    Guid Id, string Name, string? Description, bool IsSystem, IReadOnlyList<string> Permissions, uint Version, PendingRoleGrant? PendingGrant = null,
+    bool IsActive = true, PendingRoleActivation? PendingActivation = null);
 
 /// <param name="Reason">Why the role needs the permissions added, for the administrator who approves them.</param>
 public sealed record SaveRoleRequest(string Name, string? Description, IReadOnlyList<string> Permissions, uint? Version, string? Reason = null);
+
+/// <summary>Turns a role off, at once, or asks for it to be turned back on.</summary>
+/// <param name="Active">True to turn the role on, false to turn it off.</param>
+/// <param name="Version">The version the role was shown at: 409 when someone changed it since (REL-04).</param>
+/// <param name="Reason">Why, for the audit trail and for the administrator who approves turning it back on.</param>
+public sealed record SetRoleActiveRequest(bool? Active, uint Version, string? Reason = null);
 
 public sealed record PermissionItem(string Name, string Description);
 
@@ -126,9 +144,20 @@ public sealed class SaveRoleRequestValidator : AbstractValidator<SaveRoleRequest
     }
 }
 
+public sealed class SetRoleActiveRequestValidator : AbstractValidator<SetRoleActiveRequest>
+{
+    public SetRoleActiveRequestValidator()
+    {
+        RuleFor(x => x.Active).NotNull().WithMessage("Say whether the role should be on or off.");
+        RuleFor(x => x.Reason).MaximumLength(500);
+    }
+}
+
 /// <summary>User, role and permission administration (SEC-03). Every change is audited and invalidates permission caches.</summary>
 internal static class AccessAdminEndpoints
 {
+    /// <summary>The audit entry of a role turned off.</summary>
+    public const string RoleDeactivatedAction = "role.deactivated";
     public static void Map(IEndpointRouteBuilder app)
     {
         var users = app.MapGroup("/api/v1/admin/users").WithTags("Administration");
@@ -147,6 +176,7 @@ internal static class AccessAdminEndpoints
         roles.MapGet("/{id:guid}", GetRole).RequirePermission(PlatformPermissions.UsersRead);
         roles.MapPost("/", CreateRole).RequirePermission(PlatformPermissions.RolesManage).WithValidation<SaveRoleRequest>();
         roles.MapPut("/{id:guid}", UpdateRole).RequirePermission(PlatformPermissions.RolesManage).WithValidation<SaveRoleRequest>().RequireVersion();
+        roles.MapPut("/{id:guid}/active", SetRoleActive).RequirePermission(PlatformPermissions.RolesManage).WithValidation<SetRoleActiveRequest>();
         roles.MapDelete("/{id:guid}", DeleteRole).RequirePermission(PlatformPermissions.RolesManage);
 
         app.MapGet("/api/v1/admin/permissions", (PermissionRegistry registry) =>
@@ -707,7 +737,13 @@ internal static class AccessAdminEndpoints
     private static async Task<IResult> ListRoles(HospitalDbContext db, CancellationToken ct) =>
         TypedResults.Ok(await db.Set<Role>()
             .OrderByDescending(r => r.IsSystem).ThenBy(r => r.Name)
-            .Select(r => new RoleListItem(r.Id, r.Name, r.Description, r.IsSystem, r.Permissions.Count, db.Set<UserRole>().Count(ur => ur.RoleId == r.Id)))
+            .Select(r => new RoleListItem(
+                r.Id, r.Name, r.Description, r.IsSystem, r.Permissions.Count, db.Set<UserRole>().Count(ur => ur.RoleId == r.Id), r.IsActive,
+                db.Set<UserRole>().Count(ur => ur.RoleId == r.Id
+                    && db.Set<User>().Any(u => u.Id == ur.UserId && u.IsActive && u.Type == UserType.Staff)
+                    && !db.Set<UserRole>().Any(other => other.UserId == ur.UserId && other.RoleId != r.Id && other.Role!.IsActive)),
+                r.Name != SystemRoles.SuperAdmin && r.Name != SystemRoles.Patient,
+                r.Version))
             .ToListAsync(ct));
 
     private static async Task<IResult> GetRole(Guid id, HospitalDbContext db, GrantApprovals grants, CancellationToken ct)
@@ -716,8 +752,113 @@ internal static class AccessAdminEndpoints
         return role is null
             ? Error.NotFound(nameof(Role), id).ToProblem()
             : TypedResults.Ok(new RoleDetail(role.Id, role.Name, role.Description, role.IsSystem, role.Permissions.Select(p => p.Permission).OrderBy(p => p).ToList(), role.Version,
-                await grants.PendingForRoleAsync(role.Id, ct)));
+                await grants.PendingForRoleAsync(role.Id, ct), role.IsActive, await grants.PendingActivationAsync(role.Id, ct)));
     }
+
+    /// <summary>
+    /// Turns a role off at once, or asks for it to be turned back on (<see cref="Role.IsActive"/>). Off narrows access: its
+    /// holders lose what it gives from their next request. On gives everyone who holds it back what it holds, so it waits for a
+    /// second person who may approve grants, as giving the role to each of them would (<see cref="GrantApprovals"/>). The
+    /// Super Administrator's role is how the hospital is administered and every portal account holds the Patient role
+    /// (which the patient portal's switch turns off), so neither is ever off; and nobody turns off a role they hold, which
+    /// would take their own access with nobody to give it back.
+    /// </summary>
+    private static async Task<IResult> SetRoleActive(
+        Guid id,
+        SetRoleActiveRequest request,
+        HospitalDbContext db,
+        IAuditLogger audit,
+        ICurrentUser current,
+        IPermissionService permissions,
+        GrantApprovals grants,
+        CancellationToken ct)
+    {
+        var role = await db.Set<Role>().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (role is null)
+        {
+            return Error.NotFound(nameof(Role), id).ToProblem();
+        }
+
+        var on = request.Active!.Value;
+        var holds = current.UserId is { } me && await db.Set<UserRole>().AnyAsync(ur => ur.UserId == me && ur.RoleId == role.Id, ct);
+        if (RoleSwitchRefusal(role.Name, on, holds) is { } refused)
+        {
+            return refused.ToProblem();
+        }
+
+        if (role.IsActive == on)
+        {
+            return TypedResults.NoContent();
+        }
+
+        // A switch shown before someone else changed the role is refused (REL-04), whether it changes the role now or asks
+        // for it to be changed; the expected version also catches a change made between this read and the save.
+        if (role.Version != request.Version)
+        {
+            return Error.ConcurrencyConflict.ToProblem();
+        }
+
+        db.SetExpectedVersion(role, request.Version);
+        var reason = string.IsNullOrWhiteSpace(request.Reason) ? null : request.Reason.Trim();
+        if (!on)
+        {
+            var holders = await db.Set<UserRole>().CountAsync(ur => ur.RoleId == role.Id, ct);
+            role.IsActive = false;
+            audit.Add(new AuditEntry(AuditCategories.Admin, RoleDeactivatedAction, $"Turned off the role {role.Name}")
+            {
+                EntityType = nameof(Role),
+                EntityId = role.Id.ToString(),
+                Details = new { reason, holders },
+                Severity = AuditSeverity.Warning,
+            });
+            await db.SaveChangesAsync(ct);
+            permissions.InvalidateAll();
+            return TypedResults.NoContent();
+        }
+
+        // Turning it back on gives its holders what it holds: the administrative permissions among them only someone who
+        // holds them may approve, as only they may give them; and someone who holds the role gives it to themselves.
+        var decision = await grants.DecideAsync(holds, await grants.AdministrativeAsync([role.Id], ct), ct);
+        if (decision.IsFailure)
+        {
+            return decision.Error!.ToProblem();
+        }
+
+        if (decision.Value == GrantDecision.Ask)
+        {
+            var asked = await grants.AskToActivateRoleAsync(role, reason, ct);
+            return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
+        }
+
+        role.IsActive = true;
+        audit.Add(new AuditEntry(AuditCategories.Admin, GrantApprovals.RoleReactivatedAction, $"Turned the role {role.Name} back on")
+        {
+            EntityType = nameof(Role),
+            EntityId = role.Id.ToString(),
+            Details = new { reason },
+            Severity = AuditSeverity.Warning,
+        });
+        grants.AuditGivenAlone(decision.Value, nameof(Role), role.Id, $"the role {role.Name} turned back on");
+        await db.SaveChangesAsync(ct);
+        permissions.InvalidateAll();
+        return TypedResults.NoContent();
+    }
+
+    /// <summary>
+    /// Why the role named <paramref name="roleName"/> may not be turned on (<paramref name="on"/>) or off by someone who
+    /// holds it, or not (<paramref name="holds"/>); null when it may. The Super Administrator and Patient roles are never
+    /// switched, and nobody turns off a role they hold. Turning a held role on is not refused here: it waits for someone
+    /// else, as access given to oneself does (<see cref="GrantApprovals.DecideAsync"/>).
+    /// </summary>
+    internal static Error? RoleSwitchRefusal(string roleName, bool on, bool holds) => roleName switch
+    {
+        SystemRoles.SuperAdmin => Error.Rule("role.protected", "The Super Administrator role cannot be turned off: it is how the hospital is administered."),
+        SystemRoles.Patient => Error.Rule("role.protected",
+            "The Patient role cannot be turned off: every patient portal account holds it. To stop patients signing in, turn off the patient portal under Hospital setup, Features."),
+        _ when !on && holds => Error.Rule("role.self_deactivate",
+            "You hold this role, so turning it off would take your own access. Ask another administrator to turn it off."),
+        _ => null,
+    };
 
     private static async Task<IResult> CreateRole(
         SaveRoleRequest request,
