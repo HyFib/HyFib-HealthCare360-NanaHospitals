@@ -65,18 +65,18 @@ all-access); the table shows the defaults.
 
 ### The 32 built-in roles
 
-289 permissions are declared. 1748 of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.
+289 permissions are declared. 1755 of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.
 
 | Role | Responsibility | Default permissions | Endpoints | Two-step verification | Can be turned off |
 |---|---|---:|---:|---|---|
-| `SuperAdmin` | Full access to everything, including security settings | all (`*`) | 1748 | Required (role) | No, always in use |
-| `HospitalAdmin` | Hospital administration, masters, users and reports | 204 | 1258 | Required (role) | Yes |
+| `SuperAdmin` | Full access to everything, including security settings | all (`*`) | 1755 | Required (role) | No, always in use |
+| `HospitalAdmin` | Hospital administration, masters, users and reports | 204 | 1261 | Required (role) | Yes |
 | `Doctor` | Consultants and residents: EMR, orders, e-prescriptions | 87 | 522 | If the user sets it up | Yes |
-| `Nurse` | Nursing care, vitals, ward operations | 84 | 547 | If the user sets it up | Yes |
-| `FrontOffice` | Registration, visits, queue and enquiries | 40 | 310 | If the user sets it up | Yes |
-| `Billing` | OP/IP billing and charge management | 25 | 221 | If the user sets it up | Yes |
+| `Nurse` | Nursing care, vitals, ward operations | 84 | 550 | If the user sets it up | Yes |
+| `FrontOffice` | Registration, visits, queue and enquiries | 40 | 313 | If the user sets it up | Yes |
+| `Billing` | OP/IP billing and charge management | 25 | 224 | If the user sets it up | Yes |
 | `Cashier` | Payments, receipts and day-end closing | 18 | 172 | If the user sets it up | Yes |
-| `InsuranceDesk` | Insurance verification, pre-authorisation and claims | 18 | 197 | If the user sets it up | Yes |
+| `InsuranceDesk` | Insurance verification, pre-authorisation and claims | 18 | 200 | If the user sets it up | Yes |
 | `Pharmacist` | OP/IP pharmacy dispensing and pharmacy stock | 32 | 211 | If the user sets it up | Yes |
 | `LabTechnician` | Sample collection, processing and result entry | 17 | 140 | If the user sets it up | Yes |
 | `Pathologist` | Laboratory result verification and sign-off | 18 | 151 | If the user sets it up | Yes |
@@ -100,7 +100,7 @@ all-access); the table shows the defaults.
 | `QualityManager` | Incidents, risk register and quality indicators | 37 | 286 | Required (administers) | Yes |
 | `Accountant` | Accounts hand-off, doctor fees and Tally | 28 | 238 | Required (role) | Yes |
 | `MisAnalyst` | MIS reports and BI dashboards | 10 | 90 | If the user sets it up | Yes |
-| `Patient` | Patient portal user | 1 | 59 | If the user sets it up | No, always in use |
+| `Patient` | Patient portal user | 1 | 61 | If the user sets it up | No, always in use |
 
 ### What each role may do on a new installation
 
@@ -759,10 +759,10 @@ Only the Super Administrator has them on a new installation, until an administra
 
 | Permission | Area | What it allows | Endpoints |
 |---|---|---|---:|
-| `admin.backups.manage` | Administration | Run backups and see which recovery key opens each | 5 |
+| `admin.backups.manage` | Administration | Run backups and see which recovery key opens each | 6 |
 | `admin.integrations.manage` | Administration | Configure integrations and credentials | 8 |
 | `admin.roles.manage` | Administration | Create roles and assign permissions | 4 |
-| `admin.system.manage` | Administration | Change the server's database password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it (with a second person) | 14 |
+| `admin.system.manage` | Administration | Change the server's database password and keys, make backup recovery keys, sign everybody out, and set how long the audit trail is kept and purge it (with a second person) | 15 |
 | `mtp.certify` | Termination of pregnancy | Record the woman's consent (Form C), the doctors' opinion (Form I) and the termination (Form III) | 9 |
 
 <!-- roles-inventory:end -->
