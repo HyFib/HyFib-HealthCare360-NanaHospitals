@@ -44,6 +44,7 @@ public sealed class ListenerPathsTests
     [InlineData("/api/v1/consent-managers/cm-one/events")]
     [InlineData("/api/v1/billing/webhooks/payment-gateway")]
     [InlineData("/api/v1/integrations/webhooks/whatsapp/")]
+    [InlineData("/api/v1/rpm/ingest")]
     public void What_services_outside_the_hospital_call_answers_on_the_portals_address_and_the_staff_apps(string path)
     {
         ListenerPaths.Decide(Listener.Portal, path).ShouldBe(ListenerRoute.Serve);

@@ -57,6 +57,20 @@ public sealed class PortalAddressTests
     }
 
     /// <summary>
+    /// Home monitoring devices upload their readings from patients' homes, so their endpoint answers on the portal's address,
+    /// the one opened to the internet: on the staff app's address alone, no reading would arrive. It takes no session (each
+    /// device proves itself with its own key), as everything else that answers there without the portal's permission.
+    /// </summary>
+    [Fact]
+    public void Home_monitoring_devices_upload_on_the_portals_address()
+    {
+        var ingest = Endpoints().Where(e => e.Route == "/api/v1/rpm/ingest").ToList();
+
+        ingest.ShouldNotBeEmpty("the home monitoring devices' upload endpoint");
+        ingest.ShouldAllBe(e => e.Anonymous && ListenerPaths.Decide(Listener.Portal, e.Route) == ListenerRoute.Serve);
+    }
+
+    /// <summary>
     /// SMART on FHIR's authorization hands the browser to the staff app's sign-in, and the FHIR API reads as a staff account
     /// (a session or a token issued for one): neither answers where the portal's third-party script runs.
     /// </summary>

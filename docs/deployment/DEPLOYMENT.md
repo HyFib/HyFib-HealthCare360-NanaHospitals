@@ -81,9 +81,10 @@ use the report for one hospital.
 - Guest / patient WiFi must not be able to reach the server.
 - **From the internet, forward only the patient portal's port (7361)**, and only once patients or outside services need
   it. Besides the portal, that address answers what services outside the hospital call: the payment gateway's, SMS and
-  WhatsApp webhooks, the ABDM gateway's callbacks and the records other providers push (`/api/v3/...`), and consent
-  managers' events (`/api/v1/consent-managers/...`). Register its public https address with each: with NHA as the HIP's
-  callback URL, as `dataPushUrl` in `abdm.gateway`, and with each consent manager. **Never forward the staff app's port
+  WhatsApp webhooks, the ABDM gateway's callbacks and the records other providers push (`/api/v3/...`), consent
+  managers' events (`/api/v1/consent-managers/...`), and the readings home monitoring devices upload from patients' homes
+  (`/api/v1/rpm/ingest`, each with its own device key). Register its public https address with each: with NHA as the HIP's
+  callback URL, as `dataPushUrl` in `abdm.gateway`, with each consent manager, and in each home device or its gateway. **Never forward the staff app's port
   (7360)**: it serves staff sign-in and the staff API. Partners that read the FHIR API (SMART on FHIR apps and backend
   services) use it from the hospital network or over a VPN to 7360, limited to their addresses: an app's authorization
   signs a staff member in on the staff app, which the portal's address never serves.

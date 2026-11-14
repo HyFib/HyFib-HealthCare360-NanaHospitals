@@ -78,9 +78,10 @@ public static class ListenerPaths
 
     /// <summary>
     /// What services outside the hospital call it on: the payment gateway's, SMS and WhatsApp webhooks, the ABDM gateway's
-    /// callbacks and the records other providers push (everything under <c>/api/v3</c>, which holds nothing else), and
-    /// consent managers' events. A hospital opens only the portal's address to the internet, so they answer there as well as
-    /// on the staff app's. None takes a session: each call proves who sent it with a signature or the gateway's token.
+    /// callbacks and the records other providers push (everything under <c>/api/v3</c>, which holds nothing else), consent
+    /// managers' events, and the readings home monitoring devices upload from patients' homes. A hospital opens only the
+    /// portal's address to the internet, so they answer there as well as on the staff app's. None takes a session: each call
+    /// proves who sent it with a signature, the gateway's token or the device's own key.
     /// <para>
     /// Not the FHIR API or SMART on FHIR's OAuth endpoints (<c>/fhir</c>, <c>/oauth2</c>). An app's authorization hands the
     /// staff member to the staff app's sign-in and its Authorize an app screen, which must never answer here, and the FHIR
@@ -94,6 +95,7 @@ public static class ListenerPaths
         "/api/v1/integrations/webhooks",
         "/api/v3",
         "/api/v1/consent-managers",
+        "/api/v1/rpm/ingest",
     ];
 
     /// <summary>The portal's own: its pages, its API, and its sign-in with a one-time code.</summary>
