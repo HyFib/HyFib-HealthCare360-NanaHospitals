@@ -13,16 +13,28 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// docs/security/ROLES.md lists the built-in roles, what each is for, what each may do on a new installation and how many
 /// of the API's endpoints that opens, and the permissions no built-in role holds: written from the code (the built-in
 /// roles, the modules' permissions and the roles they are given by default, the sign-in policy's defaults and every
-/// endpoint's permission rule), never by hand, so it cannot say something the server does not do. This test fails when
-/// the page no longer matches the code; run it with HC360_WRITE_ROLES_INVENTORY=1 to write the part between its markers
-/// again, and commit it. What a hospital changed since (roles of its own, permissions given or taken back, roles turned
-/// off) is on its Roles and permissions screen and in its audit trail.
+/// endpoint's permission rule), never by hand, so it cannot say something the server does not do. The inventory is read
+/// from the code once (<see cref="Read"/>) and every file is written from that one reading. This test fails when the page
+/// no longer matches the code; run it with HC360_WRITE_ROLES_INVENTORY=1 to write the part between its markers again,
+/// and commit it. What a hospital changed since (roles of its own, permissions given or taken back, roles turned off) is
+/// on its Roles and permissions screen and in its audit trail.
 /// </summary>
 public sealed class RolesInventoryTests
 {
     private const string WriteVariable = "HC360_WRITE_ROLES_INVENTORY";
     private const string Start = "<!-- roles-inventory:start: written from the code by RolesInventoryTests; do not edit by hand -->";
     private const string End = "<!-- roles-inventory:end -->";
+
+    /// <summary>The inventory, read from the code once for every file written from it.</summary>
+    private static readonly Lazy<Inventory> Current = new(Read);
+
+    private enum TwoStep
+    {
+        NotEnforced,
+        RequiredByRole,
+        RequiredToAdminister,
+        Optional,
+    }
 
     [Fact]
     public void The_roles_page_says_what_the_code_does()
@@ -33,7 +45,7 @@ public sealed class RolesInventoryTests
         var end = page.IndexOf(End, StringComparison.Ordinal);
         (start >= 0 && end > start).ShouldBeTrue($"{Path.GetFileName(path)} must keep its two markers: {Start} and {End}");
 
-        var current = page[..(start + Start.Length)] + "\n\n" + Inventory() + "\n" + page[end..];
+        var current = page[..(start + Start.Length)] + "\n\n" + Markdown(Current.Value) + "\n" + page[end..];
         if (Environment.GetEnvironmentVariable(WriteVariable) == "1")
         {
             File.WriteAllText(path, current);
@@ -45,74 +57,99 @@ public sealed class RolesInventoryTests
             $"Run RolesInventoryTests with {WriteVariable}=1 to write it again, and commit it.");
     }
 
-    /// <summary>The generated part of the page, from the code as it is.</summary>
-    private static string Inventory()
+    /// <summary>
+    /// Reads the inventory from the server as Program.cs composes it: the built-in roles in their order, each with the
+    /// permissions it gets on a new installation, the endpoints those open, and what the sign-in policy's defaults ask of
+    /// it; and every permission, by name, with its area, the roles that get it and the endpoints whose rule names it.
+    /// </summary>
+    private static Inventory Read()
     {
         var app = EndpointAuthorizationTests.App.Value;
         var registry = app.Services.GetRequiredService<PermissionRegistry>();
         var security = new SecurityOptions();
         var definitions = registry.All.OrderBy(d => d.Name, StringComparer.Ordinal).ToList();
-        var defaults = SystemRoles.All.ToDictionary(
-            r => r.Name,
-            r => r.Name == SystemRoles.SuperAdmin
-                ? new SortedSet<string>([PermissionRegistry.Wildcard], StringComparer.Ordinal)
-                : new SortedSet<string>(definitions.Where(d => d.DefaultRoles?.Contains(r.Name) == true).Select(d => d.Name), StringComparer.Ordinal),
-            StringComparer.Ordinal);
         var rules = EndpointRules(app);
-        var guarded = rules.Count;
 
+        List<Role> roles =
+        [
+            .. SystemRoles.All.Select(role =>
+            {
+                var (name, description) = role;
+                var held = name == SystemRoles.SuperAdmin
+                    ? new SortedSet<string>([PermissionRegistry.Wildcard], StringComparer.Ordinal)
+                    : new SortedSet<string>(definitions.Where(d => d.DefaultRoles?.Contains(name) == true).Select(d => d.Name), StringComparer.Ordinal);
+                var mfa = !security.EnforceMfa ? TwoStep.NotEnforced
+                    : security.MfaRequiredRoles.Contains(name, StringComparer.OrdinalIgnoreCase) ? TwoStep.RequiredByRole
+                    : security.MfaForAdministration && held.Any(PlatformPermissions.IsAdministrative) ? TwoStep.RequiredToAdminister
+                    : TwoStep.Optional;
+                return new Role(name, description, [.. held], rules.Count(rule => Opens(held, rule.Groups)), mfa, !SystemRoles.AlwaysInUse.Contains(name));
+            }),
+        ];
+
+        List<Permission> permissions =
+        [
+            .. definitions.Select(d => new Permission(
+                d.Name,
+                d.Group,
+                d.Description,
+                [.. (d.DefaultRoles ?? []).Order(StringComparer.Ordinal)],
+                PlatformPermissions.IsAdministrative(d.Name),
+                rules.Count(rule => rule.Groups.Any(group => group.Contains(d.Name, StringComparer.Ordinal))))),
+        ];
+
+        return new Inventory(roles, permissions, rules.Count);
+    }
+
+    /// <summary>The generated part of ROLES.md.</summary>
+    private static string Markdown(Inventory inventory)
+    {
         var text = new StringBuilder();
-        text.AppendLine(CultureInfo.InvariantCulture, $"### The {SystemRoles.All.Count} built-in roles");
+        text.AppendLine(CultureInfo.InvariantCulture, $"### The {inventory.Roles.Count} built-in roles");
         text.AppendLine();
         text.AppendLine(CultureInfo.InvariantCulture,
-            $"{definitions.Count} permissions are declared. {guarded} of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.");
+            $"{inventory.Permissions.Count} permissions are declared. {inventory.GuardedEndpoints} of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.");
         text.AppendLine();
         text.AppendLine("| Role | Responsibility | Default permissions | Endpoints | Two-step verification | Can be turned off |");
         text.AppendLine("|---|---|---:|---:|---|---|");
-        foreach (var (name, description) in SystemRoles.All)
+        foreach (var role in inventory.Roles)
         {
-            var held = defaults[name];
-            var opens = rules.Count(rule => Opens(held, rule.Groups));
-            var mfa = !security.EnforceMfa ? "No"
-                : security.MfaRequiredRoles.Contains(name, StringComparer.OrdinalIgnoreCase) ? "Required (role)"
-                : security.MfaForAdministration && held.Any(PlatformPermissions.IsAdministrative) ? "Required (administers)"
-                : "If the user sets it up";
-            var count = held.Contains(PermissionRegistry.Wildcard) ? "all (`*`)" : held.Count.ToString(CultureInfo.InvariantCulture);
+            var count = role.HoldsAll ? "all (`*`)" : role.DefaultPermissions.Count.ToString(CultureInfo.InvariantCulture);
             text.AppendLine(CultureInfo.InvariantCulture,
-                $"| `{name}` | {Cell(description)} | {count} | {opens} | {mfa} | {(SystemRoles.AlwaysInUse.Contains(name) ? "No, always in use" : "Yes")} |");
+                $"| `{role.Name}` | {Cell(role.Description)} | {count} | {role.Endpoints} | {MfaLabel(role.Mfa)} | {(role.CanBeTurnedOff ? "Yes" : "No, always in use")} |");
         }
 
         text.AppendLine();
         text.AppendLine("### What each role may do on a new installation");
         text.AppendLine();
         text.AppendLine("Each permission is listed with its name, by the area that declares it.");
-        foreach (var (name, description) in SystemRoles.All)
+        foreach (var role in inventory.Roles)
         {
-            var held = defaults[name];
             text.AppendLine();
-            if (held.Contains(PermissionRegistry.Wildcard))
+            if (role.HoldsAll)
             {
                 text.AppendLine(CultureInfo.InvariantCulture,
-                    $"- **`{name}`**: every permission (`*`), including those added by future updates.");
+                    $"- **`{role.Name}`**: every permission (`*`), including those added by future updates.");
                 continue;
             }
 
             text.AppendLine("<details>");
-            text.AppendLine(CultureInfo.InvariantCulture, $"<summary><strong>{name}</strong>: {Html(description)} ({held.Count} permissions)</summary>");
+            text.AppendLine(CultureInfo.InvariantCulture,
+                $"<summary><strong>{role.Name}</strong>: {Html(role.Description)} ({role.DefaultPermissions.Count} permissions)</summary>");
             text.AppendLine();
             text.AppendLine("| Area | May |");
             text.AppendLine("|---|---|");
-            foreach (var area in definitions.Where(d => held.Contains(d.Name)).GroupBy(d => d.Group).OrderBy(g => g.Key, StringComparer.Ordinal))
+            var held = role.DefaultPermissions.ToHashSet(StringComparer.Ordinal);
+            foreach (var area in inventory.Permissions.Where(p => held.Contains(p.Name)).GroupBy(p => p.Area).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
                 text.AppendLine(CultureInfo.InvariantCulture,
-                    $"| {Cell(area.Key)} | {string.Join("; ", area.Select(d => $"{Cell(d.Description)} (`{d.Name}`)"))} |");
+                    $"| {Cell(area.Key)} | {string.Join("; ", area.Select(p => $"{Cell(p.Description)} (`{p.Name}`)"))} |");
             }
 
             text.AppendLine();
             text.AppendLine("</details>");
         }
 
-        var unheld = definitions.Where(d => d.DefaultRoles is not { Length: > 0 }).ToList();
+        var unheld = inventory.Permissions.Where(p => p.DefaultRoles.Count == 0).ToList();
         text.AppendLine();
         text.AppendLine(CultureInfo.InvariantCulture, $"### The {unheld.Count} permissions no built-in role holds by default");
         text.AppendLine();
@@ -120,15 +157,24 @@ public sealed class RolesInventoryTests
         text.AppendLine();
         text.AppendLine("| Permission | Area | What it allows | Endpoints |");
         text.AppendLine("|---|---|---|---:|");
-        foreach (var definition in unheld)
+        foreach (var permission in unheld)
         {
-            var opens = rules.Count(rule => rule.Groups.Any(group => group.Contains(definition.Name, StringComparer.Ordinal)));
-            text.AppendLine(CultureInfo.InvariantCulture, $"| `{definition.Name}` | {Cell(definition.Group)} | {Cell(definition.Description)} | {opens} |");
+            text.AppendLine(CultureInfo.InvariantCulture,
+                $"| `{permission.Name}` | {Cell(permission.Area)} | {Cell(permission.Description)} | {permission.Endpoints} |");
         }
 
         // AppendLine ends lines with the platform's newline, \r\n on Windows; the page is kept with \n (.gitattributes).
         return text.ToString().ReplaceLineEndings("\n");
     }
+
+    private static string MfaLabel(TwoStep mfa) => mfa switch
+    {
+        TwoStep.NotEnforced => "No",
+        TwoStep.RequiredByRole => "Required (role)",
+        TwoStep.RequiredToAdminister => "Required (administers)",
+        TwoStep.Optional => "If the user sets it up",
+        _ => throw new ArgumentOutOfRangeException(nameof(mfa), mfa, null),
+    };
 
     /// <summary>
     /// Every endpoint that asks for a permission, by method and route, with its rule: groups that must all be satisfied, each
@@ -179,4 +225,16 @@ public sealed class RolesInventoryTests
 
         throw new InvalidOperationException("The repository root (HyFib.HealthCare360.slnx) was not found above the test's folder.");
     }
+
+    /// <summary>A built-in role: its name and job, its default permissions (<c>*</c> for all), the endpoints those open, and whether it can be turned off.</summary>
+    private sealed record Role(string Name, string Description, IReadOnlyList<string> DefaultPermissions, int Endpoints, TwoStep Mfa, bool CanBeTurnedOff)
+    {
+        public bool HoldsAll => DefaultPermissions.Contains(PermissionRegistry.Wildcard);
+    }
+
+    /// <summary>A permission: its area and meaning, the built-in roles given it by default, and the endpoints whose rule names it.</summary>
+    private sealed record Permission(string Name, string Area, string Description, IReadOnlyList<string> DefaultRoles, bool Administrative, int Endpoints);
+
+    /// <summary>What the code declares and decides about roles, read once.</summary>
+    private sealed record Inventory(IReadOnlyList<Role> Roles, IReadOnlyList<Permission> Permissions, int GuardedEndpoints);
 }
