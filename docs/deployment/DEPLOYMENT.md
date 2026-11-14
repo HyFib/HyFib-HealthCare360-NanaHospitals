@@ -1215,6 +1215,15 @@ any installed before self-update or with `-NoAutoUpdate`, with `Install-HC360Des
 distribution tool). Self-update replaces the program files only: run the installer again when a release's notes ask for
 it.
 
+### Desktops and lab agents left on an old version
+
+An update is offered to workstations and lab agents, not forced, so some stay behind. System health lists, as a warning
+(`clients.outdated`), every HC360 Desktop and lab agent seen in the last 30 days that runs a version below the minimum, or
+reports none, and the answer to each one's heartbeat carries the header `X-HC360-Update-Required` with the version to update
+to. They keep working: nothing is refused, so no ward is locked out mid-shift. By default the minimum is the server's release
+(major and minor: a 1.1.x server asks for 1.1.0); to set one, put `HealthCare360:Clients:MinimumDesktopVersion` and
+`HealthCare360:Clients:MinimumLabAgentVersion` (such as `1.0.5`) in `hc360.settings.json`.
+
 ### Going back
 
 The way back from an upgrade is the previous version **and** the backup HC360 took just before the update changed the

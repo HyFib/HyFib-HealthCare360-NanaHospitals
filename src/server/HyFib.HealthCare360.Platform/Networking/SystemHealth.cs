@@ -283,6 +283,12 @@ public sealed class SystemHealthService(
             keyWarnings.Add(devicesNotReady);
         }
 
+        // Workstations and lab agents older than the minimum version supported (told to update, never locked out).
+        if (await OutdatedClients.WarningAsync(db, options.Value.Clients, ProductVersion, now, ct) is { } outdatedClients)
+        {
+            keyWarnings.Add(outdatedClients);
+        }
+
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)
         {
             keyWarnings.Add(new("keys.signing_due", "info", "The sign-in token key is over a year old. Rotate it under Encryption keys."));

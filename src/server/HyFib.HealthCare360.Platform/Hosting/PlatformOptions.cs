@@ -58,6 +58,9 @@ public sealed class PlatformOptions
 
     public NetworkOptions Network { get; set; } = new();
 
+    /// <summary>The oldest HC360 Desktop and lab agent supported (<see cref="ClientVersionOptions"/>).</summary>
+    public ClientVersionOptions Clients { get; set; } = new();
+
     public BackupOptions Backup { get; set; } = new();
 
     public PdfOptions Pdf { get; set; } = new();
