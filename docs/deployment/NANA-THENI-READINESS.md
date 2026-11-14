@@ -199,6 +199,11 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
 
 Each step ends with a check, and the next step starts only once it passes.
 
+**Steps 12 to 16, the alerts that reach IT's phone, start today (14 November), not after step 11.** The SMS in sections
+3, 4 and 7 does not exist until the hospital has an SMS gateway account and has registered its sender and its message
+on the DLT portal, which takes days to weeks, and nobody outside the hospital notices a stopped server until a heartbeat
+monitor is set up. The dates are against the release on 23 November.
+
 1. **Read the machine.** First download the release and check it before anything in it runs: compare each file with
    `SHA256SUMS.txt` and with the checksums HyFib sends separately, unblock the checked zip, extract it, and let the
    PowerShell window run scripts (DEPLOYMENT.md section 1, *The release files*). Then, on the machine, as Administrator,
@@ -276,6 +281,43 @@ Each step ends with a check, and the next step starts only once it passes.
     which is enough for a workstation).
 11. **Run the registers in parallel** (section 2 above).
     *Check:* the pharmacist-in-charge signs them off.
+12. **Start the DLT registration: today, 14 November. Owner: the hospital's IT head, with the signatory who may register
+    the hospital; HyFib supplies the message text.** Operators drop an SMS whose sender or message is not registered on
+    the DLT portal of the telecom operator, so an unregistered alert SMS fails and nobody is told. Register the hospital
+    as the sender (entity), then its sender header, then the text of the `system.alert` template (Administration ›
+    Message templates), and write down the template id each approval gives. Registration takes days to weeks and may
+    not be done by 23 November.
+    *Check:* the DLT portal shows the entity, the header and the template approved, and the template id is written
+    down. If it is not approved by 20 November, the go-live record says "alert SMS not working yet", and until it is:
+    critical alerts reach everyone who may see System health in the app, WhatsApp if the hospital chose it, and the
+    heartbeat monitor's own alarm (step 15) by call or e-mail; IT looks at System health at the start of each shift.
+13. **Open the SMS gateway account: by 17 November. Owner: the IT head opens it and pays for it; HyFib enters its
+    keys.** Choose the gateway the DLT registration was made through (MSG91, for one, takes the DLT template id with
+    each SMS). HyFib enters the key under Administration › Settings (stored encrypted), and, once step 12 gives it, the
+    template id on the `system.alert` template.
+    *Check:* System health shows no `alerts.not_ready`, and Administration › Notifications shows a test SMS from the
+    gateway delivered to IT's phone.
+14. **Name the on-call and escalation numbers: by 18 November. Owner: hospital management names the people, the IT head
+    gives their numbers, HyFib enters them.** Set `alerts.oncallPhone` (IT's mobile, which gets each critical alert),
+    `alerts.escalationPhone` (the second contact, such as the IT head: paged after `alerts.escalateMinutes`, 15 if not
+    set) and `alerts.supportPhone` (HyFib support's number: paged `alerts.supportMinutes` after that, 30 if not set).
+    Write the same three people and numbers on the go-live record and on a sheet at the server.
+    *Check:* System health shows neither `alerts.not_ready` nor `alerts.no_escalation`.
+15. **Set up the heartbeat monitor outside the hospital: by 18 November. Owner: the IT head creates the check, HyFib
+    enters its address.** A service such as Healthchecks.io or Better Stack, with a period of 5 minutes, a grace time of 5
+    to 10, and alerts to IT and to HyFib support by call or e-mail as well as SMS (a call or e-mail needs no DLT
+    registration). HyFib sets `alerts.heartbeatUrl.secret` to its address, and the firewall lets the server reach the
+    monitor's host (DEPLOYMENT.md section 4, *Alerts that reach someone*). The server fetches the address only while
+    its database and its own web host answer, so a wedged server stops it too.
+    *Check:* System health shows no `alerts.heartbeat_off`, and the monitor shows a heartbeat every 5 minutes.
+16. **Drill the alerts: by 21 November, after step 7. Owner: the IT head with HyFib, on the server, with IT's phone in
+    hand.** Start an alert drill (Administration › System health › Alert drills) and let it go unacknowledged until the
+    second contact's SMS arrives, then acknowledge it. Then stop the `HC360Server` service for longer than the monitor's
+    period plus its grace time, and start it again.
+    *Check:* IT's phone got the drill's SMS within five minutes, the second contact's phone got its SMS after
+    `alerts.escalateMinutes`, and the monitor's alarm reached IT and HyFib support while the service was stopped. The
+    drill's timings (told in the app, SMS sent, acknowledged) and the monitor's alarm time are written on the go-live
+    record. If step 12 is not finished, the drill is repeated the day the template is approved.
 
 ## 5. Who or what shows each step is right
 
@@ -292,6 +334,11 @@ None of these depends on HyFib's word:
 | Each night's backup leaves the server | At each weekly swap, the disk going off site holds the last night's backup file, and `backup verify --in` passes on it (DEPLOYMENT.md section 8). That a missing copy is noticed: the disk unplugged at step 7, and an alert drill's SMS on IT's phone for the critical alert |
 | The registers are right | The day-by-day reconciliation against the current software's printouts, signed by the pharmacist-in-charge, and then the Drugs Inspector |
 | Each drug is in the right schedule | The Schedule H1 list (G.S.R. 588(E), 2013, and later amendments), molecule by molecule |
+| Registered to send alert SMS (step 12, owner: IT head; by 20 November) | The DLT portal's approvals of the entity, the sender header and the `system.alert` template, with the template id written down; and the alert drill's SMS on IT's phone (step 16) |
+| The SMS gateway works (step 13, owner: IT head; by 17 November) | No `alerts.not_ready` in System health, and a delivered test SMS in Administration › Notifications |
+| IT's on-call and escalation numbers are right (step 14, owner: hospital management; by 18 November) | `alerts.oncallPhone`, `alerts.escalationPhone` and `alerts.supportPhone` set, no `alerts.not_ready` or `alerts.no_escalation` in System health, and the second contact's SMS in the drill |
+| Someone outside the hospital notices if the server stops or hangs (step 15, owner: IT head; by 18 November) | The monitor shows a heartbeat every 5 minutes, no `alerts.heartbeat_off` in System health, and the monitor's alarm reaching IT and HyFib support while `HC360Server` is stopped (step 16) |
+| The alerts reach a person, in time (step 16, owner: IT head with HyFib; by 21 November) | The alert drill's timings and the monitor's alarm time on the go-live record |
 
 ## 6. The hospital's answers (10 and 12 November 2026)
 
