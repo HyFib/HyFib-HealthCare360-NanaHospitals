@@ -293,10 +293,16 @@ Failure rows for these destinations:
      erasure window (F21, F22, F25).
 4. Restore, verify and decrypt with `--blobs`. Restore-from-secondary-alone and stale-disk tests (F3, F16). Key rotation:
    data key (F8, F9) and recovery key (F10).
-5. A model-based test: seeded random sequences of {backup, add document, key-move rewrite, discard, rotate recovery key,
-   swap or unplug disk, crash at step *k*, advance a day}. Invariant after every step: every retained archive in every
-   location restores completely from that location alone, and no blob outlives R+1 days after its last reference
-   (F14). It uses a seeded random generator rather than adding FsCheck, unless you want the dependency.
+5. A model-based test (`BackupModelTests`, done). Seeded random sequences of 110 steps over about seven weeks: nightly
+   and extra backups, documents added, moved to a new key and removed, recovery keys rotated, two USB disks swapped and
+   unplugged, backups stopped at any of nine steps (`BackupService.Checkpoint`), and the files a power cut leaves (a
+   `.tmp` copy, a `.partial` archive, a list without its archive, a copy cut short on an append-only disk). After every
+   backup, every archive in every folder must restore from that folder alone to the documents the model recorded when it
+   was made. After every backup that finished, a deletable folder must hold exactly the documents its archives list and
+   no archive past its time. Eight sequences run with deletable disks and eight with append-only ones. To check that it
+   catches faults, each of these changes to the code was made on purpose and failed it: the sweep not deleting (16 of
+   16 sequences fail), the hash cache ignoring file times (16 of 16), and append-only copies taken without checking
+   their length (3 of 8 append-only sequences fail; `BackupStoreTests` covers it directly).
 6. A growth benchmark over 60 simulated nights, asserting size ≈ `R × (D + I) + Docs + Docs_R`.
 7. Docs: DEPLOYMENT.md §7 (downgrade note), §8, §9 step 3, the readiness doc's sizing. A restore-drill script for a
    clean Windows VM from one USB disk (row counts plus per-document hashes, timed).
