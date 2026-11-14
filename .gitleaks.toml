@@ -1,6 +1,7 @@
-# Secret scan (gitleaks), run by CI over every commit with the default rules. The values below were reviewed and are not
-# secrets. A new finding is either a real secret (revoke it at the provider first, then remove it from the history) or,
-# once reviewed, a value added here with where it comes from.
+# Secret scan (gitleaks), run by CI with the default rules over every commit in the history of the change under test.
+# The values below were reviewed and are not secrets. A new finding is either a real secret (revoke it at the provider
+# first, then remove it from the history) or, once reviewed, a value added here with where it comes from, in the same
+# change as the value.
 title = "HC360 secret scan"
 
 [extend]
