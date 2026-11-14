@@ -144,6 +144,8 @@ internal static class PeakMix
     public static IReadOnlyDictionary<string, int> Defaults { get; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
     {
         [OpdVisit] = 30,
+        [ShiftCheck] = 1,
+        [ShiftOpen] = 1,
         [BillFind] = 8,
         [BillStart] = 12,
         [BillLine] = 12,
@@ -165,6 +167,8 @@ internal static class PeakMix
     };
 
     public const string OpdVisit = "OPD visit and token";
+    public const string ShiftCheck = "Check the counter shift";
+    public const string ShiftOpen = "Open the counter shift";
     public const string BillFind = "Find a bill";
     public const string BillStart = "Start a bill";
     public const string BillLine = "Add a service to the bill";
@@ -295,9 +299,15 @@ internal static class PeakMix
         // OPD registration and token: the new patient (Operations.Register) is then given a visit and its queue token.
         new(OpdVisit, OperationKind.Write, Defaults[OpdVisit], OpdVisitRequest, Role.FrontOffice, "OPD registration and token"),
 
-        new(BillFind, OperationKind.Read, Defaults[BillFind], _ => Get("api/v1/billing/bills?pageSize=25"), Role.Billing, "Billing"),
+        // A receipt needs the clerk's cashier shift to be open (the money is counted into it): each clerk checks first, and
+        // opens one when there is none, before any other billing step.
+        new(ShiftCheck, OperationKind.Read, Defaults[ShiftCheck], _ => Get("api/v1/billing/shifts/current"), Role.Billing, "Billing",
+            c => !c.State.ContainsKey("shiftChecked"), OnShiftChecked),
+        new(ShiftOpen, OperationKind.Write, Defaults[ShiftOpen], _ => Post("api/v1/billing/shifts/open", new { counter = "OP counter (load test)", openingFloat = 0 }), Role.Billing, "Billing",
+            c => c.State.ContainsKey("shiftChecked") && !c.State.ContainsKey("shiftOpen"), (c, _) => c.State["shiftOpen"] = true),
+        new(BillFind, OperationKind.Read, Defaults[BillFind], _ => Get("api/v1/billing/bills?pageSize=25"), Role.Billing, "Billing", ShiftIsOpen),
         new(BillStart, OperationKind.Write, Defaults[BillStart], c => Post("api/v1/billing/bills", new { patientId = c.AnyPatient() }), Role.Billing, "Billing",
-            c => !c.State.ContainsKey("bill"), OnBillStarted),
+            c => ShiftIsOpen(c) && !c.State.ContainsKey("bill"), OnBillStarted),
         new(BillLine, OperationKind.Write, Defaults[BillLine], BillLineRequest, Role.Billing, "Billing",
             c => c.State.TryGetValue("bill", out var b) && b is BillInProgress { HasLine: false }, OnBillChanged),
         new(BillFinalise, OperationKind.Write, Defaults[BillFinalise], c => Post($"api/v1/billing/bills/{Bill(c).Id}/finalize", new { version = Bill(c).Version }), Role.Billing, "Billing",
@@ -326,6 +336,18 @@ internal static class PeakMix
         new(PortalBills, OperationKind.Read, Defaults[PortalBills], _ => Get("api/v1/portal/bills"), Role.Portal, "Patient portal"),
         new(PortalAppointments, OperationKind.Read, Defaults[PortalAppointments], _ => Get("api/v1/portal/appointments"), Role.Portal, "Patient portal"),
     ];
+
+    private static bool ShiftIsOpen(OperationContext c) => c.State.ContainsKey("shiftOpen");
+
+    /// <summary>The shift as the server answers: a shift when one is open, no content when none is.</summary>
+    private static void OnShiftChecked(OperationContext c, JsonElement shift)
+    {
+        c.State["shiftChecked"] = true;
+        if (shift.ValueKind == JsonValueKind.Object)
+        {
+            c.State["shiftOpen"] = true;
+        }
+    }
 
     private static BillInProgress Bill(OperationContext c) => (BillInProgress)c.State["bill"];
 

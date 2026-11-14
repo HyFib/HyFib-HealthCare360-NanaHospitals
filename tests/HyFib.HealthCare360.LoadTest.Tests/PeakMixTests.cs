@@ -141,8 +141,18 @@ public sealed class PeakMixTests
         var finalise = Step(mix, PeakMix.BillFinalise);
         var receipt = Step(mix, PeakMix.BillReceipt);
         var billId = Guid.NewGuid();
+        var check = Step(mix, PeakMix.ShiftCheck);
+        var open = Step(mix, PeakMix.ShiftOpen);
 
-        start.IsAvailable!(context).ShouldBeTrue();
+        start.IsAvailable!(context).ShouldBeFalse("no bill before the cashier shift is open");
+        open.IsAvailable!(context).ShouldBeFalse("the shift is checked first");
+        check.IsAvailable!(context).ShouldBeTrue();
+        check.OnSuccess!(context, default);
+        check.IsAvailable(context).ShouldBeFalse("checked once");
+        open.IsAvailable(context).ShouldBeTrue("no shift was open (no content)");
+        open.OnSuccess!(context, default);
+
+        start.IsAvailable(context).ShouldBeTrue();
         line.IsAvailable!(context).ShouldBeFalse("no bill yet");
         receipt.IsAvailable!(context).ShouldBeFalse("no bill yet");
 
