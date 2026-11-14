@@ -33,8 +33,9 @@ function Assert([bool] $Condition, [string] $Message) {
 }
 function Near([double] $Actual, [double] $Expected, [double] $Tolerance) { return [math]::Abs($Actual - $Expected) -le $Tolerance }
 
-Assert ($text -match '(?m)^\$GenerationDays = 7$') 'the script keeps documents in generations of 7 days, as the design says'
-Assert ($text -match '(?m)^\$IndexBytesPerDocument = 60$') 'and counts 60 bytes a document for the index'
+# The script is checked out with CRLF line endings on Windows (.gitattributes), so a line may end in a carriage return.
+Assert ($text -match '(?m)^\$GenerationDays = 7\r?$') 'the script keeps documents in generations of 7 days, as the design says'
+Assert ($text -match '(?m)^\$IndexBytesPerDocument = 60\r?$') 'and counts 60 bytes a document for the index'
 
 Write-Host 'The model, with the year-3 figures of the readiness doc'
 $GB = [double] 1GB
