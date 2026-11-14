@@ -22,12 +22,15 @@ public static class ValidationExtensions
     /// <summary>
     /// As <see cref="WithValidation{TRequest}"/>, for a body the request may leave out (the handler takes a
     /// <typeparamref name="TRequest"/> that is null without one): a request with a body has it validated before the
-    /// handler runs, and a request without one goes straight to the handler.
+    /// handler runs, and a request without one goes straight to the handler. A request without a body has no
+    /// Content-Type, and routing matches such a request only to an endpoint that accepts any (<c>*/*</c>), whatever the
+    /// body's optionality says; without it the request would fall to the API's catch-all, a 404.
     /// </summary>
     public static RouteHandlerBuilder WithOptionalValidation<TRequest>(this RouteHandlerBuilder builder)
         where TRequest : class =>
         builder.AddEndpointFilter<OptionalBodyValidationFilter<TRequest>>()
             .WithMetadata(new ValidatedRequest(typeof(TRequest)))
+            .Accepts<TRequest>(isOptional: true, "application/json", "*/*")
             .ProducesValidationProblem();
 }
 
