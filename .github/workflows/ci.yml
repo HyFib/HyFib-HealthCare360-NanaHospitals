@@ -435,7 +435,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Test the patch-window check
+      # With the tests of the daily secret scan of the commits main does not hold (security-audit.yml), which pull requests
+      # do not otherwise run.
+      - name: Test the patch-window check and the branch secret scan
         run: python3 -m unittest discover -s .github/scripts -p "test_*.py" -v
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
