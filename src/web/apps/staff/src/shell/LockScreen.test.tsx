@@ -11,6 +11,7 @@ import {
   useSession,
   type AuthUser,
 } from '@hc360/core';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -374,6 +375,7 @@ describe('LockScreen during an outage', () => {
     useConnection.setState({ serverReachable: false });
     renderLocked();
     expect(screen.getByText('Cannot reach the HealthCare360 server')).toBeInTheDocument();
+    await expectNoAxeViolations();
     await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/v1/auth/lock'));
     vi.mocked(api.post).mockClear();
     const fetchMock = vi.fn();
@@ -393,6 +395,7 @@ describe('LockScreen during an outage', () => {
     expect(useSession.getState().locked).toBe(true);
     expect(api.post).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+    await expectNoAxeViolations();
 
     // Closed, the PIN is asked for again.
     await userEvent.click(within(copy).getByRole('button', { name: 'Close' }));

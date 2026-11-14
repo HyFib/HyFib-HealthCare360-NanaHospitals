@@ -151,18 +151,24 @@ export async function checkOfflineSecret(userId: string, kind: OfflineSecret, se
       return { result: 'unavailable' };
     }
     const stretched = await stretch(secret, fromBase64(verifier.salt), verifier.iterations);
-    if (await crypto.subtle.verify('HMAC', key, fromBase64(verifier.mac), stretched)) {
-      write({ ...kept, failures: 0 });
+    const matched = await crypto.subtle.verify('HMAC', key, fromBase64(verifier.mac), stretched);
+    // Read again: the app's other windows may have counted wrong tries, or wiped the verifiers, meanwhile.
+    const now = read();
+    if (now?.userId !== userId) {
+      return { result: 'unavailable' };
+    }
+    if (matched) {
+      write({ ...now, failures: 0 });
       return { result: 'opened' };
     }
+    return countWrongTry(now);
   } catch {
     return { result: 'unavailable' };
   }
-  // Counted on what is kept now, so that wrong tries in the app's other windows count too.
-  const now = read();
-  if (now?.userId !== userId) {
-    return { result: 'unavailable' };
-  }
+}
+
+/** A wrong try, counted with those in the app's other windows: the fifth wipes the verifiers. */
+function countWrongTry(now: KeptVerifiers): OfflineCheck {
   const failures = now.failures + 1;
   if (failures >= MAX_TRIES) {
     remove();

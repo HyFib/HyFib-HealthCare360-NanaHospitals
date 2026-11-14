@@ -96,8 +96,7 @@ export function OfflineCopyKeeper() {
 function CopyAge({ copy, now }: { copy: HeldCopy; now: () => number }) {
   const takenAt = copy.takenAt ?? now();
   const fetchedAt = formatDateTime(new Date(takenAt).toISOString());
-  const packAge = copy.pack ? now() - Date.parse(copy.pack.generatedAt) : null;
-  const packStale = packAge !== null && packAge > PACK_STALE_MS;
+  const stale = packStale(copy, now);
   return (
     <>
       {copy.pack ? (
@@ -109,7 +108,7 @@ function CopyAge({ copy, now }: { copy: HeldCopy; now: () => number }) {
         <>Use the printed pack for ward sheets and medicines. The worklists were fetched {fetchedAt}. </>
       )}
       Anything since then is not in it.
-      {packStale && ' The pack is more than an hour old: check medicines against the paper MAR.'} Nothing can be saved:
+      {stale && ' The pack is more than an hour old: check medicines against the paper MAR.'} Nothing can be saved:
       record on paper.
     </>
   );
