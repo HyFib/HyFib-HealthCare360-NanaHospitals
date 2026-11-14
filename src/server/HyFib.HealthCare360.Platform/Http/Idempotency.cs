@@ -131,6 +131,34 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
     /// <summary>The problem code of a retry of a request whose answer is not kept (<see cref="NoStoredResponseMetadata"/>, 409).</summary>
     public const string AnswerNotKeptCode = "idempotency.answer_not_kept";
 
+    // The titles and details this middleware answers with. A patient's answer is written in their language by its English
+    // text (PatientTexts, PP-06), so each is in patient-texts-{en,hi,ta}.json, and the architecture tests check every
+    // constant named *Title or *Detail here.
+
+    public const string InvalidKeyTitle = "Invalid Idempotency-Key header";
+
+    public const string KeyReusedTitle = "Idempotency key reused with a different request";
+
+    public const string KeyReusedDetail = "Generate a new Idempotency-Key for a new operation.";
+
+    public const string AnswerNotKeptTitle = "This request was already answered";
+
+    public const string AnswerNotKeptDetail = "Its answer is not kept, so it can't be sent again. Please ask again.";
+
+    public const string InProgressTitle = "This request is still being processed";
+
+    public const string InProgressDetail =
+        "An earlier attempt of this request has not finished yet. Wait a moment, then try again with the same details: it will not be saved twice.";
+
+    public const string OutcomeUnknownTitle = "This may already have been saved";
+
+    public const string OutcomeUnknownDetail =
+        "An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again.";
+
+    public const string UnreadableAnswerTitle = "This request was already processed";
+
+    public const string UnreadableAnswerDetail = "Reload the screen to see the result.";
+
     private const int MaxStoredBodyBytes = 256 * 1024;
     private const int MaxKeyLength = 128;
 
@@ -166,7 +194,7 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
         var key = keyValues.ToString().Trim();
         if (key.Length is 0 or > MaxKeyLength)
         {
-            await Results.Problem(title: "Invalid Idempotency-Key header", statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(context);
+            await Results.Problem(title: InvalidKeyTitle, statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(context);
             return;
         }
 
@@ -231,8 +259,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
             if (!string.Equals(existing.RequestHash, requestHash, StringComparison.Ordinal))
             {
                 await Results.Problem(
-                    title: "Idempotency key reused with a different request",
-                    detail: "Generate a new Idempotency-Key for a new operation.",
+                    title: KeyReusedTitle,
+                    detail: KeyReusedDetail,
                     statusCode: StatusCodes.Status422UnprocessableEntity).ExecuteAsync(context);
                 return null;
             }
@@ -247,8 +275,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
                     await ConflictAsync(
                         context,
                         AnswerNotKeptCode,
-                        "This request was already answered",
-                        "Its answer is not kept, so it can't be sent again. Please ask again.");
+                        AnswerNotKeptTitle,
+                        AnswerNotKeptDetail);
                     return null;
 
                 case IdempotencyState.Abandoned:
@@ -386,15 +414,15 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
         return ConflictAsync(
             context,
             InProgressCode,
-            "This request is still being processed",
-            "An earlier attempt of this request has not finished yet. Wait a moment, then try again with the same details: it will not be saved twice.");
+            InProgressTitle,
+            InProgressDetail);
     }
 
     private static Task OutcomeUnknownAsync(HttpContext context) => ConflictAsync(
         context,
         OutcomeUnknownCode,
-        "This may already have been saved",
-        "An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again.");
+        OutcomeUnknownTitle,
+        OutcomeUnknownDetail);
 
     private static Task ConflictAsync(HttpContext context, string code, string title, string detail) =>
         Results.Problem(
@@ -419,8 +447,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
                 // Never replay something we cannot authenticate; the client can reload to see the outcome.
                 logger.LogWarning(ex, "Stored idempotent response for key {Key} could not be decrypted", record.Key);
                 await Results.Problem(
-                    title: "This request was already processed",
-                    detail: "Reload the screen to see the result.",
+                    title: UnreadableAnswerTitle,
+                    detail: UnreadableAnswerDetail,
                     statusCode: StatusCodes.Status409Conflict).ExecuteAsync(context);
                 return;
             }
