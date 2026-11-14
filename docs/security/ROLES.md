@@ -783,3 +783,9 @@ what a role may do changes: a pull request that changes default access shows tha
 | `roles` | Each built-in role, in HC360's order: `name`, `description`, `defaultPermissions` (`*` is every permission), `endpoints` (the API endpoints those permissions open), `mfa` (`required-by-role`, `required-to-administer`, `optional` or `not-enforced`) and `canBeTurnedOff` |
 | `permissions` | Each permission, by name: `area`, `description`, `defaultRoles`, `administrative` (an `admin.` permission: only those who hold it may give it out, and its holders must use two-step verification) and `endpoints` (the API endpoints whose rule names it) |
 | `approvals` | Each kind of change a second person approves, by `kind`: its `title`, and `approvePermission`, the permission its approver must hold. The test fails when a kind is registered twice with different titles or approvers, or names a permission the code does not declare |
+
+The shareable roles page is built from this file by `dotnet run tools/build-roles-page.cs`, run from the repository
+root. It writes `artifacts/roles.html`, one file with the data inside it, which names the commit that last changed
+roles.json; `-- <file> --fragment` writes the page content alone, for a publisher that adds its own document around it.
+The template is `tools/roles-page.html` and reads version 1 of this file. The build refuses a roles.json with
+uncommitted changes, and a version the template does not read.
