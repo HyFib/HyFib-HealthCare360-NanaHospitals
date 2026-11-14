@@ -110,8 +110,9 @@ public sealed class DatabaseInitializer(
             throw new DatabaseUpgradeException(StandbyMessage);
         }
 
-        // Nor on an old primary a failover replaced: it would take patient data beside the promoted standby (SRS DED-20).
-        await PrimaryFence.CheckAsync(db, options.Value, scope.ServiceProvider.GetRequiredService<DataDirectories>(), cancellationToken);
+        // Nor on an old primary a failover replaced: it would take patient data beside the promoted standby (SRS DED-20). A host
+        // without the server's data folders (the start-up run on its own) reads only the record beside the backups' second copy.
+        await PrimaryFence.CheckAsync(db, options.Value, scope.ServiceProvider.GetService<DataDirectories>(), cancellationToken);
 
         // The schema is changed as its owner where that is an account of its own (DatabaseOwner): the account the server
         // works as cannot. The seeders write rows, as the server does.

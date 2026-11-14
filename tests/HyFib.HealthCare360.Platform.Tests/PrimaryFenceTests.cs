@@ -1,5 +1,8 @@
+using System.Data.Common;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Modules;
 using HyFib.HealthCare360.Platform.Persistence;
+using Microsoft.EntityFrameworkCore;
 
 namespace HyFib.HealthCare360.Platform.Tests;
 
@@ -108,6 +111,41 @@ public sealed class PrimaryFenceTests : IDisposable
         PrimaryFence.Read(_directories, _options).ShouldBeEmpty();
         _options.Backup.SecondaryDirectory = null;
         PrimaryFence.SharedPath(_options).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task The_start_up_check_runs_without_the_servers_data_folders_and_reads_only_the_shared_record()
+    {
+        // The database start-up run on its own (DatabaseInitializer given a database context and nothing else, as tests run
+        // it) has no data folders (DataDirectories). A record of this server's own is then not read; the shared one is.
+        const string Superseding = """{ "format": 1, "systemIdentifier": "7412345678901234567", "timeline": 2, "primary": "HC360-SRV2", "promotedAt": "2026-11-14T04:32:00Z" }""";
+        File.WriteAllText(PrimaryFence.LocalPath(_directories), Superseding);
+        var nas = _options.Backup.SecondaryDirectory!;
+        _options.Backup.SecondaryDirectory = null;
+        var ct = TestContext.Current.CancellationToken;
+
+        // Nobody answers at this address: the check succeeds only by not asking, as it does without a record.
+        await using var db = new HospitalDbContext(
+            new DbContextOptionsBuilder<HospitalDbContext>().UseNpgsql("Host=127.0.0.1;Port=1;Database=hc360_fence_check;Timeout=2").UseSnakeCaseNamingConvention().Options,
+            new ModuleCatalog([]));
+        PrimaryFence.Read(null, _options).ShouldBeEmpty();
+        await PrimaryFence.CheckAsync(db, _options, directories: null, ct);
+
+        // With the data folders, the same record is read and the database asked which cluster and timeline it is on.
+        await AskedTheDatabaseAsync(() => PrimaryFence.CheckAsync(db, _options, _directories, ct));
+
+        // The record beside the backups' second copy is read without them.
+        _options.Backup.SecondaryDirectory = nas;
+        File.WriteAllText(PrimaryFence.SharedPath(_options)!, Superseding.Replace("\"timeline\": 2", "\"timeline\": 3", StringComparison.Ordinal));
+        PrimaryFence.Read(null, _options).ShouldHaveSingleItem().Timeline.ShouldBe(3);
+        await AskedTheDatabaseAsync(() => PrimaryFence.CheckAsync(db, _options, directories: null, ct));
+
+        // The connection is refused: Npgsql's error, which EF Core reports wrapped as a likely transient failure.
+        static async Task AskedTheDatabaseAsync(Func<Task> check)
+        {
+            var thrown = await Should.ThrowAsync<Exception>(check);
+            (thrown as DbException ?? thrown.InnerException as DbException).ShouldNotBeNull(thrown.ToString());
+        }
     }
 
     [Fact]

@@ -43,9 +43,13 @@ public static class PrimaryFence
     public static string? SharedPath(PlatformOptions options) =>
         options.Backup.SecondaryDirectory is { Length: > 0 } secondary ? Path.Combine(secondary, FileName) : null;
 
-    /// <summary>The records this server can read now; one missing, unreachable (the disk unplugged) or unreadable is left out.</summary>
-    public static IReadOnlyList<PrimaryRecord> Read(DataDirectories directories, PlatformOptions options) =>
-        [.. new[] { LocalPath(directories), SharedPath(options) }.OfType<string>().Select(TryRead).OfType<PrimaryRecord>()];
+    /// <summary>
+    /// The records this server can read now; one missing, unreachable (the disk unplugged) or unreadable is left out. Without
+    /// <paramref name="directories"/> (a host that registers no data folders, such as a database start-up run on its own)
+    /// there is no record of this server's own, and only the shared one is read.
+    /// </summary>
+    public static IReadOnlyList<PrimaryRecord> Read(DataDirectories? directories, PlatformOptions options) =>
+        [.. new[] { directories is null ? null : LocalPath(directories), SharedPath(options) }.OfType<string>().Select(TryRead).OfType<PrimaryRecord>()];
 
     /// <summary>The record in <paramref name="path"/>; null when there is none, or it cannot be read as one.</summary>
     public static PrimaryRecord? TryRead(string path)
@@ -80,10 +84,11 @@ public static class PrimaryFence
 
     /// <summary>
     /// Stops start-up when the database was superseded (<see cref="SupersededMessage"/>), before anything is written.
-    /// Without a record, as on every server that never failed over, PostgreSQL is not even asked.
+    /// Without a record, as on every server that never failed over, PostgreSQL is not even asked. Without
+    /// <paramref name="directories"/>, only the record beside the backups' second copy is read (<see cref="Read"/>).
     /// </summary>
     /// <exception cref="DatabaseUpgradeException">The database was superseded.</exception>
-    public static async Task CheckAsync(HospitalDbContext db, PlatformOptions options, DataDirectories directories, CancellationToken ct)
+    public static async Task CheckAsync(HospitalDbContext db, PlatformOptions options, DataDirectories? directories, CancellationToken ct)
     {
         if (await SupersededAsync(db, options, directories, ct) is { } superseded)
         {
@@ -93,7 +98,7 @@ public static class PrimaryFence
 
     /// <summary>The record that superseded the database, with the database's cluster; null when none did.</summary>
     public static async Task<(PrimaryRecord Record, DatabaseCluster Cluster)?> SupersededAsync(
-        HospitalDbContext db, PlatformOptions options, DataDirectories directories, CancellationToken ct)
+        HospitalDbContext db, PlatformOptions options, DataDirectories? directories, CancellationToken ct)
     {
         var records = Read(directories, options);
         if (records.Count == 0)
