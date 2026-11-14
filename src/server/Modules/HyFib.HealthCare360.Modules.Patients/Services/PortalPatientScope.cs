@@ -79,6 +79,25 @@ public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser curren
                 .ToListAsync(ct))
             : [];
 
+    /// <summary>
+    /// Whether signing in with the account's number identifies <paramref name="patientId"/> as the person acting: the record
+    /// is registered with the account's own number, that number is verified, and no other active patient has it. A number
+    /// a family shares says only that someone in the family holds the phone, not which patient is asking, so a request made
+    /// from it is not taken as checked (even when every record on it is verified).
+    /// </summary>
+    public async Task<bool> SignInIdentifiesAsync(Guid patientId, CancellationToken ct) =>
+        await AccountPhoneAsync(ct) is { } phone
+        && Identifies(
+            await db.Set<Patient>()
+                .Where(p => p.Phone == phone && p.IsActive && p.MergedIntoPatientId == null)
+                .Select(p => new Reached(p.Id, true, false, p.PhoneVerifiedAt != null && p.PhoneVerifiedNumber == p.Phone, p.SensitiveCategories))
+                .ToListAsync(ct),
+            patientId);
+
+    /// <summary>The rule of <see cref="SignInIdentifiesAsync"/> over the records on the account's own number.</summary>
+    internal static bool Identifies(IReadOnlyList<Reached> ownNumber, Guid patientId) =>
+        ownNumber.Count == 1 && ownNumber[0].Id == patientId && ownNumber[0].Verified;
+
     private async Task<IReadOnlyList<Reached>> ReachedAsync(string phone, CancellationToken ct)
     {
         if (_reached is not null)
