@@ -434,6 +434,14 @@ public sealed class BackupOptions
     /// <summary>Secondary copy target (USB drive or NAS share).</summary>
     public string? SecondaryDirectory { get; set; }
 
+    /// <summary>
+    /// The secondary directory is an append-only or WORM share: HC360 may add files there but not delete or rename them,
+    /// and the share's own retention removes old ones (DEPLOYMENT.md section 8). Backups there then keep their documents in
+    /// weekly generations (docs/design/incremental-backup.md, section 5.6). HC360 also finds a share that refuses to rename
+    /// or delete by itself, but not a WORM folder that allows deleting for a while after each write: set this for those.
+    /// </summary>
+    public bool SecondaryAppendOnly { get; set; }
+
     public int RetentionDays { get; set; } = 30;
 
     public string PgDumpPath { get; set; } = "pg_dump";
