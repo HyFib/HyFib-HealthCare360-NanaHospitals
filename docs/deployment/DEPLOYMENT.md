@@ -957,7 +957,7 @@ request, the agent says so in the Application event log (source *HyFib HC360 Lab
    (its own virtual account `NT SERVICE\HC360LabAgent`, automatic start, restart on failure), enrols the PC and starts
    the service. The CA fingerprint is required: the agent refuses a server whose CA does not match it, and from then
    on trusts only that CA. The device secret is protected for this PC (machine DPAPI) in
-   `%ProgramData%\HyFib\HC360LabAgentgent.json`, which only SYSTEM, Administrators and the service account can read.
+   `%ProgramData%\HyFib\HC360LabAgent\agent.json`, which only SYSTEM, Administrators and the service account can read.
 3. In **Lab setup › Analysers › Connection**, choose "Serial cable to a lab PC", this agent, the COM port and the line
    settings from the analyser's interface manual (most use 9600 baud, 8 data bits, no parity, one stop bit, no flow
    control). Windows names the port in Device Manager › Ports (COM & LPT); a USB-to-serial adapter keeps its COM number
