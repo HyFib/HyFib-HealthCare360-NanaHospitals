@@ -8,9 +8,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request stops the older run, which it supersedes. A run on main is never stopped: the release
+# workflow refuses to publish a tag whose commit has no successful CI run (release.yml), so a main run cancelled by the
+# next merge would leave that commit with no verdict at all. The group is per ref, so runs on main queue behind each other.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Actions are pinned to commits (Dependabot proposes updates), and no job keeps the checkout's token, since none pushes.
 jobs:
