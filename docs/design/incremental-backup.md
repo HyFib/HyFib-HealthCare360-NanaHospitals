@@ -209,6 +209,62 @@ anything, as today, then copies the blobs into `files\<storage path>`, keeping f
 and DEPLOYMENT.md §9 step 3 keep their commands. The documentation changes to "copy the whole backup folder, not one
 file".
 
+### 5.6 Destinations that delete by age: generations (added after #346)
+
+#346 added two destinations where HC360 cannot delete and something else deletes by age:
+
+- **The off-site bucket.** Each object is locked for `retainDays` (35) in compliance mode. The bucket's lifecycle rule
+  expires everything under the prefix 35 days after it was created, and HC360's key may upload but never delete.
+- **An append-only or WORM share** as `Backup:SecondaryDirectory`. HC360 may create and write files but not delete or
+  rename them, and the NAS's own retention removes files after some days.
+
+A content-addressed store with a sweep (5.1–5.4) is unsafe there. A document copy written two years ago is still
+needed by last night's archive, yet deletion by age removes it after 35 days. Rename is refused too, so write-then-rename
+is impossible. These destinations use **generations** instead (agreed 2026-11-14):
+
+```
+<destination>\
+  gen-20270111\blobs\ab\cd\abcd…(64 hex).blob      every document the archives of that week need
+  gen-20270118\blobs\…
+  hc360-20270114-013000-scheduled.hc360bak        format 3 archive; its index names blob ids only
+```
+
+- **A generation lasts G = 7 days.** The first run of a generation copies **every** document the archive needs into it.
+  Each later run that week copies only the documents not yet in it. An archive only ever uses its own generation, so a
+  generation is complete for every archive made in it.
+- **Expiry.** A copy written at a generation's start is needed until the generation's last archive (made up to G − 1
+  days later) expires, `retainDays` after that. In the bucket each copy is locked until generation start + G +
+  `retainDays`. The lifecycle needs a second rule for `<prefix>gen-` with `Days` = `retainDays` + G (42); the archives'
+  rule stays at `retainDays`. A NAS's own retention must be at least `RetentionDays` + G days (37).
+- **Storage there:** about (`retainDays` + G) / G ≈ 6 copies of the documents, plus one dump per archive, instead of
+  35 full backups. At year 3 under the brief's assumptions: about 1.6 TB + 0.5 TB in the bucket, instead of about 10 TB.
+- **Erasure window.** An erased document's copy can stay until its generation expires, so the promise becomes
+  `retainDays` + G + 2 days (44) while the off-site copy is on (`BackupRetention.DaysAsync`, the erasure answer and the
+  privacy notice). No scheme does better without a key that can delete. The last archive before an erasure must stay
+  restorable for `retainDays`, and its generation's copies expire on a fixed date.
+- **Restore** does not need to know the layout. A blob is found by its id in `blobs\`, or in any `gen-*\blobs\` beside
+  the archive, and checked against the SHA-256 the archive's index gives. For the bucket, download the archive and the
+  `gen-` folders with it (`aws s3 sync`).
+- **On an append-only share**, copies are written straight under their final name (`CreateNew`, never renamed) and
+  checked by reading them back. A copy cut short is never trusted: the next run writes `<id>.1.blob` beside it, and
+  restore takes the first copy whose hash matches. No timestamp is ever set there: a NAS that deletes by file date would
+  delete a copy stamped 2000-01-01 at once.
+- **Which mode a secondary folder is in** is recorded in its store marker (`hc360-store.json`, `"appendOnly"`). It is
+  set when `HealthCare360:Backup:SecondaryAppendOnly` is true, or when, on first use, the folder refuses to rename or
+  delete a probe file. It is never cleared by itself. A later prune that finds it cannot delete switches the folder to
+  append-only, and warns. A WORM folder that allows deletion for a grace period after each write is caught only by the
+  setting, so DEPLOYMENT.md tells administrators of append-only and WORM shares to set it.
+
+Failure rows for these destinations:
+
+| # | What happens | What must hold |
+|---|---|---|
+| F21 | The bucket's lifecycle expires a generation copy | Only after `retainDays` + G from the generation start, by which time every archive using it has expired. HC360's key cannot read the bucket's lifecycle, so HC360 cannot check the generation rule's `Days`: DEPLOYMENT.md sets it, and the restore drill checks it. |
+| F22 | An upload of a generation copy is cut off | The multipart state is per copy. The archive is uploaded only after all its copies are confirmed (size and checksum read back), so an archive off site always has its copies. |
+| F23 | A copy on an append-only share is cut short | It stays (it cannot be deleted). The next run writes `<id>.1.blob`; restore and verify take the first copy whose SHA-256 matches. |
+| F24 | A WORM share that allowed deletes during a grace period, with the setting forgotten | Copies were written as for a deletable folder. A later delete refused at prune switches the folder to append-only and warns; the next run starts a generation there. Until then the share's own retention may remove copies, which verify reports by archive. DEPLOYMENT.md tells administrators to set the setting. |
+| F25 | Off-site copy on, then off, then on again | A new generation starts whenever the current one is older than G days or its folder or prefix changed. A generation is never resumed after a gap longer than G. |
+
 ---
 
 ## 6. Decisions (agreed 2026-11-14)
@@ -220,6 +276,8 @@ file".
    Backups screen and in the preflight comes with step 3.
 4. **Appendix A will be run on the Nana server** by someone with access. Until then the sizing in 2.2 stays marked as
    assumed.
+5. **The off-site bucket and append-only shares use generations** (5.6), G = 7 days. The off-site erasure window
+   becomes `retainDays` + G + 2 (44 days by default).
 
 ## 7. Implementation plan (each step its own commit)
 
@@ -227,8 +285,12 @@ file".
    for F1, F5, F12, F13, F15, F19.
 2. Archive format 3 (`documents.idx`), with format 2 still read. Tests: round trip, a format 2 archive and a v1 file
    still restore.
-3. `BackupService` uses the store: primary, then the mounted secondary disk (F3, F4, F6). The space check counts only
-   new documents.
+3. `BackupService` uses the store, in three commits:
+   - **3a.** The server's folder and a deletable secondary (the USB disks): format 3, the hash cache, the space check
+     counting only new documents, the NTFS warning (F3, F4, F6).
+   - **3b.** Append-only secondary folders: the marker mode, the probe, generations, writing without rename (F23, F24).
+   - **3c.** The off-site upload: generation copies before the archive, their locks, the lifecycle and IAM docs, and the
+     erasure window (F21, F22, F25).
 4. Restore, verify and decrypt with `--blobs`. Restore-from-secondary-alone and stale-disk tests (F3, F16). Key rotation:
    data key (F8, F9) and recovery key (F10).
 5. A model-based test: seeded random sequences of {backup, add document, key-move rewrite, discard, rotate recovery key,
