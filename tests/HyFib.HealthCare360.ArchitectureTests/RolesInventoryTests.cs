@@ -1,5 +1,8 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.Authorization;
@@ -13,11 +16,13 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 /// docs/security/ROLES.md lists the built-in roles, what each is for, what each may do on a new installation and how many
 /// of the API's endpoints that opens, and the permissions no built-in role holds: written from the code (the built-in
 /// roles, the modules' permissions and the roles they are given by default, the sign-in policy's defaults and every
-/// endpoint's permission rule), never by hand, so it cannot say something the server does not do. The inventory is read
-/// from the code once (<see cref="Read"/>) and every file is written from that one reading. This test fails when the page
-/// no longer matches the code; run it with HC360_WRITE_ROLES_INVENTORY=1 to write the part between its markers again,
-/// and commit it. What a hospital changed since (roles of its own, permissions given or taken back, roles turned off) is
-/// on its Roles and permissions screen and in its audit trail.
+/// endpoint's permission rule), never by hand, so it cannot say something the server does not do. docs/security/roles.json
+/// holds the same inventory as data, with the kinds of change a second person approves, for tools and the shareable roles
+/// page. The inventory is read from the code once (<see cref="Read"/>) and both files are written from that one reading,
+/// so they cannot disagree. This test fails when either no longer matches the code; run it with
+/// HC360_WRITE_ROLES_INVENTORY=1 to write the part of the page between its markers and the whole of roles.json again,
+/// and commit them. What a hospital changed since (roles of its own, permissions given or taken back, roles turned off)
+/// is on its Roles and permissions screen and in its audit trail.
 /// </summary>
 public sealed class RolesInventoryTests
 {
@@ -27,6 +32,18 @@ public sealed class RolesInventoryTests
 
     /// <summary>The inventory, read from the code once for every file written from it.</summary>
     private static readonly Lazy<Inventory> Current = new(Read);
+
+    /// <summary>
+    /// roles.json is the same on every platform: \n line endings (the serializer's default is the platform's), and
+    /// apostrophes and non-ASCII letters written as they are, so that a change reads as a short diff in review.
+    /// </summary>
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        WriteIndented = true,
+        NewLine = "\n",
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     private enum TwoStep
     {
@@ -57,10 +74,35 @@ public sealed class RolesInventoryTests
             $"Run RolesInventoryTests with {WriteVariable}=1 to write it again, and commit it.");
     }
 
+    [Fact]
+    public void The_roles_data_says_what_the_code_does()
+    {
+        var inventory = Current.Value;
+        inventory.ApprovalProblems.ShouldBeEmpty(
+            "roles.json lists each kind of approval once, with the permission its approver holds: a kind registered twice with " +
+            "different titles or approvers would be applied by whichever the approvals service finds first, and an approver " +
+            "permission the code does not declare could be given to nobody");
+
+        var path = Path.Combine(RepositoryRoot(), "docs", "security", "roles.json");
+        var file = File.Exists(path) ? File.ReadAllText(path).ReplaceLineEndings("\n") : string.Empty;
+        var current = Json(inventory);
+        if (Environment.GetEnvironmentVariable(WriteVariable) == "1")
+        {
+            File.WriteAllText(path, current);
+            file = current;
+        }
+
+        file.ShouldBe(current,
+            $"{Path.GetFileName(path)} no longer says what the code does: a role, a permission, a default grant, an endpoint's rule or an approval changed. " +
+            $"Run RolesInventoryTests with {WriteVariable}=1 to write it again, and commit it.");
+    }
+
     /// <summary>
     /// Reads the inventory from the server as Program.cs composes it: the built-in roles in their order, each with the
     /// permissions it gets on a new installation, the endpoints those open, and what the sign-in policy's defaults ask of
-    /// it; and every permission, by name, with its area, the roles that get it and the endpoints whose rule names it.
+    /// it; every permission, by name, with its area, the roles that get it and the endpoints whose rule names it; and every
+    /// kind of change a second person approves, with the permission its approver holds. The module scan registers an
+    /// approval action, and a module may register it again, so each kind is listed once.
     /// </summary>
     private static Inventory Read()
     {
@@ -97,7 +139,44 @@ public sealed class RolesInventoryTests
                 rules.Count(rule => rule.Groups.Any(group => group.Contains(d.Name, StringComparer.Ordinal))))),
         ];
 
-        return new Inventory(roles, permissions, rules.Count);
+        using var scope = app.Services.CreateScope();
+        List<Approval> registered =
+        [
+            .. scope.ServiceProvider.GetServices<IApprovalAction>().Select(a => new Approval(a.Kind, a.Title, a.ApprovePermission)),
+        ];
+        var declared = permissions.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        List<string> problems =
+        [
+            .. registered.GroupBy(a => a.Kind, StringComparer.Ordinal).Where(g => g.Distinct().Count() > 1)
+                .Select(g => $"{g.Key}: registered with different titles or approvers"),
+            .. registered.Where(a => !declared.Contains(a.ApprovePermission)).Select(a => $"{a.Kind}: approver permission {a.ApprovePermission} is not declared"),
+        ];
+        List<Approval> approvals = [.. registered.DistinctBy(a => a.Kind, StringComparer.Ordinal).OrderBy(a => a.Kind, StringComparer.Ordinal)];
+
+        return new Inventory(roles, permissions, rules.Count, approvals, [.. problems.Distinct(StringComparer.Ordinal)], security);
+    }
+
+    /// <summary>docs/security/roles.json: the inventory as data. ROLES.md, "The same data as JSON", says what each field means.</summary>
+    private static string Json(Inventory inventory)
+    {
+        var document = new
+        {
+            About = "Built-in roles and permissions of a new HealthCare360 installation, written from the code by RolesInventoryTests " +
+                "(tests/HyFib.HealthCare360.ArchitectureTests); do not edit by hand. ROLES.md beside this file says what each field means.",
+            Version = 1,
+            Totals = new
+            {
+                Roles = inventory.Roles.Count,
+                Permissions = inventory.Permissions.Count,
+                inventory.GuardedEndpoints,
+                ApprovalKinds = inventory.Approvals.Count,
+            },
+            Security = new { inventory.Security.EnforceMfa, inventory.Security.MfaForAdministration, inventory.Security.MfaRequiredRoles },
+            Roles = inventory.Roles.Select(r => new { r.Name, r.Description, r.DefaultPermissions, r.Endpoints, Mfa = MfaCode(r.Mfa), r.CanBeTurnedOff }),
+            Permissions = inventory.Permissions.Select(p => new { p.Name, p.Area, p.Description, p.DefaultRoles, p.Administrative, p.Endpoints }),
+            Approvals = inventory.Approvals.Select(a => new { a.Kind, a.Title, a.ApprovePermission }),
+        };
+        return JsonSerializer.Serialize(document, JsonOptions) + "\n";
     }
 
     /// <summary>The generated part of ROLES.md.</summary>
@@ -176,6 +255,15 @@ public sealed class RolesInventoryTests
         _ => throw new ArgumentOutOfRangeException(nameof(mfa), mfa, null),
     };
 
+    private static string MfaCode(TwoStep mfa) => mfa switch
+    {
+        TwoStep.NotEnforced => "not-enforced",
+        TwoStep.RequiredByRole => "required-by-role",
+        TwoStep.RequiredToAdminister => "required-to-administer",
+        TwoStep.Optional => "optional",
+        _ => throw new ArgumentOutOfRangeException(nameof(mfa), mfa, null),
+    };
+
     /// <summary>
     /// Every endpoint that asks for a permission, by method and route, with its rule: groups that must all be satisfied, each
     /// by any one of its permissions (<c>.RequirePermission</c> and <c>.RequireAnyPermission</c>, on the endpoint and its
@@ -235,6 +323,18 @@ public sealed class RolesInventoryTests
     /// <summary>A permission: its area and meaning, the built-in roles given it by default, and the endpoints whose rule names it.</summary>
     private sealed record Permission(string Name, string Area, string Description, IReadOnlyList<string> DefaultRoles, bool Administrative, int Endpoints);
 
-    /// <summary>What the code declares and decides about roles, read once.</summary>
-    private sealed record Inventory(IReadOnlyList<Role> Roles, IReadOnlyList<Permission> Permissions, int GuardedEndpoints);
+    /// <summary>A kind of change a second person approves: its title, and the permission its approver must hold.</summary>
+    private sealed record Approval(string Kind, string Title, string ApprovePermission);
+
+    /// <summary>
+    /// What the code declares and decides about roles, read once, with anything that would make the approvals ambiguous
+    /// (<see cref="ApprovalProblems"/>) and the sign-in policy's defaults.
+    /// </summary>
+    private sealed record Inventory(
+        IReadOnlyList<Role> Roles,
+        IReadOnlyList<Permission> Permissions,
+        int GuardedEndpoints,
+        IReadOnlyList<Approval> Approvals,
+        IReadOnlyList<string> ApprovalProblems,
+        SecurityOptions Security);
 }
