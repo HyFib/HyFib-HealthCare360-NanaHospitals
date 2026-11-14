@@ -12,7 +12,9 @@ the counting is [klm.ts](../../src/web/apps/staff/src/test/klm.ts).
 The registration screen (`/patients/register`), whole and with the server faked, from the empty form (the cursor is
 in *First name*, as the screen opens) to the UHID on screen, for a typical walk-in patient: Mrs Sunita Kulkarni,
 female, 46 years (age, not date of birth), mobile 9876543210. Finding the patient first (to avoid a duplicate) and
-checking in afterwards are separate tasks; UX-06's journey test counts their screens.
+checking in afterwards are separate tasks; UX-06's journey test counts their screens. So is verifying the mobile number
+("Verify mobile" on the registration's result, a code the patient reads out: portal.md, *A number nobody has
+verified*): it is optional and comes after the UHID is on screen, so it is not timed here.
 
 ## How it is counted
 

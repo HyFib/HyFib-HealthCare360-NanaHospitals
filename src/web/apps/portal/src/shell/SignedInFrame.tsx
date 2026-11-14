@@ -1,7 +1,5 @@
-import { Button, makeStyles, tokens } from '@fluentui/react-components';
-import { PersonQuestionMarkRegular, SignOutRegular } from '@fluentui/react-icons';
+import { makeStyles, tokens } from '@fluentui/react-components';
 import { markActivity, useIdle, useSession } from '@hc360/core';
-import { EmptyState } from '@hc360/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { Fragment, useEffect, useMemo, type ReactNode } from 'react';
@@ -14,6 +12,7 @@ import { SIGN_IN_PATH } from '@/lib/redirect';
 import { forgetLocalState } from '@/lib/session';
 import { IDLE_SIGN_OUT_MINUTES, takeSessionEndReason, useCallActivity } from '@/lib/sessionEnd';
 import type { PortalProfile } from '@/lib/types';
+import { NoRecordsYet } from '@/modules/confirm/ConfirmRecords';
 import { profileQueries } from '@/modules/profiles/api';
 import { useSignOut } from './hooks';
 import { PortalFrame } from './PortalFrame';
@@ -92,22 +91,8 @@ export function SignedInFrame({ children, requireSession }: { children: ReactNod
       </PortalPage>
     );
   } else if (list.length === 0) {
-    content = requireSession ? (
-      <PortalPage title={t('shell.noProfiles.title')} width="narrow">
-        <EmptyState
-          icon={<PersonQuestionMarkRegular />}
-          title={t('shell.noProfiles.title')}
-          description={t('shell.noProfiles.body')}
-          action={
-            <Button appearance="primary" size="large" icon={<SignOutRegular />} onClick={() => void signOut()}>
-              {t('common.signOut')}
-            </Button>
-          }
-        />
-      </PortalPage>
-    ) : (
-      children
-    );
+    // Nobody's records yet: records on the number may be waiting for the patient's date of birth or UHID.
+    content = requireSession ? <NoRecordsYet onSignOut={() => void signOut()} /> : children;
   } else if (!context) {
     content = <ProfileChooser profiles={list} />;
   } else {

@@ -389,6 +389,13 @@ public static class SettingGuard
         ["doctorfees.tds.percent"] = new SettingRedirect("TDS on doctors' fees",
             "The income tax withheld from doctors' payouts (section 194J): too little leaves the hospital owing it, too much underpays the doctors."),
 
+        // BackupOffsite.SettingKey and SecretKey (Platform/Jobs): the bucket outside the building that every backup is uploaded
+        // to, and the access key the uploads are signed with.
+        ["backup.offsite"] = new SettingRedirect("Off-site backup copy",
+            "Where every backup of the hospital is uploaded outside the building, and how long each copy is locked there: another bucket sends the hospital's records (encrypted) somewhere else, and switching it off, or shortening the lock, leaves only copies that a fire in the building or ransomware on the server can take."),
+        ["backup.offsite.secret"] = new SettingRedirect("Off-site backup access key",
+            "The access key HC360 uploads the backups with: another key can upload them to an account the hospital does not control."),
+
         // PortalAddress.BaseUrlSetting
         ["portal.baseUrl"] = new SettingRedirect("Patient portal address",
             "The address in every SMS and WhatsApp link and every QR code printed for patients: a wrong one sends patients, and their personal links, somewhere else."),

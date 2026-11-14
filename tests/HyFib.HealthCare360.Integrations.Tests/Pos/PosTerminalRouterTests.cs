@@ -77,6 +77,20 @@ public sealed class PosTerminalRouterTests
     }
 
     [Fact]
+    public async Task A_sale_whose_upload_answer_was_lost_gets_a_distinct_unconfirmed_id()
+    {
+        _pineLabs.StartSaleAsync(default!, default!, default!, Ct).ReturnsForAnyArgs(PosTerminalRouter.Unconfirmed("timed out"));
+        var router = Router();
+
+        var first = await router.StartSaleAsync(Sale, null, Ct);
+        var second = await router.StartSaleAsync(Sale, null, Ct);
+
+        first.Status.ShouldBe(PosTransactionStatus.Unconfirmed);
+        first.TransactionId.ShouldStartWith("unconfirmed-");
+        second.TransactionId.ShouldNotBe(first.TransactionId);
+    }
+
+    [Fact]
     public async Task Status_checks_without_configuration_decline_the_same_transaction()
     {
         Configure(new PosSettings { Enabled = false, Provider = "pinelabs" });

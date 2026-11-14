@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 
 namespace HyFib.HealthCare360.Integrations.Pos;
 
@@ -139,15 +140,27 @@ internal sealed class PineLabsPosTerminal(HttpClient http, IntegrationTrace trac
             var error = parsed is null ? $"The POS service returned HTTP {(int)response.StatusCode} without a readable response." : null;
             await trace.LogAsync(IntegrationNames.Pos, Key, operation, parsed is not null, started, reference, summary,
                 parsed is null ? $"HTTP {(int)response.StatusCode}" : $"code={parsed.ResponseCode} message={parsed.ResponseMessage}", error);
-            return parsed is null ? (null, PosTerminalRouter.Declined(reference ?? string.Empty, error)) : (parsed, null);
+            if (parsed is not null)
+            {
+                return (parsed, null);
+            }
+
+            // A server error, or an answer that cannot be read, may follow the sale reaching the terminal; a client error
+            // (4xx) is a refusal.
+            return (null, operation == "sale.upload" && response.StatusCode is not (>= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError)
+                ? PosTerminalRouter.Unconfirmed(error)
+                : PosTerminalRouter.Declined(reference ?? string.Empty, error));
         }
         catch (Exception ex) when (IntegrationErrors.IsCallFailure(ex, cancellationToken))
         {
             var error = IntegrationErrors.Describe(ex, "The POS service");
             await trace.LogAsync(IntegrationNames.Pos, Key, operation, false, started, reference, summary, error: error);
-            // A lost status/cancel response is not a decline: report "still waiting" so the counter polls again.
-            var status = operation == "sale.upload" ? PosTransactionStatus.Declined : PosTransactionStatus.AwaitingCustomer;
-            return (null, new PosTransactionResult(operation == "sale.upload" ? string.Empty : reference ?? string.Empty, status, null, null, null, error));
+            // A lost status/cancel response is not a decline: report "still waiting" so the counter polls again. A lost
+            // upload answer is not a decline either: the terminal may have the sale, and Pine Labs' reference to it was in
+            // the answer, so it cannot be asked about. It is reported as unconfirmed, never as declined.
+            return (null, operation == "sale.upload"
+                ? PosTerminalRouter.Unconfirmed(error)
+                : new PosTransactionResult(reference ?? string.Empty, PosTransactionStatus.AwaitingCustomer, null, null, null, error));
         }
     }
 }

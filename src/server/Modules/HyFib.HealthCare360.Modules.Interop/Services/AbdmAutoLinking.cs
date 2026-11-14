@@ -63,6 +63,12 @@ internal static class AbdmAutoLinking
 {
     public const string MessageType = "abdm.link_record";
 
+    /// <summary>
+    /// The outbox provider of the ABDM gateway, for linking and for transfers (<see cref="IOutboxHandler.Provider"/>): their
+    /// failures to reach it count together, and when it cools down, both wait.
+    /// </summary>
+    public const string OutboxProvider = "abdm";
+
     /// <summary>How long a queued record keeps being tried, its waits for a DSC or a link token included.</summary>
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(2);
 
@@ -213,9 +219,10 @@ internal sealed class AbdmAutoLinkTriggers(
 
 /// <summary>
 /// Links a queued record (<see cref="AbdmLinkingService.LinkAutomaticallyAsync"/>) in a scope of its own. The
-/// dispatcher handles a batch of messages in one transaction, and linking saves each step before its gateway call so
-/// that the gateway's answer, which may come back within a second, finds it: inside the batch's transaction the request
-/// would not be committed until the whole batch was, and the answer would find nothing. A wait queues the record again
+/// dispatcher handles each message in a transaction that commits once its handler is done, and linking saves each step
+/// before its gateway call so that the gateway's answer, which may come back within a second, finds it: inside the
+/// message's transaction the request would not be committed until the linking was done, and the answer would find
+/// nothing. A wait queues the record again
 /// for later, within the message's lifetime; anything else ends the job. A refusal is not retried here: the request
 /// shows it, and staff link the record again (the gateway may have acted on a call whose answer was lost).
 /// </summary>
@@ -227,6 +234,8 @@ internal sealed class AbdmAutoLinkHandler(
     ILogger<AbdmAutoLinkHandler> log) : IOutboxHandler
 {
     public string Type => AbdmAutoLinking.MessageType;
+
+    public string Provider => AbdmAutoLinking.OutboxProvider;
 
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {

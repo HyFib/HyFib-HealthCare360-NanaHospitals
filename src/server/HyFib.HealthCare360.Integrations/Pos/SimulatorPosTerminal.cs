@@ -7,7 +7,8 @@ namespace HyFib.HealthCare360.Integrations.Pos;
 /// <summary>
 /// Training terminal: a pushed sale waits for the "customer" and is approved after a few seconds
 /// (<see cref="PosSettings.SimulatorApproveAfterSeconds"/>), so the counter's poll/cancel flow behaves as with a real
-/// terminal. Any terminal id is accepted.
+/// terminal. Any terminal id is accepted. With <see cref="PosSettings.SimulatorLoseUploadAnswer"/> the sale is taken but
+/// its answer is lost, so the unconfirmed-sale flow can be tried without pulling a cable.
 /// </summary>
 internal sealed class SimulatorPosTerminal(SimulatorInbox inbox, IntegrationTrace trace) : IPosProvider
 {
@@ -33,6 +34,12 @@ internal sealed class SimulatorPosTerminal(SimulatorInbox inbox, IntegrationTrac
         }, cancellationToken);
         await trace.LogAsync(IntegrationNames.Pos, Key, "sale.upload", true, started, request.Reference,
             $"{{\"terminal\":\"{request.TerminalId}\",\"amount\":{request.Amount}}}", id);
+        if (settings.SimulatorLoseUploadAnswer)
+        {
+            // The sale is on the "terminal", but HC360 never hears of it: the id above is not handed back.
+            return PosTerminalRouter.Unconfirmed("The simulator lost the answer to the sale upload (training setting).");
+        }
+
         return new PosTransactionResult(id, PosTransactionStatus.AwaitingCustomer, null, null, null, "Waiting for the customer (simulator).");
     }
 

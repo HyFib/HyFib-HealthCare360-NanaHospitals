@@ -80,6 +80,9 @@ internal sealed class EInvoiceReminderHandler(EInvoiceService einvoices) : IOutb
 
     public string Type => MessageType;
 
+    /// <summary>The reminder is in the app, read from the register: it does not wait for the portal or the internet.</summary>
+    public OutboxLane Lane => OutboxLane.Local;
+
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var reminder = message.Read<EInvoiceReminderMessage>();

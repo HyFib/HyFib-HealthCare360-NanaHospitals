@@ -113,8 +113,9 @@ export function ConnectionIndicator() {
 }
 
 /**
- * Full-width banner while the server is unreachable. Work in progress stays on screen; saves are retried safely
- * with idempotency keys, so users are told they can simply try again.
+ * Full-width banner while the server is unreachable. Work in progress stays on screen. A save whose outcome is not known
+ * keeps its idempotency key, so saving it again with the same details cannot save it twice; one changed meanwhile is a
+ * new save, so users are told to check first whether the first one was saved.
  */
 export function OfflineBanner() {
   const styles = useStyles();
@@ -146,7 +147,8 @@ export function OfflineBanner() {
         {beyondThisComputer
           ? "This computer's network cable is connected, so the server or the hospital network may be down: tell IT."
           : "Check this computer's network cable or WiFi."}{' '}
-        Your unsaved work stays on this screen and nothing will be duplicated when you retry.
+        Your unsaved work stays on this screen. Saving it again with the same details will not save it twice; if you
+        change anything, first check whether it was saved.
       </MessageBarBody>
       <MessageBarActions>
         <Button

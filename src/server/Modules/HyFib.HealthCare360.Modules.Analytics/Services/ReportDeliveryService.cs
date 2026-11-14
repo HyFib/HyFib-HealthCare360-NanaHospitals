@@ -253,6 +253,9 @@ internal sealed class ScheduledReportEmailHandler(
 
     public string Type => MessageType;
 
+    /// <summary>The mail server, as for every e-mail: when it stops answering, the reports wait with the other e-mails.</summary>
+    public string Provider => OutboxProviders.Email;
+
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var payload = message.Read<ScheduledReportEmail>();
@@ -297,7 +300,8 @@ internal sealed class ScheduledReportEmailHandler(
         if (!result.Success)
         {
             logger.LogWarning("Scheduled report e-mail {RecipientId} failed: {Error}", recipient.Id, result.Error);
-            throw new InvalidOperationException(result.Error ?? "The e-mail could not be sent.");
+            var error = result.Error ?? "The e-mail could not be sent.";
+            throw result.ProviderUnreachable ? new ProviderUnreachableException(error) : new InvalidOperationException(error);
         }
     }
 

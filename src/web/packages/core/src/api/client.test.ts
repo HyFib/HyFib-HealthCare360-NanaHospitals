@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSession } from '../auth/session';
 import { buildUrl, createApiClient, fileNameFromDisposition } from './client';
 import { ApiError, featureOf, isFeatureDisabled, isSessionLocked } from './errors';
+import { forgetRememberedKeys } from './rememberedKeys';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -350,5 +352,267 @@ describe('api client', () => {
 
     const error = (await client.get('/api/v1/patients').catch((e: unknown) => e)) as ApiError;
     expect(error.referenceId).toBe('from-body');
+  });
+});
+
+describe('a write whose outcome is not known', () => {
+  const receipt = { billId: 'b1', amount: 500, mode: 'Cash' };
+  const config = {
+    clientType: 'web' as const,
+    getAccessToken: () => 'token-1',
+    refreshAccessToken: async () => 'token-2',
+    onSessionExpired: vi.fn(),
+    getUserId: () => 'u-asha',
+  };
+  let keys: (string | null)[];
+  let waits: number[];
+
+  beforeEach(() => {
+    forgetRememberedKeys();
+    keys = [];
+    // The client's waits (backoff, Retry-After) pass at once; each asked-for length is kept.
+    waits = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, ms?: number) => {
+      waits.push(ms ?? 0);
+      callback();
+      return 0;
+    }) as unknown as typeof setTimeout);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** The server as the client sees it: each call answers with the next of `answers`, keeping the key it was sent. */
+  function server(...answers: (() => Response | Promise<Response>)[]) {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      keys.push(new Headers(init.headers).get('Idempotency-Key'));
+      const next = answers.shift();
+      if (!next) {
+        throw new Error('No answer left for this call.');
+      }
+      return next();
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  const unreachable = () => Promise.reject(new TypeError('Failed to fetch'));
+  const saved =
+    (receiptNo = 'NHR-1') =>
+    () =>
+      jsonResponse(201, { receiptNo });
+  const problem =
+    (status: number, code: string, detail: string, headers: Record<string, string> = {}) =>
+    () =>
+      new Response(JSON.stringify({ title: 'Refused', status, code, detail }), {
+        status,
+        headers: { 'content-type': 'application/problem+json', ...headers },
+      });
+
+  /** A write that could not reach the server, after the client's own three tries. */
+  async function lost(client: ReturnType<typeof createApiClient>, body: unknown = receipt): Promise<ApiError> {
+    return (await client.post('/api/v1/billing/receipts', body).catch((e: unknown) => e)) as ApiError;
+  }
+
+  it('sends the same key again with the same write after a network failure, so the server answers the first attempt', async () => {
+    server(unreachable, unreachable, unreachable, saved(), saved('NHR-2'));
+    const client = createApiClient(config);
+
+    const failure = await lost(client);
+    const resent = await client.post('/api/v1/billing/receipts', receipt);
+    const next = await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(failure.code).toBe('network');
+    expect(failure.detail).toBe(
+      'Check the WiFi connection, then try again. Saving again with the same details will not save it twice; if you change anything, first check whether it was saved.',
+    );
+    expect(resent).toEqual({ receiptNo: 'NHR-1' });
+    expect(new Set(keys.slice(0, 4)).size).toBe(1);
+    expect(keys[0]).toMatch(/^[0-9a-f-]{36}$/);
+    // Answered, it is forgotten: the same details sent again after that are a new receipt.
+    expect(next).toEqual({ receiptNo: 'NHR-2' });
+    expect(keys[4]).not.toBe(keys[0]);
+  });
+
+  it('keeps the key when the answer is lost while it arrives, and asks for it again', async () => {
+    const cutOff = () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError('terminated'));
+          },
+        }),
+        { status: 201, headers: { 'content-type': 'application/json' } },
+      );
+    server(cutOff, saved());
+    const client = createApiClient(config);
+
+    await expect(client.post('/api/v1/billing/receipts', receipt)).resolves.toEqual({ receiptNo: 'NHR-1' });
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it('gives a changed write a new key, and keeps the first one for the write it was made for', async () => {
+    server(unreachable, unreachable, unreachable, saved('NHR-800'), saved());
+    const client = createApiClient(config);
+
+    await lost(client);
+    await client.post('/api/v1/billing/receipts', { ...receipt, amount: 800 });
+    await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(keys[3]).not.toBe(keys[0]);
+    expect(keys[4]).toBe(keys[0]);
+  });
+
+  it('does not offer one user the key kept for another', async () => {
+    let user = 'u-asha';
+    server(unreachable, unreachable, unreachable, saved());
+    const client = createApiClient({ ...config, getUserId: () => user });
+
+    await lost(client);
+    user = 'u-ravi';
+    await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(keys[3]).not.toBe(keys[0]);
+  });
+
+  it.each([
+    ['a refusal', problem(422, 'bill.finalized', 'The bill is already settled.')],
+    ['a server error', problem(500, 'server.error', 'Something went wrong.')],
+  ])('forgets the key once the write gets a definitive answer: %s', async (_name, answer) => {
+    server(unreachable, unreachable, unreachable, answer, saved());
+    const client = createApiClient(config);
+
+    await lost(client);
+    await expect(client.post('/api/v1/billing/receipts', receipt)).rejects.toBeInstanceOf(ApiError);
+    await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(keys[3]).toBe(keys[0]);
+    expect(keys[4]).not.toBe(keys[0]);
+  });
+
+  it('forgets every kept key at sign-out', async () => {
+    server(unreachable, unreachable, unreachable, saved());
+    const client = createApiClient(config);
+
+    await lost(client);
+    useSession.getState().clear();
+    await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(keys[3]).not.toBe(keys[0]);
+  });
+
+  it.each([
+    ['a locked screen', problem(423, 'auth.session_locked', 'The screen is locked.')],
+    ['too many requests', problem(429, 'rate_limited', 'Too many requests.')],
+  ])('keeps the key through a refusal that never reached the store: %s', async (_name, answer) => {
+    server(unreachable, unreachable, unreachable, answer, saved());
+    const client = createApiClient({ ...config, onSessionLocked: vi.fn() });
+
+    await lost(client);
+    await expect(client.post('/api/v1/billing/receipts', receipt)).rejects.toBeInstanceOf(ApiError);
+    await client.post('/api/v1/billing/receipts', receipt);
+
+    // Whether the first attempt was saved is still not known, so the write sent again still carries its key.
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it('does not count a wait for the first attempt as a try: network failures after it are still retried', async () => {
+    const running = problem(409, 'idempotency.in_progress', 'Still running.', { 'Retry-After': '2' });
+    server(running, unreachable, unreachable, saved());
+    const client = createApiClient(config);
+
+    await expect(client.post('/api/v1/billing/receipts', receipt)).resolves.toEqual({ receiptNo: 'NHR-1' });
+    expect(keys).toHaveLength(4);
+  });
+
+  it('forgets the key of an earlier attempt that did not finish, and says what the server says: check first', async () => {
+    const check =
+      'An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again.';
+    server(unreachable, unreachable, unreachable, problem(409, 'idempotency.outcome_unknown', check), saved());
+    const client = createApiClient(config);
+
+    await lost(client);
+    const error = (await client.post('/api/v1/billing/receipts', receipt).catch((e: unknown) => e)) as ApiError;
+    await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(error.status).toBe(409);
+    expect(error.code).toBe('idempotency.outcome_unknown');
+    expect(error.userMessage).toBe(check);
+    expect(keys).toHaveLength(5);
+    expect(keys[3]).toBe(keys[0]);
+    expect(keys[4]).not.toBe(keys[0]);
+  });
+
+  it('waits as the server asks while the first attempt is still running, then gets its answer', async () => {
+    const running = problem(409, 'idempotency.in_progress', 'Still running.', { 'Retry-After': '2' });
+    server(running, saved());
+    const client = createApiClient(config);
+
+    await expect(client.post('/api/v1/billing/receipts', receipt)).resolves.toEqual({ receiptNo: 'NHR-1' });
+
+    expect(waits).toEqual([2000]);
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).toBe(keys[0]);
+  });
+
+  it('stops waiting after a few tries, and keeps the key for when the write is made again', async () => {
+    const running = problem(409, 'idempotency.in_progress', 'Still running.', { 'Retry-After': '2' });
+    server(running, running, running, running, running, running, saved());
+    const client = createApiClient(config);
+
+    const error = (await client.post('/api/v1/billing/receipts', receipt).catch((e: unknown) => e)) as ApiError;
+    const resent = await client.post('/api/v1/billing/receipts', receipt);
+
+    expect(error.code).toBe('idempotency.in_progress');
+    expect(waits).toEqual([2000, 2000, 2000, 2000, 2000]);
+    expect(resent).toEqual({ receiptNo: 'NHR-1' });
+    expect(new Set(keys).size).toBe(1);
+  });
+
+  it("lets the caller's own key win, and does not keep it", async () => {
+    const other = { ...receipt, amount: 900 };
+    server(unreachable, unreachable, unreachable, saved(), unreachable, unreachable, unreachable, saved());
+    const client = createApiClient(config);
+
+    await lost(client);
+    await client.post('/api/v1/billing/receipts', receipt, { idempotencyKey: 'dialog-attempt-1' });
+    await client.post('/api/v1/billing/receipts', other, { idempotencyKey: 'dialog-attempt-2' }).catch(() => undefined);
+    await client.post('/api/v1/billing/receipts', other);
+
+    // The caller's key wins over the one kept for the same write.
+    expect(keys[3]).toBe('dialog-attempt-1');
+    // Its own key is the caller's to keep: the client does not send it again by itself.
+    expect(keys.slice(4, 7)).toEqual(['dialog-attempt-2', 'dialog-attempt-2', 'dialog-attempt-2']);
+    expect(keys[7]).not.toBe('dialog-attempt-2');
+  });
+
+  it('gives a form (a file upload) a new key every time, and says to check before sending it again', async () => {
+    server(unreachable, unreachable, unreachable, saved());
+    const client = createApiClient(config);
+    const form = () => {
+      const data = new FormData();
+      data.append('file', new Blob(['%PDF-1.7']), 'report.pdf');
+      return data;
+    };
+
+    const failure = (await client.post('/api/v1/files', form()).catch((e: unknown) => e)) as ApiError;
+    await client.post('/api/v1/files', form());
+
+    expect(new Set(keys.slice(0, 3)).size).toBe(1);
+    expect(keys[3]).not.toBe(keys[0]);
+    expect(failure.detail).toBe('Check the WiFi connection. It may have been saved: check before you try again.');
+  });
+
+  it('keeps no key for a read, and says only to try again', async () => {
+    server(unreachable, unreachable, unreachable);
+    const client = createApiClient(config);
+
+    const failure = (await client.get('/api/v1/patients').catch((e: unknown) => e)) as ApiError;
+
+    expect(keys).toEqual([null, null, null]);
+    expect(failure.detail).toBe('Check the WiFi connection and try again.');
   });
 });

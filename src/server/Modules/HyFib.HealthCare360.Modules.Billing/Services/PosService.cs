@@ -1,9 +1,11 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Gateway;
+using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Realtime;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
@@ -85,6 +87,8 @@ public sealed class PosService(
     IServiceProvider services,
     IRealtimePublisher realtime,
     ICurrentUser currentUser,
+    IAuditLogger audit,
+    ISettingsService settings,
     TimeProvider time,
     ILogger<PosService> logger)
 {
@@ -138,7 +142,7 @@ public sealed class PosService(
             await TryRecordAsync(sale, ct);
         }
 
-        return ToDto(sale);
+        return await ToDtoAsync(sale, ct);
     }
 
     /// <summary>
@@ -164,47 +168,234 @@ public sealed class PosService(
         return pushed.IsFailure ? pushed.Error! : sale;
     }
 
-    /// <summary>Asks the terminal to take the amount and keeps the sale, whatever the terminal answered.</summary>
+    /// <summary>
+    /// Asks the terminal to take the amount and keeps the sale, whatever the terminal answered. The sale is saved first,
+    /// pending, and updated with the answer: a crash or an aborted request after the push then leaves a visible sale
+    /// rather than money on a terminal HC360 knows nothing about. A new sale is refused while an earlier one on the same
+    /// terminal may still be on it (<see cref="PosUnconfirmed"/>): the customer could pay twice.
+    /// </summary>
     private async Task<Result> PushAsync(IPosTerminal terminal, PosTransaction sale, string terminalId, decimal amount, PaymentMode mode, CancellationToken ct)
     {
-        var reference = Guid.CreateVersion7().ToString("N");
-        PosTransactionResult result;
-        try
+        var id = terminalId.Trim();
+        var window = await PosAutoCancelSettings.WindowAsync(settings, sale.FacilityId, ct);
+        if (await BlockingSaleAsync(sale.FacilityId, id, time.GetUtcNow(), window, ct) is { } last)
         {
-            result = await terminal.StartSaleAsync(new PosSaleRequest(terminalId.Trim(), Money.Round(amount), reference, mode.ToString()), sale.FacilityId, ct);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The id was typed at the counter: no line break in it may start a log line of its own.
-            logger.LogWarning(ex, "Could not start a sale on terminal {TerminalId}", terminalId.Replace('\r', ' ').Replace('\n', ' '));
-            return Error.Rule("billing.pos_unavailable", "The terminal could not be reached. Check it is online and try again.");
+            return PosUnconfirmed.Refusal(last, window);
         }
 
-        sale.Provider = terminal.Provider;
-        sale.TerminalId = terminalId.Trim();
-        sale.TransactionId = result.TransactionId;
+        var reference = Guid.CreateVersion7().ToString("N");
+        sale.Provider = "pending";
+        sale.TerminalId = id;
+        sale.TransactionId = PosUnconfirmed.PendingPrefix + reference;
         sale.Reference = reference;
         sale.Amount = Money.Round(amount);
         sale.Mode = mode;
         sale.Status = PosTransactionStatus.Initiated;
         sale.InitiatedBy = currentUser.UserId;
-        sale.Apply(result, time.GetUtcNow());
         db.Add(sale);
         await db.SaveChangesAsync(ct);
+
+        PosTransactionResult result;
+        try
+        {
+            result = await terminal.StartSaleAsync(new PosSaleRequest(id, sale.Amount, reference, mode.ToString()), sale.FacilityId, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            // The sale stays pending: it blocks the terminal, and the re-check settles it.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The id was typed at the counter: no line break in it may start a log line of its own.
+            logger.LogWarning(ex, "Could not start a sale on terminal {TerminalId}", id.Replace('\r', ' ').Replace('\n', ' '));
+            await KeepUnconfirmedAfterFailureAsync(sale);
+            return Error.Rule("billing.pos_unavailable", "The terminal could not be reached. Check that it is online and that its screen shows no sale before trying again.");
+        }
+
+        sale.Provider = terminal.Provider;
+        sale.TransactionId = result.TransactionId;
+        sale.Apply(result, time.GetUtcNow());
+        if (sale.Status == PosTransactionStatus.Unconfirmed)
+        {
+            sale.Message = PosUnconfirmed.UnconfirmedMessage(result.Message);
+            logger.LogWarning("The answer to the upload of sale {TransactionId} on terminal {TerminalId} was lost; the sale may be on the terminal",
+                sale.TransactionId, id.Replace('\r', ' ').Replace('\n', ' '));
+        }
+
+        await db.SaveChangesAsync(ct);
         return Result.Success();
+    }
+
+    /// <summary>
+    /// A call to the terminal that threw: whether it left the sale there is not known, so the sale is kept as unconfirmed.
+    /// Best effort: when it cannot be saved either, the pending sale blocks the terminal all the same.
+    /// </summary>
+    private async Task KeepUnconfirmedAfterFailureAsync(PosTransaction sale)
+    {
+        try
+        {
+            sale.MarkUnconfirmed(PosUnconfirmed.UnconfirmedMessage(null));
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not keep sale {TransactionId} as unconfirmed", sale.TransactionId);
+        }
+    }
+
+    /// <summary>
+    /// The sale on <paramref name="terminalId"/> (any case, as Pine Labs reads it) that may still be on the terminal: one
+    /// whose upload answer was lost, or never saved, and whose window has not passed.
+    /// </summary>
+    private async Task<PosTransaction?> BlockingSaleAsync(Guid facilityId, string terminalId, DateTimeOffset now, TimeSpan window, CancellationToken ct)
+    {
+        var lower = terminalId.ToLowerInvariant();
+        var since = now - window;
+        var candidates = await db.Set<PosTransaction>().AsNoTracking()
+            .Where(s => s.FacilityId == facilityId && s.TerminalId.ToLower() == lower && s.CreatedAt > since
+                        && (s.Status == PosTransactionStatus.Unconfirmed || s.Status == PosTransactionStatus.Initiated))
+            .OrderByDescending(s => s.CreatedAt)
+            .Take(20)
+            .ToListAsync(ct);
+        return candidates.FirstOrDefault(s => s.BlocksTerminal(now, window));
+    }
+
+    /// <summary>When a sale whose answer was lost may be tried again: the end of its window; null for any other sale.</summary>
+    internal async Task<DateTimeOffset?> RetryAfterAsync(PosTransaction sale, CancellationToken ct) =>
+        sale.Status == PosTransactionStatus.Unconfirmed || sale.IsAwaitingProvider
+            ? sale.CreatedAt + await PosAutoCancelSettings.WindowAsync(settings, sale.FacilityId, ct)
+            : null;
+
+    /// <summary>
+    /// A sale whose answer was lost, or never saved, as time passes: a pending one the server dropped (older than
+    /// <see cref="PosUnconfirmed.PendingStale"/>) becomes unconfirmed, and an unconfirmed one past its window lapses, which
+    /// keeps it in the reconciliation exceptions. Returns false when a concurrent request changed the sale first.
+    /// </summary>
+    internal async Task<bool> ResolveUnconfirmedAsync(PosTransaction sale, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        if (sale.IsAwaitingProvider)
+        {
+            if (now - sale.CreatedAt < PosUnconfirmed.PendingStale)
+            {
+                return true;
+            }
+
+            sale.MarkUnconfirmed(PosUnconfirmed.UnconfirmedMessage("HC360 stopped before the terminal's answer was saved."));
+        }
+
+        var window = await PosAutoCancelSettings.WindowAsync(settings, sale.FacilityId, ct);
+        var lapsed = sale.Status == PosTransactionStatus.Unconfirmed && now >= sale.CreatedAt + window;
+        if (lapsed)
+        {
+            sale.Lapse(now, PosUnconfirmed.LapsedMessage(sale.CreatedAt));
+        }
+
+        var exception = lapsed ? await RaiseLapsedAsync(sale, ct) : null;
+        var isNew = exception is not null && db.Entry(exception).State == EntityState.Added;
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // The counter polled at the same moment as the re-check: whichever saved first has settled it.
+            logger.LogInformation(ex, "Terminal sale {TransactionId} changed while it was settled as unconfirmed", sale.TransactionId);
+            db.ChangeTracker.Clear();
+            return false;
+        }
+
+        if (lapsed)
+        {
+            await AfterLapsedAsync(sale, isNew, ct);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// A sale that lapsed without news from the terminal: the customer may or may not have paid, so it goes to the
+    /// reconciliation exceptions (as money that no record holds does), for the accountants to check against the acquirer's
+    /// settlement. A counter's own sale is kept the same way, so the counters' exceptions read as Billing's.
+    /// </summary>
+    private async Task<GatewayDiscrepancy> RaiseLapsedAsync(PosTransaction sale, CancellationToken ct)
+    {
+        var where = sale.Owner is null ? $"card/UPI terminal {sale.TerminalId}" : $"card/UPI terminal {sale.TerminalId} at the {CounterWords(sale.Owner)}";
+        return await discrepancies.RaiseAsync(
+            DiscrepancyKind.UnrecordedPayment, sale.TransactionId, sale.FacilityId,
+            $"A sale of ₹{Money.FormatInr(sale.Amount)} sent to {where} at {PosUnconfirmed.Clock(sale.CreatedAt)} was never confirmed (reference {sale.Reference}): the terminal's answer was lost and the outcome is unknown. Check it against the settlement: if it settled, record the payment; if not, mark this resolved with a note.",
+            d =>
+            {
+                d.BillId = sale.BillId;
+                d.IpAccountId = sale.IpAccountId;
+                d.GatewayAmount = sale.Amount;
+                d.GatewayAt = sale.CreatedAt;
+            },
+            ct);
+    }
+
+    private async Task AfterLapsedAsync(PosTransaction sale, bool isNew, CancellationToken ct)
+    {
+        logger.LogWarning("Unconfirmed terminal sale {TransactionId} lapsed with its outcome unknown", sale.TransactionId);
+        if (sale.Owner is null)
+        {
+            await AfterSaveAsync("tell the counter", sale,
+                () => realtime.ToFacilityAsync(sale.FacilityId, "billing.pos.changed", new { sale.Id, sale.Status, sale.BillId }, ct));
+        }
+
+        if (isNew)
+        {
+            var counter = sale.Owner is null ? "billing" : CounterWords(sale.Owner);
+            await AfterSaveAsync("alert the accountants", sale, () => notifications.NotifyPermissionHoldersAsync(
+                BillingPermissions.GatewayReconcile, sale.FacilityId, "Card/UPI sale never confirmed",
+                $"A sale of ₹{Money.FormatInr(sale.Amount)} sent to terminal {sale.TerminalId} ({counter}) was never confirmed: the terminal's answer was lost, so it is not known whether the customer paid. Check it against the settlement in Gateway reconciliation.",
+                "/billing/reconciliation", "billing", "warning", ct));
+        }
+    }
+
+    /// <summary>
+    /// The cashier confirms that the terminal shows no sale, which frees the terminal before the window passes. The
+    /// cashier's note is required and audited: if the customer did pay, it says who decided it had not happened.
+    /// </summary>
+    private async Task<Result<PosTransaction>> ClearUnconfirmedAsync(PosTransaction sale, string? note, CancellationToken ct)
+    {
+        var text = note?.Trim();
+        if (string.IsNullOrEmpty(text) || text.Length < 3)
+        {
+            return Error.Field("note", "Say what you checked: for example, that the terminal's screen shows no sale.");
+        }
+
+        text = text.Length > 200 ? text[..200] : text;
+        sale.ClearUnconfirmed(time.GetUtcNow(), $"The cashier confirmed that the terminal shows no sale: {text}");
+        audit.Add(new AuditEntry(
+            AuditCategories.Data, "billing.pos.unconfirmed_cleared",
+            $"Terminal {sale.TerminalId}: unconfirmed sale of ₹{Money.FormatInr(sale.Amount)} cleared. The cashier confirmed the terminal shows no sale. Note: {text}")
+        {
+            PatientId = sale.PatientId,
+            EntityType = nameof(PosTransaction),
+            EntityId = sale.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+        });
+        await db.SaveChangesAsync(ct);
+        return sale;
     }
 
     /// <summary>Polls the terminal (the counter calls this every few seconds while the customer pays).</summary>
     public async Task<Result<PosSaleDto>> RefreshAsync(Guid id, CancellationToken ct)
     {
         var sale = await RefreshSaleAsync(id, null, ct);
-        return sale.IsFailure ? sale.Error! : ToDto(sale.Value);
+        return sale.IsFailure ? sale.Error! : await ToDtoAsync(sale.Value, ct);
     }
 
-    public async Task<Result<PosSaleDto>> CancelAsync(Guid id, CancellationToken ct)
+    /// <summary>
+    /// Cancels the sale on the terminal. For a sale whose answer was lost (it is not on any terminal HC360 can reach) it is
+    /// the cashier's confirmation that the terminal shows no sale, and <paramref name="note"/> says what they checked.
+    /// </summary>
+    public async Task<Result<PosSaleDto>> CancelAsync(Guid id, string? note, CancellationToken ct)
     {
-        var sale = await CancelSaleAsync(id, null, ct);
-        return sale.IsFailure ? sale.Error! : ToDto(sale.Value);
+        var sale = await CancelSaleAsync(id, null, note, ct);
+        return sale.IsFailure ? sale.Error! : await ToDtoAsync(sale.Value, ct);
     }
 
     /// <summary>
@@ -217,6 +408,14 @@ public sealed class PosService(
         if (sale is null)
         {
             return Error.NotFound(nameof(PosTransaction), id);
+        }
+
+        if (sale.Status == PosTransactionStatus.Unconfirmed || sale.IsAwaitingProvider)
+        {
+            // Nothing can be asked of the terminal: it has no reference to the sale. Time settles it.
+            return await ResolveUnconfirmedAsync(sale, ct)
+                ? sale
+                : await db.Set<PosTransaction>().AsNoTracking().FirstAsync(s => s.Id == id, ct);
         }
 
         if (sale.IsComplete && (sale.Status != PosTransactionStatus.Approved || sale.Owner is not null || sale.ReceiptId is not null))
@@ -244,13 +443,31 @@ public sealed class PosService(
         return sale;
     }
 
-    /// <summary>Cancels the sale of <paramref name="owner"/> (null: Billing's own) on the terminal.</summary>
-    internal async Task<Result<PosTransaction>> CancelSaleAsync(Guid id, string? owner, CancellationToken ct)
+    /// <summary>
+    /// Cancels the sale of <paramref name="owner"/> (null: Billing's own) on the terminal. A sale whose answer was lost
+    /// cannot be cancelled there; the cashier clears it instead, with a <paramref name="note"/> (<see cref="ClearUnconfirmedAsync"/>).
+    /// </summary>
+    internal async Task<Result<PosTransaction>> CancelSaleAsync(Guid id, string? owner, string? note, CancellationToken ct)
     {
         var sale = await db.Set<PosTransaction>().FirstOrDefaultAsync(s => s.Id == id && s.Owner == owner, ct);
         if (sale is null)
         {
             return Error.NotFound(nameof(PosTransaction), id);
+        }
+
+        if (sale.IsAwaitingProvider && time.GetUtcNow() - sale.CreatedAt >= PosUnconfirmed.PendingStale)
+        {
+            sale.MarkUnconfirmed(PosUnconfirmed.UnconfirmedMessage("HC360 stopped before the terminal's answer was saved."));
+        }
+
+        if (sale.Status == PosTransactionStatus.Unconfirmed)
+        {
+            return await ClearUnconfirmedAsync(sale, note, ct);
+        }
+
+        if (sale.IsAwaitingProvider)
+        {
+            return Error.Rule("pos.sale_sending", "This sale is still being sent to the terminal. Wait a minute, then check the terminal's screen.");
         }
 
         if (sale.IsComplete)
@@ -319,6 +536,12 @@ public sealed class PosService(
             return Error.Rule("pos.sale_unknown", "This terminal payment was not taken at this counter.");
         }
 
+        if (sale.Status == PosTransactionStatus.Unconfirmed || sale.IsAwaitingProvider)
+        {
+            return Error.Rule("pos.sale_unconfirmed",
+                "HC360 never heard whether the terminal took this payment. Check the terminal's screen and the slip: if the customer paid, record the payment from the slip instead.");
+        }
+
         if (sale.Status != PosTransactionStatus.Approved)
         {
             return sale.IsComplete
@@ -368,6 +591,13 @@ public sealed class PosService(
     /// </summary>
     internal async Task RecheckAsync(PosTransaction sale, TimeSpan timeout, CancellationToken ct)
     {
+        if (sale.Status == PosTransactionStatus.Unconfirmed || sale.IsAwaitingProvider)
+        {
+            // The terminal has no reference to ask about: once the window has passed, the accountants take over.
+            await ResolveUnconfirmedAsync(sale, ct);
+            return;
+        }
+
         if (!sale.IsComplete && services.GetService<IPosTerminal>() is { } terminal)
         {
             var status = await terminal.GetStatusAsync(sale.TransactionId, sale.FacilityId, ct);
@@ -421,9 +651,11 @@ public sealed class PosService(
         }
     }
 
-    internal static PosSaleDto ToDto(PosTransaction s) => new(
+    internal async Task<PosSaleDto> ToDtoAsync(PosTransaction s, CancellationToken ct) => ToDto(s, await RetryAfterAsync(s, ct));
+
+    internal static PosSaleDto ToDto(PosTransaction s, DateTimeOffset? retryAfter = null) => new(
         s.Id, s.Provider, s.TerminalId, s.TransactionId, s.Amount, s.Mode, s.Status, s.ApprovalCode, s.CardLast4, s.Rrn, s.Message, s.ReceiptId,
-        s.CreatedAt, s.CompletedAt);
+        s.CreatedAt, s.CompletedAt, retryAfter);
 
     /// <summary>
     /// Records the approved sale's receipt; returns false when a concurrent poll recorded it first. When the bill or
@@ -577,6 +809,7 @@ public sealed class PosService(
         PosTransactionStatus.Declined => "declined",
         PosTransactionStatus.Cancelled => "cancelled",
         PosTransactionStatus.TimedOut => "timed out",
+        PosTransactionStatus.Lapsed => "never confirmed, so the outcome is unknown",
         _ => status.ToString(),
     };
 

@@ -82,9 +82,14 @@ public sealed class SharedNumberTests(HospitalServer server)
         var phone = NewMobile();
         var mother = await RegisterAsync(frontOffice, "Parvathi", phone);
         var son = await RegisterAsync(frontOffice, "Kumar", phone);
-        var alone = await RegisterAsync(frontOffice, "Vasanthi", NewMobile());
+        var alonePhone = NewMobile();
+        var alone = await RegisterAsync(frontOffice, "Vasanthi", alonePhone);
         await ProtectAsync(mother);
         await ProtectAsync(alone);
+
+        // Verified numbers, as the desk verifies them with a code: an unverified one gets no documents at all.
+        await server.VerifyPatientPhonesAsync(phone);
+        await server.VerifyPatientPhonesAsync(alonePhone);
 
         // A report ready.
         foreach (var patient in new[] { mother, son, alone })

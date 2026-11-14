@@ -12,6 +12,11 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// the SMS only says where to find it. Report content is never sent as message text. A record in a protected category
 /// gets no SMS or WhatsApp when another patient shares its number (<see cref="SharedNumbers"/>): the report is given in
 /// person, or by e-mail to the patient's own address.
+/// <para>
+/// The PDF goes to the patient's mobile number only once the number is verified (<see cref="VerifiedNumbers"/>): a
+/// number typed one digit wrong, or one the telco gave to someone new, gets the notice without the report. The e-mail
+/// keeps its PDF either way.
+/// </para>
 /// </summary>
 internal sealed class ReportDelivery(DiagnosticsLookups lookups, HospitalDbContext db, INotificationService notifications, ISettingsService settings)
 {
@@ -37,26 +42,31 @@ internal sealed class ReportDelivery(DiagnosticsLookups lookups, HospitalDbConte
             return;
         }
 
-        var channels = new List<NotificationChannel>();
-        if (phone is not null)
+        var pdf = document is not null && (await settings.GetAsync<bool?>(SendPdfSetting, facilityId, ct) ?? true) ? document : null;
+        var numberVerified = phone is not null && pdf is not null && await VerifiedNumbers.CarriesDocumentsAsync(db, patient.Id, ct);
+        var recipient = NotificationRecipient.Patient(phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage);
+        var values = new Dictionary<string, string> { ["name"] = patient.FullName, ["reference"] = reference };
+        foreach (var (channels, carried) in Messages(phone is not null, patient.Email is not null, pdf, numberVerified))
         {
-            channels.Add(NotificationChannel.Sms);
-            channels.Add(NotificationChannel.WhatsApp);
+            notifications.Queue(ReportReadyTemplate, recipient, values, channels, TimeSpan.FromDays(3), facilityId, carried);
+        }
+    }
+
+    /// <summary>
+    /// The messages the notice goes as, each with its channels and the document it carries: SMS and WhatsApp to the number,
+    /// e-mail to the address, as one message with the PDF when the number is verified (or there is none to send), and as
+    /// two when it is not, the number's without the PDF and the e-mail's with it.
+    /// </summary>
+    internal static List<(List<NotificationChannel> Channels, NotificationDocument? Document)> Messages(
+        bool toNumber, bool toEmail, NotificationDocument? pdf, bool numberVerified)
+    {
+        List<NotificationChannel> number = toNumber ? [NotificationChannel.Sms, NotificationChannel.WhatsApp] : [];
+        List<NotificationChannel> email = toEmail ? [NotificationChannel.Email] : [];
+        if (pdf is null || numberVerified || number.Count == 0)
+        {
+            return [([.. number, .. email], pdf)];
         }
 
-        if (patient.Email is not null)
-        {
-            channels.Add(NotificationChannel.Email);
-        }
-
-        var sendPdf = document is not null && (await settings.GetAsync<bool?>(SendPdfSetting, facilityId, ct) ?? true);
-        notifications.Queue(
-            ReportReadyTemplate,
-            NotificationRecipient.Patient(phone, patient.Email, patient.Id, patient.FullName, patient.PreferredLanguage),
-            new Dictionary<string, string> { ["name"] = patient.FullName, ["reference"] = reference },
-            channels,
-            TimeSpan.FromDays(3),
-            facilityId,
-            sendPdf ? document : null);
+        return email.Count == 0 ? [(number, null)] : [(number, null), (email, pdf)];
     }
 }

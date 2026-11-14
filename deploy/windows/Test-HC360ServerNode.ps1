@@ -9,6 +9,8 @@
     whether HC360 runs well and safely on the machine, so this script reads it from Windows:
       - which disk holds Windows (PostgreSQL and HC360's data go there) and whether it is an NVMe SSD, its size, its
         health and wear, and whether there is another disk for backup copies;
+      - whether the system disk keeps writes in a cache a power cut would lose, and, once PostgreSQL is installed, the
+        wal_sync_method it runs with (fsync flushes that cache at every commit);
       - BitLocker on every fixed disk, and the TPM;
       - the network adapter in use (a cable and the speed it runs at, or WiFi and its standard), its profile (Private or
         Public), its address and MAC address (for the DHCP reservation);
@@ -78,6 +80,35 @@ function Get-DiskMediaVerdict([string] $MediaType, [string] $BusType) {
     if ($BusType -eq 'NVMe') { return 'Pass' }
     if ($MediaType -eq 'SSD') { return 'Warn' }
     return 'Unknown'
+}
+
+# A disk that acknowledges a write while it is still in its own cache loses it when the power goes, unless the cache is
+# off or the drive keeps it safe (a capacitor or battery: IsPowerProtected). Windows does not always know, so a missing
+# answer is Unknown, and a cache that is on without protection is a Warn: PostgreSQL's wal_sync_method covers it
+# (Get-WalSyncVerdict), and a UPS on USB shuts the machine down before the power goes.
+function Get-WriteCacheVerdict($CacheEnabled, $PowerProtected) {
+    if ($null -eq $CacheEnabled) { return 'Unknown' }
+    if (-not [bool]$CacheEnabled) { return 'Pass' }
+    if ($null -ne $PowerProtected -and [bool]$PowerProtected) { return 'Pass' }
+    return 'Warn'
+}
+
+# The wal_sync_method PostgreSQL runs with: the last one set in postgresql.conf, overridden by postgresql.auto.conf
+# (ALTER SYSTEM, which Install-PostgreSQL.ps1 uses); open_datasync, the Windows default, when neither sets one.
+function Get-WalSyncMethod([string[]] $ConfLines, [string[]] $AutoLines) {
+    $method = $null
+    foreach ($line in @($ConfLines) + @($AutoLines)) {
+        if ($line -and $line -match '^\s*wal_sync_method\s*=?\s*''?([A-Za-z_]+)''?') { $method = $Matches[1].ToLowerInvariant() }
+    }
+    if ($method) { return $method }
+    return 'open_datasync'
+}
+
+# fsync and fdatasync ask Windows to flush the disk's cache at every commit. The default, open_datasync, relies on the
+# disk's write cache being off (PostgreSQL documentation, Reliability).
+function Get-WalSyncVerdict([string] $Method) {
+    if ($Method -in 'fsync', 'fdatasync') { return 'Pass' }
+    return 'Warn'
 }
 
 # Windows' own names (DESKTOP-XXXXXXX, WIN-XXXXXXXXXXX) are placeholders. Workstations, HC360's server certificate and
@@ -349,6 +380,43 @@ Invoke-Section 'Storage' 'System disk type' {
         default { '' }
     }
     Add-Check 'Storage' 'Disk health' $found 'Healthy, under 80% worn' $verdict $note
+}
+
+Invoke-Section 'Storage' 'Disk write cache' {
+    $needed = 'Write cache off, or kept safe through a power cut'
+    if (-not $isAdmin) { Add-Check 'Storage' 'Disk write cache' 'Not read' $needed 'Unknown' $needsAdmin; return }
+    $number = (Get-Partition -DriveLetter $env:SystemDrive.TrimEnd(':') | Select-Object -First 1).DiskNumber
+    $physical = @(Get-PhysicalDisk | Where-Object { [string]$_.DeviceId -eq [string]$number } | Select-Object -First 1)
+    if ($physical.Count -eq 0) { Add-Check 'Storage' 'Disk write cache' "No disk found for $env:SystemDrive" $needed 'Unknown'; return }
+    $advanced = @($physical[0] | Get-StorageAdvancedProperty -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $cache = if ($advanced.Count -gt 0) { Get-Value $advanced[0] 'IsDeviceCacheEnabled' } else { $null }
+    $protected = if ($advanced.Count -gt 0) { Get-Value $advanced[0] 'IsPowerProtected' } else { $null }
+    $facts.DiskWriteCache = [ordered]@{ Disk = $number; CacheEnabled = $cache; PowerProtected = $protected }
+    $verdict = Get-WriteCacheVerdict $cache $protected
+    if ($null -eq $cache) { $found = "disk ${number}: Windows does not say" }
+    else { $found = "disk ${number}: write cache $(if ($cache) { 'on' } else { 'off' }), $(if ($protected) { 'power protected' } else { 'not power protected' })" }
+    $note = switch ($verdict) {
+        'Warn' { 'The disk reports a write as done while it is still in its cache, and nothing keeps the cache through a power cut: committed work can be lost, and this server may have no UPS yet. Install-PostgreSQL.ps1 sets wal_sync_method = fsync so PostgreSQL flushes the cache at every commit (PostgreSQL documentation, Reliability). Still connect a UPS on USB; or turn the cache off in Device Manager > the disk > Policies, if the drive allows it.' }
+        'Unknown' { 'Windows does not say whether this disk caches writes. Treat it as caching them: keep wal_sync_method = fsync (Install-PostgreSQL.ps1 sets it) and put the server on a UPS.' }
+        default { '' }
+    }
+    Add-Check 'Storage' 'Disk write cache' $found $needed $verdict $note
+}
+
+Invoke-Section 'Storage' 'PostgreSQL wal_sync_method' {
+    $dataDirs = @(Get-ChildItem -LiteralPath (Join-Path $env:ProgramFiles 'PostgreSQL') -Directory -ErrorAction SilentlyContinue |
+            ForEach-Object { Join-Path $_.FullName 'data' } | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'postgresql.conf') })
+    if ($dataDirs.Count -eq 0) { return }
+    foreach ($dataDir in $dataDirs) {
+        $auto = Join-Path $dataDir 'postgresql.auto.conf'
+        $conf = @(Get-Content -LiteralPath (Join-Path $dataDir 'postgresql.conf') -ErrorAction Stop)
+        $overrides = if (Test-Path -LiteralPath $auto) { @(Get-Content -LiteralPath $auto -ErrorAction Stop) } else { @() }
+        $method = Get-WalSyncMethod $conf $overrides
+        $facts.WalSyncMethod = $method
+        $verdict = Get-WalSyncVerdict $method
+        $note = if ($verdict -eq 'Pass') { '' } else { "PostgreSQL at $dataDir relies on the disk's write cache being off. Run Install-PostgreSQL.ps1 again, or: ALTER SYSTEM SET wal_sync_method = 'fsync', then restart the service." }
+        Add-Check 'Storage' 'PostgreSQL wal_sync_method' "$method ($dataDir)" 'fsync or fdatasync' $verdict $note
+    }
 }
 
 Invoke-Section 'Storage' 'Free space' {

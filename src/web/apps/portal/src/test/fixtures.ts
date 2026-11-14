@@ -424,6 +424,8 @@ export const PORTAL_ANSWERS: FakeAnswers = {
   'POST /api/v1/public/challenge': { required: true, challenge: '1.otp.1.1.00.sig', bits: 1, expiresAt: null },
   'POST /api/v1/auth/otp/request': CHALLENGE,
   'GET /api/v1/portal/profiles': [PROFILE],
+  // Nothing on the number waits for the patient's date of birth (modules/confirm).
+  'GET /api/v1/portal/records-to-confirm': { unconfirmed: 0, attemptsLeft: 5, retryAfterSeconds: null },
   'GET /api/v1/portal/appointments': APPOINTMENTS,
   'GET /api/v1/portal/waitlist': WAITLIST,
   'GET /api/v1/portal/reports': REPORTS,

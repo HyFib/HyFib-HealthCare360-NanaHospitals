@@ -19,7 +19,13 @@ namespace HyFib.HealthCare360.Modules.Patients.Services;
 /// family members the old number's portal account saw follow the patient to the new number when nobody else keeps the old
 /// one (<see cref="PortalFamilyService.FollowNumberChangeAsync"/>), and when the old number then reaches no patient's
 /// records at all, its portal account is signed out everywhere and forgets the patient's name, so that whoever gets the
-/// number next never sees it.
+/// number next never sees it. The new number is verified with the change (<see cref="Patient.PhoneVerifiedAt"/>): the
+/// patient read out the code sent to it.
+/// </para>
+/// <para>
+/// A code that verifies the number the record has already is <see cref="PatientPhoneVerificationService"/>'s
+/// (<see cref="PhoneCodePurpose.Verify"/>): this service neither shows nor confirms one, though both count towards the
+/// number's three codes in 15 minutes.
 /// </para>
 /// </summary>
 public sealed class PatientPhoneChangeService(
@@ -55,7 +61,7 @@ public sealed class PatientPhoneChangeService(
 
         var now = time.GetUtcNow();
         var pending = await db.Set<PatientPhoneChange>().AsNoTracking()
-            .Where(c => c.PatientId == patientId && c.Status == PatientPhoneChangeStatus.Pending)
+            .Where(c => c.PatientId == patientId && c.Purpose == PhoneCodePurpose.Change && c.Status == PatientPhoneChangeStatus.Pending)
             .OrderByDescending(c => c.CreatedAt)
             .FirstOrDefaultAsync(ct);
         return pending is not null && pending.IsOpen(now) ? View(pending) : null;
@@ -117,7 +123,7 @@ public sealed class PatientPhoneChangeService(
         }
 
         foreach (var earlier in await db.Set<PatientPhoneChange>()
-                     .Where(c => c.PatientId == patientId && c.Status == PatientPhoneChangeStatus.Pending)
+                     .Where(c => c.PatientId == patientId && c.Purpose == PhoneCodePurpose.Change && c.Status == PatientPhoneChangeStatus.Pending)
                      .ToListAsync(ct))
         {
             earlier.Supersede();
@@ -129,6 +135,7 @@ public sealed class PatientPhoneChangeService(
         {
             FacilityId = facilityId,
             PatientId = patientId,
+            Purpose = PhoneCodePurpose.Change,
             Phone = phone,
             PreviousPhone = patient.Phone,
             ExpiresAt = now + PatientPhoneChange.Lifetime,
@@ -180,7 +187,8 @@ public sealed class PatientPhoneChangeService(
         {
             await db.Database.ExecuteSqlAsync($"SELECT 1 FROM patients.patients WHERE id = {patientId} FOR NO KEY UPDATE", ct);
             await db.Database.ExecuteSqlAsync($"SELECT 1 FROM patients.patient_phone_changes WHERE id = {changeId} FOR NO KEY UPDATE", ct);
-            var change = await db.Set<PatientPhoneChange>().FirstOrDefaultAsync(c => c.Id == changeId && c.PatientId == patientId, ct);
+            var change = await db.Set<PatientPhoneChange>()
+                .FirstOrDefaultAsync(c => c.Id == changeId && c.PatientId == patientId && c.Purpose == PhoneCodePurpose.Change, ct);
             var patient = change is null ? null : await db.Set<Patient>().FirstOrDefaultAsync(p => p.Id == patientId, ct);
             if (change is null || patient is null)
             {
@@ -219,6 +227,7 @@ public sealed class PatientPhoneChangeService(
 
             var oldPhone = patient.Phone;
             patient.Phone = change.Phone;
+            patient.MarkPhoneVerified(now);
             await PortalLinkService.RevokeLiveLinksAsync(db, patient.Id, PortalLink.NumberChangedReason, now, ct);
             var moved = await family.FollowNumberChangeAsync(patient, oldPhone, change.Phone, ct);
             await db.SaveChangesAsync(ct);

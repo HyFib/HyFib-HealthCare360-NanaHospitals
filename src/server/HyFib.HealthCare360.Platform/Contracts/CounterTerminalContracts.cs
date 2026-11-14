@@ -26,7 +26,14 @@ public sealed record CounterTerminalSale(
     string? Message,
     string? UsedFor,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? CompletedAt);
+    DateTimeOffset? CompletedAt,
+    DateTimeOffset? RetryAfter = null);
+
+/// <summary>
+/// The cashier's note when cancelling a terminal sale. For a sale whose answer was lost (<see cref="PosTransactionStatus.Unconfirmed"/>)
+/// it is required: the cashier confirms that the terminal shows no sale, and says what they checked.
+/// </summary>
+public sealed record CounterTerminalCancel(string? Note);
 
 /// <summary>The counter records an approved terminal sale as one of its payments.</summary>
 /// <param name="PaymentId">The counter's own id of the payment that records the sale.</param>
@@ -57,8 +64,12 @@ public interface ICounterTerminal
     /// <summary>The sale as the terminal has it now (the counter asks every few seconds while the customer pays).</summary>
     Task<Result<CounterTerminalSale>> RefreshAsync(string counter, Guid id, CancellationToken cancellationToken);
 
-    /// <summary>Cancels the sale on the terminal; a sale the customer paid first stays approved.</summary>
-    Task<Result<CounterTerminalSale>> CancelAsync(string counter, Guid id, CancellationToken cancellationToken);
+    /// <summary>
+    /// Cancels the sale on the terminal; a sale the customer paid first stays approved. A sale whose upload answer was lost
+    /// (<see cref="PosTransactionStatus.Unconfirmed"/>) cannot be cancelled there: <paramref name="note"/> is then the
+    /// cashier's required, audited confirmation that the terminal shows no sale, which frees the terminal.
+    /// </summary>
+    Task<Result<CounterTerminalSale>> CancelAsync(string counter, Guid id, string? note, CancellationToken cancellationToken);
 
     /// <summary>The counter's approved sales that no payment records yet, newest first: money taken on the terminal still to be put on an invoice.</summary>
     Task<IReadOnlyList<CounterTerminalSale>> UnusedAsync(string counter, CancellationToken cancellationToken);
@@ -83,7 +94,7 @@ internal sealed class NullCounterTerminal : ICounterTerminal
     public Task<Result<CounterTerminalSale>> RefreshAsync(string counter, Guid id, CancellationToken cancellationToken) =>
         Task.FromResult<Result<CounterTerminalSale>>(Unavailable);
 
-    public Task<Result<CounterTerminalSale>> CancelAsync(string counter, Guid id, CancellationToken cancellationToken) =>
+    public Task<Result<CounterTerminalSale>> CancelAsync(string counter, Guid id, string? note, CancellationToken cancellationToken) =>
         Task.FromResult<Result<CounterTerminalSale>>(Unavailable);
 
     public Task<IReadOnlyList<CounterTerminalSale>> UnusedAsync(string counter, CancellationToken cancellationToken) =>

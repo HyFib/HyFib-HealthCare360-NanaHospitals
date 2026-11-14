@@ -32,7 +32,10 @@ namespace HyFib.HealthCare360.Integrations;
 /// </summary>
 internal static class IntegrationsServiceCollectionExtensions
 {
-    // Cloud APIs answer in seconds, and the outbox gives a delivery handler 30 s in total, so calls give up well before.
+    // Cloud APIs answer in seconds, and the outbox gives a delivery handler 30 s in total, so calls give up well before. A
+    // connection that does not open within 5 s (IntegrationHttp.ConnectTimeout) fails sooner still: on an internet link
+    // that drops packets, an SMS fails in 5 s rather than 15, and three such failures in a row let its provider cool down
+    // in the outbox (OutboxCoolDowns) while the other providers, and every alert inside the hospital, carry on.
     private static readonly TimeSpan CloudAttempt = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CloudTotal = TimeSpan.FromSeconds(20);
 

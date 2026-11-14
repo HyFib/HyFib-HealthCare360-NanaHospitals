@@ -25,7 +25,7 @@ internal sealed class EInvoiceQueue(IOutbox outbox, ISettingsService settings) :
 /// <summary>
 /// Delivers <c>billing.einvoice.generate</c> (<see cref="EInvoiceService.GenerateQueuedAsync"/>) in a scope of its own: the
 /// IRN is saved as soon as the portal gives it, and a conflict on the register (another request recorded the IRN at the
-/// same moment) fails this message alone, not the outbox's whole batch. What can change on its own is tried again with the
+/// same moment) fails this message alone, in its own scope. What can change on its own is tried again with the
 /// outbox's back-off (an exception says why); the rest ends here.
 /// </summary>
 internal sealed class EInvoiceGenerateHandler(IServiceScopeFactory scopes) : IOutboxHandler

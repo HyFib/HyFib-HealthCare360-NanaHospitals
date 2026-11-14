@@ -17,13 +17,18 @@ public sealed record TallyCheckMessage(Guid FacilityId, DateOnly Date);
 
 /// <summary>
 /// Delivers <c>billing.tally.post</c> outbox messages (retried with back-off while Tally is unreachable). The post
-/// runs in a scope of its own and saves as it goes: the outbox's batch transaction then holds only its own message
-/// rows while Tally is called, never the day's rows, and a conflict on the day fails this message alone, not the
-/// whole batch.
+/// runs in a scope of its own and saves as it goes: the outbox's transaction for the message then holds only the
+/// message's row while Tally is called, never the day's rows, and a conflict on the day fails this message alone.
 /// </summary>
 internal sealed class TallyDayBookHandler(IServiceScopeFactory scopes) : IOutboxHandler
 {
     public const string MessageType = "billing.tally.post";
+
+    /// <summary>
+    /// The outbox provider of the post and its check: Tally on the accounts PC, on the LAN, so on the local lane. Its
+    /// messages go one at a time beside the alerts, never in their way, and a Tally that stops answering cools down alone.
+    /// </summary>
+    internal const string TallyProvider = "tally";
 
     /// <summary>
     /// What the outbox gives a delivery (it has no per-handler setting); TallyService plans its calls inside it.
@@ -31,6 +36,10 @@ internal sealed class TallyDayBookHandler(IServiceScopeFactory scopes) : IOutbox
     internal static readonly TimeSpan OutboxLimit = TimeSpan.FromSeconds(30);
 
     public string Type => MessageType;
+
+    public OutboxLane Lane => OutboxLane.Local;
+
+    public string Provider => TallyProvider;
 
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
@@ -62,6 +71,10 @@ internal sealed class TallyCheckHandler(IServiceScopeFactory scopes) : IOutboxHa
     public const string MessageType = "billing.tally.check";
 
     public string Type => MessageType;
+
+    public OutboxLane Lane => OutboxLane.Local;
+
+    public string Provider => TallyDayBookHandler.TallyProvider;
 
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {

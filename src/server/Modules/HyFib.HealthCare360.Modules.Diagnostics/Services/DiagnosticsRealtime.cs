@@ -78,10 +78,12 @@ internal static class DiagnosticsOutboxTypes
     public const string UserAlert = "diagnostics.user-alert";
 }
 
-/// <summary>Delivers realtime pushes deferred by <see cref="DiagnosticsRealtime.PublishAfterCommit"/>.</summary>
+/// <summary>Delivers realtime pushes deferred by <see cref="DiagnosticsRealtime.PublishAfterCommit"/> (local: they never wait behind the internet).</summary>
 internal sealed class DiagnosticsRealtimeOutboxHandler(IRealtimePublisher realtime) : IOutboxHandler
 {
     public string Type => DiagnosticsOutboxTypes.Realtime;
+
+    public OutboxLane Lane => OutboxLane.Local;
 
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
@@ -90,10 +92,15 @@ internal sealed class DiagnosticsRealtimeOutboxHandler(IRealtimePublisher realti
     }
 }
 
-/// <summary>Delivers staff alerts deferred by <see cref="DiagnosticsRealtime.AlertStaffAfterCommit"/>.</summary>
+/// <summary>
+/// Delivers staff alerts deferred by <see cref="DiagnosticsRealtime.AlertStaffAfterCommit"/>, in the app (local: a critical
+/// result's alert never waits behind the internet, while its SMS copy, a message of its own, may).
+/// </summary>
 internal sealed class DiagnosticsStaffAlertOutboxHandler(INotificationService notifications) : IOutboxHandler
 {
     public string Type => DiagnosticsOutboxTypes.StaffAlert;
+
+    public OutboxLane Lane => OutboxLane.Local;
 
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
@@ -103,10 +110,12 @@ internal sealed class DiagnosticsStaffAlertOutboxHandler(INotificationService no
     }
 }
 
-/// <summary>Delivers alerts to named staff deferred by <see cref="DiagnosticsRealtime.AlertUsersAfterCommit"/>.</summary>
+/// <summary>Delivers alerts to named staff deferred by <see cref="DiagnosticsRealtime.AlertUsersAfterCommit"/>, in the app (local).</summary>
 internal sealed class DiagnosticsUserAlertOutboxHandler(INotificationService notifications) : IOutboxHandler
 {
     public string Type => DiagnosticsOutboxTypes.UserAlert;
+
+    public OutboxLane Lane => OutboxLane.Local;
 
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {

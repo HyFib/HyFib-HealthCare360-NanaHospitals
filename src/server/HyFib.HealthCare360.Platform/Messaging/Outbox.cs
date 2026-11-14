@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -23,10 +25,11 @@ public enum OutboxStatus
 }
 
 /// <summary>
-/// A message to deliver outside the transaction that created it (SMS, WhatsApp, e-mail, Tally, webhooks).
+/// A message to deliver outside the transaction that created it (SMS, WhatsApp, e-mail, Tally, in-app alerts, webhooks).
 /// Written atomically with the business change; delivered at least once by <see cref="OutboxDispatcher"/>, which
 /// retries it until it is delivered or expires (<see cref="OutboxRetryPolicy"/>), so messages survive internet
-/// outages on the hospital WiFi link however long they last.
+/// outages on the hospital WiFi link however long they last, and an outage holds up only what goes to the internet
+/// (<see cref="OutboxLane"/>).
 /// </summary>
 [NotAudited]
 public sealed class OutboxMessage
@@ -121,108 +124,307 @@ public sealed class Outbox(HospitalDbContext db, ICurrentUser currentUser, TimeP
     }
 }
 
-/// <summary>Delivers one outbox message type. Throw to trigger a retry with backoff.</summary>
+/// <summary>
+/// Delivers one outbox message type. Throw to have the message tried again with back-off, and throw
+/// <see cref="ProviderUnreachableException"/> when the provider could not be reached or did not answer in time.
+/// </summary>
 public interface IOutboxHandler
 {
     string Type { get; }
 
+    /// <summary>
+    /// Where the delivery goes: the internet, unless the handler opts in to the local lane because it stays inside the
+    /// hospital (an in-app or realtime notification, work in the database, a system on the LAN). A local delivery is held
+    /// up neither by an internet outage nor by the hold after a restore (<see cref="OutboxHold"/>), so it must call nothing
+    /// on the internet: what it queues to go there, such as an alert's SMS copy, is a message of its own on the internet lane.
+    /// </summary>
+    OutboxLane Lane => OutboxLane.Internet;
+
+    /// <summary>
+    /// The outside service the delivery calls, the same for every handler that calls it (<see cref="OutboxProviders"/>):
+    /// a provider's messages go one at a time, beside every other provider's, and its connection failures and timeouts
+    /// count together towards its cool-down (<see cref="OutboxCoolDowns"/>). The message type by default.
+    /// </summary>
+    string Provider => Type;
+
     Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken);
 }
 
-/// <summary>Polls pending messages (FOR UPDATE SKIP LOCKED, so several workers can run safely).</summary>
-public sealed class OutboxDispatcher(
-    IServiceScopeFactory scopeFactory,
-    TimeProvider time,
-    IOptions<PlatformOptions> options,
-    ILogger<OutboxDispatcher> logger) : BackgroundService
+/// <summary>The channel providers of the notification handlers, for <see cref="IOutboxHandler.Provider"/>.</summary>
+public static class OutboxProviders
 {
-    private const int BatchSize = 25;
+    public const string Sms = "sms";
+
+    public const string WhatsApp = "whatsapp";
+
+    public const string Email = "email";
+}
+
+/// <summary>What the dispatcher knows of a handler without running it: its message type, lane and provider.</summary>
+internal sealed record OutboxHandlerInfo(string Type, OutboxLane Lane, string Provider)
+{
+    public static OutboxHandlerInfo Of(IOutboxHandler handler) =>
+        new(handler.Type, handler.Lane, string.IsNullOrEmpty(handler.Provider) ? handler.Type : handler.Provider);
+}
+
+/// <summary>A provider the outbox delivers to (<see cref="IOutboxHandler.Provider"/>): the message types its handlers deliver, and their lane.</summary>
+internal sealed record OutboxProvider(string Name, OutboxLane Lane, IReadOnlyList<string> Types)
+{
+    /// <summary>
+    /// The providers of the message types due, from the handlers by message type. A provider is on the internet lane when
+    /// any of its handlers is. A type that no handler delivers is a provider of its own on the internet lane, and its
+    /// messages fail at once.
+    /// </summary>
+    public static IReadOnlyList<OutboxProvider> Of(IReadOnlyCollection<string> dueTypes, IReadOnlyDictionary<string, OutboxHandlerInfo> handlers)
+    {
+        var providers = new Dictionary<string, OutboxProvider>(StringComparer.Ordinal);
+        foreach (var type in dueTypes)
+        {
+            if (!handlers.TryGetValue(type, out var handler))
+            {
+                providers.TryAdd(type, new OutboxProvider(type, OutboxLane.Internet, [type]));
+            }
+            else if (!providers.ContainsKey(handler.Provider))
+            {
+                var theirs = handlers.Values.Where(h => string.Equals(h.Provider, handler.Provider, StringComparison.Ordinal)).ToList();
+                providers[handler.Provider] = new OutboxProvider(
+                    handler.Provider, theirs.TrueForAll(h => h.Lane == OutboxLane.Local) ? OutboxLane.Local : OutboxLane.Internet, [.. theirs.Select(h => h.Type)]);
+            }
+        }
+
+        return [.. providers.Values];
+    }
+
+    /// <summary>
+    /// The message types on the local lane, as <see cref="Of"/> decides: those of the providers whose every handler is
+    /// local. Every other type, one no handler delivers included, is on the internet lane.
+    /// </summary>
+    public static IReadOnlyList<string> LocalTypes(IEnumerable<IOutboxHandler> handlers) =>
+        [.. handlers.Select(OutboxHandlerInfo.Of)
+            .GroupBy(h => h.Provider, StringComparer.Ordinal)
+            .Where(provider => provider.All(h => h.Lane == OutboxLane.Local))
+            .SelectMany(provider => provider.Select(h => h.Type))];
+}
+
+/// <summary>
+/// Delivers the outbox (SRS DED-11) so that an internet outage holds up only what goes to the internet.
+/// <list type="bullet">
+/// <item>Each message is taken on its own, in a transaction of its own, locked with <c>FOR UPDATE SKIP LOCKED</c> so that
+/// several servers deliver side by side and never the same message, and its outcome is committed before the next is
+/// taken: a restart part way through sends again at most the one message it was sending.</item>
+/// <item>Messages go provider by provider (<see cref="IOutboxHandler.Provider"/>): each provider's one at a time, in the
+/// order they fell due, and the providers side by side. An SMS gateway that hangs holds up only the SMS, and a fridge's
+/// alert in the app, on the local lane (<see cref="OutboxLane"/>), goes within seconds whatever the internet does.</item>
+/// <item>After <see cref="OutboxCoolDowns.FailuresBeforeCoolDown"/> connection failures or timeouts in a row, a provider's
+/// messages wait out a cool-down without being tried (<see cref="OutboxCoolDowns"/>).</item>
+/// <item>A failed message's next try is counted from when the try failed (<see cref="OutboxRetryPolicy"/>).</item>
+/// <item>While outgoing messages are held after a restore (<see cref="OutboxHold"/>), the internet lane sends none of those
+/// queued before the hold began; those queued since go as ever.</item>
+/// <item>Once a minute, every waiting message whose time is up is ended, held or not (<see cref="ExpireIfDue"/>).</item>
+/// </list>
+/// </summary>
+public sealed class OutboxDispatcher : BackgroundService
+{
+    /// <summary>How long a handler has to deliver one message.</summary>
+    internal static readonly TimeSpan HandlerTimeout = TimeSpan.FromSeconds(30);
+
+    /// <summary>How often the waiting messages whose time is up are ended.</summary>
+    internal static readonly TimeSpan ExpiryInterval = TimeSpan.FromMinutes(1);
+
     private static readonly TimeSpan IdleDelay = TimeSpan.FromSeconds(2);
-    private static readonly TimeSpan HandlerTimeout = TimeSpan.FromSeconds(30);
+
+    private readonly IServiceScopeFactory _scopes;
+    private readonly IOutboxStore _store;
+    private readonly TimeProvider _time;
+    private readonly IOptions<PlatformOptions> _options;
+    private readonly ILogger<OutboxDispatcher> _logger;
+    private IReadOnlyDictionary<string, OutboxHandlerInfo>? _handlers;
+    private DateTimeOffset _nextExpiry = DateTimeOffset.MinValue;
+    private bool _held;
+
+    public OutboxDispatcher(IServiceScopeFactory scopeFactory, TimeProvider time, IOptions<PlatformOptions> options, ILogger<OutboxDispatcher> logger)
+        : this(scopeFactory, new OutboxStore(scopeFactory), time, options, logger)
+    {
+    }
+
+    internal OutboxDispatcher(
+        IServiceScopeFactory scopeFactory, IOutboxStore store, TimeProvider time, IOptions<PlatformOptions> options, ILogger<OutboxDispatcher> logger)
+    {
+        _scopes = scopeFactory;
+        _store = store;
+        _time = time;
+        _options = options;
+        _logger = logger;
+    }
+
+    /// <summary>Each provider's run of failures that got no answer, and its cool-down.</summary>
+    internal OutboxCoolDowns CoolDowns { get; } = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!options.Value.RunsJobs)
+        if (!_options.Value.RunsJobs)
         {
             return;
         }
 
-        while (!stoppingToken.IsCancellationRequested)
+        // Each provider's delivery while it runs: one at a time per provider, as many providers at once as have messages due.
+        var deliveries = new Dictionary<string, Task>(StringComparer.Ordinal);
+        try
         {
-            var processed = 0;
-            try
+            while (!stoppingToken.IsCancellationRequested)
             {
-                processed = await ProcessBatchAsync(stoppingToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                logger.LogError(ex, "Outbox dispatch cycle failed");
-            }
+                foreach (var done in deliveries.Where(d => d.Value.IsCompleted).Select(d => d.Key).ToList())
+                {
+                    deliveries.Remove(done);
+                }
 
-            if (processed < BatchSize)
-            {
-                await Task.Delay(IdleDelay, time, stoppingToken);
+                try
+                {
+                    foreach (var provider in await DueAsync(deliveries.Keys, stoppingToken))
+                    {
+                        deliveries[provider.Name] = DeliverAsync(provider, stoppingToken);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogError(ex, "Outbox dispatch cycle failed");
+                }
+
+                await Task.Delay(IdleDelay, _time, stoppingToken);
             }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            // Each delivery stops at its next message, or when the handler it waits on gives up on the stop.
+            await Task.WhenAll(deliveries.Values);
         }
     }
 
-    internal async Task<int> ProcessBatchAsync(CancellationToken cancellationToken)
+    /// <summary>One round, for the tests: delivers what is due, the providers side by side, and waits until each has delivered what it can.</summary>
+    internal async Task DispatchOnceAsync(CancellationToken cancellationToken) =>
+        await Task.WhenAll((await DueAsync([], cancellationToken)).Select(provider => DeliverAsync(provider, cancellationToken)));
+
+    /// <summary>
+    /// Ends the waiting messages whose time is up, once a minute, and returns the providers with messages due that have no
+    /// delivery running here (<paramref name="running"/>) and are not cooling down. While messages are held, a provider on
+    /// the internet lane is due only for messages queued since the hold began.
+    /// </summary>
+    internal async Task<IReadOnlyList<OutboxProvider>> DueAsync(ICollection<string> running, CancellationToken cancellationToken)
     {
-        await using var scope = scopeFactory.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
-        var handlers = scope.ServiceProvider.GetServices<IOutboxHandler>().ToDictionary(h => h.Type, StringComparer.Ordinal);
-        var now = time.GetUtcNow();
-
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var batch = await db.Set<OutboxMessage>()
-            .FromSqlInterpolated($"""
-                SELECT * FROM platform.outbox_messages
-                 WHERE status = 'Pending' AND next_attempt_at <= {now}
-                 ORDER BY next_attempt_at
-                 LIMIT {BatchSize}
-                   FOR UPDATE SKIP LOCKED
-                """)
-            .ToListAsync(cancellationToken);
-
-        foreach (var message in batch)
+        var now = _time.GetUtcNow();
+        if (now >= _nextExpiry)
         {
-            if (ExpireIfDue(message, now))
+            _nextExpiry = now + ExpiryInterval;
+            if (await _store.ExpireAsync(now, cancellationToken) is var ended and > 0)
             {
-                continue;
-            }
-
-            if (!handlers.TryGetValue(message.Type, out var handler))
-            {
-                Fail(message, now, $"No handler registered for '{message.Type}'.", permanent: true);
-                continue;
-            }
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(HandlerTimeout);
-
-            // The send carries the id of the request that queued it, in the log and to the provider (OBS-04).
-            using var correlation = CorrelationContext.Begin(message.CorrelationId);
-            using var logScope = message.CorrelationId is null
-                ? null
-                : logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = message.CorrelationId });
-            try
-            {
-                await handler.HandleAsync(message, timeout.Token);
-                message.Status = OutboxStatus.Succeeded;
-                message.ProcessedAt = time.GetUtcNow();
-                message.Attempts++;
-                message.LastError = null;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-            {
-                logger.LogWarning(ex, "Outbox message {MessageId} ({Type}) failed on attempt {Attempt}", message.Id, message.Type, message.Attempts + 1);
-                Fail(message, now, ex.Message, permanent: false);
+                _logger.LogWarning("{Count} outbox message(s) ended unsent: their time was up before they could go", ended);
             }
         }
 
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return batch.Count;
+        var providers = OutboxProvider.Of(await _store.DueTypesAsync(now, null, cancellationToken), await HandlersAsync())
+            .Where(p => !running.Contains(p.Name) && CoolDowns.CoolingUntil(p.Name, now) is null)
+            .ToList();
+        if (providers.Exists(p => p.Lane == OutboxLane.Internet))
+        {
+            var hold = await HoldAsync(cancellationToken);
+            if (hold is not null)
+            {
+                // A hold that cannot be read holds every message; else only those queued before it began.
+                IReadOnlyCollection<string> queuedSince = hold.Since == default ? [] : await _store.DueTypesAsync(now, hold.Since, cancellationToken);
+                providers.RemoveAll(p => p.Lane == OutboxLane.Internet && !p.Types.Any(queuedSince.Contains));
+            }
+
+            if (hold is not null != _held)
+            {
+                _held = hold is not null;
+                if (hold is not null)
+                {
+                    _logger.LogWarning("Outgoing messages queued before {Since:O} are held: they go to the internet once an administrator releases them", hold.Since);
+                }
+                else
+                {
+                    _logger.LogWarning("Outgoing messages are no longer held: they go to the internet again");
+                }
+            }
+        }
+
+        return providers;
+    }
+
+    /// <summary>
+    /// Takes the provider's next due message, delivers it and commits its outcome. False when there was none to take. While
+    /// messages are held, the internet lane takes only those queued since the hold began: the others stay as they were.
+    /// </summary>
+    internal async Task<bool> ProcessNextAsync(OutboxProvider provider, CancellationToken stoppingToken)
+    {
+        // Asked for each message: the hold may come on while a provider's messages are going.
+        DateTimeOffset? queuedAfter = null;
+        if (provider.Lane == OutboxLane.Internet && await HoldAsync(stoppingToken) is { } hold)
+        {
+            if (hold.Since == default)
+            {
+                return false;
+            }
+
+            queuedAfter = hold.Since;
+        }
+
+        var now = _time.GetUtcNow();
+        await using var unit = await _store.TakeAsync(provider.Types, now, queuedAfter, stoppingToken);
+        if (unit is null)
+        {
+            return false;
+        }
+
+        var message = unit.Message;
+        if (ExpireIfDue(message, now))
+        {
+            await unit.CommitAsync(stoppingToken);
+            return true;
+        }
+
+        var handler = unit.Services.GetServices<IOutboxHandler>().FirstOrDefault(h => string.Equals(h.Type, message.Type, StringComparison.Ordinal));
+        if (handler is null)
+        {
+            Fail(message, now, $"No handler registered for '{message.Type}'.", permanent: true);
+            await unit.CommitAsync(stoppingToken);
+            return true;
+        }
+
+        var attempts = message.Attempts;
+        var failure = await HandleAsync(handler, message, stoppingToken);
+
+        // The next try is counted from when this one ended, however long it took. Once the handler has run, its outcome
+        // is committed even while the server stops: abandoned, it would be sent again after the restart.
+        var at = _time.GetUtcNow();
+        Record(message, failure, at);
+        try
+        {
+            await unit.CommitAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // What the handler changed cannot be saved, or a failed statement left the transaction unusable: the outcome is
+            // saved on its own. A delivery whose changes are lost is tried again, as one that failed.
+            _logger.LogWarning(ex, "The outcome of outbox message {MessageId} ({Type}) could not be saved with what its handler changed", message.Id, message.Type);
+            await unit.UndoHandlerAsync(CancellationToken.None);
+            if (failure is null)
+            {
+                message.Status = OutboxStatus.Pending;
+                message.ProcessedAt = null;
+                message.Attempts = attempts;
+                failure = new DeliveryFailure($"It was delivered, but what the delivery changed could not be saved: {ex.Message}", Unreachable: false);
+                Record(message, failure, at);
+            }
+
+            await unit.CommitAsync(CancellationToken.None);
+        }
+
+        Count(provider, failure, at);
+        return true;
     }
 
     /// <summary>
@@ -240,10 +442,6 @@ public sealed class OutboxDispatcher(
         message.ProcessedAt = now;
         return true;
     }
-
-    private static void Fail(OutboxMessage message, DateTimeOffset now, string error, bool permanent) =>
-        // Jitter, so that a recovered WiFi or internet link is not stampeded.
-        Fail(message, now, error, permanent, TimeSpan.FromMilliseconds(RandomNumberGenerator.GetInt32(0, 3000)));
 
     /// <summary>
     /// Records a failed try and when to try again. A permanent failure, or one whose next try would come after the
@@ -264,4 +462,104 @@ public sealed class OutboxDispatcher(
 
         message.NextAttemptAt = next;
     }
+
+    private static void Fail(OutboxMessage message, DateTimeOffset now, string error, bool permanent) =>
+        // Jitter, so that a recovered WiFi or internet link is not stampeded.
+        Fail(message, now, error, permanent, TimeSpan.FromMilliseconds(RandomNumberGenerator.GetInt32(0, 3000)));
+
+    private static void Record(OutboxMessage message, DeliveryFailure? failure, DateTimeOffset at)
+    {
+        if (failure is not null)
+        {
+            Fail(message, at, failure.Error, permanent: false);
+            return;
+        }
+
+        message.Status = OutboxStatus.Succeeded;
+        message.ProcessedAt = at;
+        message.Attempts++;
+        message.LastError = null;
+    }
+
+    /// <summary>Delivers the provider's due messages one at a time, until none is due, the provider cools down, or the hold comes on.</summary>
+    private async Task DeliverAsync(OutboxProvider provider, CancellationToken stoppingToken)
+    {
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested
+                   && CoolDowns.CoolingUntil(provider.Name, _time.GetUtcNow()) is null
+                   && await ProcessNextAsync(provider, stoppingToken))
+            {
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Stopping: the message being delivered stays waiting, and goes after the restart.
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Outbox delivery to {Provider} failed", provider.Name);
+        }
+    }
+
+    /// <summary>Runs the handler on the message within <see cref="HandlerTimeout"/>: null when it delivered it, else why not.</summary>
+    private async Task<DeliveryFailure?> HandleAsync(IOutboxHandler handler, OutboxMessage message, CancellationToken stoppingToken)
+    {
+        using var limit = new CancellationTokenSource(HandlerTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, limit.Token);
+
+        // The send carries the id of the request that queued it, in the log and to the provider (OBS-04).
+        using var correlation = CorrelationContext.Begin(message.CorrelationId);
+        using var logScope = message.CorrelationId is null
+            ? null
+            : _logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = message.CorrelationId });
+        try
+        {
+            await handler.HandleAsync(message, timeout.Token);
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Outbox message {MessageId} ({Type}) failed on attempt {Attempt}", message.Id, message.Type, message.Attempts + 1);
+            return ex is OperationCanceledException && limit.IsCancellationRequested
+                ? new DeliveryFailure(string.Create(CultureInfo.InvariantCulture, $"The delivery did not finish within {HandlerTimeout.TotalSeconds:0} s."), Unreachable: true)
+                : new DeliveryFailure(ex.Message, OutboxFailures.IsUnreachable(ex));
+        }
+    }
+
+    /// <summary>Counts the delivery towards its provider's cool-down.</summary>
+    private void Count(OutboxProvider provider, DeliveryFailure? failure, DateTimeOffset at)
+    {
+        if (failure is not { Unreachable: true })
+        {
+            CoolDowns.Answered(provider.Name);
+        }
+        else if (CoolDowns.Unreachable(provider.Name, at) is { } until)
+        {
+            _logger.LogWarning(
+                "{Provider} could not be reached {Failures} or more times in a row: its messages wait until {Until:O} before the next try",
+                provider.Name, OutboxCoolDowns.FailuresBeforeCoolDown, until);
+        }
+    }
+
+    /// <summary>The handlers by message type, read once: their types, lanes and providers do not change while the server runs.</summary>
+    private async Task<IReadOnlyDictionary<string, OutboxHandlerInfo>> HandlersAsync()
+    {
+        if (_handlers is null)
+        {
+            await using var scope = _scopes.CreateAsyncScope();
+            _handlers = scope.ServiceProvider.GetServices<IOutboxHandler>().ToDictionary(h => h.Type, OutboxHandlerInfo.Of, StringComparer.Ordinal);
+        }
+
+        return _handlers;
+    }
+
+    private async Task<OutboxHold?> HoldAsync(CancellationToken cancellationToken)
+    {
+        await using var scope = _scopes.CreateAsyncScope();
+        return await OutboxHolds.ReadAsync(scope.ServiceProvider.GetRequiredService<ISettingsService>(), cancellationToken);
+    }
+
+    /// <summary>Why a delivery failed, and whether for want of an answer from its provider (<see cref="OutboxFailures.IsUnreachable"/>).</summary>
+    private sealed record DeliveryFailure(string Error, bool Unreachable);
 }

@@ -74,6 +74,8 @@ public sealed class PortalLinkTests(HospitalServer server)
         (await frontOffice.GetAsync<PatientPortalLinksDto>(ListPath(patient.Id))).Links.Single().OpenedAt.ShouldBeNull("opening the page changes nothing");
 
         // Asking for a code through it sends one to the number, as the sign-in page does; the code signs the patient in there.
+        // (The portal shows the record once the number is verified on it, as the desk does with a code.)
+        await server.VerifyPatientPhonesAsync(phone);
         var challenge = await portal.PostAsync<OtpChallengeResponse>(PublicPath(token) + "/otp");
         challenge.MaskedPhone.ShouldBe(Phone.Mask(phone));
         var signedIn = await portal.PostAsync<AuthResult>("/api/v1/auth/otp/verify", new OtpVerifyRequest(challenge.ChallengeId, await server.PortalCodeAsync(phone)));

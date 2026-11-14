@@ -531,8 +531,10 @@ event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff
 
 **The report's PDF with "report ready".** The message names the released report as a notification document; the PDF is
 made when the message is sent, so the patient gets the report as it is then, and it is never stored. The e-mail carries
-it as an attachment, and the WhatsApp message carries it when its template has a document header. SMS never carries it.
-Only released content is ever made into these PDFs.
+it as an attachment, and the WhatsApp message carries it when its template has a document header and the patient's
+mobile number is verified (`VerifiedNumbers`, ASVS V6.6.1: a number typed one digit wrong, or one the telco gave to
+someone new, gets the notice without the report; see portal.md, *A number nobody has verified*). The e-mail keeps the PDF
+either way. SMS never carries it. Only released content is ever made into these PDFs.
 
 | Document kind | Id | Made by |
 |---|---|---|
