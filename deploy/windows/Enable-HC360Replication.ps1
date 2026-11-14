@@ -305,7 +305,10 @@ function Set-ReplicationIdentBlock([string[]] $Lines, [string] $Map, [string] $W
         "$Map   `"$WindowsAccount`"   $Role",
         '# END HC360 replication'
     )
-    return , (@(Remove-ReplicationIdentBlock $Lines) + $block)
+    # Into a variable first, as Set-ReplicationHbaBlock does: the lines come back as one array (return , ...), which @()
+    # around the call would nest as a single element instead of giving the lines.
+    $rest = Remove-ReplicationIdentBlock $Lines
+    return , ($rest + $block)
 }
 
 # The lines of pg_ident.conf without the replication block.
