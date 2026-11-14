@@ -262,6 +262,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<AuditChainService>();
         services.AddSingleton<AuditSealKey>();
         services.AddSingleton<AuditAnchors>();
+        services.AddSingleton<AuditRestores>();
 
         // Off the server (CERT-In, SRS SEC-09): log events to the syslog collector, and each anchor to a second anchor file
         // on another machine or to the collector, on every node; System health says when either fails.

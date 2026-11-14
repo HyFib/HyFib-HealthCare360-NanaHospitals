@@ -123,6 +123,26 @@ public sealed class AuditAnchorMirrorTests : IDisposable
 
     private static PlatformOptions Live() => new();
 
+    /// <summary>
+    /// The anchor a restore writes names a position, and hash, anchored already: it is copied all the same, so the copy off
+    /// the server shows the restore that sets the anchors after it aside (AuditRestores), and nothing disagrees.
+    /// </summary>
+    [Fact]
+    public async Task A_restore_anchor_of_a_position_anchored_already_is_copied_too()
+    {
+        var (anchors, mirror) = Make(Path.Combine(_root, "share", "anchors.log"));
+        anchors.Append(Anchor(1));
+        anchors.Append(Anchor(2));
+        await mirror.SyncAsync(TestContext.Current.CancellationToken);
+
+        var restore = Anchor(1) with { AnchoredAt = Now.AddDays(1), Restore = new AuditRestoreMark(Now.AddDays(1), "hc360-20261108-200000-scheduled.hc360bak", 2, new string('0', 64)) };
+        anchors.Append(restore);
+        await mirror.SyncAsync(TestContext.Current.CancellationToken);
+
+        AuditAnchors.ReadFile(mirror.MirrorFile!).Anchors.ShouldBe([Anchor(1), Anchor(2), restore]);
+        mirror.Status.Mismatch.ShouldBeNull();
+    }
+
     private static AuditAnchor Anchor(long index) =>
         new(index, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(BitConverter.GetBytes(index))), "mac" + index, Now.AddHours(index));
 

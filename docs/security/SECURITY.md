@@ -1296,6 +1296,17 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     point it at storage the database's administrators cannot write) and to the server log. Every anchor's position
     must hold that hash, and the chain must reach the last anchor, so a chain cut short, or made again from an earlier
     point, is found even by someone who holds the key.
+  - *A restore* takes the chain back to its backup's end, while the anchors written since name later positions. As HC360
+    first starts after Restore-HC360.ps1, before anything is sealed (under the sealer's lock), it records the restore
+    twice: an anchor of the restored chain's end carrying a restore mark sealed with the audit seal key, and a critical
+    entry in the audit trail naming that point (`audit.restored`). The check then sets aside the anchors written before
+    that anchor at later positions (they were of the chain the restore left behind) and checks everything else as
+    before: a record changed or removed, before or after the restore, or an anchor written since that the chain does not
+    match, still fails it. A restore mark counts only with both its seal and its entry, so whoever can write only the
+    database, or only the anchor file, cannot pass a chain cut short for a restore; someone who holds the key and the
+    database could, but only by adding a critical entry anyone reviewing the trail sees, and the copy of the anchors off
+    the server keeps the anchors set aside. An auditor's export holds only the anchors in force. Tests:
+    `AuditRestoreAnchorTests`, `AuditRestoreTests` (a real backup restored, on PostgreSQL).
   - Copies of the anchors off the server (`AuditAnchorMirror`): each anchor is appended, as it is written, to a second
     anchor file on another machine (`HealthCare360:Audit:AnchorMirrorFile`, a UNC path to a share the service may read
     and append to but not change) and/or sent to the syslog collector (`HealthCare360:Audit:AnchorsToSyslog`: facility

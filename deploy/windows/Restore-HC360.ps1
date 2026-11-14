@@ -37,7 +37,9 @@
     5. Leaves the restore marker (restored.json) in the data folder, for HC360's next start. As it starts, HC360 moves
        every number series (UHIDs, visits, bills, receipts, GST invoices) past the numbers issued after the backup was
        made, by their high-water mark kept outside the database; holds outgoing messages, some of which went after the
-       backup was made, until an administrator checks and releases them; and says so in System health.
+       backup was made, until an administrator checks and releases them; records the restore in the audit trail and in
+       the audit anchor file, so the audit trail's check accepts the break the restore makes in its chain, and no other;
+       and says so in System health.
     6. Starts the service again.
 
     Backups made before HC360 archive backups hold the database only. To restore one of those on new hardware, copy

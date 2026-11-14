@@ -25,7 +25,8 @@ public sealed record AuditVerification(bool Valid, long CheckedCount, long? Firs
 /// </summary>
 public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, AuditAnchors anchors, TimeProvider time)
 {
-    private const long AdvisoryLockKey = 4_247_360;
+    /// <summary>The sealer's lock: while another transaction holds it, nothing is sealed (<see cref="AuditRestores"/> takes it).</summary>
+    internal const long AdvisoryLockKey = 4_247_360;
     private const int SealBatchSize = 500;
     private const int VerifyBatchSize = 5000;
 
@@ -113,6 +114,11 @@ public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, Au
     /// boundary with that hash, written as the purge was made: a purge record made up to account for rows someone removed
     /// does neither. Anchors at positions a purge removed are not checked against rows: the rows are gone.
     /// </para>
+    /// <para>
+    /// After a restore the chain goes on from its backup's end, while the anchors written before name later positions of
+    /// the chain the restore left behind. The restore's own anchor, sealed with this server's key, sets those aside when the
+    /// audit trail records the restore too (<see cref="AuditRestores.InForce"/>); every other anchor is checked.
+    /// </para>
     /// </summary>
     public async Task<AuditVerification> VerifyAsync(CancellationToken cancellationToken)
     {
@@ -120,7 +126,9 @@ public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, Au
         long expectedIndex = 1;
         string? previous = null;
         long? firstSealed = null;
-        var (anchorList, unreadableAnchors) = anchors.Read();
+        var (written, unreadableAnchors) = anchors.Read();
+        var inForce = AuditRestores.InForce(written, key, await AuditRestores.RecordedAsync(db, cancellationToken));
+        var anchorList = inForce.Anchors;
         var anchored = anchorList.GroupBy(a => a.ChainIndex).ToDictionary(g => g.Key, g => g.Select(a => a.Hash).ToHashSet(StringComparer.Ordinal));
         var lastAnchor = anchorList.LastOrDefault();
         AuditPurge? purged = null;
@@ -227,7 +235,11 @@ public sealed class AuditChainService(HospitalDbContext db, AuditSealKey key, Au
             ? ""
             : string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $" The chain starts at position {purged.BoundaryChainIndex + 1:N0}: positions up to {purged.BoundaryChainIndex:N0} were purged on {purged.PurgedAt:dd MMM yyyy} and exported ({purged.ExportFile}).");
-        return new AuditVerification(true, checkedCount, null, unsealed, $"Verified {checkedCount:N0} audit records.{purgeNote}{anchorsNote}")
+        var restoreNote = inForce.Restores.Count == 0
+            ? ""
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $" The database was restored on {inForce.Restores[^1].Restore!.RestoredAt:dd MMM yyyy} to position {inForce.Restores[^1].ChainIndex:N0}, as the audit trail records{(inForce.SetAside > 0 ? $": the {inForce.SetAside:N0} anchor(s) of the chain before the restore are set aside" : "")}.");
+        return new AuditVerification(true, checkedCount, null, unsealed, $"Verified {checkedCount:N0} audit records.{purgeNote}{restoreNote}{anchorsNote}")
         {
             AnchorsChecked = anchorList.Count,
             LastAnchor = lastAnchor,

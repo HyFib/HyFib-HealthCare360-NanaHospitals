@@ -1536,6 +1536,14 @@ can sign in, it:
    brought up to date with the ledger the backup carries and the ledger's copy beside the backup file. Each one is a
    critical entry in the audit trail (`privacy.erasure_reapplied`), is told to the grievance officers, and is listed in
    Privacy › Retention. This happens at every start, and every hour on the server that runs the jobs.
+5. **Records the restore in the audit trail.** A restore takes the audit chain back to where the backup's ended, while
+   the anchor file outside the database names later positions, of the chain before the restore. So start-up writes a
+   critical entry (`audit.restored`) naming the point restored to and the backup, and anchors that point in the anchor
+   file with this server's seal. The audit trail's check (Administration › Audit log, and the daily one) then accepts
+   that one break, and still fails on any other: before, every restore left the trail "broken", with a critical alert
+   every day for good. Keep the anchor file, and its copy off the server, as they are: the restore only adds to them.
+   Like steps 2 and 3, this needs the script's `restored.json`: after a restore made by hand, the check reports the
+   chain broken where the restored database ends.
 
 Before the hospital works on the restored server:
 - Sign in, check the records entered last before the failure, and enter again from paper what is missing.

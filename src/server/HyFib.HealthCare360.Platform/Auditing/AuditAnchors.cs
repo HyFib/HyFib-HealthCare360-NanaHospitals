@@ -1,11 +1,31 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using HyFib.HealthCare360.Platform.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Auditing;
 
 /// <summary>Where the audit chain ended at a moment: its last sealed position, that event's hash and its seal.</summary>
-public sealed record AuditAnchor(long ChainIndex, string Hash, string? Mac, DateTimeOffset AnchoredAt);
+public sealed record AuditAnchor(long ChainIndex, string Hash, string? Mac, DateTimeOffset AnchoredAt)
+{
+    /// <summary>
+    /// Set on the anchor HC360 writes as it first starts after a restore (<see cref="AuditRestores"/>): the database was
+    /// restored to this position, and the anchors written before at later positions were of the chain the restore left
+    /// behind. Not written for any other anchor.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AuditRestoreMark? Restore { get; init; }
+}
+
+/// <summary>The restore an anchor marks (<see cref="AuditAnchor.Restore"/>).</summary>
+/// <param name="RestoredAt">When the restore ended, as Restore-HC360.ps1 recorded it.</param>
+/// <param name="Backup">The backup restored (its file name), when the restore marker names it.</param>
+/// <param name="Superseded">
+/// The last position anchored before the restore: the anchors from the next position after the anchor's own to this one
+/// were of the chain the restore left behind (the anchor's own position when there were none).
+/// </param>
+/// <param name="Seal">The audit seal key's HMAC of the anchor and this mark (<see cref="AuditRestores"/>): only a server holding the key writes one.</param>
+public sealed record AuditRestoreMark(DateTimeOffset RestoredAt, string? Backup, long Superseded, string Seal);
 
 /// <summary>
 /// Anchors of the audit chain kept outside the database (<see cref="DataDirectories.AuditAnchors"/>): every so often the
@@ -44,7 +64,8 @@ public sealed class AuditAnchors(DataDirectories directories, ILogger<AuditAncho
 
             try
             {
-                if (JsonSerializer.Deserialize<AuditAnchor>(line, Json) is { ChainIndex: > 0, Hash.Length: 64 } anchor)
+                // A restore to a chain with no sealed record yet anchors position 0.
+                if (JsonSerializer.Deserialize<AuditAnchor>(line, Json) is { Hash.Length: 64 } anchor && (anchor.ChainIndex > 0 || anchor is { ChainIndex: 0, Restore: not null }))
                 {
                     anchors.Add(anchor);
                     continue;
