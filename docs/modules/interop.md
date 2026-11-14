@@ -885,6 +885,14 @@ sees it in their PHR app without anyone doing anything (`AbdmAutoLinking`):
     linked to the patient's ABHA automatically: 1", with no user and `automatic: true`.
 * What the gateway answers, and a request it does not answer, are handled as for staff's requests; a refusal is not
   retried by the job.
+* A gateway that cannot be reached (`abdm.gateway_unreachable`: the hospital's internet is down) is retried. Nothing
+  reached ABDM, so sending again cannot link a record twice. The failed request stays on the patient's list, marked
+  failed, and the job is queued again 2 minutes later, then twice as long each time up to 2 hours: 8 tries in all, the
+  last some four hours after the first. When the last one fails (or the message's two days end first) the holders of
+  `abdm.export` at the facility get one in-app warning, "A record was not linked to the patient's ABHA", naming the
+  kind of record (never the patient) and linking to the patient's chart, where the failed request can be sent again
+  with Retry once the internet is back. `AbdmAutoLinkRetryTests` covers a transient failure that then succeeds, the
+  doubling waits and the single alert.
 * Not linked automatically, though staff may link them: cardiology reports, clinical notes, vaccine doses, bills, home
   readings, in-patient notes and prescriptions, and records completed before ABDM, the gateway or `autoLink` was
   switched on (nothing is linked backwards).

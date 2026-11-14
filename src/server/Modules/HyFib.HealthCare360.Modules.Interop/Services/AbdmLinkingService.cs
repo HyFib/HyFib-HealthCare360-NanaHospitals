@@ -89,7 +89,7 @@ internal sealed class AbdmLinkingService(
     IFieldProtector protector,
     IAuditLogger audit,
     TimeProvider time,
-    ILogger<AbdmLinkingService> log)
+    ILogger<AbdmLinkingService> log) : IAbdmAutoLinker
 {
     public const string LinkRequested = "abdm.link_requested";
 
@@ -274,7 +274,16 @@ internal sealed class AbdmLinkingService(
         }
 
         var linked = await LinkAsync(source.PatientId, source.FacilityId, [AbdmCareContexts.Describe(type, id, source.RecordedAt, source.Label)], automatic: true, retryOf: null, ct);
-        return linked.IsSuccess ? AbdmAutoLinkResult.Requested(linked.Value) : AbdmAutoLinkResult.Nothing(linked.Error!.Message);
+        if (linked.IsFailure)
+        {
+            return AbdmAutoLinkResult.Nothing(linked.Error!.Message);
+        }
+
+        // The request was saved and the gateway call made; a call that never got there (internet down) failed the request
+        // with nothing done at the gateway, so the job may send it again. A refusal, which the gateway answered, may not.
+        return linked.Value is { Status: AbdmLinkStatus.Failed, ErrorCode: HttpAbdmGatewayClient.UnreachableCode }
+            ? AbdmAutoLinkResult.GatewayUnreachable(linked.Value.Error ?? "The ABDM gateway could not be reached.")
+            : AbdmAutoLinkResult.Requested(linked.Value);
     }
 
     /// <summary>
