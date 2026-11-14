@@ -91,6 +91,10 @@ export const bedQueries = {
 
 * `api.get/post/put/patch/delete/blob` add auth, retries and an **Idempotency-Key** on every write, so a WiFi retry
   never duplicates a bill or an order. Never call `fetch` directly.
+* A write whose outcome is not known (a network failure or timeout after the client's retries, or the server still
+  working on it) keeps its key: the same write sent again by the same user, with the same details, carries it, so
+  pressing Save again never saves twice. Screens need not pass `idempotencyKey` for this. Pass one only to keep the
+  same key across changed details (a payment dialog's attempt key). Form uploads (`FormData`) get a new key each time.
 * Types mirror the C# records in camelCase; enums arrive as **strings** (`'Admitted'`), dates as ISO strings,
   `DateOnly` as `yyyy-MM-dd`, money as numbers (INR).
 * Put filters and paging in the **URL search params** (`validateSearch`) so Back/Forward and bookmarks work.

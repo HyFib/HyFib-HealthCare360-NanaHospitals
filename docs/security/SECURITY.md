@@ -1374,6 +1374,15 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     from the audit log.
 - **Idempotency keys** on every write:
   - A WiFi retry replays the original result instead of creating a duplicate bill, payment or order.
+  - The first attempt runs to its end even if the client goes, and its outcome is recorded before the answer is sent,
+    so a client that lost the answer gets it on its retry. A failure is not kept, so its retry runs again.
+  - A retry while the first attempt still runs gets 409 `idempotency.in_progress` with Retry-After. A first attempt
+    still marked as running after 2 minutes did not finish (the server stopped while it ran): it is marked abandoned,
+    and every retry gets 409 `idempotency.outcome_unknown`, telling the user to check before trying again. A request
+    whose outcome is not known is never run a second time.
+  - The apps keep the key of a write whose outcome is not known, so the same write sent again carries it: in memory and
+    in the tab's sessionStorage for 24 h, under a SHA-256 hash of the user, method, path and body, never the body
+    itself. A definitive answer and signing out forget it.
   - Stored responses are encrypted, because they can contain one-time secrets.
   - The AI endpoints' answers (dictation transcripts, SOAP drafts, interpreted commands) are never stored
     (`.WithoutStoredResponse()`). The key still stops a retry from running again, so there is no second AI call or
