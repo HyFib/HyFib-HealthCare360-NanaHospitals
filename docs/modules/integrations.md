@@ -1028,7 +1028,10 @@ acknowledgements are never acknowledged in turn.
     * NM, ST and TX values are read as text.
     * CE, CWE and CNE use the coded value's text.
     * SN is joined, for example `<5` or `1:160`.
-    * ED, RP and AD values, and D, W and X statuses, are skipped.
+    * ED, RP and AD values are skipped, whatever their status.
+    * An OBX whose OBX-11 is `D` (deleted) or `W` (posted in error) is passed on as the analyser withdrawing its result,
+      and one with `X` as a result it could not obtain; neither needs a value. See *Withdrawn results and results not
+      obtained* in [diagnostics.md](diagnostics.md#analyser-interface) for what the LIS does with them.
     * The unit (OBX-6), the abnormal flags (OBX-8) and the result status (OBX-11: F final, P preliminary, C
       correction…) go with the value, and the NTE segments straight after an OBX are its comment.
   * Results are timed from OBX-14, falling back to OBR-7 and then MSH-7, interpreted in the lab's zone.
@@ -1060,12 +1063,16 @@ acknowledgements are never acknowledged in turn.
   unmatched results for the lab to assign. If the LIS is unavailable or refuses the analyser, that frame is NAKed and
   the analyser retransmits it, so a result is never acknowledged and then lost. Records H/P/O/R/C/L use the delimiters
   from the header. The sample comes from O.3, falling back to O.4; results under an order record with neither, or with
-  no order record, go to the LIS under no sample id rather than being dropped. Results with status X or I are skipped;
-  the others carry their unit (R.5), abnormal flags (R.7) and status (R.9: F final, P preliminary, C correction…), and
-  the C records after an R record are its comment. The patient of the P record before them goes with them, for the
-  LIS to check against the tube's (*Patient identity check* in [diagnostics.md](diagnostics.md)): the first of P.3
-  (where HC360's orders put the UHID), P.4 and P.5 the analyser filled, and P.6 (last, first and middle name). A sample
-  sent under two P records' patients goes to the LIS as two messages; an empty P record, or none, carries no patient.
+  no order record, go to the LIS under no sample id rather than being dropped. Results with status `I` (pending on the
+  analyser) are skipped. `X` (the test could not be done) is passed on as a result not obtained, which needs no value;
+  see *Withdrawn results and results not obtained* in [diagnostics.md](diagnostics.md#analyser-interface) for what the
+  LIS does with it. `W` is passed on as a value: in ASTM it only warns that the value's validity is questionable,
+  whereas in HL7 it withdraws the result. Each result passed on carries its unit (R.5), abnormal flags (R.7) and status
+  (R.9: F final, P preliminary, C correction…), and the C records after an R record are its comment. The patient of the
+  P record before them goes with them, for the LIS to check against the tube's (*Patient identity check* in
+  [diagnostics.md](diagnostics.md)): the first of P.3 (where HC360's orders put the UHID), P.4 and P.5 the analyser
+  filled, and P.6 (last, first and middle name). A sample sent under two P records' patients goes to the LIS as two
+  messages; an empty P record, or none, carries no patient.
 * **Size limit**: once a message passes `maxMessageKilobytes`, the transfer is refused as a whole: that frame and every
   later one are NAKed until the analyser gives up with EOT, and nothing of it is stored, not even frames already
   acknowledged. The rejection is logged without the message.
