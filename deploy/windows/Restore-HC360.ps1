@@ -25,9 +25,10 @@
        Then clears, and names, the rows of the servers the backup knew (System health's part of each server): a backup
        made before HC360 left them out holds those of the machines that made it, which on new hardware would show as
        servers that stopped reporting, told to IT every day. Each server here writes its own as it starts.
-    4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
-       key already here is kept under a new name, never deleted. On new hardware, later backups open with the recovery
-       key entered here.
+    4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A document
+       already here whose bytes are not those the backup recorded for it is replaced by the backup's copy, the file that
+       was there kept in files-replaced-<time> beside the documents. A different key already here is kept under a new
+       name, never deleted. On new hardware, later backups open with the recovery key entered here.
     5. Leaves the restore marker (restored.json) in the data folder, for HC360's next start. As it starts, HC360 moves
        every number series (UHIDs, visits, bills, receipts, GST invoices) past the numbers issued after the backup was
        made, by their high-water mark kept outside the database; holds outgoing messages, some of which went after the

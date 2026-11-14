@@ -43,8 +43,9 @@ internal static class ServerCli
 
           backup restore --in <backup.hc360bak> [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
               Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
-              rotations) on this Server Node, with the HC360 service stopped. A different key already here is kept under a
-              new name. The whole backup is checked first,
+              rotations) on this Server Node, with the HC360 service stopped. A document already here whose bytes are not
+              those the backup records is replaced, and the file that was there kept in a folder of its own. A different key
+              already here is kept under a new name. The whole backup is checked first,
               so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
               machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order. A machine without a recovery
               key of its own, such as new hardware, goes on backing up with the key the backup was opened with.
@@ -298,7 +299,14 @@ internal static class ServerCli
         }
 
         Describe(result.Manifest);
-        Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present.");
+        Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present as the backup has them, " +
+            $"{result.DocumentsReplaced} replaced because they were not.");
+        if (result.ReplacedDocumentsKeptIn is { } replacedIn)
+        {
+            Console.WriteLine($"The files the backup's documents replaced (damaged, or encrypted again since the backup was made) are kept in {replacedIn}.");
+            Console.WriteLine("Delete that folder once the restored server is checked.");
+        }
+
         Console.WriteLine(result.RingKeysInstalled == 0
             ? $"Installed the backup's field encryption key in {directories.Keys}."
             : $"Installed the backup's field encryption key and the {result.RingKeysInstalled} key(s) its rotations added in {directories.Keys}.");

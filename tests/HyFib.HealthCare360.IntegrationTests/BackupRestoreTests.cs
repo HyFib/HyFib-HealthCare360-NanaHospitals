@@ -176,6 +176,50 @@ public sealed class BackupRestoreTests(HospitalServer server)
         }
     }
 
+    /// <summary>
+    /// A document damaged on the disk of the machine restored onto (a failing disk, ransomware) is put back by the restore,
+    /// as Restore-HC360.ps1 runs <c>backup restore</c>: the archive records the hash of every document, and one already
+    /// there that does not match it is replaced by the backup's copy, the damaged file kept beside the documents.
+    /// </summary>
+    [Fact]
+    public async Task A_restore_puts_back_a_document_damaged_on_disk_and_keeps_the_damaged_file()
+    {
+        Assert.SkipUnless(ScriptedRestore.PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
+        StoredFile document;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            document = (await scope.ServiceProvider.GetRequiredService<IFileStore>().SaveAsync(new MemoryStream(ScannedDocument()), "scan.pdf", "document", null, null, Ct)).Value;
+        }
+
+        var machine = NewMachine();
+        string? backup = null;
+        try
+        {
+            (backup, var recoveryKey) = await BackupAsync();
+            var original = await File.ReadAllBytesAsync(Path.Combine(server.Services.GetRequiredService<DataDirectories>().Files, document.StoragePath), Ct);
+            var damaged = original.ToArray();
+            damaged[^1] ^= 0xFF;
+            var onDisk = Path.Combine(machine.Files, document.StoragePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(onDisk)!);
+            await File.WriteAllBytesAsync(onDisk, damaged, Ct);
+
+            (await CliAsync(recoveryKey, "backup", "restore", "--in", backup, "--data-dir", machine.Root)).ShouldBe(0, "backup restore");
+
+            (await File.ReadAllBytesAsync(onDisk, Ct)).ShouldBe(original, "the backup's copy is put in place of the damaged file");
+            var kept = Directory.GetDirectories(machine.Root, "files-replaced-*").ShouldHaveSingleItem();
+            (await File.ReadAllBytesAsync(Path.Combine(kept, document.StoragePath), Ct)).ShouldBe(damaged, "the damaged file is kept, never deleted");
+        }
+        finally
+        {
+            if (backup is not null)
+            {
+                File.Delete(backup);
+            }
+
+            Directory.Delete(machine.Root, recursive: true);
+        }
+    }
+
     private static async Task<long> ServerRowsAsync(NpgsqlConnection connection)
     {
         await using var count = new NpgsqlCommand("SELECT count(*) FROM platform.server_nodes", connection);

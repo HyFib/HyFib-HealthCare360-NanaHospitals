@@ -1419,6 +1419,12 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      encryption key. If a step fails, the previous database is put back and HC360 starts again on it. On new hardware,
      later backups open with the key entered here; make a new key if that one should be retired.
 
+     Every backup records the SHA-256 of each document it holds. A document already on the machine whose bytes are not
+     those the backup recorded (damaged on disk, or encrypted again with a newer key since the backup was made, which
+     the restored database does not know) is replaced by the backup's copy; one that matches is left. The script says
+     how many it restored, left and replaced ("Documents: …"), and keeps each file it replaced in
+     `files-replaced-<time>` beside the documents folder: delete that folder once the restored server is checked.
+
      A backup holds no server's part of System health, the heartbeat of the machines that made it: each server here
      writes its own as it starts, so System health shows the servers that run here, not the old ones. A backup made
      before HC360 left those out holds them: the script clears them after restoring the database, and names them

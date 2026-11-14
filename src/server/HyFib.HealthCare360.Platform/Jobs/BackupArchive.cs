@@ -1,5 +1,8 @@
+using System.Buffers;
 using System.Formats.Tar;
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Security;
@@ -20,6 +23,10 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// The rows of the key tables in the dump, counted in the very snapshot pg_dump dumped (<see cref="BackupRowCounts"/>), which
 /// a test restore checks the restored database against; null in older backups.
 /// </param>
+/// <param name="DocumentHashes">
+/// Whether the archive records the SHA-256 of each document as it was copied (<see cref="BackupArchive.DocumentHashesEntry"/>,
+/// after the documents); false in older backups. <see cref="BackupArchive.WriteAsync"/> sets it.
+/// </param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -34,7 +41,8 @@ public sealed record BackupManifest(
     IReadOnlyList<string>? RingKeys = null,
     string? CurrentKey = null,
     string? AuditSealKey = null,
-    IReadOnlyDictionary<string, long>? RowCounts = null);
+    IReadOnlyDictionary<string, long>? RowCounts = null,
+    bool DocumentHashes = false);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);
@@ -50,11 +58,18 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
 
     /// <summary>The audit seal key, when the backup escrows one.</summary>
     public byte[]? AuditSealKey { get; init; }
+
+    /// <summary>
+    /// The SHA-256 (lower-case hex) of each document the archive holds, by its path relative to the documents folder: the
+    /// hash the archive records, which its copy matched, or, in an older backup that records none, the hash of its copy.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> DocumentHashes { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 }
 
 /// <summary>
 /// The payload of an archive backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
-/// the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each already encrypted).
+/// the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each already encrypted),
+/// followed by the SHA-256 of each as it was copied.
 /// The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key administrators keep offline
 /// (<see cref="BackupRecoveryKey"/>), so one backup file and that key restore everything on replacement hardware.
 /// </summary>
@@ -68,7 +83,16 @@ public static class BackupArchive
     public const string DatabaseEntry = "database.dump";
     public const string DocumentsPrefix = "files/";
 
+    /// <summary>
+    /// The SHA-256 of every document, written after the documents as each was copied: one line each, as sha256sum writes
+    /// them (<c>&lt;hash&gt;  files/2026/09/&lt;id&gt;.bin</c>), so the archive's own record of every document can be checked
+    /// with ordinary tools once it is decrypted.
+    /// </summary>
+    public const string DocumentHashesEntry = "documents.sha256";
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
+    private static readonly SearchValues<char> HexDigits = SearchValues.Create("0123456789abcdefABCDEF");
 
     /// <summary>The documents under <paramref name="documentsFolder"/>, in a stable order.</summary>
     public static IReadOnlyList<BackupDocument> ListDocuments(string documentsFolder)
@@ -98,6 +122,9 @@ public static class BackupArchive
         CancellationToken ct)
     {
         await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
+
+        // The manifest says what follows, so a restore can tell an archive cut short from an older one.
+        manifest = manifest with { DocumentHashes = true };
         await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest, Json)), ct);
         await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
         foreach (var key in ringKeys)
@@ -110,6 +137,9 @@ public static class BackupArchive
             await WriteEntryAsync(tar, AuditSealKeyEntry, new MemoryStream(auditSealKey, writable: false), ct);
         }
         await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
+
+        // Each document is hashed as it is copied, so its hash is that of the very bytes in the archive, read once.
+        var hashes = new StringBuilder();
         foreach (var document in documents)
         {
             var source = OpenForReading(Path.Combine(documentsFolder, document.RelativePath));
@@ -119,14 +149,19 @@ public static class BackupArchive
                 throw new InvalidOperationException($"Document {document.RelativePath} changed while it was being backed up.");
             }
 
-            await WriteEntryAsync(tar, DocumentsPrefix + document.RelativePath, source, ct);
+            var hashing = new HashingReadStream(source);
+            await WriteEntryAsync(tar, DocumentsPrefix + document.RelativePath, hashing, ct);
+            hashes.Append(hashing.Sha256).Append("  ").Append(DocumentsPrefix).Append(document.RelativePath).Append('\n');
         }
+
+        await WriteEntryAsync(tar, DocumentHashesEntry, new MemoryStream(Encoding.UTF8.GetBytes(hashes.ToString()), writable: false), ct);
     }
 
     /// <summary>
     /// Reads a whole archive: the manifest first, then the key (which must match the manifest's fingerprint), the database
-    /// dump and the documents, whose count and size must match the manifest. Documents already present in
-    /// <see cref="BackupReadTargets.DocumentsFolder"/> are left as they are (stored documents never change).
+    /// dump and the documents, whose count and size must match the manifest, and whose hashes must match those the archive
+    /// records. Documents already present in <see cref="BackupReadTargets.DocumentsFolder"/> are left as they are; a restore
+    /// reads into an empty folder and compares them itself (<see cref="BackupRestore"/>).
     /// </summary>
     /// <exception cref="InvalidDataException">The archive is incomplete or does not match its manifest.</exception>
     public static async Task<BackupContents> ReadAsync(Stream payload, BackupReadTargets targets, CancellationToken ct)
@@ -138,6 +173,8 @@ public static class BackupArchive
         var hasDatabase = false;
         var documentCount = 0;
         var documentBytes = 0L;
+        var documentHashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        Dictionary<string, string>? recordedHashes = null;
 
         await using (var tar = new TarReader(payload, leaveOpen: true))
         {
@@ -188,14 +225,24 @@ public static class BackupArchive
 
                     case DatabaseEntry when !hasDatabase:
                         hasDatabase = true;
-                        await CopyEntryAsync(entry, targets.DatabaseDumpPath, overwrite: true, ct);
+                        await CopyEntryAsync(entry, targets.DatabaseDumpPath, overwrite: true, hash: false, ct);
                         break;
 
                     case var name when name.StartsWith(DocumentsPrefix, StringComparison.Ordinal) && IsSafeRelativePath(name[DocumentsPrefix.Length..]):
                         documentCount++;
                         documentBytes += entry.Length;
-                        var target = targets.DocumentsFolder is { } folder ? Path.Combine(folder, name[DocumentsPrefix.Length..]) : null;
-                        await CopyEntryAsync(entry, target, overwrite: false, ct);
+                        var relative = name[DocumentsPrefix.Length..];
+                        var target = targets.DocumentsFolder is { } folder ? Path.Combine(folder, relative) : null;
+                        var sha256 = await CopyEntryAsync(entry, target, overwrite: false, hash: true, ct);
+                        if (!documentHashes.TryAdd(relative, sha256!))
+                        {
+                            throw new InvalidDataException($"The document {relative} is in the backup twice.");
+                        }
+
+                        break;
+
+                    case DocumentHashesEntry when recordedHashes is null:
+                        recordedHashes = await ReadDocumentHashesAsync(entry, ct);
                         break;
 
                     default:
@@ -228,11 +275,73 @@ public static class BackupArchive
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
         }
 
+        CheckDocumentHashes(manifest, documentHashes, recordedHashes);
         return new BackupContents(manifest, masterKey, documentCount, documentBytes)
         {
             RingKeys = listed.Select(id => ringKeys[id]).ToList(),
             AuditSealKey = auditSealKey,
+            DocumentHashes = documentHashes,
         };
+    }
+
+    /// <summary>
+    /// Every document read must be the one whose hash the archive records, and every hash it records must be of a document
+    /// it holds. An older backup records none: its documents are then known by the hash of what was read.
+    /// </summary>
+    private static void CheckDocumentHashes(BackupManifest manifest, Dictionary<string, string> read, Dictionary<string, string>? recorded)
+    {
+        if (recorded is null)
+        {
+            if (manifest.DocumentHashes)
+            {
+                throw new InvalidDataException("The backup is incomplete: the hashes of the documents its manifest lists are missing.");
+            }
+
+            return;
+        }
+
+        foreach (var (path, hash) in read)
+        {
+            if (!recorded.TryGetValue(path, out var expected) || !string.Equals(expected, hash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"The document {path} in the backup does not match the hash the backup records for it.");
+            }
+        }
+
+        if (recorded.Keys.FirstOrDefault(path => !read.ContainsKey(path)) is { } absent)
+        {
+            throw new InvalidDataException($"The backup records the hash of the document {absent}, which it does not hold.");
+        }
+    }
+
+    /// <summary>Reads <see cref="DocumentHashesEntry"/>: a path may be listed once, with a 64-digit hash, and must be a document's.</summary>
+    private static async Task<Dictionary<string, string>> ReadDocumentHashesAsync(TarEntry entry, CancellationToken ct)
+    {
+        var hashes = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (entry.DataStream is null)
+        {
+            return hashes;
+        }
+
+        // Bytes that are not UTF-8 read as replacement characters, which no hash or path has: the line is then refused below.
+        using var reader = new StreamReader(entry.DataStream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1 << 16, leaveOpen: true);
+        while (await reader.ReadLineAsync(ct) is { } line)
+        {
+            if (line.Length == 0)
+            {
+                continue;
+            }
+
+            // "<64 hex digits>  files/<path>", as sha256sum writes a file read as text.
+            var name = line.Length > 66 && line[64] == ' ' && line[65] == ' ' ? line[66..] : null;
+            if (name is null || line.AsSpan(0, 64).ContainsAnyExcept(HexDigits) || !name.StartsWith(DocumentsPrefix, StringComparison.Ordinal)
+                || !IsSafeRelativePath(name[DocumentsPrefix.Length..]) || !hashes.TryAdd(name[DocumentsPrefix.Length..], line[..64].ToLowerInvariant()))
+            {
+                throw new InvalidDataException("The hashes the backup records for its documents are not valid.");
+            }
+        }
+
+        return hashes;
     }
 
     /// <summary>
@@ -297,22 +406,121 @@ public static class BackupArchive
         return buffer;
     }
 
-    private static async Task CopyEntryAsync(TarEntry entry, string? target, bool overwrite, CancellationToken ct)
+    /// <summary>
+    /// Copies an entry's data to <paramref name="target"/> (or reads it through, when there is none or it is there already
+    /// and not to be overwritten), and returns its SHA-256 (lower-case hex) when <paramref name="hash"/> asks for it.
+    /// </summary>
+    private static async Task<string?> CopyEntryAsync(TarEntry entry, string? target, bool overwrite, bool hash, CancellationToken ct)
     {
-        if (entry.DataStream is null)
+        using var sha256 = hash ? IncrementalHash.CreateHash(HashAlgorithmName.SHA256) : null;
+        if (entry.DataStream is not null)
         {
-            return;
+            await using var output = target is null || (!overwrite && File.Exists(target)) ? null : CreateForWriting(target, overwrite);
+            var buffer = ArrayPool<byte>.Shared.Rent(1 << 16);
+            try
+            {
+                int read;
+                while ((read = await entry.DataStream.ReadAsync(buffer.AsMemory(0, 1 << 16), ct)) > 0)
+                {
+                    sha256?.AppendData(buffer, 0, read);
+                    if (output is not null)
+                    {
+                        await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
 
-        if (target is null || (!overwrite && File.Exists(target)))
-        {
-            await entry.DataStream.CopyToAsync(Stream.Null, ct);
-            return;
-        }
+        return sha256 is null ? null : Convert.ToHexStringLower(sha256.GetHashAndReset());
+    }
 
+    private static FileStream CreateForWriting(string target, bool overwrite)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(target))!);
-        await using var output = new FileStream(target, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
-        await entry.DataStream.CopyToAsync(output, ct);
+        return new FileStream(target, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
+    }
+
+    /// <summary>
+    /// A document's file as the tar writer reads it, hashed (SHA-256) on the way through. It tells the file's length and
+    /// position, as the file does, because the writer puts the size in the entry's header before it copies the data.
+    /// </summary>
+    private sealed class HashingReadStream(FileStream file) : Stream
+    {
+        private readonly IncrementalHash _sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+
+        /// <summary>The SHA-256 (lower-case hex) of everything read, once the writer has disposed of the stream.</summary>
+        public string? Sha256 { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => file.CanSeek;
+
+        public override bool CanWrite => false;
+
+        public override long Length => file.Length;
+
+        public override long Position
+        {
+            get => file.Position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+
+        public override int Read(Span<byte> buffer)
+        {
+            var read = file.Read(buffer);
+            _sha256.AppendData(buffer[..read]);
+            return read;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await file.ReadAsync(buffer, cancellationToken);
+            _sha256.AppendData(buffer.Span[..read]);
+            return read;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && Sha256 is null)
+            {
+                Sha256 = Convert.ToHexStringLower(_sha256.GetHashAndReset());
+                _sha256.Dispose();
+                file.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (Sha256 is null)
+            {
+                Sha256 = Convert.ToHexStringLower(_sha256.GetHashAndReset());
+                _sha256.Dispose();
+                await file.DisposeAsync();
+            }
+
+            await base.DisposeAsync();
+        }
     }
 }
 
@@ -335,6 +543,15 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 
     /// <summary>Why the recovery key could not be kept, when that failed after everything else was restored.</summary>
     public string? RecoveryKeyProblem { get; init; }
+
+    /// <summary>
+    /// Documents that were here but whose bytes were not those the backup records (damaged on disk, or encrypted again
+    /// since the backup was made), replaced by the backup's.
+    /// </summary>
+    public int DocumentsReplaced { get; init; }
+
+    /// <summary>Where the files the backup's documents replaced are kept, when any were; null otherwise.</summary>
+    public string? ReplacedDocumentsKeptIn { get; init; }
 }
 
 /// <summary>
@@ -391,32 +608,44 @@ public static class BackupRestore
                     CheckKey(contents.MasterKey, recoveryKey);
                 }
 
-                // Documents first: they are only ever added, and one the database does not refer to is harmless. The key
-                // last: until it is installed, this machine keeps the key its current database was encrypted with.
-                var (restored, present) = MoveDocuments(staging, directories.Files);
-
-                // The keys rotations added only ever join the ring (one already here stays), then the original key, then
-                // which key is current: data encrypted with any of them is readable once the database is back.
-                var protector = FieldMasterKey.CreateProtector(dataProtection);
-                foreach (var key in contents.RingKeys)
+                // Documents first, each as the backup has it: one the database does not refer to is harmless, and one that
+                // differs here is set aside, and put back should a later step fail. The key last: until it is installed,
+                // this machine keeps the key its current database was encrypted with.
+                var keptFolder = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(directories.Files))!,
+                    string.Create(CultureInfo.InvariantCulture, $"files-replaced-{time.GetUtcNow():yyyyMMdd-HHmmss}"));
+                var documents = MoveDocuments(staging, directories.Files, contents.DocumentHashes, keptFolder);
+                string? keptAs;
+                try
                 {
-                    FieldKeyRing.Add(directories, protector, key);
+                    // The keys rotations added only ever join the ring (one already here stays), then the original key, then
+                    // which key is current: data encrypted with any of them is readable once the database is back.
+                    var protector = FieldMasterKey.CreateProtector(dataProtection);
+                    foreach (var key in contents.RingKeys)
+                    {
+                        FieldKeyRing.Add(directories, protector, key);
+                    }
+
+                    keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), protector, contents.MasterKey, time.GetUtcNow());
+
+                    // The seals of the restored audit trail were made with the backup's audit key; a different one here is
+                    // kept under a new name, as the field key is.
+                    if (contents.AuditSealKey is { } auditSealKey)
+                    {
+                        FieldMasterKey.Install(Auditing.AuditSealKey.PathIn(directories), Auditing.AuditSealKey.CreateProtector(dataProtection), auditSealKey,
+                            time.GetUtcNow());
+                    }
+
+                    // The backup decides which key encrypts new data, also when it is the original key (no current key in
+                    // its manifest): a key this machine had made current before is not used again, in case it was exposed.
+                    var current = contents.Manifest.CurrentKey;
+                    FieldKeyRing.SetCurrent(directories, current is null || current == contents.Manifest.KeyFingerprint ? null : current);
                 }
-
-                var keptAs = FieldMasterKey.Install(FieldMasterKey.PathIn(directories), protector, contents.MasterKey, time.GetUtcNow());
-
-                // The seals of the restored audit trail were made with the backup's audit key; a different one here is kept
-                // under a new name, as the field key is.
-                if (contents.AuditSealKey is { } auditSealKey)
+                catch
                 {
-                    FieldMasterKey.Install(Auditing.AuditSealKey.PathIn(directories), Auditing.AuditSealKey.CreateProtector(dataProtection), auditSealKey,
-                        time.GetUtcNow());
+                    // Restore-HC360.ps1 puts the previous database back: the documents it refers to go back with it.
+                    documents.Undo();
+                    throw;
                 }
-
-                // The backup decides which key encrypts new data, also when it is the original key (no current key in its
-                // manifest): a key this machine had made current before is not used again, in case it was exposed.
-                var current = contents.Manifest.CurrentKey;
-                FieldKeyRing.SetCurrent(directories, current is null || current == contents.Manifest.KeyFingerprint ? null : current);
 
                 // Backups made here from now on open with the key the hospital just used. Everything else is back by now,
                 // so a failure here is reported rather than undoing the restore.
@@ -432,12 +661,14 @@ public static class BackupRestore
                     recoveryKeyProblem = ex.Message;
                 }
 
-                return new BackupRestoreResult(payload.Version, contents.Manifest, restored, present, KeyInstalled: true, keptAs)
+                return new BackupRestoreResult(payload.Version, contents.Manifest, documents.Restored, documents.Present, KeyInstalled: true, keptAs)
                 {
                     RingKeysInstalled = contents.RingKeys.Count,
                     AuditSealKeyInstalled = contents.AuditSealKey is not null,
                     RecoveryKeyKept = recoveryKeyKept,
                     RecoveryKeyProblem = recoveryKeyProblem,
+                    DocumentsReplaced = documents.Replaced.Count,
+                    ReplacedDocumentsKeptIn = documents.Replaced.Count > 0 ? keptFolder : null,
                 };
             }
             finally
@@ -476,29 +707,99 @@ public static class BackupRestore
         }
     }
 
-    private static (int Restored, int AlreadyPresent) MoveDocuments(string staging, string documentsFolder)
+    /// <summary>
+    /// Puts the backup's documents in place from <paramref name="staging"/>. One missing here is moved in. One here is
+    /// compared with the hash the backup records for it: left when its bytes are the backup's, replaced when they are not
+    /// (damaged on disk, or encrypted again with another key since the backup was made, which the restored database does
+    /// not know). The file it replaces is moved to <paramref name="keptFolder"/>, never deleted.
+    /// </summary>
+    private static DocumentsPutBack MoveDocuments(string staging, string documentsFolder, IReadOnlyDictionary<string, string> hashes, string keptFolder)
     {
+        var documents = new DocumentsPutBack(keptFolder);
         if (!Directory.Exists(staging))
         {
-            return (0, 0);
+            return documents;
         }
 
-        var restored = 0;
-        var present = 0;
         foreach (var source in Directory.EnumerateFiles(staging, "*", SearchOption.AllDirectories))
         {
-            var target = Path.Combine(documentsFolder, Path.GetRelativePath(staging, source));
-            if (File.Exists(target))
+            var relative = Path.GetRelativePath(staging, source);
+            var target = Path.Combine(documentsFolder, relative);
+            if (!File.Exists(target))
             {
-                present++;
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Move(source, target);
+                documents.Restored++;
                 continue;
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Move(source, target);
-            restored++;
+            if (hashes.TryGetValue(relative.Replace('\\', '/'), out var recorded) && string.Equals(Sha256Of(target), recorded, StringComparison.OrdinalIgnoreCase))
+            {
+                documents.Present++;
+                continue;
+            }
+
+            var kept = Path.Combine(keptFolder, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(kept)!);
+            File.Move(target, kept);
+            try
+            {
+                File.Move(source, target);
+            }
+            catch
+            {
+                File.Move(kept, target);
+                throw;
+            }
+
+            documents.Replaced.Add((target, kept));
         }
 
-        return (restored, present);
+        return documents;
+    }
+
+    private static string Sha256Of(string path)
+    {
+        using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.SequentialScan);
+        return Convert.ToHexStringLower(SHA256.HashData(file));
+    }
+
+    /// <summary>What <see cref="MoveDocuments"/> did, and how to undo the replacements it made.</summary>
+    private sealed class DocumentsPutBack(string keptFolder)
+    {
+        public int Restored { get; set; }
+
+        public int Present { get; set; }
+
+        /// <summary>Each document replaced, and where the file that was there is kept.</summary>
+        public List<(string Target, string Kept)> Replaced { get; } = [];
+
+        /// <summary>Puts back, as far as it can, the files the backup's replaced: the restore failed after the documents.</summary>
+        public void Undo()
+        {
+            foreach (var (target, kept) in Replaced)
+            {
+                try
+                {
+                    File.Move(kept, target, overwrite: true);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // It stays in the kept folder, which then stays too.
+                }
+            }
+
+            try
+            {
+                if (Directory.Exists(keptFolder) && !Directory.EnumerateFiles(keptFolder, "*", SearchOption.AllDirectories).Any())
+                {
+                    Directory.Delete(keptFolder, recursive: true);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // An empty folder left behind does no harm.
+            }
+        }
     }
 }

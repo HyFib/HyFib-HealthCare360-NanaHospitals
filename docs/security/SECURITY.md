@@ -1652,6 +1652,10 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 - Each backup is one archive holding the database, the stored documents (already encrypted) and escrow copies of the
   field encryption keys. So one backup file and its recovery key restore everything on replacement hardware, including
   identifiers such as Aadhaar and ABHA, which are unreadable without that key.
+- The archive records the SHA-256 of each document as it is copied, and a restore checks every document against it. A
+  document already on the disk restored onto whose bytes differ (damaged, or encrypted again since the backup) is
+  replaced by the backup's copy, so the documents always match the restored database; the file it replaced is kept
+  beside the documents folder, never deleted, and put back if the restore fails after it.
 - Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
   this check is discarded and reported.
 - A restore does not make HC360 issue a number twice (UHIDs, bills, receipts, GST invoices) or send a message twice. A

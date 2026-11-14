@@ -334,6 +334,108 @@ public sealed class BackupArchiveTests : IDisposable
         Directory.GetFiles(newServer.Keys, "field-master.key*").Length.ShouldBe(1);
     }
 
+    /// <summary>
+    /// A restore onto a machine that still has documents: one as the backup has it is left, one damaged on disk (the same
+    /// size, other bytes) is replaced by the backup's, and one gone is put back. The damaged file is kept, never deleted.
+    /// </summary>
+    [Fact]
+    public async Task A_restore_replaces_a_document_whose_bytes_are_not_the_backups_and_keeps_the_file_that_was_there()
+    {
+        var oldServer = Machine("old");
+        WriteDocument(oldServer, "2026/09/same.bin", 40);
+        WriteDocument(oldServer, "2026/09/damaged.bin", 40);
+        WriteDocument(oldServer, "2026/10/missing.bin", 40);
+        var (backup, recoveryKey) = await BackupFileAsync(oldServer, RandomNumberGenerator.GetBytes(32));
+        var machine = Machine("machine");
+        WriteDocument(machine, "2026/09/same.bin", File.ReadAllBytes(Path.Combine(oldServer.Files, "2026", "09", "same.bin")));
+        var damaged = File.ReadAllBytes(Path.Combine(oldServer.Files, "2026", "09", "damaged.bin"));
+        damaged[7] ^= 0xFF;
+        WriteDocument(machine, "2026/09/damaged.bin", damaged);
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, machine, new EphemeralDataProtectionProvider(), TimeProvider.System,
+            TestContext.Current.CancellationToken);
+
+        (result.DocumentsRestored, result.DocumentsAlreadyPresent, result.DocumentsReplaced).ShouldBe((1, 1, 1));
+        foreach (var document in new[] { "2026/09/same.bin", "2026/09/damaged.bin", "2026/10/missing.bin" })
+        {
+            File.ReadAllBytes(Path.Combine(machine.Files, document)).ShouldBe(File.ReadAllBytes(Path.Combine(oldServer.Files, document)), $"{document} is as the backup has it");
+        }
+
+        var keptIn = result.ReplacedDocumentsKeptIn.ShouldNotBeNull();
+        Directory.EnumerateFiles(keptIn, "*", SearchOption.AllDirectories).ShouldHaveSingleItem();
+        File.ReadAllBytes(Path.Combine(keptIn, "2026", "09", "damaged.bin")).ShouldBe(damaged, "the file that was there is kept");
+        BackupArchive.ListDocuments(machine.Files).Count.ShouldBe(3, "the kept file is not taken for a document by the next backup");
+    }
+
+    [Fact]
+    public async Task An_archive_records_the_hash_of_each_document_as_it_was_copied()
+    {
+        var source = Machine("source");
+        var key = RandomNumberGenerator.GetBytes(32);
+        WriteDocument(source, "2026/09/a.bin", 10);
+        WriteDocument(source, "2026/10/b.bin", 70_000);
+        var documents = BackupArchive.ListDocuments(source.Files);
+        var payload = new MemoryStream();
+
+        await BackupArchive.WriteAsync(payload, Manifest(key, documents), key, [], null, WriteDump(source), source.Files, documents, CancellationToken.None);
+
+        var expected = documents.ToDictionary(d => d.RelativePath, d => Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(Path.Combine(source.Files, d.RelativePath)))));
+        var entries = await EntriesAsync(payload);
+        Encoding.UTF8.GetString(entries[BackupArchive.DocumentHashesEntry])
+            .ShouldBe(string.Concat(expected.Select(e => $"{e.Value}  files/{e.Key}\n")), "as sha256sum writes it, after the documents");
+        payload.Position = 0;
+        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None);
+        contents.Manifest.DocumentHashes.ShouldBeTrue();
+        contents.DocumentHashes.OrderBy(e => e.Key, StringComparer.Ordinal).ShouldBe(expected.OrderBy(e => e.Key, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task An_archive_whose_document_does_not_match_its_recorded_hash_or_that_lost_its_hashes_is_refused()
+    {
+        var key = RandomNumberGenerator.GetBytes(32);
+        byte[] document = [1, 2, 3];
+        var manifest = Manifest(key, [new BackupDocument("2026/09/a.bin", 3)]) with { DocumentHashes = true };
+
+        var changed = await ArchiveAsync(manifest, key, ("files/2026/09/a.bin", document),
+            (BackupArchive.DocumentHashesEntry, Encoding.UTF8.GetBytes($"{Convert.ToHexStringLower(SHA256.HashData([9, 9, 9]))}  files/2026/09/a.bin\n")));
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(changed, new BackupReadTargets(), CancellationToken.None)))
+            .Message.ShouldContain("does not match the hash the backup records");
+
+        var lost = await ArchiveAsync(manifest, key, ("files/2026/09/a.bin", document));
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(lost, new BackupReadTargets(), CancellationToken.None)))
+            .Message.ShouldContain("hashes of the documents its manifest lists are missing");
+
+        var older = await ArchiveAsync(manifest with { DocumentHashes = false }, key, ("files/2026/09/a.bin", document));
+        (await BackupArchive.ReadAsync(older, new BackupReadTargets(), CancellationToken.None)).DocumentHashes["2026/09/a.bin"]
+            .ShouldBe(Convert.ToHexStringLower(SHA256.HashData(document)), "a backup made before they were recorded is known by its copy's hash");
+    }
+
+    /// <summary>A backup made before the archive recorded its documents' hashes compares them by the hash of its own copy.</summary>
+    [Fact]
+    public async Task A_restore_of_an_older_backup_replaces_a_damaged_document_too()
+    {
+        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var recoveryKey = BackupRecoveryKey.Original(masterKey);
+        var document = RandomNumberGenerator.GetBytes(30);
+        var machine = Machine("machine");
+        var backup = Path.Combine(machine.Backups, "older.hc360bak");
+        await using (var output = File.Create(backup))
+        await using (var encryptor = BackupEncryption.CreateEncryptor(output, recoveryKey))
+        {
+            var archive = await ArchiveAsync(Manifest(masterKey, [new BackupDocument("2026/09/a.bin", 30)]), masterKey, ("files/2026/09/a.bin", document));
+            await archive.CopyToAsync(encryptor, TestContext.Current.CancellationToken);
+            await encryptor.CompleteAsync(CancellationToken.None);
+        }
+
+        WriteDocument(machine, "2026/09/a.bin", [.. document.Select(b => (byte)~b)]);
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, machine, new EphemeralDataProtectionProvider(), TimeProvider.System,
+            TestContext.Current.CancellationToken);
+
+        result.DocumentsReplaced.ShouldBe(1);
+        File.ReadAllBytes(Path.Combine(machine.Files, "2026", "09", "a.bin")).ShouldBe(document);
+    }
+
     [Fact]
     public async Task An_older_backup_restores_its_database()
     {
@@ -392,11 +494,53 @@ public sealed class BackupArchiveTests : IDisposable
         return path;
     }
 
-    private static void WriteDocument(DataDirectories machine, string relativePath, int length)
+    private static void WriteDocument(DataDirectories machine, string relativePath, int length) =>
+        WriteDocument(machine, relativePath, RandomNumberGenerator.GetBytes(length));
+
+    private static void WriteDocument(DataDirectories machine, string relativePath, byte[] content)
     {
         var path = Path.Combine(machine.Files, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, RandomNumberGenerator.GetBytes(length));
+        File.WriteAllBytes(path, content);
+    }
+
+    /// <summary>An archive made by hand: the manifest, the key, a database dump, then <paramref name="entries"/> in order.</summary>
+    private static async Task<MemoryStream> ArchiveAsync(BackupManifest manifest, byte[] key, params (string Name, byte[] Content)[] entries)
+    {
+        var payload = new MemoryStream();
+        await using (var tar = new TarWriter(payload, TarEntryFormat.Pax, leaveOpen: true))
+        {
+            await WriteEntryAsync(tar, BackupArchive.ManifestEntry, JsonSerializer.SerializeToUtf8Bytes(manifest, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+            await WriteEntryAsync(tar, BackupArchive.KeyEntry, key);
+            await WriteEntryAsync(tar, BackupArchive.DatabaseEntry, "PGDMP"u8.ToArray());
+            foreach (var (name, content) in entries)
+            {
+                await WriteEntryAsync(tar, name, content);
+            }
+        }
+
+        payload.Position = 0;
+        return payload;
+    }
+
+    /// <summary>Every entry of an unencrypted archive, by name.</summary>
+    private static async Task<Dictionary<string, byte[]>> EntriesAsync(MemoryStream payload)
+    {
+        payload.Position = 0;
+        var entries = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        await using var tar = new TarReader(payload, leaveOpen: true);
+        while (await tar.GetNextEntryAsync(copyData: true) is { } entry)
+        {
+            using var content = new MemoryStream();
+            if (entry.DataStream is not null)
+            {
+                await entry.DataStream.CopyToAsync(content);
+            }
+
+            entries[entry.Name] = content.ToArray();
+        }
+
+        return entries;
     }
 
     private static BackupManifest Manifest(byte[] key, IReadOnlyList<BackupDocument> documents) =>
