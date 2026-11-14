@@ -32,6 +32,7 @@ using HyFib.HealthCare360.Platform.Updates;
 using HyFib.HealthCare360.Server;
 using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.Updates;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
@@ -55,6 +56,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// database. The real migrations create the database, and the seeders fill it with the demonstration data and the staff
 /// accounts in <see cref="Users"/> (roles the seed has no account for are created on first use). One server is shared by
 /// every test and tests run one at a time, so each journey registers its own patients rather than relying on another test's.
+/// A test that needs a server of its own makes one, such as one on a clock it sets (<see cref="MidnightInIndiaServer"/>).
 /// </summary>
 public sealed class HospitalServer : IAsyncLifetime
 {
@@ -147,14 +149,24 @@ public sealed class HospitalServer : IAsyncLifetime
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-" + Guid.NewGuid().ToString("N"));
     private readonly ConcurrentDictionary<string, ApiClient> _signedIn = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _created = new(StringComparer.Ordinal);
+    private readonly TestClock? _clock;
     private TestDatabase? _database;
     private WebApplication? _app;
+
+    /// <summary>The server every journey shares, on the real clock.</summary>
+    public HospitalServer()
+    {
+    }
+
+    /// <summary>A server of a test's own, on its own database and on <paramref name="clock"/>.</summary>
+    internal HospitalServer(TestClock clock) => _clock = clock;
 
     public IServiceProvider Services => App.Services;
 
     /// <summary>
-    /// Today in the hospital's calendar (IST), on the server's clock. No test starts near midnight
-    /// (<see cref="AwayFromMidnightInIndiaAttribute"/>), so a test reads the same day from its start to its end.
+    /// Today in the hospital's calendar (IST), on the server's clock. No test on the real clock starts near midnight
+    /// (<see cref="AwayFromMidnightInIndiaAttribute"/>), so a test reads the same day from its start to its end; a test on a
+    /// clock of its own reads the day it set.
     /// </summary>
     public DateOnly Today =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Services.GetRequiredService<TimeProvider>().GetUtcNow(), HospitalTimeZone.Zone).DateTime);
@@ -222,6 +234,16 @@ public sealed class HospitalServer : IAsyncLifetime
         // HC360 Desktop packages signed with a throwaway key made for this run (DesktopUpdateTests) are trusted too, as
         // HyFib's are; the server registers only the built-in keys when nothing was registered before.
         builder.Services.AddSingleton(new ReleaseTrust([.. ReleaseKeys.Trusted, ReleaseKey.FromSubjectPublicKeyInfo(ReleaseSigningKey.ExportSubjectPublicKeyInfo())]));
+
+        // A server on a test's clock reads every "now" from it, the lifetimes of its sign-ins included: it dates its tokens by
+        // that clock, and the token handler would otherwise check them against the real one.
+        if (_clock is { } clock)
+        {
+            builder.Services.AddSingleton<TimeProvider>(clock);
+            builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme,
+                jwt => jwt.TokenValidationParameters.LifetimeValidator = clock.IsWithinLifetime);
+        }
+
         builder.AddServerApplication(certificates);
 
         // The ABDM gateway is a fake one of this run (AbdmLinkingTests): the gateway client, the key-set fetch and the
@@ -276,7 +298,7 @@ public sealed class HospitalServer : IAsyncLifetime
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(
                 Modules.Clinical.Services.DischargeSummaryDischargeHold.Setting, false, cancellationToken: ct);
 
-            var now = DateTimeOffset.UtcNow;
+            var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
             var desktop = new Device
             {
                 Name = "IT workstation",

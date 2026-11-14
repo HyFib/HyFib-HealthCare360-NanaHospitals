@@ -337,4 +337,5 @@ answers are not touched.
   * `OutpatientJourneyTests`: register → appointment → consult → lab → pharmacy → bill.
   * `InpatientJourneyTests`: admit (with insurance and a pre-authorisation) → bed and transfer → charges → discharge bill → insurance claim and settlement.
   * `TeleconsultationJourneyTests`: video booking → join link → call and telehealth visit → e-prescription, which reaches the patient once on WhatsApp and once by SMS.
+  * `MidnightInIndiaTests`: what the hospital keys to its day turns at midnight in India, crossed from 23:59:30 to 00:00:30 IST (still the day before in UTC) on a server of their own whose clock they set (`TestClock`, only forward): a night's bed and nursing charge, a department's queue tokens and today's queue, and New Year's Eve's last and the new year's first OP bill, numbered and printed by the calendar in India. The other journeys, on the real clock, start none near midnight in India (`AwayFromMidnightInIndiaAttribute`).
   * CI runs them on the runner's own PostgreSQL. Locally they use Docker or `HC360_TEST_DATABASE` (see the README).
