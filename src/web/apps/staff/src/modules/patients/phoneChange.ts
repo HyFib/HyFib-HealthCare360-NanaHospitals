@@ -1,5 +1,5 @@
 import { isApiError, isIndianMobile, normalizePhone } from '@hc360/core';
-import type { PhoneChangeConfirmed } from './api';
+import type { PhoneChangeConfirmed, PhoneVerified } from './api';
 
 // Changing a patient's registered mobile number (PatientPhoneChangeService): a code goes by SMS to the new number, and
 // the number changes when the code the patient reads out is entered. The rules the dialog checks before asking, and how
@@ -36,6 +36,8 @@ const SPENT = new Set([
   'patient.phone_code_expired',
   'patient.phone_changed_meanwhile',
   'patient.phone_change_not_found',
+  // A verification of the number on the record (VerifyPhoneDialog) is refused the same way.
+  'patient.phone_verification_not_found',
 ]);
 
 export function phoneChangeProblem(error: unknown): PhoneChangeProblem {
@@ -87,4 +89,9 @@ export function describeChange(done: PhoneChangeConfirmed): string {
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+/** What the desk is told once the number on the record is verified (VerifyPhoneDialog). */
+export function describeVerified(done: PhoneVerified): string {
+  return `${done.maskedPhone} is verified as the patient’s mobile number. Reports and bills can go to it, and the patient portal shows the record to it.`;
 }

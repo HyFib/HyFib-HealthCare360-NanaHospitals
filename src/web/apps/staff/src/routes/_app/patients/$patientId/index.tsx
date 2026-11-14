@@ -49,6 +49,7 @@ import { ConsentsPanel } from '@/modules/patients/ConsentsPanel';
 import { DocumentsPanel } from '@/modules/patients/DocumentsPanel';
 import { IdentityChecksPanel } from '@/modules/patients/IdentityChecksPanel';
 import { MergePatientDialog } from '@/modules/patients/MergePatientDialog';
+import { MobileVerification } from '@/modules/patients/MobileVerification';
 import { PatientChangesWaiting } from '@/modules/patients/PatientChangesWaiting';
 import { PortalAccessPanel } from '@/modules/patients/PortalAccessPanel';
 import { GuardianConsentCard } from '@/modules/privacy/GuardianConsentCard';
@@ -264,7 +265,9 @@ function PatientProfilePage() {
           </TabList>
         </div>
         <div style={{ padding: 16 }}>
-          {tab === 'overview' && <Overview patient={p} />}
+          {tab === 'overview' && (
+            <Overview patient={p} canVerifyPhone={canEdit} onPhoneVerified={() => void patient.refetch()} />
+          )}
           {tab === 'visits' && <Visits patientId={patientId} />}
           {tab === 'consents' && <ConsentsPanel patientId={patientId} />}
           {tab === 'identity' && (
@@ -298,7 +301,16 @@ function PatientProfilePage() {
   );
 }
 
-function Overview({ patient: p }: { patient: PatientDetail }) {
+function Overview({
+  patient: p,
+  canVerifyPhone,
+  onPhoneVerified,
+}: {
+  patient: PatientDetail;
+  /** The user edits patients' details, and so may verify the mobile number with a code (Verify mobile). */
+  canVerifyPhone: boolean;
+  onPhoneVerified: () => void;
+}) {
   const styles = useStyles();
   const address = [
     p.address.line1,
@@ -319,7 +331,20 @@ function Overview({ patient: p }: { patient: PatientDetail }) {
       <Detail label={p.guardianRelation ? guardianRelationLabel[p.guardianRelation] : 'Guardian'}>
         {p.guardianName}
       </Detail>
-      <Detail label="Mobile">{p.phone ? formatPhone(p.phone) : null}</Detail>
+      <Detail label="Mobile">
+        {p.phone ? (
+          <>
+            {formatPhone(p.phone)}{' '}
+            <MobileVerification
+              patientId={p.id}
+              phone={formatPhone(p.phone)}
+              verifiedAt={p.phoneVerifiedAt}
+              canVerify={canVerifyPhone && !p.mergedIntoPatientId}
+              onVerified={onPhoneVerified}
+            />
+          </>
+        ) : null}
+      </Detail>
       <Detail label="Alternate phone">{p.alternatePhone ? formatPhone(p.alternatePhone) : null}</Detail>
       <Detail label="Email">{p.email}</Detail>
       <Detail label="Address">{address}</Detail>

@@ -24,6 +24,7 @@ import { AppointmentCard } from '@/modules/appointments/AppointmentCard';
 import { appointmentQueries } from '@/modules/appointments/api';
 import { isOpenAppointment } from '@/modules/appointments/labels';
 import { billQueries } from '@/modules/bills/api';
+import { ConfirmRecordsBanner } from '@/modules/confirm/ConfirmRecords';
 import { isDue, totalDue } from '@/modules/bills/labels';
 import { greetingKey } from '@/modules/home/greeting';
 import { prescriptionQueries } from '@/modules/prescriptions/api';
@@ -147,6 +148,9 @@ function HomePage() {
           </div>
         </div>
       )}
+
+      {/* Records on this number that wait for the patient's date of birth or UHID before they are shown. */}
+      <ConfirmRecordsBanner />
 
       <PrivacyNotices />
 

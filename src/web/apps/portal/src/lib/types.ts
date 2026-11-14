@@ -89,6 +89,31 @@ export interface FamilyCodeSent {
   expiresAt: string;
 }
 
+// ------------------------------------------------------------------ records to confirm
+
+/**
+ * Records registered with this mobile number that wait for the patient's date of birth or UHID before the portal shows
+ * them (nobody has verified the number yet), and how many wrong tries the number has left today: none while
+ * `retryAfterSeconds` counts down to the next. Only a count: nothing of a record is shown before it is confirmed.
+ */
+export interface RecordsToConfirm {
+  unconfirmed: number;
+  attemptsLeft: number;
+  retryAfterSeconds: number | null;
+}
+
+/** The patient's date of birth ("1979-06-23") or the UHID on their hospital card: one of the two. */
+export interface ConfirmRecordsRequest {
+  dateOfBirth: string | null;
+  uhid: string | null;
+}
+
+/** How many records the details confirmed (shown from now on), and how many still wait. */
+export interface RecordsConfirmed {
+  confirmed: number;
+  unconfirmed: number;
+}
+
 // ------------------------------------------------------------------ scheduling
 
 export type ConsultationMode = 'InPerson' | 'Telehealth' | 'Both';
