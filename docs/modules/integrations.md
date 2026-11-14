@@ -140,7 +140,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.labels` | `provider` (`printers`, the default: each workstation's printers \| `simulator`) | none |
 | `integrations.icd` | `enabled`, `provider` (`who` \| `simulator` \| `disabled`), `tokenUrl`, `apiBaseUrl`, `icd11Release` (`2025-01`), `icd10Release` (`2019`), `language` (`en`), `cacheHours` (24) | `clientId`, `clientSecret` |
 | `integrations.lab` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `maxMessageKilobytes` (1024), `idleTimeoutSeconds` (300), `maxConnectionsPerInstrument` (4), `timeZone` | none |
-| `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), transport (Tcp \| Serial \| Simulator), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery }` | none |
+| `integrations.lab.instruments` (global) | array of `{ code, name, protocol (Hl7v2 \| Astm), transport (Tcp \| Serial \| Simulator), port, enabled, allowedIps[], encoding (latin1 \| utf-8), sampleIdFields[], hostQuery, astmDialect (ASTM: none \| YumizenC150) }` | none |
 
 ## Channels
 
@@ -1087,6 +1087,23 @@ acknowledgements are never acknowledged in turn.
   waits it keeps listening, so the analyser can send at any time. After three refused bids the send is given up (EOT).
   NAKed frames are retransmitted up to six times. A receiver interrupt (EOT instead of ACK) acknowledges the frame, and
   the rest of the message is still sent so the analyser never holds half an order.
+* **Dialects** (`astmDialect`, *Analyser model* in Lab setup › Analysers › Connection): an ASTM analyser whose model
+  departs from E1394 is named on its connection, and the gateway follows that model. With none (the default) the rules
+  above apply as written. An unknown name is refused on save and read as E1394 if stored.
+  * **HORIBA Yumizen C150** (`YumizenC150`, clinical chemistry; HORIBA's *LIS Communication Protocol* for the C150).
+    It connects to HC360 as a network client (*Server IP* and *Port* in its Maintenance › Parameter settings) or over
+    RS-232 (9600 8N1 by default). It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
+    the backtick is the repeat delimiter both ways, and HC360 writes `H|`^&`. Its *Patient ID* (P.3) is the id it keys a
+    sample by: it asks for orders by it and uploads results as H, P, R… L **without an O record**, so HC360 sends the
+    tube's barcode in P.3 (not the UHID) and reads the sample from P.3 when no O record names one; the patient is then
+    named by P.6 (and P.4/P.5 if sent), never by P.3. Lab staff therefore type or scan the tube's barcode as the
+    analyser's Patient ID. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
+    completion time R.14), as the result frames in the manual show (their checksums match their bytes); a record in
+    the manual's table layout (status R.9) is still read. HC360 sends it a 14-digit date of birth (an 8-digit one shows
+    "Invalid DateTime"), the name cut to 30 characters, O.16 always (`SERUM`, `PLASMA`, `URINE`, `CSF` or `BLOOD`;
+    `SERUM` when unknown, and any other specimen as HC360 names it, for the analyser to refuse), O.26 `O` also in a query
+    answer, H.13 `E 1394-97`, and `L|1|N` in every message. The header time is read from H.13 when it holds a full
+    timestamp (any analyser).
 
 #### Order download
 
