@@ -119,7 +119,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `parameters` (`text` \| `positional` \| `named`; `text`: how the templates are registered, see [Template parameters](#template-parameters)), `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
 | `integrations.payment` | `enabled`, `provider` (`razorpay` \| `cashfree` \| `simulator`: the gateway new payments go through), `baseUrl`, `keyId` (Razorpay), `cashfreeBaseUrl` (`https://api.cashfree.com/pg`; `https://sandbox.cashfree.com/pg` for its test mode), `cashfreeClientId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false; Razorpay's and Cashfree's own SMS/e-mail), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret`; Cashfree's `clientSecret` in its own row, `integrations.payment.cashfree.secret`, so replacing one gateway's credentials never wipes the other's |
-| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5, at most 30), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
+| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5, at most 30), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8), `simulatorLoseUploadAnswer` (false) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
@@ -469,6 +469,9 @@ and Windows Server 2022 machine has.
 Pine Labs Plutus Cloud-style push-to-terminal:
 
 * **Upload**: the billed transaction goes to the terminal. The body carries the security token and is never logged.
+  A readable refusal (a non-zero response code, or an HTTP 4xx) is a **decline**. A lost answer is not: a timeout, a
+  dropped connection, an HTTP 5xx or a 2xx that cannot be read may follow the sale reaching the terminal, so the result
+  is `Unconfirmed` (below).
 * **Poll**: status codes are mapped, and `pendingResponseCodes` means the customer is still paying.
 * **Cancel**: cancels the transaction with its original amount.
 * **Approved, not recorded**: when the bill or admission refuses an approved sale's receipt (an advance for a stay whose
@@ -478,6 +481,16 @@ Pine Labs Plutus Cloud-style push-to-terminal:
 
 * **Counters' sales**: the pharmacy and the canteen take card and UPI payments on the same terminal through the Platform
   contract `ICounterTerminal` (below), not through `IPosTerminal`.
+
+**A lost upload answer.** Pine Labs' reference to the sale (`PlutusTransactionReferenceID`) travels in the upload's
+answer, and the status and cancel calls need it, so when the answer is lost the outcome cannot be fetched. If Pine Labs did
+receive the upload, the terminal keeps the sale open for `autoCancelMinutes` (default 5) and the customer can still pay
+on it, so showing a decline there would invite a second push and a double charge. The result is therefore
+`PosTransactionStatus.Unconfirmed`, with an empty provider id that `PosTerminalRouter` replaces by a unique
+`unconfirmed-…` id (a decline gets `declined-…`). Billing keeps the sale, refuses a new sale to that terminal for
+`autoCancelMinutes` plus two minutes, and lets the accountants check it once that time has passed (see
+[billing.md](billing.md#card-and-upi-sales-whose-upload-answer-was-lost)). A lost status or cancel answer is still read as
+"still waiting".
 
 A status code that is neither 0 nor in `pendingResponseCodes` ends the sale (declined, or cancelled or timed out when the
 message says so). Pine Labs' Cloud Integration document (v1.36) confirms the payment-mode codes HC360 sends (`0` all
@@ -490,8 +503,9 @@ card sale to the terminal (`TxnType` 3 with the sale's transaction id); HC360 do
 made on the terminal and recorded with its RRN.
 
 Transaction ids encode what status and cancel need (`OPD-1:987654:125075`, meaning terminal, provider reference and
-paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id. A lost
-status or cancel response reports "still waiting" rather than a decline. Only the last four card digits are kept. The admin "test" checks configuration only, because pushing a sale
+paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id; one whose
+upload answer was lost gets a unique `unconfirmed-…` id. A lost status or cancel response reports "still waiting" rather
+than a decline. Only the last four card digits are kept. The admin "test" checks configuration only, because pushing a sale
 would prompt a customer at a counter.
 
 **Background re-check.** Every `IPosTerminal` call names the facility whose settings apply (null: the signed-in
@@ -510,7 +524,7 @@ patient for a walk-in. The contract's methods:
 |---|---|
 | `StartAsync(CounterTerminalStart)` | Pushes the amount (counter, amount, terminal id, card or UPI, patient if registered) to the terminal; the signed-in facility's settings apply |
 | `RefreshAsync(counter, id)` | The sale as the terminal has it now |
-| `CancelAsync(counter, id)` | Cancels it on the terminal; a sale the customer paid first stays approved |
+| `CancelAsync(counter, id, note)` | Cancels it on the terminal; a sale the customer paid first stays approved. For an `Unconfirmed` sale, which is on no terminal HC360 can reach, it is the cashier's confirmation that the terminal shows no sale: `note` is required (400 `note`), is audited (`billing.pos.unconfirmed_cleared`), and frees the terminal |
 | `UnusedAsync(counter)` | The counter's approved sales that no payment records yet and the accountants have not closed, within two days, newest first |
 | `UseAsync(CounterTerminalUse)` | Marks the approved sale as recorded by the counter's payment and returns what the terminal reported (`CounterTerminalPayment`: RRN, approval code, card digits) |
 
@@ -523,7 +537,9 @@ it (`pos.sale_used`, 409). Only a counter that reports its card and UPI payments
 (`ICounterSalesSource`) may take terminal payments. The Platform helper `MapCounterTerminalSales` gives each counter the
 endpoints `POST …/terminal-sales`, `GET …/terminal-sales/{id}`, `POST …/terminal-sales/{id}/cancel` and
 `GET …/terminal-sales/unused` (see [pharmacy.md](pharmacy.md) and [supportservices.md](supportservices.md)), returning
-`CounterTerminalSale`. An approved sale that no invoice records within the timeout is shown to the accountants as an
+`CounterTerminalSale` (with `retryAfter`, when a new sale may go to the terminal, for an unconfirmed one). `…/cancel` takes
+an optional body `{ "note" }`. A new sale to a terminal an unconfirmed sale may still be on is refused with
+`pos.terminal_unconfirmed` (422), for the counters as for Billing. An approved sale that no invoice records within the timeout is shown to the accountants as an
 unrecorded payment (see [billing.md](billing.md#outbox-jobs-and-notifications)). Without Billing, `NullCounterTerminal`
 refuses with `pos.unavailable` and the counter's payment is typed from the slip.
 

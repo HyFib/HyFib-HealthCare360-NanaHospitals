@@ -1370,6 +1370,14 @@ const posSpec: SettingsSpec = {
       max: 120,
       when: posBy('simulator'),
     },
+    {
+      key: POS,
+      path: 'simulatorLoseUploadAnswer',
+      label: 'Simulator loses the answer to a sale upload',
+      kind: 'switch',
+      when: posBy('simulator'),
+      hint: 'Training only: the sale is taken but HC360 is told the call timed out, as when the terminal’s network cable is pulled.',
+    },
   ],
   secrets: [
     { key: 'integrations.pos.secret', prop: 'securityToken', label: 'Security token', hint: 'Used by Pine Labs.' },

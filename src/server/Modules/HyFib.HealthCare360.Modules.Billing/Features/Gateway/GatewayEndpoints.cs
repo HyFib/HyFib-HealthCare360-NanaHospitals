@@ -46,7 +46,8 @@ internal static class GatewayEndpoints
 
     private static async Task<IResult> PollSale(Guid id, PosService pos, CancellationToken ct) => (await pos.RefreshAsync(id, ct)).ToOk();
 
-    private static async Task<IResult> CancelSale(Guid id, PosService pos, CancellationToken ct) => (await pos.CancelAsync(id, ct)).ToOk();
+    private static async Task<IResult> CancelSale(Guid id, CancelPosSaleRequest? request, PosService pos, CancellationToken ct) =>
+        (await pos.CancelAsync(id, request?.Note, ct)).ToOk();
 
     private static async Task<IResult> CreateLink(CreatePaymentLinkRequest request, PaymentGatewayService gateway, CancellationToken ct) =>
         (await gateway.CreateLinkAsync(request, ct)).ToCreated(o => $"/api/v1/billing/payment-links/{o.Id}");

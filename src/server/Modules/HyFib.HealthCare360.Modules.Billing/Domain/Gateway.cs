@@ -127,7 +127,9 @@ public sealed class GatewayOrder : AuditableEntity, IFacilityScoped
 /// A card/UPI sale pushed to a POS terminal (INT-POS). The counter polls its status; the receipt is recorded exactly
 /// once when the terminal approves, keyed on the terminal transaction id. A counter that bills its own sales (the
 /// pharmacy, the canteen) takes its payments the same way (<see cref="Owner"/>): it records the approved sale as one of
-/// its own payments, once (<see cref="OwnerPaymentId"/>).
+/// its own payments, once (<see cref="OwnerPaymentId"/>). The row is saved before the terminal is called, so a crash
+/// leaves a visible sale; one whose upload answer was lost is <see cref="PosTransactionStatus.Unconfirmed"/> for the
+/// terminal's auto-cancel window (<see cref="PosUnconfirmed"/>) and then <see cref="PosTransactionStatus.Lapsed"/>.
 /// </summary>
 public sealed class PosTransaction : AuditableEntity, IFacilityScoped
 {
@@ -172,7 +174,64 @@ public sealed class PosTransaction : AuditableEntity, IFacilityScoped
     public DateTimeOffset? CompletedAt { get; set; }
 
     public bool IsComplete => Status is PosTransactionStatus.Approved or PosTransactionStatus.Declined
-        or PosTransactionStatus.Cancelled or PosTransactionStatus.TimedOut;
+        or PosTransactionStatus.Cancelled or PosTransactionStatus.TimedOut or PosTransactionStatus.Lapsed;
+
+    /// <summary>
+    /// The sale was saved before the terminal was called and the terminal's answer never reached the row: HC360 stopped
+    /// or the request was dropped in between. The sale may be on the terminal, so it is treated like an unconfirmed one.
+    /// </summary>
+    public bool IsAwaitingProvider => Status == PosTransactionStatus.Initiated && TransactionId.StartsWith(PosUnconfirmed.PendingPrefix, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Whether this sale keeps another sale off its terminal at <paramref name="now"/>: it may still be on the terminal (its
+    /// answer was lost or never saved) and the customer may still pay, until its <paramref name="window"/> has passed.
+    /// </summary>
+    public bool BlocksTerminal(DateTimeOffset now, TimeSpan window) =>
+        (Status == PosTransactionStatus.Unconfirmed || IsAwaitingProvider) && now < CreatedAt + window;
+
+    /// <summary>The sale's answer was lost: it keeps a generated id (the provider's reference was in the lost answer) and the reason.</summary>
+    public void MarkUnconfirmed(string message)
+    {
+        if (Status == PosTransactionStatus.Approved)
+        {
+            return;
+        }
+
+        if (IsAwaitingProvider || TransactionId.Length == 0)
+        {
+            TransactionId = PosUnconfirmed.IdPrefix + Guid.CreateVersion7().ToString("N");
+        }
+
+        Status = PosTransactionStatus.Unconfirmed;
+
+        Message = PosUnconfirmed.Clip(message);
+    }
+
+    /// <summary>The window passed with no news: the outcome stays unknown and the accountants check it against the settlement.</summary>
+    public void Lapse(DateTimeOffset now, string message)
+    {
+        if (Status != PosTransactionStatus.Unconfirmed)
+        {
+            return;
+        }
+
+        Status = PosTransactionStatus.Lapsed;
+        CompletedAt ??= now;
+        Message = PosUnconfirmed.Clip(message);
+    }
+
+    /// <summary>The cashier saw that the terminal shows no sale: nothing was taken, and the terminal is free again.</summary>
+    public void ClearUnconfirmed(DateTimeOffset now, string message)
+    {
+        if (Status != PosTransactionStatus.Unconfirmed)
+        {
+            return;
+        }
+
+        Status = PosTransactionStatus.Cancelled;
+        CompletedAt ??= now;
+        Message = PosUnconfirmed.Clip(message);
+    }
 
     /// <summary>Approved, and recorded: by Billing's receipt, or by the payment of the counter that took it.</summary>
     public bool IsRecorded => Status == PosTransactionStatus.Approved && (Owner is null ? ReceiptId is not null : OwnerPaymentId is not null);

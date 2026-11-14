@@ -57,7 +57,8 @@ public static class CounterTerminalEndpoints
             .RequireAnyPermission(permissions);
         sales.MapGet("/{id:guid}", async (Guid id, ICounterTerminal terminal, CancellationToken ct) => (await terminal.RefreshAsync(counter, id, ct)).ToOk())
             .RequireAnyPermission(permissions);
-        sales.MapPost("/{id:guid}/cancel", async (Guid id, ICounterTerminal terminal, CancellationToken ct) => (await terminal.CancelAsync(counter, id, ct)).ToOk())
+        sales.MapPost("/{id:guid}/cancel", async (Guid id, CounterTerminalCancel? request, ICounterTerminal terminal, CancellationToken ct) =>
+                (await terminal.CancelAsync(counter, id, request?.Note, ct)).ToOk())
             .RequireAnyPermission(permissions);
     }
 }

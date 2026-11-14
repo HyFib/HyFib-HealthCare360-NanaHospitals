@@ -311,7 +311,7 @@ case, and its Tally journal reads "taken back by a chargeback" rather than "mone
 |---|---|---|---|
 | POST | `/pos/sales` | `payments.collect` / `deposits` | `StartPosSaleRequest(billId? \| ipAccountId?, amount?, terminalId, channel)` → `PosSaleDto` |
 | GET | `/pos/sales/{id}` | same | → `PosSaleDto` (polls the terminal; an approved sale records the receipt once, keyed on the terminal transaction id). A sale the counter stops polling is followed by `PosRecheckJob` (below) |
-| POST | `/pos/sales/{id}/cancel` | same | → `PosSaleDto` |
+| POST | `/pos/sales/{id}/cancel` | same | optional body `CancelPosSaleRequest(note)` → `PosSaleDto`. For a sale whose upload answer was lost (`Unconfirmed`) it is the cashier's confirmation that the terminal shows no sale: `note` is required (400) and audited (below) |
 | POST | `/payment-links` | `payments.collect` / `deposits` | `CreatePaymentLinkRequest` → 201 `GatewayOrderDto` (SMS/WhatsApp template `payment.link`) |
 | GET | `/payment-links?billId&ipAccountId&status` (paged) | `payments.collect` / `charges.read` | → `PagedResult<GatewayOrderDto>` (`paidAt` = when the gateway took the payment; `lastError` = why it failed, expired or was cancelled, or why its paid receipt could not be recorded yet; `paymentId`) |
 | POST | `/payment-links/{id}/refresh` | `payments.collect` / `deposits` | → `GatewayOrderDto` (asks the gateway for the real status: records a captured payment, or marks the order `Failed`, `Expired` or `Cancelled`; for a paid order whose receipt could not be recorded, it tries again) |
@@ -324,6 +324,40 @@ The pharmacy's and the canteen's card and UPI sales use the same lifecycle throu
 `/api/v1/canteen/terminal-sales`). Billing keeps those sales in `pos_transactions` too, with `owner` (`pharmacy` or
 `canteen`), no receipt and, for a walk-in, no patient; the counter's invoice or bill records the sale
 (`owner_payment_id`, `owner_document`) once, in its own transaction.
+
+#### Card and UPI sales whose upload answer was lost
+
+When the answer to a Pine Labs upload is lost (a timeout, a dropped connection, an HTTP 5xx), the terminal may have the
+sale and the customer may still pay on it for the terminal's `autoCancelMinutes` (the `integrations.pos` setting, default
+5, at most 30), and Pine Labs' reference to it was in the lost answer, so HC360 cannot ask about it. HC360 therefore never
+shows it as declined:
+
+* **Save first.** `PosService` saves the `pos_transactions` row before it calls the terminal (status `Initiated`,
+  transaction id `pending-…`, provider `pending`) and updates it with the answer. A crash or an aborted request after
+  the push leaves a visible row rather than money on a terminal HC360 knows nothing about. A pending row the server
+  dropped is made `Unconfirmed` by the re-check once it is five minutes old.
+* **`Unconfirmed`.** The sale keeps a generated `unconfirmed-…` transaction id. It is not complete and cannot be polled:
+  a poll returns it as it is. `PosSaleDto` and `CounterTerminalSale` carry `retryAfter`, the end of its window. No column
+  holds the window: it is the row's creation time plus the facility's auto-cancel minutes plus a two-minute margin
+  (`PosUnconfirmed.Window`), and the status is stored as a string, so there is no migration.
+* **A second push is refused** while an unconfirmed sale (or a pending one) on the same terminal (any letter case, same
+  facility) is inside its window: 422 `pos.terminal_unconfirmed`, "The last sale of ₹X at HH:MM may still be on the
+  terminal. Check the terminal's screen. If the customer paid, record the payment from the slip; otherwise wait until
+  HH:MM, or confirm that the terminal shows no sale." It applies to Billing's counter and, through `ICounterTerminal`, to
+  the pharmacy and the canteen, because both go through `PosService.PushAsync`.
+* **The cashier can clear it early** by confirming that the terminal shows no sale: `POST …/cancel` with a `note`
+  (required, at most 200 characters). The sale becomes `Cancelled`, the terminal is free, and an audit entry
+  `billing.pos.unconfirmed_cleared` (warning) keeps the note and the cashier. The terminal is not called: there is no
+  reference to cancel. An approval is never downgraded.
+* **After the window** the re-check (`PosRecheckJob`, or a poll from the counter) marks the sale `Lapsed`, outcome
+  unknown, and raises an `UnrecordedPayment` exception keyed on the `unconfirmed-…` id, with the amount, the terminal, the
+  time sent and the reference, so the accountants check it against the acquirer's settlement. Holders of
+  `billing.gateway.reconcile` get one alert, "Card/UPI sale never confirmed". A counter's own sale (pharmacy, canteen) is
+  kept the same way and names the counter. If the settlement shows the money, the accountants record the payment; if not,
+  they resolve the exception with a note. A lapsed sale cannot be put on an invoice (`pos.sale_not_paid`), and an
+  unconfirmed one is refused with `pos.sale_unconfirmed`.
+* **Training.** The simulator's `simulatorLoseUploadAnswer` setting takes the sale and then reports a timeout, so all of
+  the above can be tried without pulling a cable (`PosUnconfirmedSaleTests`).
 
 ### Cash counter — `/api/v1/billing/shifts`, day-end
 | Method | Path | Permission | Request → response |
@@ -1316,7 +1350,7 @@ only the one that clashed is merely refreshed.
 
 | Rank | Kind | Raised when | Clears itself when |
 |---|---|---|---|
-| 1 | `UnrecordedPayment` | a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert); or a counter's approved terminal sale that no invoice or bill records within `billing.pos.recheck` (the message starts "Paid on the terminal, but no invoice records it yet"; holders of `billing.gateway.reconcile` get one alert, "Card/UPI payment not recorded at the pharmacy/canteen") | the receipt is recorded, or the counter's invoice or bill records the sale |
+| 1 | `UnrecordedPayment` | a card/UPI sale whose upload answer was lost and that lapsed with its outcome unknown (keyed on its `unconfirmed-…` id; one alert, "Card/UPI sale never confirmed"); a settled payment has no receipt; or the gateway reports a payment captured but its receipt could not be recorded (the reason is kept on the order and accountants get an alert); or a card/UPI terminal approved a sale whose receipt could not be recorded (keyed on the terminal transaction id; the reason is kept on the sale and accountants get an alert); or a counter's approved terminal sale that no invoice or bill records within `billing.pos.recheck` (the message starts "Paid on the terminal, but no invoice records it yet"; holders of `billing.gateway.reconcile` get one alert, "Card/UPI payment not recorded at the pharmacy/canteen") | the receipt is recorded, or the counter's invoice or bill records the sale |
 | 2 | `UnsettledReceipt` | an online receipt is not in any settlement `settlementDays` after the payment, while the gateway has settled something newer (receipts of the last month are looked at) | a settlement carries the payment, or the payment is reversed as not received |
 | 2 | `FailedSettlement` | a settlement paid out fails afterwards; its journal is reversed in the books of the day it is learnt (accountants get an alert) | the gateway pays the settlement out after all (its journal is restored); "Read the settlements again" reads its day |
 | 3 | `AmountMismatch` | a settled payment's amount differs from its receipt; the gateway adjusted a settlement; a settlement's payout differs from its transactions | the amounts agree on a later match |
@@ -1659,7 +1693,9 @@ the bill's day again, never to delete it.
 * `PosRecheckJob` — every minute where `PlatformOptions.RunsJobs` is set, follows the terminal sales the counter
   stopped polling (the screen closed, the browser crashed, the cashier moved on while the customer paid). Sales started
   more than a minute and less than two days ago that are still `Initiated` or `AwaitingCustomer`, or `Approved` without
-  their receipt, are asked about with their own facility's terminal settings: an approval records the receipt (once,
+  their receipt, are asked about with their own facility's terminal settings (one `Unconfirmed`, or still pending, has no
+  reference to ask about: it is only settled by time, see
+  [Card and UPI sales whose upload answer was lost](#card-and-upi-sales-whose-upload-answer-was-lost)): an approval records the receipt (once,
   keyed on the transaction id, as when the counter polls), and a sale still waiting after the facility's
   `billing.pos.recheck` timeout is cancelled on the terminal and marked `TimedOut` ("Nobody completed the payment
   within 15 minutes; HC360 cancelled the sale on the terminal."), so a later approval cannot leave money unrecorded.

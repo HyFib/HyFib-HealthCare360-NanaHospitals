@@ -1059,6 +1059,11 @@ reference from the slip instead.
    | 11 | A card Pine Labs declines (their decline test card) | try again or cancel | The sale stays waiting while the terminal lets the customer retry, or ends declined (note which) |
    | 12 | A sale while the terminal is offline | nothing | Waiting; Cancel in HC360 ends it |
    | 13 | A void on the terminal, then a refund in HC360 with the void's RRN | void | The refund is recorded |
+   | 14 | A card sale; pull the terminal's network cable just as **Send to terminal** is pressed, and put it back after the screen has answered | the sale may or may not appear | Not confirmed (never Declined), with what to check on the terminal, the time a new sale may be sent, and **Try again** off. Note whether the sale appeared on the terminal |
+   | 15 | The same, then press **Send to terminal** again at once from another counter | the first sale, if it appeared | Refused with "The last sale of ₹… at … may still be on the terminal"; the customer is charged once |
+   | 16 | The same, with the sale on the terminal: pay it | pay | Record the payment from the slip; the exception raised later is resolved with a note |
+   | 17 | The same, with no sale on the terminal | idle menu | **The terminal shows no sale** with a note frees the terminal; the note is in the audit trail |
+   | 18 | The same, and leave it past the auto-cancel time plus two minutes | nothing | Lapsed, outcome unknown, and a Gateway reconciliation exception the accountants clear against the settlement |
    | 14 | A pharmacy walk-in counter sale by card, **Take on terminal** | pay with a test card | "Paid on the terminal · Card ending …"; the invoice's payment has the RRN, approval code and card digits |
    | 15 | A pharmacy dispense paid part by UPI on the terminal, the rest in cash | pay by UPI | Two payments on the invoice; the UPI one has the terminal's reference |
    | 16 | A canteen bill by UPI, **Take on terminal**, then **Finish the bill** | pay by UPI | The bill is saved with the terminal's reference |

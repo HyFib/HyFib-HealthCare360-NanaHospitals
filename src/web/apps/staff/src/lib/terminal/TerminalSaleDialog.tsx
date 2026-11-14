@@ -24,9 +24,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useAttemptKey } from '@/modules/billing/hooks';
 import { ActionError } from '@/modules/billing/ui';
-import { isTerminalSalePending, terminalDetailsLine, terminalSaleFits } from './labels';
+import {
+  isTerminalBusy,
+  isTerminalSalePending,
+  isTerminalSaleUnconfirmed,
+  terminalDetailsLine,
+  terminalSaleFits,
+} from './labels';
 import { TerminalSaleStatus } from './TerminalSaleStatus';
 import { loadTerminalId, saveTerminalId } from './terminalPrefs';
+import { ClearUnconfirmedSale } from './UnconfirmedSale';
+import { useNow } from './useNow';
 import type { CounterTerminalSale, TerminalMode, TerminalSaleApi } from './types';
 
 const useStyles = makeStyles({
@@ -119,10 +127,18 @@ export function TerminalSaleDialog({
     queryKey: saleKey(saleId ?? ''),
     queryFn: ({ signal }) => api.get(saleId!, signal),
     enabled: saleId !== null,
-    refetchInterval: (query) => (query.state.data && isTerminalSalePending(query.state.data.status) ? 2_000 : false),
+    // An unconfirmed sale cannot be asked of the terminal; the server settles it once its wait is over.
+    refetchInterval: (query) =>
+      query.state.data && isTerminalSalePending(query.state.data.status)
+        ? 2_000
+        : query.state.data && isTerminalSaleUnconfirmed(query.state.data.status)
+          ? 30_000
+          : false,
   });
   const current = sale.data;
   const pending = current ? isTerminalSalePending(current.status) : false;
+  const now = useNow();
+  const busy = current ? isTerminalBusy(current, now) : false;
 
   const unused = useQuery({
     queryKey: unusedKey,
@@ -133,7 +149,7 @@ export function TerminalSaleDialog({
   });
 
   const cancel = useMutation({
-    mutationFn: () => api.cancel(saleId!),
+    mutationFn: (note?: string) => api.cancel(saleId!, note),
     onSuccess: (cancelled) => queryClient.setQueryData(saleKey(cancelled.id), cancelled),
   });
 
@@ -254,7 +270,11 @@ export function TerminalSaleDialog({
                 payer="customer"
                 lostContact={!!sale.error}
                 footer={<ActionError error={cancel.error} />}
-              />
+              >
+                {isTerminalSaleUnconfirmed(current.status) && (
+                  <ClearUnconfirmedSale onClear={(note) => cancel.mutate(note)} pending={cancel.isPending} />
+                )}
+              </TerminalSaleStatus>
             )}
           </DialogContent>
           <DialogActions>
@@ -275,11 +295,15 @@ export function TerminalSaleDialog({
               </>
             )}
             {current && pending && (
-              <Button onClick={() => cancel.mutate()} disabled={cancel.isPending}>
+              <Button onClick={() => cancel.mutate(undefined)} disabled={cancel.isPending}>
                 Cancel on the terminal
               </Button>
             )}
-            {current && !pending && current.status !== 'Approved' && <Button onClick={tryAgain}>Try again</Button>}
+            {current && !pending && current.status !== 'Approved' && (
+              <Button onClick={tryAgain} disabled={busy}>
+                Try again
+              </Button>
+            )}
             {current && !pending && (
               <Button appearance="primary" onClick={finish}>
                 {current.status === 'Approved' ? approveLabel : 'Close'}

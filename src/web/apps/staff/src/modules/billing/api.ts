@@ -763,6 +763,8 @@ export interface PosSaleDto {
   receiptId: string | null;
   createdAt: string;
   completedAt: string | null;
+  /** For an unconfirmed sale: when a new sale may go to the terminal. */
+  retryAfter?: string | null;
 }
 
 export interface StartPosSaleRequest {
@@ -1112,7 +1114,8 @@ export const billingApi = {
     api.post<ApprovalRequestDto>(`/api/v1/billing/shifts/${id}/shortage`, { reason }),
   startPosSale: (request: StartPosSaleRequest, options: WriteOptions = {}) =>
     api.post<PosSaleDto>('/api/v1/billing/pos/sales', request, options),
-  cancelPosSale: (id: string) => api.post<PosSaleDto>(`/api/v1/billing/pos/sales/${id}/cancel`),
+  cancelPosSale: (id: string, note?: string) =>
+    api.post<PosSaleDto>(`/api/v1/billing/pos/sales/${id}/cancel`, note ? { note } : undefined),
   createPaymentLink: (request: CreatePaymentLinkRequest, options: WriteOptions = {}) =>
     api.post<GatewayOrderDto>('/api/v1/billing/payment-links', request, options),
   refreshPaymentLink: (id: string) => api.post<GatewayOrderDto>(`/api/v1/billing/payment-links/${id}/refresh`),

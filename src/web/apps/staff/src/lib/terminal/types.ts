@@ -20,6 +20,8 @@ export interface CounterTerminalSale {
   usedFor: string | null;
   createdAt: string;
   completedAt: string | null;
+  /** For an unconfirmed sale: when a new sale may go to the terminal. Null for any other sale. */
+  retryAfter?: string | null;
 }
 
 export interface StartTerminalSaleRequest {
@@ -35,7 +37,8 @@ export interface TerminalSaleApi {
   queryKey: readonly unknown[];
   start: (request: StartTerminalSaleRequest, options: { idempotencyKey: string }) => Promise<CounterTerminalSale>;
   get: (id: string, signal?: AbortSignal) => Promise<CounterTerminalSale>;
-  cancel: (id: string) => Promise<CounterTerminalSale>;
+  /** Cancels on the terminal; for an unconfirmed sale `note` is the cashier's confirmation that the terminal shows no sale. */
+  cancel: (id: string, note?: string) => Promise<CounterTerminalSale>;
   unused: (signal?: AbortSignal) => Promise<CounterTerminalSale[]>;
 }
 

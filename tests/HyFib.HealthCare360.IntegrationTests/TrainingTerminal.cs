@@ -20,15 +20,16 @@ internal static class TrainingTerminal
     /// <summary>
     /// Card and UPI sales go to the training terminal for the rest of the test, which approves a sale
     /// <paramref name="approveAfterSeconds"/> after it was pushed (by its own clock); then the setting is put back.
+    /// <paramref name="loseUploadAnswer"/> makes the terminal take each sale but lose the answer to the upload.
     /// </summary>
-    public static async Task<IAsyncDisposable> UseAsync(HospitalServer server, int approveAfterSeconds)
+    public static async Task<IAsyncDisposable> UseAsync(HospitalServer server, int approveAfterSeconds, bool loseUploadAnswer = false)
     {
         const string key = "integrations.pos";
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
             .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
         await server.SaveSettingAsync(admin, key, new SaveSettingRequest(
-            new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorApproveAfterSeconds"] = approveAfterSeconds }, null, false, null));
+            new JsonObject { ["enabled"] = true, ["provider"] = "simulator", ["simulatorApproveAfterSeconds"] = approveAfterSeconds, ["simulatorLoseUploadAnswer"] = loseUploadAnswer }, null, false, null));
         return new Restore(() => server.SaveSettingAsync(admin, key,
             new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
     }
