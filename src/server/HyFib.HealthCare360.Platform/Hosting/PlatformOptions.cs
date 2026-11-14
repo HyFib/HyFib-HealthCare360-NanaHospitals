@@ -382,7 +382,7 @@ public sealed class SyslogOptions
     }
 }
 
-/// <summary>How the server reaches PostgreSQL.</summary>
+/// <summary>How the server reaches PostgreSQL, and which newer database it may start on.</summary>
 public sealed class DatabaseOptions
 {
     /// <summary>
@@ -392,6 +392,15 @@ public sealed class DatabaseOptions
     /// health says so while it is on.
     /// </summary>
     public bool AllowUnverifiedRemoteConnection { get; set; }
+
+    /// <summary>
+    /// The next release's database changes this version may start beside, by name, as start-up names them when it stops on a
+    /// database a newer version changed: going back one release without restoring the backup (docs/deployment/DEPLOYMENT.md,
+    /// section 7, "Going back"). A release's changes take away nothing the release before uses (expand/contract), so that
+    /// release runs on them and keeps what was entered since the upgrade. A change not named still stops start-up. Empty by
+    /// default.
+    /// </summary>
+    public string[] AcceptNewerMigrations { get; set; } = [];
 }
 
 /// <summary>

@@ -1255,9 +1255,34 @@ not an older one, can run on the upgraded database.
 
 ### Going back
 
-The way back from an upgrade is the previous version **and** the backup HC360 took just before the update changed the
-database. Never the previous version alone: on a database a newer version changed, it stops, says so in its log and in
-Windows Event Viewer, and names the database changes it does not know. It changes nothing.
+On a database a newer version changed, the previous version stops, says so in its log and in Windows Event Viewer, and
+names the database changes it does not know. It changes nothing. There are two ways back from there.
+
+**To the release just before, without a restore.** That release runs on the upgraded database (*What an upgrade changes
+in the database*), so going back to it keeps everything entered since the upgrade. It needs the previous release to be
+1.0.0 or later, and to be told the newer release's database changes by name:
+
+1. **Put the previous version back, stopped.** From the previous release's `deploy` folder, checked and unblocked as in
+   section 1, run `.\Install-HC360Server.ps1 -NoStart`. It replaces the program files and keeps the configuration and
+   data.
+2. **Name the newer changes.** Start the `HC360Server` service once: it stops, and its log names the database changes it
+   does not know. Add exactly those names to `hc360.settings.json`, keeping the rest of the file, for example:
+
+   ```json
+   "HealthCare360": { "Database": { "AcceptNewerMigrations": [ "20270112093000_WardRoundNotes", "20270120101500_LabCriticalCalls" ] } }
+   ```
+
+   A change it is not told of still stops it, so the setting cannot carry over to another going back unnoticed.
+3. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`. *Check:* Administration › System
+   health shows the previous version and nothing red. Its log warns at each start that it runs beside the named changes.
+4. **Workstations** as in step 5 below.
+5. **Once the fixed version is installed**, remove `AcceptNewerMigrations`: the newer version knows its own changes.
+
+With several servers, do it on each. Never go further back this way than the release just before: a newer release's
+contract step may take away what an older release still uses.
+
+**Further back, or to the database as it was before the update:** the previous version **and** the backup HC360 took
+just before the update changed the database.
 
 Restoring that backup loses everything entered since the upgrade. So upgrade at the quietest hour with the downtime kit
 out (docs/modules/downtime.md), decide within about half an hour whether the upgrade stands, and keep on paper what is
