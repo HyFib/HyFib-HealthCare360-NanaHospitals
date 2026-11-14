@@ -99,6 +99,11 @@ public sealed class PeakMixTests(HospitalServer server)
             await TakeAsync(frontOffice, operation, desk);
         }
 
+        // The patient the desk registered had one visit (a patient seen before may have a visit open today, which is refused), and
+        // is the one the clerk bills below.
+        fixtures.NewPatients.IsEmpty.ShouldBeTrue("the registered patient was given their visit");
+        fixtures.BillPatients.ShouldHaveSingleItem();
+
         // Billing: the counter shift (open already, or opened by the clerk), then a bill from start to receipt.
         var clerk = Context(2);
         await TakeAsync(billing, Step(PeakMix.ShiftCheck), clerk);

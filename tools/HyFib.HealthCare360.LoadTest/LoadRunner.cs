@@ -106,6 +106,11 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
             tokens[role] = await roleAccounts[0].TokenAsync(SignIn, _clock);
         }
 
+        foreach (var clerk in accountsByRole.GetValueOrDefault(Role.Billing) ?? [])
+        {
+            await FixtureDiscovery.EnsureShiftAsync(http, await clerk.TokenAsync(SignIn, _clock), log, cancellationToken);
+        }
+
         var fixtures = await FixtureDiscovery.DiscoverAsync(http, tokens, options, log, cancellationToken);
         var mix = PeakMix.Build(accountsByRole.Keys.ToHashSet(), fixtures, options.Weights, out var notRun);
         var split = PeakMix.Split(mix, options.Users);

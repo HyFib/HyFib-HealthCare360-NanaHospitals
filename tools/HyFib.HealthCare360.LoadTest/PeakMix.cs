@@ -21,7 +21,35 @@ internal enum Role
 }
 
 /// <summary>A medicine the pharmacy counter can sell now: in stock, no prescription needed, with its price.</summary>
-internal sealed record StockItem(Guid ItemId, decimal Mrp);
+internal sealed class StockItem(Guid itemId, decimal mrp, int available = int.MaxValue)
+{
+    private readonly object _lock = new();
+    private int _remaining = available;
+
+    public Guid ItemId => itemId;
+
+    public decimal Mrp => mrp;
+
+    public bool InStock
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _remaining > 0;
+            }
+        }
+    }
+
+    /// <summary>Takes one unit for a sale, when any is left: the run never sells what the shelf does not have.</summary>
+    public bool TryTake()
+    {
+        lock (_lock)
+        {
+            return _remaining > 0 && _remaining-- > 0;
+        }
+    }
+}
 
 /// <summary>A dose due on a ward that a nurse may give without a witness.</summary>
 internal sealed record DueDose(Guid EntryId, uint Version);
@@ -48,6 +76,24 @@ internal sealed class Fixtures
     public IReadOnlyList<Guid> LabTestIds { get; set; } = [];
 
     public Guid? WardId { get; set; }
+
+    /// <summary>Patients registered in this run, each waiting for an OPD visit: they cannot have an open visit today already.</summary>
+    public ConcurrentQueue<Guid> NewPatients { get; } = new();
+
+    /// <summary>Patients registered in this run, each waiting for a bill: one draft bill per patient.</summary>
+    public ConcurrentQueue<Guid> BillPatients { get; } = new();
+
+    public void PatientRegistered(Guid patientId)
+    {
+        NewPatients.Enqueue(patientId);
+        BillPatients.Enqueue(patientId);
+    }
+
+    public bool HasStock => PharmacyItems.Any(i => i.InStock);
+
+    /// <summary>One unit of a medicine still on the shelf, taken for a sale; null when all that was in stock is sold.</summary>
+    public StockItem? TakeStock(Random random) =>
+        PharmacyItems.OrderBy(_ => random.Next()).FirstOrDefault(i => i.TryTake());
 
     public ConcurrentQueue<DueDose> Doses { get; } = new();
 
@@ -297,7 +343,8 @@ internal static class PeakMix
     internal static IReadOnlyList<Operation> Extra() =>
     [
         // OPD registration and token: the new patient (Operations.Register) is then given a visit and its queue token.
-        new(OpdVisit, OperationKind.Write, Defaults[OpdVisit], OpdVisitRequest, Role.FrontOffice, "OPD registration and token"),
+        new(OpdVisit, OperationKind.Write, Defaults[OpdVisit], OpdVisitRequest, Role.FrontOffice, "OPD registration and token",
+            c => !c.Fixtures.NewPatients.IsEmpty),
 
         // A receipt needs the clerk's cashier shift to be open (the money is counted into it): each clerk checks first, and
         // opens one when there is none, before any other billing step.
@@ -306,8 +353,8 @@ internal static class PeakMix
         new(ShiftOpen, OperationKind.Write, Defaults[ShiftOpen], _ => Post("api/v1/billing/shifts/open", new { counter = "OP counter (load test)", openingFloat = 0 }), Role.Billing, "Billing",
             c => c.State.ContainsKey("shiftChecked") && !c.State.ContainsKey("shiftOpen"), (c, _) => c.State["shiftOpen"] = true),
         new(BillFind, OperationKind.Read, Defaults[BillFind], _ => Get("api/v1/billing/bills?pageSize=25"), Role.Billing, "Billing", ShiftIsOpen),
-        new(BillStart, OperationKind.Write, Defaults[BillStart], c => Post("api/v1/billing/bills", new { patientId = c.AnyPatient() }), Role.Billing, "Billing",
-            c => ShiftIsOpen(c) && !c.State.ContainsKey("bill"), OnBillStarted),
+        new(BillStart, OperationKind.Write, Defaults[BillStart], BillStartRequest, Role.Billing, "Billing",
+            c => ShiftIsOpen(c) && !c.State.ContainsKey("bill") && !c.Fixtures.BillPatients.IsEmpty, OnBillStarted),
         new(BillLine, OperationKind.Write, Defaults[BillLine], BillLineRequest, Role.Billing, "Billing",
             c => c.State.TryGetValue("bill", out var b) && b is BillInProgress { HasLine: false }, OnBillChanged),
         new(BillFinalise, OperationKind.Write, Defaults[BillFinalise], c => Post($"api/v1/billing/bills/{Bill(c).Id}/finalize", new { version = Bill(c).Version }), Role.Billing, "Billing",
@@ -318,7 +365,7 @@ internal static class PeakMix
         new(StockLookup, OperationKind.Search, Defaults[StockLookup], c => Get(
             $"api/v1/pharmacy/stock?storeId={c.Fixtures.PharmacyStoreId}&search={Uri.EscapeDataString(c.Pick(["Para", "Amox", "Cetri", "Metf", "Omep", "Azith"]))}&inStockOnly=true&take=20"),
             Role.Pharmacy, "Pharmacy"),
-        new(CounterSale, OperationKind.Write, Defaults[CounterSale], CounterSaleRequest, Role.Pharmacy, "Pharmacy"),
+        new(CounterSale, OperationKind.Write, Defaults[CounterSale], CounterSaleRequest, Role.Pharmacy, "Pharmacy", c => c.Fixtures.HasStock),
 
         new(LabWorklist, OperationKind.Read, Defaults[LabWorklist], _ => Get("api/v1/lab/worklist"), Role.Lab, "Laboratory", null, OnWorklist),
         new(LabOrder, OperationKind.Write, Defaults[LabOrder], LabOrderRequest, Role.Lab, "Laboratory"),
@@ -351,9 +398,19 @@ internal static class PeakMix
 
     private static BillInProgress Bill(OperationContext c) => (BillInProgress)c.State["bill"];
 
-    private static HttpRequestMessage OpdVisitRequest(OperationContext c) => Post("api/v1/visits", new
+    // A patient registered in this run, each once: a second visit for a patient in the department today is refused (409). Another
+    // user may have taken the last one since this one looked; the visit list is read instead, which is a fair step.
+    private static HttpRequestMessage OpdVisitRequest(OperationContext c) =>
+        c.Fixtures.NewPatients.TryDequeue(out var patient) ? OpdVisitFor(c, patient) : Get("api/v1/visits?pageSize=25");
+
+    private static HttpRequestMessage BillStartRequest(OperationContext c) =>
+        c.Fixtures.BillPatients.TryDequeue(out var patient)
+            ? Post("api/v1/billing/bills", new { patientId = patient })
+            : Get("api/v1/billing/bills?pageSize=25");
+
+    private static HttpRequestMessage OpdVisitFor(OperationContext c, Guid patient) => Post("api/v1/visits", new
     {
-        patientId = c.AnyPatient(),
+        patientId = patient,
         type = "OutPatient",
         departmentId = c.Fixtures.DepartmentId,
         practitionerId = (Guid?)null,
@@ -428,7 +485,12 @@ internal static class PeakMix
 
     private static HttpRequestMessage CounterSaleRequest(OperationContext c)
     {
-        var item = c.Pick(c.Fixtures.PharmacyItems);
+        // One unit off the shelf for each sale, never more than the stock found: the last unit is sold once. Sold out, the stock is read.
+        if (c.Fixtures.TakeStock(c.Random) is not { } item)
+        {
+            return Get($"api/v1/pharmacy/stock?storeId={c.Fixtures.PharmacyStoreId}&inStockOnly=true&take=20");
+        }
+
         return Post("api/v1/pharmacy/sales/counter", new
         {
             storeId = c.Fixtures.PharmacyStoreId,
@@ -590,9 +652,9 @@ internal static class FixtureDiscovery
                 [
                     .. Answer.Rows(stock)
                         .Where(r => Answer.Prop(r, "needsPrescription") is not { ValueKind: JsonValueKind.True } && Answer.Number(r, "available") > 0 && Answer.Number(r, "currentMrp") > 0)
-                        .Select(r => (Id: Answer.Id(r, "itemId"), Mrp: Answer.Number(r, "currentMrp")))
+                        .Select(r => (Id: Answer.Id(r, "itemId"), Mrp: Answer.Number(r, "currentMrp"), Units: (int)Math.Min(Answer.Number(r, "available"), 100_000)))
                         .Where(r => r.Id is not null)
-                        .Select(r => new StockItem(r.Id!.Value, r.Mrp)),
+                        .Select(r => new StockItem(r.Id!.Value, r.Mrp, r.Units)),
                 ];
             }
         }
@@ -614,6 +676,39 @@ internal static class FixtureDiscovery
         }
 
         return fixtures;
+    }
+
+    /// <summary>
+    /// Opens the cashier shift of a billing account that has none, before the users start: the clerks sharing the account would
+    /// otherwise each open one at the same moment, and all but one be refused (409).
+    /// </summary>
+    public static async Task EnsureShiftAsync(HttpClient http, string token, TextWriter log, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var current = new HttpRequestMessage(HttpMethod.Get, "api/v1/billing/shifts/current");
+            current.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            using var answer = await http.SendAsync(current, cancellationToken);
+            if (answer.StatusCode != System.Net.HttpStatusCode.NoContent)
+            {
+                return;
+            }
+
+            using var open = new HttpRequestMessage(HttpMethod.Post, "api/v1/billing/shifts/open")
+            {
+                Content = JsonContent.Create(new { counter = "OP counter (load test)", openingFloat = 0 }, options: Operations.Json),
+            };
+            open.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            using var opened = await http.SendAsync(open, cancellationToken);
+            if (!opened.IsSuccessStatusCode)
+            {
+                log.WriteLine($"  a billing account's cashier shift could not be opened: the server answered {(int)opened.StatusCode}");
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            log.WriteLine($"  a billing account's cashier shift could not be checked: {ex.Message}");
+        }
     }
 
     /// <summary>A list read as <paramref name="token"/>'s account; an empty one (and a line in the log) when it could not be read.</summary>

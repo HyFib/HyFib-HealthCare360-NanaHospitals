@@ -120,6 +120,7 @@ public sealed class PeakMixTests
     {
         var fixtures = FullFixtures();
         var context = ContextFor(fixtures);
+        fixtures.PatientRegistered(Guid.NewGuid());
 
         using var request = Step(PeakMix.Extra(), PeakMix.OpdVisit).Request(context);
         var body = await request.Content.ShouldNotBeNull().ReadFromJsonAsyncForTest(TestContext.Current.CancellationToken);
@@ -152,6 +153,7 @@ public sealed class PeakMixTests
         open.IsAvailable(context).ShouldBeTrue("no shift was open (no content)");
         open.OnSuccess!(context, default);
 
+        context.Fixtures.PatientRegistered(Guid.NewGuid());
         start.IsAvailable(context).ShouldBeTrue();
         line.IsAvailable!(context).ShouldBeFalse("no bill yet");
         receipt.IsAvailable!(context).ShouldBeFalse("no bill yet");
@@ -176,6 +178,66 @@ public sealed class PeakMixTests
 
         receipt.OnSuccess!(context, default);
         start.IsAvailable(context).ShouldBeTrue("the clerk starts the next bill");
+    }
+
+    [Fact]
+    public void A_registered_patient_is_queued_once_and_gets_one_visit_and_one_bill()
+    {
+        var context = ContextFor(FullFixtures());
+        var register = Operations.All.Single(o => o.Name == "Register a patient");
+        var visit = Step(PeakMix.Extra(), PeakMix.OpdVisit);
+        var patient = Guid.NewGuid();
+
+        visit.IsAvailable!(context).ShouldBeFalse("no one registered yet: a patient seen before may have a visit open today (409)");
+
+        register.OnSuccess!(context, Json($"{{\"id\":\"{patient}\",\"uhid\":\"NH1\"}}"));
+        visit.IsAvailable(context).ShouldBeTrue();
+        using (var request = visit.Request(context))
+        {
+            request.RequestUri!.OriginalString.ShouldBe("api/v1/visits");
+            request.Content.ShouldNotBeNull();
+        }
+
+        visit.IsAvailable(context).ShouldBeFalse("each new patient has one visit");
+        context.Fixtures.BillPatients.ShouldHaveSingleItem().ShouldBe(patient);
+        using var again = visit.Request(context);
+        again.Method.ShouldBe(HttpMethod.Get, "with no one queued the step reads, and never repeats a visit");
+    }
+
+    [Fact]
+    public void A_bill_is_started_for_a_patient_registered_in_the_run_once()
+    {
+        var mix = PeakMix.Extra();
+        var context = ContextFor(FullFixtures());
+        context.State["shiftOpen"] = true;
+        var start = Step(mix, PeakMix.BillStart);
+
+        start.IsAvailable!(context).ShouldBeFalse("no patient without a bill yet");
+        context.Fixtures.PatientRegistered(Guid.NewGuid());
+        start.IsAvailable(context).ShouldBeTrue();
+        using var request = start.Request(context);
+        request.Method.ShouldBe(HttpMethod.Post);
+        context.Fixtures.BillPatients.IsEmpty.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Counter_sales_take_stock_off_the_shelf_and_stop_when_it_is_sold()
+    {
+        var fixtures = FullFixtures();
+        fixtures.PharmacyItems = [new StockItem(Guid.NewGuid(), 10m, 2)];
+        var context = ContextFor(fixtures);
+        var sale = Step(PeakMix.Extra(), PeakMix.CounterSale);
+
+        for (var i = 0; i < 2; i++)
+        {
+            sale.IsAvailable!(context).ShouldBeTrue();
+            using var request = sale.Request(context);
+            request.Method.ShouldBe(HttpMethod.Post);
+        }
+
+        sale.IsAvailable!(context).ShouldBeFalse("the last unit is sold once");
+        using var read = sale.Request(context);
+        read.Method.ShouldBe(HttpMethod.Get, "a sold-out shelf is read, not sold from again");
     }
 
     [Fact]

@@ -91,7 +91,15 @@ internal static class Operations
             Get($"api/v1/scheduling/appointments?from={Today()}&to={Today()}&pageSize=25")),
         new("Visits", OperationKind.Read, 6, _ => Get("api/v1/visits?pageSize=25")),
         new("Who am I", OperationKind.Read, 3, _ => Get("api/v1/auth/me")),
-        new("Register a patient", OperationKind.Write, 10, Register),
+        // The new patient is queued for the OPD visit and for a bill, once each: only a patient registered in this run is sure to
+        // have no open visit today and no draft bill, which the server refuses to make a second of (409).
+        new("Register a patient", OperationKind.Write, 10, Register, OnSuccess: (c, patient) =>
+        {
+            if (Answer.Id(patient) is { } id)
+            {
+                c.Fixtures.PatientRegistered(id);
+            }
+        }),
     ];
 
     /// <summary>Lists whose largest page must stay under 100 KB as sent, compressed (PERF-05).</summary>
