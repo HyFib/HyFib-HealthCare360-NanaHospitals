@@ -1548,14 +1548,17 @@ On OCI, the access key is a customer secret key of a user whose group's policy a
 **Restoring from the off-site copy.** When the server and the second disk are both gone:
 
 1. On the new machine, with the hospital's own credentials for the store (not HC360's key), download the backup the
-   Backups list named, or the newest one, from the store's console or with the AWS CLI:
+   Backups list named, or the newest one, and the generation of documents it needs, into one folder. The object's
+   metadata names the backup's SHA-256 (`x-amz-meta-hc360-sha256`), the recovery key that opens it
+   (`x-amz-meta-hc360-recovery-key`) and its generation (`x-amz-meta-hc360-generation`). With the AWS CLI:
 
    ```powershell
+   aws s3api head-object --bucket nana-hc360-backups --key hc360/hc360-<date>-scheduled.hc360bak --query Metadata
    aws s3 cp s3://nana-hc360-backups/hc360/hc360-<date>-scheduled.hc360bak D:\Restore\
+   aws s3 sync s3://nana-hc360-backups/hc360/gen-<date>/ D:\Restore\gen-<date>\
    ```
 
-   The object's metadata names the backup's SHA-256 (`x-amz-meta-hc360-sha256`) and the recovery key that opens it
-   (`x-amz-meta-hc360-recovery-key`).
+   A backup with no generation in its metadata was made before HC360 kept the documents apart, and holds them itself.
 2. Check it without restoring it: `backup verify --in D:\Restore\hc360-<date>-scheduled.hc360bak`, as above.
 3. Restore it with `.\Restore-HC360.ps1 -BackupFile D:\Restore\hc360-<date>-scheduled.hc360bak`, as above. No other tool
    is needed.
