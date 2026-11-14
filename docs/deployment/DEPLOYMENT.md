@@ -1248,9 +1248,10 @@ release still runs on the upgraded database (an *expand* step). A change that ta
 table or a column, shortens a column or gives it another type, makes it NOT NULL, or drops a default that the release
 before inserts by) waits until the code has stopped using what it takes away for a whole release. It then comes as a
 reviewed *contract* step, which the release notes name with the release whose code stopped using it. HyFib's build
-refuses any other change that takes something away (`MigrationPolicyTests`, which lists the contract steps). So an
-upgrade loses nothing the release before still uses, and that release, though not an older one, can run on the upgraded
-database.
+refuses any other change that takes something away (`MigrationPolicyTests`, which lists the contract steps), and upgrades
+a database full of records from the previous release's schema to the new one, checking that no record is lost and the
+server works on it (`UpgradeTests`). So an upgrade loses nothing the release before still uses, and that release, though
+not an older one, can run on the upgraded database.
 
 ### Going back
 

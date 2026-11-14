@@ -56,7 +56,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// database. The real migrations create the database, and the seeders fill it with the demonstration data and the staff
 /// accounts in <see cref="Users"/> (roles the seed has no account for are created on first use). One server is shared by
 /// every test and tests run one at a time, so each journey registers its own patients rather than relying on another test's.
-/// A test that needs a server of its own makes one, such as one on a clock it sets (<see cref="MidnightInIndiaServer"/>).
+/// A test that needs a server of its own makes one: on a clock it sets (<see cref="MidnightInIndiaServer"/>), or with a step of
+/// its own between seeding and starting (<see cref="UpgradeTests"/>).
 /// </summary>
 public sealed class HospitalServer : IAsyncLifetime
 {
@@ -150,6 +151,7 @@ public sealed class HospitalServer : IAsyncLifetime
     private readonly ConcurrentDictionary<string, ApiClient> _signedIn = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _created = new(StringComparer.Ordinal);
     private readonly TestClock? _clock;
+    private readonly Func<IServiceProvider, CancellationToken, Task>? _beforeStart;
     private TestDatabase? _database;
     private WebApplication? _app;
 
@@ -160,6 +162,12 @@ public sealed class HospitalServer : IAsyncLifetime
 
     /// <summary>A server of a test's own, on its own database and on <paramref name="clock"/>.</summary>
     internal HospitalServer(TestClock clock) => _clock = clock;
+
+    /// <summary>
+    /// A server of a test's own, on its own database, which runs <paramref name="beforeStart"/> once the database is migrated
+    /// and seeded, before anything else is written to it and before the server starts.
+    /// </summary>
+    internal HospitalServer(Func<IServiceProvider, CancellationToken, Task> beforeStart) => _beforeStart = beforeStart;
 
     public IServiceProvider Services => App.Services;
 
@@ -285,6 +293,10 @@ public sealed class HospitalServer : IAsyncLifetime
         _app.UseListenerGate();
         _app.UseServerApplication();
         await _app.InitializeDatabaseAsync(ct);
+        if (_beforeStart is not null)
+        {
+            await _beforeStart(_app.Services, ct);
+        }
 
         // Many tests sign in the same seeded accounts, each with a session of its own, while other tests keep using the
         // cached ones: no limit on sessions per account, except in a test that sets one (SessionControlTests).
