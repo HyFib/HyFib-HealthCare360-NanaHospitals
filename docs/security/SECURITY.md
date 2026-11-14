@@ -2006,6 +2006,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
 | CA5351, MD5 | `S3Client.Md5` (Platform, the off-site backup copies) | S3's `Content-MD5` header and its ETags are MD5 by the protocol, and Object Lock requires the header: a check against damage on the way, beside the SHA-256 every request is signed with. Nothing secret depends on it |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
+| CA2100, SQL from text | `BackupRowCounts.CountAsync` (Platform, the key tables' rows a backup records and a test restore checks) | A table name cannot be a parameter. The names are HC360's fixed list, or a backup's manifest that recorded them; each must be `schema.table` in lower-case letters, digits and underscores, and is quoted. Nothing comes from a request |
+| CA2100, SQL from text | `PostgresTools.CreateAsync` (Platform, the test restores' scratch database) | `CREATE DATABASE` takes no parameters. The name is HC360's own (`hc360_restore_test_` and 12 random hex digits); the encoding and locale are the hospital database's, read from `pg_database` and quoted as literals |
+| CA2100, SQL from text | `PostgresTools.DropAsync` (Platform, the same) | `DROP DATABASE` takes no parameters. It drops only a name that matches the scratch databases' pattern (`hc360_restore_test_` and 12 hex digits), checked first, and never the hospital's database |
 | CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
 
 ## 3. What the hospital must do
