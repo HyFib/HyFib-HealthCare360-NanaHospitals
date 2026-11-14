@@ -131,13 +131,13 @@ public sealed class HospitalCaBackupTests : IDisposable
         File.WriteAllBytes(dump, "PGDMP"u8.ToArray());
 
         var swapped = new MemoryStream();
-        await BackupArchive.WriteAsync(swapped, Manifest(masterKey), masterKey, [], null, dump, node.Directories.Files, [], new BackupExtras(HospitalCa: exported with { Pkcs12 = otherExported.Pkcs12 }), Ct);
+        await BackupArchive.WriteIndexedAsync(swapped, Manifest(masterKey), masterKey, [], null, dump, [], new BackupExtras(HospitalCa: exported with { Pkcs12 = otherExported.Pkcs12 }), Ct);
         swapped.Position = 0;
         (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(swapped, new BackupReadTargets(), Ct))).Message
             .ShouldContain("hospital CA in the backup does not match its manifest");
 
         var written = new MemoryStream();
-        await BackupArchive.WriteAsync(written, Manifest(masterKey), masterKey, [], null, dump, node.Directories.Files, [], new BackupExtras(HospitalCa: exported), Ct);
+        await BackupArchive.WriteIndexedAsync(written, Manifest(masterKey), masterKey, [], null, dump, [], new BackupExtras(HospitalCa: exported), Ct);
         written.Position = 0;
         var contents = await BackupArchive.ReadAsync(written, new BackupReadTargets(), Ct);
         contents.Manifest.HospitalCa.ShouldBe(exported.Fingerprint);
@@ -184,7 +184,7 @@ public sealed class HospitalCaBackupTests : IDisposable
         await using (var output = File.Create(file))
         await using (var encryptor = BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
-            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey), masterKey, [], null, dump, node.Directories.Files, [], new BackupExtras(HospitalCa: ca), Ct);
+            await BackupArchive.WriteIndexedAsync(encryptor, Manifest(masterKey), masterKey, [], null, dump, [], new BackupExtras(HospitalCa: ca), Ct);
             await encryptor.CompleteAsync(Ct);
         }
 

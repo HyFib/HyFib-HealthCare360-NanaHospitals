@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  ASTM_DIALECTS,
   HL7_ORDER_MESSAGES,
   SERIAL_BAUD_RATES,
   SERIAL_HANDSHAKES,
@@ -54,6 +55,8 @@ export const connectionSchema = z
     encoding: z.enum(['latin1', 'utf-8']),
     sampleIdFields: z.string().max(100),
     orderMessage: z.enum(HL7_ORDER_MESSAGES),
+    /** '' is standard ASTM. */
+    astmDialect: z.enum(['', ...ASTM_DIALECTS]),
     agentDeviceId: z.string(),
     portName: z.string().trim(),
     baudRate: z.string(),
@@ -114,6 +117,7 @@ export function toConnectionForm(connection: LabConnectionDto | undefined): Conn
     encoding: connection?.encoding === 'utf-8' ? 'utf-8' : 'latin1',
     sampleIdFields: (connection?.sampleIdFields ?? []).join(', '),
     orderMessage: connection?.orderMessage === 'ORM^O01' ? 'ORM^O01' : 'OML^O21',
+    astmDialect: ASTM_DIALECTS.find((dialect) => dialect === connection?.astmDialect) ?? '',
     agentDeviceId: connection?.agentDeviceId ?? '',
     portName: serial?.portName ?? 'COM1',
     baudRate: String(serial?.baudRate ?? 9600),
@@ -146,6 +150,7 @@ export function toSaveRequest(values: ConnectionForm, isHl7: boolean, listVersio
     encoding: values.encoding === 'utf-8' ? 'utf-8' : null,
     sampleIdFields: isHl7 && fields.length > 0 ? fields : null,
     orderMessage: isHl7 ? values.orderMessage : null,
+    astmDialect: !isHl7 && values.astmDialect !== '' ? values.astmDialect : null,
     agentDeviceId: serial ? values.agentDeviceId : null,
     serial: !serial
       ? null
@@ -185,6 +190,7 @@ export function formFieldOf(serverField: string): keyof ConnectionForm | null {
     'encoding',
     'sampleIdFields',
     'orderMessage',
+    'astmDialect',
     'agentDeviceId',
     'portName',
     'baudRate',

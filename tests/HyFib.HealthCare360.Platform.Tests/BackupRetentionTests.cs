@@ -1,9 +1,9 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace HyFib.HealthCare360.Platform.Tests;
@@ -137,11 +137,12 @@ public sealed class BackupRetentionTests : IDisposable
     }
 
     /// <summary>
-    /// On a directory: the backups past their time and an unfinished file over a day old are removed; the newest backup, a
-    /// file HC360 did not name, and an unfinished file still being written are left.
+    /// On a backup folder (<see cref="BackupStore.Prune"/>): the backups past their time go with their lists, and so does an
+    /// unfinished file, which only a run that stopped leaves (every run holds the folder while it writes); the newest backup
+    /// and a file HC360 did not name are left.
     /// </summary>
     [Fact]
-    public void Retention_on_a_directory_removes_only_backups_past_their_time_and_old_unfinished_files()
+    public void Retention_on_a_backup_folder_removes_only_backups_past_their_time_and_what_a_stopped_run_left()
     {
         Directory.CreateDirectory(_root);
         var nightly = Nightly(Ist(2026, 8, 1, 1, 30), Ist(2026, 11, 14, 1, 30));
@@ -152,21 +153,22 @@ public sealed class BackupRetentionTests : IDisposable
 
         var foreign = Path.Combine(_root, "copied-by-hand.hc360bak");
         File.WriteAllText(foreign, "kept");
-        var oldPartial = Path.Combine(_root, "hc360-20261110-200000-scheduled.hc360bak.partial");
-        var newPartial = Path.Combine(_root, "hc360-20261113-200000-scheduled.hc360bak.partial");
-        File.WriteAllText(oldPartial, "cut off");
-        File.WriteAllText(newPartial, "being written");
-        File.SetLastWriteTimeUtc(oldPartial, Now.UtcDateTime.AddDays(-2));
-        File.SetLastWriteTimeUtc(newPartial, Now.UtcDateTime.AddHours(-1));
+        var unfinished = Path.Combine(_root, "hc360-20261113-200000-scheduled.hc360bak.partial");
+        File.WriteAllText(unfinished, "cut off");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var store = BackupStore.Open(_root, "A1B2C3D4E5F60718", key, new FixedTime(Now));
+        using var held = store.Lock();
 
-        var removed = BackupRetention.Apply(_root, Defaults, HospitalTimeZone.Zone, Now, NullLogger.Instance);
+        var result = store.Prune(held, Defaults, HospitalTimeZone.Zone, key);
 
-        var expected = BackupRetention.ToRemove(nightly, Defaults, HospitalTimeZone.Zone, Now).Select(InRoot).Append(oldPartial).ToList();
-        removed.ShouldBe(expected, ignoreOrder: true);
-        removed.Count.ShouldBeGreaterThan(50);
-        Directory.EnumerateFiles(_root, "*.hc360bak").Count().ShouldBe(nightly.Count - expected.Count + 2, "the backups kept, and the foreign file");
+        var expected = BackupRetention.ToRemove(nightly, Defaults, HospitalTimeZone.Zone, Now).Select(InRoot).ToList();
+        result.ArchivesDeleted.ShouldBe(expected.Count);
+        expected.Count.ShouldBeGreaterThan(50);
+        expected.ShouldAllBe(path => !File.Exists(path) && !File.Exists(Path.ChangeExtension(path, BackupStore.ReferencesExtension)));
+        Directory.EnumerateFiles(_root, "*.hc360bak").Count().ShouldBe(nightly.Count - expected.Count + 1, "the backups kept, and the foreign file");
+        Directory.EnumerateFiles(_root, "*.refs").Count().ShouldBe(nightly.Count - expected.Count + 1, "each backup kept keeps its list, and the foreign file the empty one it was given");
         File.Exists(foreign).ShouldBeTrue("a file HC360 did not name is left alone");
-        File.Exists(newPartial).ShouldBeTrue();
+        File.Exists(unfinished).ShouldBeFalse("only a run that stopped leaves one");
         File.Exists(InRoot(nightly[^1])).ShouldBeTrue();
     }
 
@@ -185,7 +187,9 @@ public sealed class BackupRetentionTests : IDisposable
     /// <summary>
     /// What the privacy notice and the erasure answer say of erased data in backups (DPDP Act s8(7)) counts the longest a
     /// backup is kept on the server and its second copy, and the off-site copies too while they are on: locked for 35
-    /// days, and removed by the bucket's lifecycle the day after.
+    /// days, their documents in generations of 7 (docs/design/incremental-backup.md, section 5.6), and removed by the
+    /// bucket's lifecycle the day after; and an append-only second copy, which keeps every file at least the daily backups'
+    /// days and a generation.
     /// </summary>
     [Fact]
     public async Task How_long_backups_are_kept_counts_the_longest_copy()
@@ -199,12 +203,51 @@ public sealed class BackupRetentionTests : IDisposable
         settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(offsite);
         (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(342);
         options.Backup.Retention = new BackupRetentionOptions { Daily = 14, Weekly = 0, Monthly = 0 };
-        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(36, "the off-site lock, and the day after");
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(43, "the off-site lock, a generation, and the day after");
 
         settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(offsite with { Enabled = false });
         (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(14);
         settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(offsite with { RetainDays = 0 });
         (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(14);
+
+        // An append-only second copy keeps a generation more than the daily backups, which is what it must keep at least.
+        options.Backup.SecondaryDirectory = @"\\NAS\HC360-Backups";
+        options.Backup.SecondaryAppendOnly = true;
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(21);
+        BackupRetention.AppendOnlyMinimumDays(options.Backup.Retention).ShouldBe(21);
+        options.Backup.Retention = new BackupRetentionOptions();
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(342, "nothing past the longest period, which the share keeps within");
+        BackupRetention.AppendOnlyMinimumDays(options.Backup.Retention).ShouldBe(21);
+    }
+
+    /// <summary>
+    /// The off-site copy as main counted it with a 30-day backup period (BackupOffsiteUploadTests before grandfather-father-son):
+    /// with every backup of the newest 30 days kept and nothing older, the numbers are the same.
+    /// </summary>
+    [Fact]
+    public async Task How_long_backups_are_kept_with_a_thirty_day_period_counts_the_off_site_lock_while_it_is_on()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = Substitute.For<ISettingsService>();
+        var options = new PlatformOptions();
+        options.Backup.Retention = new BackupRetentionOptions { Daily = 30, Weekly = 0, Monthly = 0 };
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(30);
+
+        var offsite = new BackupOffsiteSettings { Enabled = true, RetainDays = 35 };
+        settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(offsite);
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(43);
+        options.Backup.Retention = new BackupRetentionOptions { Daily = 60, Weekly = 0, Monthly = 0 };
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(60);
+
+        options.Backup.Retention = new BackupRetentionOptions { Daily = 30, Weekly = 0, Monthly = 0 };
+        settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(offsite with { Enabled = false });
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(30);
+        settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(offsite with { RetainDays = 0 });
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(30);
+
+        options.Backup.SecondaryDirectory = @"\\NAS\HC360-Backups";
+        options.Backup.SecondaryAppendOnly = true;
+        (await BackupRetention.DaysAsync(settings, options, ct)).ShouldBe(37);
     }
 
     private string InRoot(BackupFile backup) => Path.Combine(_root, Path.GetFileName(backup.Path));
@@ -227,4 +270,9 @@ public sealed class BackupRetentionTests : IDisposable
         [.. backups.Select(b => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(b.StartedAt, HospitalTimeZone.Zone).DateTime)).Order()];
 
     private static DateTimeOffset Ist(int year, int month, int day, int hour, int minute) => new(year, month, day, hour, minute, 0, TimeSpan.FromHours(5.5));
+
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now.ToUniversalTime();
+    }
 }

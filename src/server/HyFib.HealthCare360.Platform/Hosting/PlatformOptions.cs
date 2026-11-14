@@ -447,6 +447,17 @@ public sealed class BackupOptions
     public string? SecondaryDirectory { get; set; }
 
     /// <summary>
+    /// The secondary directory is an append-only or WORM share: HC360 may add files there but not delete or rename them,
+    /// and the share's own retention removes each file a fixed number of days after it was written (DEPLOYMENT.md section
+    /// 8): at least the daily backups' days and a generation (<see cref="Jobs.BackupRetention.AppendOnlyMinimumDays"/>).
+    /// Backups there then keep their documents in weekly generations (docs/design/incremental-backup.md, section 5.6), and
+    /// grandfather-father-son retention (<see cref="Retention"/>) does not apply there. HC360 also finds a share that
+    /// refuses to rename or delete by itself, but not a WORM folder that allows deleting for a while after each write: set
+    /// this for those.
+    /// </summary>
+    public bool SecondaryAppendOnly { get; set; }
+
+    /// <summary>
     /// How many days a backup disk may stay in place, where two or more take turns at <see cref="SecondaryDirectory"/>,
     /// before System health asks for it to be swapped (default 7: a weekly swap). Each disk is known by the id it is given
     /// on its first copy (<see cref="Jobs.BackupDisk"/>). 0 never asks.
@@ -454,16 +465,18 @@ public sealed class BackupOptions
     public int DiskRotationDays { get; set; } = 7;
 
     /// <summary>
-    /// Which backups are kept on the server and on the second disk or NAS, grandfather-father-son: every backup of the
-    /// newest days that have one, then the last of each of the newest weeks and months (<see cref="Jobs.BackupRetention"/>).
-    /// The off-site bucket keeps its copies by its own lock and lifecycle rules.
+    /// Which backups are kept wherever HC360 removes them, on the server and on a second disk or NAS it may delete from,
+    /// grandfather-father-son: every backup of the newest days that have one, then the last of each of the newest weeks and
+    /// months (<see cref="Jobs.BackupRetention"/>). The documents a backup needs stay in its backup folder while any backup
+    /// kept there lists them (<see cref="Jobs.BackupStore.Prune"/>). An append-only share (<see cref="SecondaryAppendOnly"/>)
+    /// and the off-site bucket remove copies by age with their own rules.
     /// </summary>
     public BackupRetentionOptions Retention { get; set; } = new();
 
     /// <summary>
-    /// The longest a backup is kept on the server and its second copy, in days, from <see cref="Retention"/>: what the
-    /// privacy notice and the erasure answer count. It replaced the setting of this name, which kept every backup 30 days
-    /// and is no longer read.
+    /// The longest a backup is kept on the server and its second copy, in days, from <see cref="Retention"/>, which the
+    /// privacy notice and the erasure answer count (<see cref="Jobs.BackupRetention.DaysAsync"/>). It replaced the setting of
+    /// this name, which kept every backup 30 days and is no longer read.
     /// </summary>
     public int RetentionDays => Retention.LongestDays;
 
@@ -483,7 +496,11 @@ public sealed class BackupOptions
     /// </summary>
     public string UpkeepSchedule { get; set; } = "0 30 3 * * ?";
 
-    /// <summary>How often each copy on the second disk or NAS is read back and checked against its backup's SHA-256, in days.</summary>
+    /// <summary>
+    /// How often each copy on the second disk or NAS is read back, in days: the backup's file against the SHA-256 it was
+    /// verified with, and every copy of a document there against its own SHA-256, a share of them each night
+    /// (<see cref="Jobs.BackupUpkeep"/>).
+    /// </summary>
     public int CopyCheckDays { get; set; } = 7;
 
     /// <summary>The test restores of the newest backup into a scratch database (<see cref="Jobs.BackupRestoreTest"/>).</summary>

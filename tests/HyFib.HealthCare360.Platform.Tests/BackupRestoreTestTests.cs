@@ -139,6 +139,32 @@ public sealed class BackupRestoreTestTests : IDisposable
         _scratch.Created.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// A backup keeps its documents in its backup folder, which a restore from that folder needs: one gone from the folder
+    /// fails the test, naming it, though the database restored; and the scratch database is dropped all the same.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_whose_folder_lost_a_document_it_lists_fails_its_test()
+    {
+        var path = Path.Combine(_directories.Files, "2026", "11", "scan.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, _protector.ProtectBytes(RandomNumberGenerator.GetBytes(500), "files"), Ct);
+        var run = await BackupAsync();
+        _scratch.Rows = new(_postgres.Rows);
+        foreach (var blob in Directory.EnumerateFiles(Path.Combine(_directories.Backups, BackupStore.BlobsFolder), "*" + BackupStore.BlobExtension, SearchOption.AllDirectories))
+        {
+            File.Delete(blob);
+        }
+
+        var outcome = await Tester().TestAsync(run, _ => Task.CompletedTask, Ct);
+
+        outcome.Passed.ShouldBeFalse();
+        outcome.Note.ShouldContain("1 of the backup's 1 documents have no copy in its backup folder");
+        outcome.Note.ShouldContain("2026/11/scan.bin");
+        _scratch.Restored.ShouldNotBeNull("the database was restored");
+        _scratch.Dropped.ShouldBe(_scratch.Created);
+    }
+
     /// <summary>A backup made before backups recorded their rows passes on restoring without error, and says it had nothing to count.</summary>
     [Fact]
     public async Task A_backup_made_before_row_counts_passes_on_restoring_without_error()

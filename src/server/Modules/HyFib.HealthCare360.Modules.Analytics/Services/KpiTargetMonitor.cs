@@ -75,13 +75,13 @@ internal sealed class KpiTargetMonitor(HospitalDbContext db, KpiService kpis, IN
         var facilityId = target.FacilityId;
         var owners = await db.Set<User>().AsNoTracking()
             .Where(u => u.IsActive && u.Type == UserType.Staff
-                        && u.Roles.Any(r => r.Role != null && r.Role.Name == role)
+                        && u.Roles.Any(r => r.Role != null && r.Role.Name == role && r.Role.IsActive)
                         && (u.AllFacilities || u.Facilities.Any(f => f.FacilityId == facilityId)))
             .Select(u => u.Id)
             .ToListAsync(ct);
         if (owners.Count == 0)
         {
-            logger.LogWarning("KPI {Kpi} of facility {FacilityId} is {Status} but no active user holds the owner role {Role}", kpi.Key, facilityId, view.Status, role);
+            logger.LogWarning("KPI {Kpi} of facility {FacilityId} is {Status} but no active user holds the owner role {Role}, or the role is turned off", kpi.Key, facilityId, view.Status, role);
             return;
         }
 

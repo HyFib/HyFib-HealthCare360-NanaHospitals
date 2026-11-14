@@ -359,9 +359,16 @@ and grants nothing.
 - **Access is given by two people**. What widens someone's access waits for a second person who holds
   `admin.grants.approve` (hospital administrators by default; the Super Administrator holds everything):
   - roles or facilities added to a user, a new user's included, and a user reactivated (`identity.user_grant`);
-  - permissions added to a role, a new role's included (`identity.role_grant`).
+  - permissions added to a role, a new role's included (`identity.role_grant`);
+  - a role turned off, turned back on (`identity.role_activation`), approved by someone who does not hold the role.
 
-  What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted.
+  What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted, a role
+  turned off (`role.deactivated`, by a holder of `admin.roles.manage`).
+  - A role turned off gives nothing, wherever a role becomes access: no permission for any endpoint or hub, no notification
+    or work sent to its holders (`PermissionHolders`), no part in approving grants. It stays assigned, and what it
+    requires of its holders (two-step verification, an enrolled workstation, its idle lock, the protection of accounts
+    that hold it) still applies. The Super Administrator and Patient roles are never off, and nobody turns off a role they
+    hold ([ROLES.md](ROLES.md)).
   - **All facilities is a grant of its own** (`User.AllFacilities`). A user works in every facility, those added later
     included, only when given all facilities, which waits for a second person like any widening; an empty list of
     facilities is none. Taking every facility away applies at once, and the user then cannot sign in (403
@@ -370,7 +377,8 @@ and grants nothing.
     them with nobody's approval; the upgrade gives all facilities to the users whose list was empty, so nobody loses
     access then (migration `UserAllFacilities`).
   - Only someone who holds an administrative permission approves a grant of it, as only they may give it.
-  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`). A grant to
+  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`): roles or
+    facilities given to their own account, or permissions added to or the turning back on of a role they hold. A grant to
     yourself, your own account or a role you hold, waits for someone else, and is refused when nobody else may approve it.
   - The approver gives what was asked, if it may still be given: the user still active (unless the grant reactivates
     them), the roles and facilities still there, and the approver allowed to manage the user and to give those roles.
@@ -1245,12 +1253,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     automatically.
   - Every period is on one screen, and none can be set below its legal minimum.
 - **Erasure and backups.**
-  - Erased data stays in the encrypted backups until they are deleted: at most the backup period and a day (31 days by
-    default). The erasure answer and the privacy notice say so. It is not crypto-shredded: the field keys are per
+  - Erased data stays in the encrypted backups until they are deleted: at most the longest a backup is kept and a day
+    (343 days by default, as a backup of each month is kept a year). The erasure answer and the privacy notice say so. It is not crypto-shredded: the field keys are per
     purpose, not per patient, and every backup escrows every key so it restores on new hardware.
   - Every erasure is appended to the erasure ledger outside the database (`privacy/erasure-ledger.log`, beside the audit
     anchors, and beside the backups' second copy when one is set), by id only, each line sealed with the audit seal key.
-  - Every backup carries the ledger inside its encryption, so the off-site copy has it too, and a restore adds its
+  - Every nightly or manual backup carries the ledger inside its encryption, so the off-site copy has it too, and a restore adds its
     erasures, and those of the ledger's copy beside the backup file, to the ledger of the server it restores onto. So
     an erasure is applied again whichever copy the hospital recovers from, on new hardware too.
   - A database restored from a backup made before an erasure has it applied again as the server starts on it, before
@@ -1663,17 +1671,20 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   when; the key is never shown again. System health warns until two different people have, and when nobody has for 90
   days: the quarterly check of the copies. Typing a key in is open to holders of the backups permission; it changes
   nothing and is audited, without the key.
-- Each backup is one archive holding the database, the stored documents (already encrypted) and escrow copies of the
-  field encryption keys. So one backup file and its recovery key restore everything on replacement hardware, including
-  identifiers such as Aadhaar and ABHA, which are unreadable without that key.
-- The archive records the SHA-256 of each document as it is copied, and a restore checks every document against it. A
+- Each backup is an archive holding the database, escrow copies of the field encryption keys, the hospital CA, the erasure
+  ledger and the list of the stored documents it needs; the documents themselves (already encrypted) are kept once in
+  the backup folder beside it (docs/design/incremental-backup.md). So a backup folder and its recovery key restore
+  everything on replacement hardware, including identifiers such as Aadhaar and ABHA, which are unreadable without that
+  key. The backup taken before an update holds the database and the keys only, for the version updated from.
+- The archive records the SHA-256 of each document (in its document index, which names each copy by it; an older backup
+  that holds its documents, as each was copied), and a restore checks every document against it. A
   document already on the disk restored onto whose bytes differ (damaged, or encrypted again since the backup) is
   replaced by the backup's copy, so the documents always match the restored database; the file it replaced is kept
   beside the documents folder, never deleted, and put back if the restore fails after it.
 - **The hospital CA travels with the backups**, so a server restored on new hardware, from the second disk or the
   off-site copy, serves a certificate every workstation, tablet, HC360 Desktop and lab agent already trusts, and none
   has to be set up again in a disaster.
-  - Every backup carries the CA with its private key (after a switch, also the CA it replaced and the certificate that
+  - Every full backup carries the CA with its private key (after a switch, also the CA it replaced and the certificate that
     CA signed for it), as a PKCS#12 file inside the archive, beside the database and the field keys. It has no
     password of its own: the archive's encryption protects it exactly as it protects the database (AES-256-GCM under
     the recovery key, every chunk authenticated), which is the protection the CA's key must have, no weaker. The
@@ -1930,8 +1941,15 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **Secret scan:** gitleaks checks every commit in the history of the change under test, not only the latest files.
   On a pull request, that is GitHub's merge of it with main: the pull request's commits and all of main's.
   - A commit on another branch is checked in that branch's own pull request, against that branch's `.gitleaks.toml`,
-    so a test fixture on one branch cannot fail another's checks. A commit on a branch that never has a pull request
-    is not scanned.
+    so a test fixture on one branch cannot fail another's checks.
+  - The daily **Security audit** workflow also scans, for every branch and tag, the commits main does not have, each
+    against its own `.gitleaks.toml` and `.gitleaksignore` (main's `.gitleaks.toml` when it has none), so a branch that
+    never has a pull request is scanned too (`.github/scripts/branch_secret_scan.py`). A finding fails that run, which
+    emails whoever last changed its schedule, and is listed in its summary; it never fails a pull request. The run also
+    fails when gitleaks reads fewer commits than git has for it, as gitleaks says "no leaks found" when git cannot read
+    a ref.
+  - A branch's own `.gitleaks.toml` decides what is allowlisted on it, in its pull request and in the daily scan alike,
+    so whoever can push a branch can allowlist values on it. An entry reaches main only through a reviewed pull request.
   - Values reviewed as not secret, such as the fixed fake tokens in the tests, are listed in `.gitleaks.toml` with
     where they come from, in the same change as the value.
   - A real secret found in a commit must be revoked at its provider first. Removing it from the files is not enough,

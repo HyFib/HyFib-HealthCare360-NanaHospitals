@@ -1,10 +1,8 @@
 using System.Globalization;
-using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Settings;
-using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Platform.Jobs;
 
@@ -35,29 +33,45 @@ internal sealed partial record BackupFile(string Path, DateTimeOffset StartedAt,
 }
 
 /// <summary>
-/// How long backups are kept, wherever HC360 puts them (DED-16). On the server and its second copy (the USB disk or NAS),
-/// grandfather-father-son (<see cref="BackupOptions.Retention"/>): every backup of the newest 14 days that have one, then
-/// the last of each of the newest 8 weeks and of the newest 12 months, so a year back there is still a backup to go to,
-/// a month apart, rather than nothing past 30 days. A weekly or monthly one is a full backup when the week or month has
-/// one, not the database-only backup taken before an update. Counting days, weeks and months that have a backup, rather
-/// than calendar ones, keeps the newest backups when backups stop; nothing is kept past
+/// How long backups are kept (DED-16), wherever HC360 puts them: one policy, with two kinds of place (DEPLOYMENT.md
+/// section 8, "How long backups are kept"; docs/design/incremental-backup.md, section 5.7).
+/// <list type="bullet">
+/// <item><b>Where HC360 removes backups</b>, on the server and on a second disk or NAS it may delete from:
+/// grandfather-father-son (<see cref="BackupOptions.Retention"/>), every backup of the newest 14 days that have one, then the
+/// last of each of the newest 8 weeks and of the newest 12 months, so a year back there is still a backup to go to, a month
+/// apart, rather than nothing past 30 days. A weekly or monthly one is a full backup when the week or month has one, not
+/// the database-only backup taken before an update. Counting days, weeks and months that have a backup, rather than
+/// calendar ones, keeps the newest backups when backups stop; nothing is kept past
 /// <see cref="BackupRetentionOptions.LongestDays"/> all the same, except the newest full backup, which is never removed.
-/// While the off-site copy is on, the bucket keeps its copies until their lock (<see cref="BackupOffsiteSettings.RetainDays"/>)
-/// has passed and its lifecycle removes them the day after (DEPLOYMENT.md section 8). What the privacy notice and the
-/// erasure answer say of erased data in backups is counted from <see cref="DaysAsync"/> (DPDP Act s8(7)), so it never
-/// says less than any copy is kept.
+/// Each backup folder keeps every document once, and a document goes only when no backup kept there lists it
+/// (<see cref="BackupStore.Prune"/>): one an old monthly backup needs stays as long as that backup.</item>
+/// <item><b>Where something else removes them by age</b>, an append-only share (<see cref="BackupOptions.SecondaryAppendOnly"/>)
+/// and the off-site bucket: every file is kept a fixed number of days after it was written, the documents in weekly
+/// generations (<see cref="BackupStore.GenerationDays"/>), so each backup there restores for that long. Such a place cannot
+/// keep only a week's or a month's last backup. The share's own retention keeps each file at least
+/// <see cref="AppendOnlyMinimumDays"/> (the daily backups' days and a generation) and at most the longest period; the bucket
+/// keeps each backup for its lock (<see cref="BackupOffsiteSettings.RetainDays"/>), its documents a generation longer, and
+/// its lifecycle removes them the day after (DEPLOYMENT.md section 8).</item>
+/// </list>
+/// What the privacy notice and the erasure answer say of erased data in backups is counted from <see cref="DaysAsync"/>
+/// (DPDP Act s8(7)), so it never says less than any copy is kept.
 /// </summary>
 public static class BackupRetention
 {
-    /// <summary>How long an unfinished file (<c>.partial</c>) is left: only a server stopped in the middle of a backup or a copy leaves one.</summary>
-    internal static readonly TimeSpan PartialKept = TimeSpan.FromDays(1);
-
     /// <summary>The longest any copy of a backup is kept, in days: on the server and its second copy, or off site while that is on.</summary>
     public static async Task<int> DaysAsync(ISettingsService settings, PlatformOptions options, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(options);
-        var days = options.Backup.RetentionDays;
+        var days = Math.Max(options.Backup.RetentionDays, 1);
+
+        // An append-only second copy keeps every backup for the share's own retention, at least the daily backups' days and
+        // a generation (docs/design/incremental-backup.md, section 5.6).
+        if (options.Backup.SecondaryAppendOnly && options.Backup.SecondaryDirectory is { Length: > 0 })
+        {
+            days = Math.Max(days, AppendOnlyMinimumDays(options.Backup.Retention));
+        }
+
         BackupOffsiteSettings? offsite;
         try
         {
@@ -68,7 +82,20 @@ public static class BackupRetention
             return days;
         }
 
-        return offsite is { Enabled: true, RetainDays: > 0 } ? Math.Max(days, offsite.RetainDays + 1) : days;
+        // The bucket's documents are in generations too: a copy stays until its generation's last backup has expired, a
+        // generation after the lock of the backup that first needed it, and the lifecycle removes it the day after.
+        return offsite is { Enabled: true, RetainDays: > 0 } ? Math.Max(days, offsite.RetainDays + BackupStore.GenerationDays + 1) : days;
+    }
+
+    /// <summary>
+    /// The least an append-only share's own retention may keep each file, in days: every backup of the daily window
+    /// (<see cref="BackupRetentionOptions.DailyKept"/>) must restore from the share alone, and a generation's documents are
+    /// written up to a generation (<see cref="BackupStore.GenerationDays"/>) before its last backup. 21 by default.
+    /// </summary>
+    public static int AppendOnlyMinimumDays(BackupRetentionOptions retention)
+    {
+        ArgumentNullException.ThrowIfNull(retention);
+        return retention.DailyKept + BackupStore.GenerationDays;
     }
 
     /// <summary>
@@ -104,38 +131,4 @@ public static class BackupRetention
 
     /// <summary>The backup a week or month keeps: its last full backup, or its last one when it has none.</summary>
     private static BackupFile Last(IEnumerable<BackupFile> newestFirst) => newestFirst.FirstOrDefault(f => f.Full) ?? newestFirst.First();
-
-    /// <summary>
-    /// Removes from <paramref name="directory"/> the backups retention no longer keeps, and what a server stopped in the
-    /// middle of a backup or a copy left (<c>.partial</c> files over a day old). Each removal is tried; the first that
-    /// fails is thrown once the others are done, as a share that refuses deletes (DEPLOYMENT.md section 8) refuses them all.
-    /// </summary>
-    /// <returns>The backups removed.</returns>
-    internal static IReadOnlyList<string> Apply(string directory, BackupRetentionOptions retention, TimeZoneInfo zone, DateTimeOffset now, ILogger logger)
-    {
-        var removed = new List<string>();
-        ExceptionDispatchInfo? failed = null;
-        var leftovers = Directory.EnumerateFiles(directory, "*" + BackupService.FileExtension + BackupService.PartialExtension)
-            .Where(f => File.GetLastWriteTimeUtc(f) < (now - PartialKept).UtcDateTime);
-        foreach (var path in ToRemove(BackupFile.In(directory), retention, zone, now).Select(f => f.Path).Concat(leftovers).ToList())
-        {
-            try
-            {
-                File.Delete(path);
-                removed.Add(path);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                failed ??= ExceptionDispatchInfo.Capture(ex);
-            }
-        }
-
-        if (removed.Count > 0)
-        {
-            logger.LogInformation("Removed {Count} backup file(s) from {Directory} that retention no longer keeps", removed.Count, directory);
-        }
-
-        failed?.Throw();
-        return removed;
-    }
 }

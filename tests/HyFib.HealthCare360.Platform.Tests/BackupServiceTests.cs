@@ -90,6 +90,7 @@ public sealed class BackupServiceTests : IDisposable
         var result = await Service().CreatePreMigrationAsync(["20260928102924_InitialCreate"], CancellationToken.None);
 
         result.SecondaryCopied.ShouldBeFalse();
+        result.SecondaryDisk.ShouldBeNull("no disk took it");
         result.Warning.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
         BackupCopies.Reason(result.Warning).ShouldNotBeNullOrWhiteSpace();
         File.Exists(Path.Combine(_directories.Backups, result.FileName)).ShouldBeTrue("the backup is kept on the server's disk");
@@ -102,18 +103,16 @@ public sealed class BackupServiceTests : IDisposable
     /// never that the copy failed (which System health would then warn of).
     /// </summary>
     [Fact]
-    public void A_copy_to_a_share_that_refuses_deletes_is_made_and_says_the_older_copies_were_kept()
+    public async Task A_copy_to_a_share_that_refuses_deletes_is_made_and_says_the_older_copies_were_kept()
     {
-        var backup = Path.Combine(_directories.Backups, "hc360-20261114-013000-scheduled.hc360bak");
-        File.WriteAllBytes(backup, RandomNumberGenerator.GetBytes(64));
-        var share = Path.Combine(_root, "append-only");
+        var copiedIt = false;
 
-        var (copied, note, _) = BackupService.CopyToSecondary(backup, share,
-            _ => throw new UnauthorizedAccessException(@"Access to the path '\\NAS\HC360-Backups\hc360-20261014-013000-scheduled.hc360bak' is denied."),
-            DateTimeOffset.UtcNow, NullLogger.Instance);
+        var (copied, note) = await BackupService.CopyToSecondary(
+            () => { copiedIt = true; return Task.CompletedTask; },
+            () => throw new UnauthorizedAccessException(@"Access to the path '\\NAS\HC360-Backups\hc360-20261014-013000-scheduled.hc360bak' is denied."),
+            @"\\NAS\HC360-Backups", NullLogger.Instance);
 
-        copied.ShouldBeTrue();
-        File.ReadAllBytes(Path.Combine(share, Path.GetFileName(backup))).ShouldBe(File.ReadAllBytes(backup));
+        (copied, copiedIt).ShouldBe((true, true));
         note.ShouldNotBeNull().ShouldStartWith("Copied to the secondary directory; older copies there were not removed: Access to the path");
         note.ShouldNotContain(BackupService.CopyFailedNote);
         BackupCopies.Reason(note).ShouldBeNull();
@@ -137,18 +136,16 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
-    public void A_copy_that_cannot_be_made_says_why_and_removes_nothing()
+    public async Task A_copy_that_cannot_be_made_says_why_and_removes_nothing()
     {
-        var backup = Path.Combine(_directories.Backups, "hc360-20261114-013000-scheduled.hc360bak");
-        File.WriteAllBytes(backup, RandomNumberGenerator.GetBytes(64));
-        var unplugged = Path.Combine(_root, "unplugged");
-        File.WriteAllText(unplugged, string.Empty);
         var removed = false;
 
-        var (copied, note, disk) = BackupService.CopyToSecondary(backup, Path.Combine(unplugged, "HC360-Backups"), _ => removed = true, DateTimeOffset.UtcNow,
-            NullLogger.Instance);
+        var (copied, note) = await BackupService.CopyToSecondary(
+            () => throw new IOException("The device is not ready."),
+            () => { removed = true; return new BackupPruneResult(0, 0, 0, 0, null); },
+            @"E:\HC360-Backups", NullLogger.Instance);
 
-        (copied, removed, disk).ShouldBe((false, false, (string?)null));
+        (copied, removed).ShouldBe((false, false));
         note.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
         BackupCopies.Reason(note).ShouldNotBeNullOrWhiteSpace();
     }
@@ -185,6 +182,19 @@ public sealed class BackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Documents_kept_because_a_list_is_missing_are_noted_and_are_not_a_failed_copy()
+    {
+        var (copied, note) = await BackupService.CopyToSecondary(
+            () => Task.CompletedTask,
+            () => new BackupPruneResult(1, 0, 0, 0, "hc360-20261101-013000-scheduled.hc360bak has no list of the documents it needs"),
+            @"E:\HC360-Backups", NullLogger.Instance);
+
+        copied.ShouldBeTrue();
+        note.ShouldNotBeNull().ShouldStartWith(BackupService.UnusedKeptNote);
+        BackupCopies.Reason(note).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task A_document_saved_while_the_database_is_dumped_is_in_the_backup()
     {
         // The file store writes a document, then commits its row. A row that made it into the dump must find its file in
@@ -193,25 +203,30 @@ public sealed class BackupServiceTests : IDisposable
         _postgres.DuringDump = () =>
         {
             Directory.CreateDirectory(Path.GetDirectoryName(document)!);
-            File.WriteAllBytes(document, RandomNumberGenerator.GetBytes(40));
+            File.WriteAllBytes(document, [1, .. RandomNumberGenerator.GetBytes(40)]);
         };
 
         var ct = TestContext.Current.CancellationToken;
         var result = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow, includeDocuments: true, [], ct);
 
         result.DocumentCount.ShouldBe(1);
-        var restored = Path.Combine(_root, "restored");
         await using var input = File.OpenRead(Path.Combine(_directories.Backups, result.FileName));
         await using var payload = await BackupEncryption.OpenAsync(input, _protector.DeriveKey("backup"), ct);
-        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(DocumentsFolder: restored), ct);
+        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
         contents.Manifest.DocumentCount.ShouldBe(1);
+        var listed = contents.Index.ShouldHaveSingleItem();
+        listed.RelativePath.ShouldBe("2026/09/saved-during-dump.bin");
+        var restored = Path.Combine(_root, "restored");
+        await BackupBlobs.CopyAsync(_directories.Backups, contents, restored, ct);
         File.ReadAllBytes(Path.Combine(restored, "2026", "09", "saved-during-dump.bin")).ShouldBe(File.ReadAllBytes(document));
     }
 
     /// <summary>
-    /// Every backup carries the erasure ledger (DPDP Act 2023 s8(7)), inside its encryption, with the lines of the ledger's
-    /// copy beside the second copy that the ledger lacks (one it lost with a disk), so a restore from any copy of the backup,
-    /// the off-site one included, can carry out the erasures again.
+    /// Every full backup carries the erasure ledger (DPDP Act 2023 s8(7)), inside its encryption, with the lines of the
+    /// ledger's copy beside the second copy that the ledger lacks (one it lost with a disk), so a restore from any copy of the
+    /// backup, the off-site one included, can carry out the erasures again. The backup before an update carries none: it is
+    /// for going back on this machine, whose ledger the update leaves alone, with the version updated from, which reads an
+    /// archive with nothing it does not know (F17).
     /// </summary>
     [Fact]
     public async Task A_backup_carries_the_erasure_ledger_with_what_its_copy_has_that_it_lost()
@@ -223,12 +238,20 @@ public sealed class BackupServiceTests : IDisposable
         Directory.CreateDirectory(_options.Backup.SecondaryDirectory!);
         await File.WriteAllTextAsync(ErasureLedgerFiles.MirrorPath(_options.Backup)!, "{\"id\":\"A\"}\n{\"id\":\"B\"}\n", ct);
 
-        var result = await Service().CreatePreMigrationAsync([], ct);
+        var full = await ContentsAsync(await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow.AddMinutes(-1), includeDocuments: true, [], ct));
+        Encoding.UTF8.GetString(full.ErasureLedger.ShouldNotBeNull()).ShouldBe("{\"id\":\"A\"}\n{\"id\":\"B\"}\n");
+        full.Manifest.Format.ShouldBe(BackupArchive.Format);
 
-        await using var input = File.OpenRead(Path.Combine(_directories.Backups, result.FileName));
-        await using var payload = await BackupEncryption.OpenAsync(input, _protector.DeriveKey("backup"), ct);
-        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
-        Encoding.UTF8.GetString(contents.ErasureLedger.ShouldNotBeNull()).ShouldBe("{\"id\":\"A\"}\n{\"id\":\"B\"}\n");
+        var beforeUpdate = await ContentsAsync(await Service().CreatePreMigrationAsync([], ct));
+        beforeUpdate.Manifest.Format.ShouldBe(BackupArchive.InlineDocumentsFormat);
+        (beforeUpdate.ErasureLedger, beforeUpdate.Manifest.ErasureLedger, beforeUpdate.Manifest.HospitalCa).ShouldBe(((byte[]?)null, (string?)null, (string?)null));
+
+        async Task<BackupContents> ContentsAsync(BackupResult result)
+        {
+            await using var input = File.OpenRead(Path.Combine(_directories.Backups, result.FileName));
+            await using var payload = await BackupEncryption.OpenAsync(input, _protector.DeriveKey("backup"), ct);
+            return await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
+        }
     }
 
     [Fact]
@@ -299,7 +322,7 @@ public sealed class BackupServiceTests : IDisposable
 
         ex.Message.ShouldContain("Not enough free disk space");
         _postgres.Dumped.ShouldBeNull();
-        Directory.EnumerateFiles(_directories.Backups).ShouldBeEmpty();
+        BackupFiles().ShouldBeEmpty();
     }
 
     [Fact]
@@ -310,7 +333,7 @@ public sealed class BackupServiceTests : IDisposable
         var ex = await Should.ThrowAsync<InvalidOperationException>(() => Service().CreatePreMigrationAsync([], CancellationToken.None));
 
         ex.Message.ShouldContain("pg_restore cannot read");
-        Directory.EnumerateFiles(_directories.Backups).ShouldBeEmpty();
+        BackupFiles().ShouldBeEmpty();
         Directory.EnumerateFiles(_directories.Temp).ShouldBeEmpty();
     }
 
@@ -333,6 +356,11 @@ public sealed class BackupServiceTests : IDisposable
         var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
         contents.MasterKey.ShouldBe(_protector.ExportMasterKey());
     }
+
+    /// <summary>What a backup leaves in the backup folder: archives, unfinished ones and lists, not the folder's own marker and lock.</summary>
+    private IEnumerable<string> BackupFiles() =>
+        Directory.EnumerateFiles(_directories.Backups).Where(f => f.EndsWith(".hc360bak", StringComparison.Ordinal)
+            || f.EndsWith(".partial", StringComparison.Ordinal) || f.EndsWith(".refs", StringComparison.Ordinal));
 
     private BackupService Service() => new(
         Substitute.For<IDbContextFactory<HospitalDbContext>>(),

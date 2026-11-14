@@ -100,7 +100,8 @@ internal sealed class LabConnectionService(
                     : null,
                 pending.GetValueOrDefault(instrument.Code.ToUpperInvariant()),
                 tcp && LabConnectionHealthWarnings.OpenToAnyDevice(instrument),
-                instrument.DeviceAuthentication));
+                instrument.DeviceAuthentication,
+                instrument.Protocol == LabProtocol.Astm ? instrument.AstmDialect : null));
         }
 
         return new LabConnectionsDto(gateway.Enabled, row?.Version ?? 0, connections, agents);
@@ -195,6 +196,7 @@ internal sealed class LabConnectionService(
             Encoding = request.Encoding,
             SampleIdFields = hl7 ? Clean(request.SampleIdFields) : null,
             OrderMessage = hl7 ? request.OrderMessage : null,
+            AstmDialect = hl7 || string.IsNullOrEmpty(request.AstmDialect) ? null : request.AstmDialect,
 
             // Not sent (an older screen): the connection keeps how its devices prove themselves.
             DeviceAuthentication = request.DeviceAuthentication
@@ -224,6 +226,7 @@ internal sealed class LabConnectionService(
                 entry.AgentDeviceId,
                 comPort = entry.Serial?.PortName,
                 deviceAuthentication = entry.DeviceAuthentication.ToString(),
+                astmDialect = entry.AstmDialect,
             },
             Severity = AuditSeverity.Warning,
         });

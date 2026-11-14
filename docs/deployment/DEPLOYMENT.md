@@ -975,7 +975,7 @@ request, the agent says so in the Application event log (source *HyFib HC360 Lab
    (its own virtual account `NT SERVICE\HC360LabAgent`, automatic start, restart on failure), enrols the PC and starts
    the service. The CA fingerprint is required: the agent refuses a server whose CA does not match it, and from then
    on trusts only that CA. The device secret is protected for this PC (machine DPAPI) in
-   `%ProgramData%\HyFib\HC360LabAgentgent.json`, which only SYSTEM, Administrators and the service account can read.
+   `%ProgramData%\HyFib\HC360LabAgent\agent.json`, which only SYSTEM, Administrators and the service account can read.
 3. In **Lab setup › Analysers › Connection**, choose "Serial cable to a lab PC", this agent, the COM port and the line
    settings from the analyser's interface manual (most use 9600 baud, 8 data bits, no parity, one stop bit, no flow
    control). Windows names the port in Device Manager › Ports (COM & LPT); a USB-to-serial adapter keeps its COM number
@@ -1311,6 +1311,10 @@ each.
    series past the numbers issued since the upgrade, so a bill or UHID printed meanwhile is not issued again, and holds
    outgoing messages until an administrator releases them (section 8, "After a restore"; a previous version does so
    only if it is this version or later).
+
+   The nightly backups made after an upgrade to a version that keeps documents apart (archive format 3, section 8)
+   restore only with that version or a later one. The backup taken just before the upgrade is in the earlier format,
+   so going back works as above.
 4. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`, so that HC360 starts with
    Windows again. *Check:* Administration › System health shows the previous version and nothing red.
 5. **Workstations.** HC360 Desktop never goes back a version by itself. One that took the newer version keeps it; where
@@ -1337,9 +1341,14 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   ```
 
   The longest period is what the privacy notice tells patients of erased data in backups (docs/modules/privacy.md),
-  so it changes with these numbers. Plan the disk space for about 34 backups on each copy. `Backup:RetentionDays`,
-  which kept every backup 30 days, is no longer read. The off-site bucket keeps its copies by its own lock and
-  lifecycle ("The off-site copy" below).
+  so it changes with these numbers. Plan the disk space for about 34 backups on each copy, and for the documents once
+  (twice for up to the longest period after a data-key rotation, while the backups made before it are kept).
+  `Backup:RetentionDays`, which kept every backup 30 days, is no longer read. Grandfather-father-son applies where HC360
+  removes backups: on the server, and on a USB disk or a NAS share it may delete from. Where something else removes
+  them by age, the copies are kept a fixed number of days instead, every backup alike, with the documents in weekly
+  generations so that each backup there restores on its own for those days: the off-site bucket by its lock and
+  lifecycle ("The off-site copy" below), and an append-only share by its own retention ("A second copy the server
+  cannot delete" below).
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
 - **Backups switched off, or no second copy.** With `Backup:Enabled` false in `hc360.settings.json`, no backup is made
@@ -1387,23 +1396,66 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   **Back up now**: check that the Second copy column says "No", the in-app notice arrives, and System health shows
   `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Keep the result with the go-live
   records.
-- Each backup holds the database, the stored documents (with the SHA-256 of each), the field encryption keys, the audit
-  seal key, the erasure ledger and the hospital CA, all encrypted. Every backup is read back and checked when it is
-  made. The **Contents** and **Checked** columns show this, and the **Checked** column also shows the backup's last test
-  restore ("Test restores" below).
-- **The copies on the second disk or NAS are read back.** During the nightly upkeep, each copy there is read back
+- Each backup holds the database, the field encryption keys, the audit seal key, the erasure ledger and the hospital CA,
+  encrypted, and the list of the stored documents it needs, with the SHA-256 of each. Every backup is read back and
+  checked when it is made. The **Contents** and **Checked** columns show this, and the **Checked** column also shows the
+  backup's last test restore ("Test restores" below). The backup taken before an update holds the database and the keys
+  only, written so that the version updated from can restore it (section 7, "Going back").
+- **The documents are kept once, beside the backups.** A stored document never changes, so the backup folder keeps one
+  copy of each, under `blobs\`, and each night's backup copies only the documents added that day. The backup folder
+  therefore grows by about the day's new documents and one database dump each night, not by every document each night
+  (docs/design/incremental-backup.md). Each backup has a `.refs` list beside it. When retention removes a backup (above),
+  the documents no remaining backup needs are removed from `blobs\` too, on the server and on the second disk: a
+  document a kept weekly or monthly backup needs stays as long as that backup, so an erased document, or one written
+  again under a new key, stays until the last backup that lists it goes, up to 342 days. A document copy is the stored
+  file byte for byte, already encrypted with the field keys, so it is unreadable without the recovery key.
+  - **Copy the whole backup folder, never only a `.hc360bak` file.** A backup without the `blobs\` folder beside it
+    cannot put the documents back. `backup verify` and `Restore-HC360.ps1` say so, and change nothing.
+  - **Format the USB disks NTFS.** exFAT has no journal and wastes up to 128 KB on every document. A backup's note says
+    so when the second disk is exFAT or FAT.
+  - **Each USB disk is complete on its own.** When a disk that was off site comes back, the night's backup copies the
+    documents it missed while it was away, then the backup, and the upkeep copies each backup it missed with the
+    documents that backup needs (above). Every backup on a disk restores from that disk alone.
+  - Don't edit, rename or delete anything under `blobs\`, `gen-*\` or `offsite\`, or the `.refs` files, by hand. If a
+    `.refs` file is lost, HC360 stops removing documents from that folder, and the backup's note says which file is
+    missing, until the backup it belongs to is deleted.
+- **The copies on the second disk or NAS are read back.** During the nightly upkeep, each backup there is read back
   every 7 days (`Backup:CopyCheckDays`), the least recently checked first, for up to three hours a night, and checked
-  against the SHA-256 its backup was verified with. A copy that no longer matches is copied again from the server, if
-  the server's own still matches. Otherwise the **Second copy** column says that copy is damaged, and System health
-  warns (`backup.copy_damaged`): replace the disk, or check the NAS's own disks.
-- **Restore test every quarter** on a spare machine, as well as the weekly test restores below: only a restore on
-  other hardware checks the documents, the keys and the recovery key's copies too. The restored copy holds its outgoing
-  messages ("After a restore" below): leave them held there, or patients get the test copy's messages. To check a copy
-  on the NAS or a USB drive without restoring it:
+  against the SHA-256 it was verified with; every document it needs must be on the disk. Every copy of a document there
+  is read back too, a seventh of them each night, so each once in those 7 days, and checked against its own SHA-256. A
+  backup or a document whose copy no longer matches, or a document missing from the disk, is copied again from the
+  server, if the server's own still matches. Otherwise the **Second copy** column says that copy is damaged, and System
+  health warns (`backup.copy_damaged`): replace the disk, or check the NAS's own disks.
+- **Restore drill every quarter** on a spare machine, as well as the weekly test restores below: only a restore on
+  other hardware checks every document end to end, the keys and the recovery key's copies too. Install HC360 and
+  PostgreSQL as for new hardware (step 1 below) and attach one USB disk or the NAS. Right after a night's backup, on the
+  live server, count the rows to compare with. That only reads, so it changes nothing:
+
+  ```powershell
+  .\Invoke-HC360RestoreDrill.ps1 -ExportReference -ReportPath E:\drill-reference.json
+  ```
+
+  Then on the spare machine, with that night's backup from the disk:
+
+  ```powershell
+  .\Invoke-HC360RestoreDrill.ps1 -BackupFile E:\HC360-Backups\hc360-<date>-scheduled.hc360bak -ReferenceFile E:\drill-reference.json
+  ```
+
+  It checks the backup in its folder and restores it with `Restore-HC360.ps1`. Then it checks every stored document
+  the restored database records: its file must be in place, decrypt with the restored keys, and hold what was saved
+  (the SHA-256 recorded when it was saved). It counts the rows of every table against the live server's: a table
+  missing, or with more rows, fails the drill, while fewer rows are the ones added after the backup. It times each
+  step and leaves a report (`drills\restore-drill-<time>.json` and `.txt` in the data folder) to keep with the go-live
+  records. The time it takes is the time a real restore takes. The restored copy holds its outgoing messages ("After
+  a restore" below): leave them held there, or patients get the test copy's messages. To check a copy on the NAS or a
+  USB drive without restoring it:
 
   ```powershell
   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
   ```
+
+  It also checks every document the backup needs in the folder beside it, against the SHA-256 the backup lists. For a
+  copy whose documents are in another folder, add `--blobs <folder>`.
 
 - To restore after a disk failure on new hardware:
   1. Install PostgreSQL and HC360 as above, with the old server's `-SecondaryBackupDir`: HC360 finds the copy of the
@@ -1415,7 +1467,8 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      ```
 
      It asks for the recovery key that opens that backup: the one in use when it was made, which the Backups list names.
-     It checks the whole backup before it changes anything. It restores the database first, keeping the current one
+     It reads the documents from the folder the backup is in, so give it the backup in its folder on the NAS or USB
+     disk, or a copy of the whole folder. It checks the whole backup, and every document, before it changes anything. It restores the database first, keeping the current one
      under a new name (nothing is dropped). Only then does it put the documents back and install the backup's
      encryption key. If a step fails, the previous database is put back and HC360 starts again on it. On new hardware,
      later backups open with the key entered here; make a new key if that one should be retired.
@@ -1426,7 +1479,7 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      how many it restored, left and replaced ("Documents: …"), and keeps each file it replaced in
      `files-replaced-<time>` beside the documents folder: delete that folder once the restored server is checked.
 
-     Erased data must not come back with a restore (DPDP Act 2023 s8(7)). Every backup carries the erasure ledger inside
+     Erased data must not come back with a restore (DPDP Act 2023 s8(7)). Every nightly or manual backup carries the erasure ledger inside
      its encryption, and the script adds its erasures, with those of the ledger's copy beside the backup file on the
      second disk or NAS, to the new server's ledger ("Erasures: … added to this server's erasure ledger …"). As HC360
      starts, it carries out again each one the restored database does not have ("After a restore" below). So restore
@@ -1442,7 +1495,7 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
      Last, before it starts HC360, it leaves `restored.json` in the data folder. What HC360 then does, and what to check
      before the hospital works on the restored server, is under "After a restore" below.
-  3. Every backup carries the hospital CA, inside its encryption, and the script installs it with the database
+  3. Every nightly or manual backup carries the hospital CA, inside its encryption, and the script installs it with the database
      ("Installed the backup's hospital CA …", with its fingerprint): HC360 Desktop, the lab agents, tablets and browsers
      trust the new server as they trusted the old one, and find it on the network, without being set up again. The CA
      the new hardware made as it first started is kept under a new name. Restore the newest backup you have: one made
@@ -1476,7 +1529,9 @@ once a week HC360 restores the newest backup into a scratch database on the hosp
   counted when it was made: patients, visits, appointments, encounters, clinical notes, prescriptions, lab results,
   admissions, bills, receipts, pharmacy sales, stored documents, staff accounts, the audit trail and the schema's
   migrations. The rows are counted in the same snapshot pg_dump dumps, so records saved during the backup do not
-  count. A backup made before HC360 counted rows passes if it restores without error.
+  count. A backup made before HC360 counted rows passes if it restores without error. Every document the backup lists
+  must also have its copy in the backup folder, as a restore from that folder needs; one missing fails the test, and
+  is named.
 - **Cleaned up.** The scratch database (`hc360_restore_test_…`) holds a full copy of every patient's record. It is
   dropped as soon as the test ends, whether it passed or failed. One left by a power cut or a restart during a test
   is dropped by the next test. The plain database dump in the temporary folder is deleted too.
@@ -1591,9 +1646,20 @@ never has that key.
 - **When.** The server that runs the background jobs looks every 15 minutes. It uploads the newest verified full backup
   first, then older ones not yet off site that were made within the last 7 days (`backfillDays`), one at a time. The
   backup taken before an update holds no documents and is not uploaded.
+- **Documents in weekly generations.** The bucket deletes by age, and HC360 may not delete there, so the documents
+  cannot be kept once as on the second disk. They go up in generations, under `hc360/gen-<date>/blobs/`. The first
+  backup of a generation uploads every document. Each later backup that week uploads only the new ones, before the
+  backup itself, so a backup off site always has its documents. Every 7 days a new generation starts with every
+  document again, and each generation is locked until its last backup has expired (its start + 7 + `retainDays` days).
+  The bucket therefore holds about six copies of the documents plus one dump a night, not one full backup a night.
+  HC360 records on the server (in the backup folder's `offsite\`) which documents each generation has, because its key
+  may not list the bucket.
 - **Large backups on a slow line.** A backup over 16 MB goes up in parts of 8 MB or more. Each part the store takes is
   recorded with the backup, so an upload cut off by a lost connection or a restart goes on from where it stopped. Size
-  the uplink so that a night's backup goes up within the day: a 6 GB backup takes about 80 minutes at 10 Mbit/s.
+  the uplink so that a night's backup goes up within the day: a 6 GB backup takes about 80 minutes at 10 Mbit/s. The
+  first backup of each generation also uploads every document, once a week: 100 GB of documents take about 23 hours
+  at 10 Mbit/s, and 300 GB about three days. The uploads go on through the week, and a backup counts as off site once
+  its documents and itself are there.
 - **Checked on the way and at the end.** Every request goes over https only, is signed with the access key, and carries
   the SHA-256 and MD5 of what it sends, which the store checks: a part damaged on the way is refused, not stored. Before
   the parts are joined, HC360 reads the backup file again and checks it against the SHA-256 it was verified with when
@@ -1616,17 +1682,27 @@ never has that key.
    aws s3api put-bucket-lifecycle-configuration --bucket nana-hc360-backups --lifecycle-configuration file://hc360-lifecycle.json
    ```
 
-   `hc360-lifecycle.json` removes each copy as its lock passes, and the parts of uploads that never finished. Keep its
-   `Days` equal to `retainDays`: the privacy notice tells patients that erased data leaves the backups within
-   `retainDays` + 2 days (37) while the off-site copy is on, and counts on it (docs/modules/privacy.md).
+   `hc360-lifecycle.json` removes each copy as its lock passes, and the parts of uploads that never finished. Keep the
+   backups' `Days` equal to `retainDays`, and the documents' (`hc360/gen-`) at `retainDays` + 7. A document uploaded
+   at the start of a generation is still needed by that generation's last backup 6 days later, so a shorter rule
+   would hide it while that backup is kept. The privacy notice tells patients that erased data leaves the backups
+   within `retainDays` + 9 days (44) while the off-site copy is on, and counts on these rules (docs/modules/privacy.md).
 
    ```json
    {
      "Rules": [
        {
+         "ID": "hc360-documents",
+         "Status": "Enabled",
+         "Filter": { "Prefix": "hc360/gen-" },
+         "Expiration": { "Days": 42 },
+         "NoncurrentVersionExpiration": { "NoncurrentDays": 1 },
+         "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+       },
+       {
          "ID": "hc360-backups",
          "Status": "Enabled",
-         "Filter": { "Prefix": "hc360/" },
+         "Filter": { "Prefix": "hc360/hc360-" },
          "Expiration": { "Days": 35 },
          "NoncurrentVersionExpiration": { "NoncurrentDays": 1 },
          "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
@@ -1634,6 +1710,10 @@ never has that key.
      ]
    }
    ```
+
+   A bucket set up with the earlier single rule (`"Prefix": "hc360/"`, 35 days) must get these two rules before HC360
+   is upgraded to keep documents in generations. Otherwise each generation's documents expire up to 6 days before
+   its last backup does.
 
    Keep the bucket's default encryption with keys the store manages (SSE-S3), not KMS keys: HC360 checks each copy
    against its ETag, which is a checksum only with SSE-S3.
@@ -1707,14 +1787,17 @@ On OCI, the access key is a customer secret key of a user whose group's policy a
 **Restoring from the off-site copy.** When the server and the second disk are both gone:
 
 1. On the new machine, with the hospital's own credentials for the store (not HC360's key), download the backup the
-   Backups list named, or the newest one, from the store's console or with the AWS CLI:
+   Backups list named, or the newest one, and the generation of documents it needs, into one folder. The object's
+   metadata names the backup's SHA-256 (`x-amz-meta-hc360-sha256`), the recovery key that opens it
+   (`x-amz-meta-hc360-recovery-key`) and its generation (`x-amz-meta-hc360-generation`). With the AWS CLI:
 
    ```powershell
+   aws s3api head-object --bucket nana-hc360-backups --key hc360/hc360-<date>-scheduled.hc360bak --query Metadata
    aws s3 cp s3://nana-hc360-backups/hc360/hc360-<date>-scheduled.hc360bak D:\Restore\
+   aws s3 sync s3://nana-hc360-backups/hc360/gen-<date>/ D:\Restore\gen-<date>\
    ```
 
-   The object's metadata names the backup's SHA-256 (`x-amz-meta-hc360-sha256`) and the recovery key that opens it
-   (`x-amz-meta-hc360-recovery-key`).
+   A backup with no generation in its metadata was made before HC360 kept the documents apart, and holds them itself.
 2. Check it without restoring it: `backup verify --in D:\Restore\hc360-<date>-scheduled.hc360bak`, as above.
 3. Restore it with `.\Restore-HC360.ps1 -BackupFile D:\Restore\hc360-<date>-scheduled.hc360bak`, as above. No other tool
    is needed.
@@ -1730,10 +1813,20 @@ server, and ransomware on it, can add copies there but not remove or change them
 - Better still, make the share a WORM folder (write once, read many: Synology's WriteOnce, QNAP's WORM), which keeps
   each file unchangeable for the days set, or take immutable snapshots of it every day. Then a copy cannot be
   overwritten either.
-- Let the NAS's own retention remove the copies. HC360 cannot: each backup's note then says it was copied and that the
-  older copies there were not removed. That note is not a failed copy, and raises no warning. Keep what HC360 would
-  keep (14 days, the last of each week for 8 weeks and of each month for 12 months, which most NAS retention or
-  snapshot policies can do), and nothing past the longest period the privacy notice counts (342 days by default).
+- Set `HealthCare360:Backup:SecondaryAppendOnly` to `true` in the settings file. HC360 then keeps the documents there in
+  weekly generations (`gen-<date>\blobs\`), as in the bucket, because the NAS removes files by age and HC360 cannot
+  remove any. HC360 also finds by itself a share that refuses to rename or delete when it first uses it, and records
+  it in `hc360-append-only`, but a WORM folder that allows deleting for a while after each write looks like an ordinary
+  folder until then: set the setting for those.
+- Let the NAS's own retention remove each file a fixed number of days after it was created: at least 21 days
+  (`Backup:Retention:Daily` + 7), and no more than the longest period the privacy notice counts (342 days by default).
+  A shorter retention removes a generation's documents while a backup of the last 14 days still needs them. HC360 cannot
+  remove the copies itself: each backup's note then says it was copied and that the older copies there were not
+  removed. That note is not a failed copy, and raises no warning.
+- Such a share cannot keep only the last backup of each week and month, as HC360 does on the server: it keeps every
+  backup for its retention, and every generation's documents for as long. Each further week kept costs a full copy of
+  the documents. The weekly and monthly backups stay on the server's own disk; keep them on the share too only by giving
+  it the room for a longer retention.
 - Keep the NAS's administrator account off the Server Node.
 
 ## 9. Warm standby and failover (optional)
@@ -2011,8 +2104,10 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    & "$env:ProgramFiles\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe" backup restore --in '\\NAS\HC360-Backups\hc360-<latest>.hc360bak'
    ```
 
-   It asks for the recovery key that opens that backup. It installs the data encryption keys, protected for this
-   machine, and the stored documents, and leaves the database as it is: the standby's is newer than the backup's. Do not
+   It asks for the recovery key that opens that backup. It reads the documents from the folder the backup is in, so name
+   the backup in its folder on the NAS or USB disk, not a copy of the file alone (or add `--blobs <folder>`). It
+   installs the data encryption keys, protected for this machine, and the stored documents, and leaves the database as
+   it is: the standby's is newer than the backup's. Do not
    run `Restore-HC360.ps1`, which would replace it with the backup's. If the old primary's disk can still be read, copy
    its `%ProgramData%\HyFib\HealthCare360\files` folder over the standby's too, keeping files already there: it has the
    documents uploaded since the backup.

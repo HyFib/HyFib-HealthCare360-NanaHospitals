@@ -342,11 +342,7 @@ internal sealed class NotificationService(
 
     public async Task NotifyPermissionHoldersAsync(string permission, Guid? facilityId, string title, string? body, string? link, string category, string severity = "info", CancellationToken cancellationToken = default)
     {
-        var roleIds = db.Set<RolePermission>()
-            .Where(rp => rp.Permission == permission || rp.Permission == PermissionRegistry.Wildcard)
-            .Select(rp => rp.RoleId);
-
-        var users = db.Set<User>().Where(u => u.IsActive && u.Type == UserType.Staff && u.Roles.Any(r => roleIds.Contains(r.RoleId)));
+        var users = PermissionHolders.Of(db, permission);
         if (facilityId is { } fid)
         {
             users = users.Where(u => u.AllFacilities || u.Facilities.Any(f => f.FacilityId == fid));

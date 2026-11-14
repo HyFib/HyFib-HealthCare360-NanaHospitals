@@ -91,7 +91,7 @@ internal sealed partial class LabOrderQueue(HospitalDbContext db, TimeProvider t
             return [];
         }
 
-        if (OffReason(await sink.GetInstrumentAsync(code, cancellationToken), instrument) is { } off)
+        if ((OffReason(await sink.GetInstrumentAsync(code, cancellationToken), instrument) ?? UnaskedOrdersReason(instrument)) is { } off)
         {
             await FinishAsync(due.Select(d => d.Id).ToList(), LabOrderDownloadStatus.Skipped, off, cancellationToken);
             return [];
@@ -223,6 +223,15 @@ internal sealed partial class LabOrderQueue(HospitalDbContext db, TimeProvider t
         : !profile.IsBidirectional ? $"Host queries and order download are off: {profile.Code} is not bidirectional in Lab setup."
         : instrument.HostQuery == false ? $"Host queries and order download are off: the connection of {profile.Code} still has the retired \"hostQuery\": false. Save its connection in Lab setup to clear it."
         : null;
+
+    /// <summary>
+    /// Why an analyser is never sent orders unasked although it is bidirectional: its ASTM dialect takes orders only in
+    /// answer to its own host query (the Yumizen H500 ignores any other), which still works.
+    /// </summary>
+    internal static string? UnaskedOrdersReason(LabInstrumentSettings instrument) =>
+        instrument.Protocol == LabProtocol.Astm && !Astm.AstmDialect.For(instrument.AstmDialect).SendsOrdersUnasked
+            ? $"Analyser {instrument.Code} takes orders only when it asks for a sample (host query), so none are sent unasked."
+            : null;
 
     /// <summary>30 s, 1, 2, 4 and 8 minutes, then every 10 minutes.</summary>
     internal static TimeSpan RetryDelay(int attempts) => TimeSpan.FromSeconds(Math.Min(30 * Math.Pow(2, Math.Max(0, attempts - 1)), 600));

@@ -4,7 +4,9 @@ name: Security audit
 # nobody is changing the code still fails a run. GitHub emails whoever last changed the schedule when a run fails, and
 # the log names each vulnerable package and its advisory. It also checks the patch windows (SRS SEC-11), as CI does:
 # docs/security/SECURITY.md, "Patching security advisories". Every day, not every week: a critical advisory must be
-# patched within 7 days, and a weekly run could see it for the first time on the last of them.
+# patched within 7 days, and a weekly run could see it for the first time on the last of them. It also scans the commits
+# main does not hold, on every branch and tag, for secrets: a branch that never has a pull request is scanned nowhere
+# else.
 on:
   schedule:
     - cron: "30 0 * * *" # every day, 06:00 IST
@@ -109,3 +111,29 @@ jobs:
 
       - name: Check the patch windows
         run: python3 .github/scripts/patch_windows.py --nuget "$RUNNER_TEMP/audits/nuget-audit.json" --npm "$RUNNER_TEMP/audits/npm-audit.json"
+
+  # CI scans the history of each change, so a commit on a branch that never has a pull request is scanned by nothing
+  # there. This scans, for every branch and tag, the commits main does not have, each against its own .gitleaks.toml and
+  # .gitleaksignore (main's .gitleaks.toml when it has none), and lists what it finds in the run's summary. No pull
+  # request is affected (.github/scripts/branch_secret_scan.py; docs/security/SECURITY.md, "Secret scan"). gitleaks is
+  # the release ci.yml downloads: test_branch_secret_scan.py fails while the two pins differ.
+  secrets:
+    name: Secrets in commits main does not hold
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every branch and tag, with its whole history
+          persist-credentials: false
+
+      - name: Scan the commits each branch and tag holds that main does not
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 15 --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+          python3 .github/scripts/branch_secret_scan.py --gitleaks "$RUNNER_TEMP/gitleaks"

@@ -34,16 +34,24 @@ internal static class ServerCli
     private const string Usage = """
         HyFib HealthCare360 server maintenance
 
-          backup verify --in <backup.hc360bak> [--key <recovery-key>]
+          backup verify --in <backup.hc360bak> [--blobs <folder>] [--key <recovery-key>]
               Reads a backup in full and checks it: every part decrypts, and the database, the encryption key and the
               documents match its manifest. Use it for the quarterly restore test and for copies on a NAS or USB drive.
+              A backup keeps its documents beside it, in the same folder (each checked against its SHA-256): give that
+              folder with --blobs when the documents are elsewhere.
 
           backup decrypt --in <backup.hc360bak> --out <database.dump> [--key <recovery-key>]
               Checks the whole backup and writes only its database dump, for pg_restore. Nothing else changes.
 
-          backup restore --in <backup.hc360bak> [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
+          backup check-documents
+              After a restore: checks every stored document the database records. Its file must be in place, decrypt with
+              the encryption keys on this machine, and hold what was saved (the SHA-256 recorded when it was saved). The
+              restore drill (Invoke-HC360RestoreDrill.ps1) runs it. Reads only; exit code 2 when a document fails.
+
+          backup restore --in <backup.hc360bak> [--blobs <folder>] [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
               Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
-              rotations) on this Server Node, with the HC360 service stopped. A document already here whose bytes are not
+              rotations) on this Server Node, with the HC360 service stopped. The documents come from the backup's folder
+              (or --blobs), each checked against the SHA-256 the backup lists. A document already here whose bytes are not
               those the backup records is replaced, and the file that was there kept in a folder of its own. The erasures in
               the backup's erasure ledger, and in the ledger's copy beside the backup file, are added to this server's
               ledger, which HC360 applies as it starts. A different key already here is kept under a new name. Last, the
@@ -195,6 +203,7 @@ internal static class ServerCli
                 ["backup", "verify", ..] when options.ContainsKey("in") => await VerifyAsync(options),
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
+                ["backup", "check-documents", ..] => await CheckDocumentsAsync(),
                 ["backup", "decrypt-base", ..] when options.ContainsKey("in") && options.ContainsKey("out") =>
                     await PointInTimeCli.DecryptBaseAsync(options["in"], options["out"], () => ReadRecoveryKey(options)),
                 ["backup", "decrypt-wal", ..] when options.ContainsKey("in") && options.ContainsKey("out") =>
@@ -274,6 +283,20 @@ internal static class ServerCli
         CryptographicOperations.ZeroMemory(contents.MasterKey);
         CryptographicOperations.ZeroMemory(contents.HospitalCa);
         Describe(contents.Manifest);
+        if (contents.Index.Count > 0)
+        {
+            // A format 3 backup's documents are in its backup folder: each must have a copy whose SHA-256 is the index's.
+            var folder = options.GetValueOrDefault("blobs") ?? BackupBlobs.FolderOf(options["in"]);
+            var problems = await BackupBlobs.CheckAsync(folder, contents, CancellationToken.None);
+            if (problems.Count > 0)
+            {
+                Console.Error.WriteLine(BackupBlobs.Missing(folder, problems, contents.Index.Count));
+                return 2;
+            }
+
+            Console.WriteLine($"All {contents.Index.Count} documents are in {folder}, each matching the SHA-256 the backup lists.");
+        }
+
         Console.WriteLine(payload.KeyId is { } keyId
             ? $"The backup decrypts in full and matches its manifest. It opens with recovery key {keyId}."
             : "The backup decrypts in full and matches its manifest. It opens with the original recovery key.");
@@ -293,7 +316,8 @@ internal static class ServerCli
 
         var databaseOut = options.GetValueOrDefault("database-out");
         var result = await BackupRestore.RestoreAsync(options["in"], key, databaseOut, directories,
-            HospitalDataProtection.CreateProvider(directories), HospitalDataProtection.CreateNodeProvider(directories), TimeProvider.System, CancellationToken.None);
+            HospitalDataProtection.CreateProvider(directories), HospitalDataProtection.CreateNodeProvider(directories), TimeProvider.System, CancellationToken.None,
+            options.GetValueOrDefault("blobs"));
         if (result.Manifest is null)
         {
             Console.WriteLine(databaseOut is null
@@ -933,6 +957,32 @@ internal static class ServerCli
         Console.WriteLine("  1. Start the HC360Server service: it issues itself a certificate from the new CA.");
         Console.WriteLine("  2. On a warm standby and every other server node, import the CA again: 'certificates export-ca' here, 'certificates import-ca' there.");
         Console.WriteLine("  3. Give the certificate probe's tasks the new fingerprint.");
+        return 0;
+    }
+
+    /// <summary>
+    /// Checks the stored documents of the database the server uses against their files and the keys on this machine
+    /// (<see cref="HyFib.HealthCare360.Platform.Files.DocumentIntegrityCheck"/>), for the restore drill. Reads only.
+    /// </summary>
+    private static async Task<int> CheckDocumentsAsync()
+    {
+        await using var app = CatalogueCli.BuildApplication();
+        await using var scope = app.Services.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var result = await HyFib.HealthCare360.Platform.Files.DocumentIntegrityCheck.RunAsync(services.GetRequiredService<HospitalDbContext>(),
+            services.GetRequiredService<DataDirectories>(), services.GetRequiredService<IFieldProtector>(), CancellationToken.None);
+        Console.WriteLine(HyFib.HealthCare360.Platform.Files.DocumentIntegrityCheck.Summary(result));
+        foreach (var problem in result.Problems)
+        {
+            Console.Error.WriteLine("  " + problem);
+        }
+
+        if (!result.Ok)
+        {
+            Console.Error.WriteLine("Some documents are not as they were saved: the restore is not complete. Restore again from another copy of the backup folder.");
+            return 2;
+        }
+
         return 0;
     }
 

@@ -11,7 +11,7 @@ using Microsoft.AspNetCore.DataProtection;
 
 namespace HyFib.HealthCare360.Platform.Jobs;
 
-/// <summary>What a version 2 backup holds, written first so a restore can check everything that follows.</summary>
+/// <summary>What an archive backup holds, written first so a restore can check everything that follows.</summary>
 /// <param name="Format">The archive format (<see cref="BackupArchive.Format"/>).</param>
 /// <param name="Kind">Scheduled, Manual or PreMigration.</param>
 /// <param name="Migrations">The EF migrations applied to the database when it was dumped (its schema version).</param>
@@ -20,21 +20,26 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <param name="RingKeys">The ids of the keys rotations added to the ring (<see cref="FieldKeyRing"/>), escrowed too; none before the first rotation.</param>
 /// <param name="CurrentKey">Which key of the ring was current, or null for the original key.</param>
 /// <param name="AuditSealKey">The fingerprint of the escrowed audit seal key (<see cref="Auditing.AuditSealKey"/>); null in older backups.</param>
+/// <param name="DocumentIndexSha256">
+/// Format 3: the SHA-256 of the <c>documents.idx</c> entry (<see cref="BackupDocumentIndex"/>), which records the SHA-256 of
+/// every document the backup needs; null otherwise.
+/// </param>
 /// <param name="RowCounts">
 /// The rows of the key tables in the dump, counted in the very snapshot pg_dump dumped (<see cref="BackupRowCounts"/>), which
 /// a test restore checks the restored database against; null in older backups.
 /// </param>
 /// <param name="DocumentHashes">
-/// Whether the archive records the SHA-256 of each document as it was copied (<see cref="BackupArchive.DocumentHashesEntry"/>,
-/// after the documents); false in older backups. <see cref="BackupArchive.WriteAsync"/> sets it.
+/// Format 2 only: whether the archive records the SHA-256 of each document it holds, as it was copied
+/// (<see cref="BackupArchive.DocumentHashesEntry"/>, after the documents), as some format 2 backups do; false otherwise.
+/// A format 3 archive's index records each document's SHA-256 itself.
 /// </param>
 /// <param name="ErasureLedger">
 /// The SHA-256 of the erasure ledger the archive carries (<see cref="BackupArchive.ErasureLedgerEntry"/>); null in older
-/// backups. <see cref="BackupArchive.WriteAsync"/> sets it.
+/// backups and in the backup before an update. The writer sets it from what it writes.
 /// </param>
 /// <param name="HospitalCa">
 /// The fingerprint, as HC360 Desktop pins it, of the hospital CA the archive carries (<see cref="BackupArchive.HospitalCaEntry"/>);
-/// null in older backups and when the server had no CA of its own. <see cref="BackupArchive.WriteAsync"/> sets it.
+/// null in older backups, in the backup before an update and when the server had no CA of its own.
 /// </param>
 public sealed record BackupManifest(
     int Format,
@@ -50,6 +55,7 @@ public sealed record BackupManifest(
     IReadOnlyList<string>? RingKeys = null,
     string? CurrentKey = null,
     string? AuditSealKey = null,
+    string? DocumentIndexSha256 = null,
     IReadOnlyDictionary<string, long>? RowCounts = null,
     bool DocumentHashes = false,
     string? ErasureLedger = null,
@@ -79,8 +85,15 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
     public byte[]? AuditSealKey { get; init; }
 
     /// <summary>
-    /// The SHA-256 (lower-case hex) of each document the archive holds, by its path relative to the documents folder: the
-    /// hash the archive records, which its copy matched, or, in an older backup that records none, the hash of its copy.
+    /// Format 3: the documents the backup needs, each with its SHA-256 and length, which are kept in the backup folder beside
+    /// it (<see cref="BackupStore"/>) rather than in the archive. Empty for format 2, whose documents are inside.
+    /// </summary>
+    public IReadOnlyList<BackupIndexedDocument> Index { get; init; } = [];
+
+    /// <summary>
+    /// Format 2: the SHA-256 (lower-case hex) of each document the archive holds, by its path relative to the documents
+    /// folder: the hash the archive records, which its copy matched, or, in a backup that records none, the hash of its
+    /// copy. Empty for format 3, whose <see cref="Index"/> gives each document's SHA-256.
     /// </summary>
     public IReadOnlyDictionary<string, string> DocumentHashes { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -96,14 +109,27 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
 
 /// <summary>
 /// The payload of an archive backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
-/// the hospital CA, the erasure ledger, the PostgreSQL dump and, for full backups, the stored documents exactly as they
-/// are on disk (each already encrypted), followed by the SHA-256 of each as it was copied.
-/// The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key administrators keep offline
-/// (<see cref="BackupRecoveryKey"/>), so one backup file and that key restore everything on replacement hardware.
+/// the hospital CA and the erasure ledger, and the PostgreSQL dump. The archive itself is encrypted by
+/// <see cref="BackupEncryption"/> with the recovery key administrators keep offline (<see cref="BackupRecoveryKey"/>). For
+/// full backups, the stored documents (each already encrypted with the field keys):
+/// <list type="bullet">
+/// <item>Format 3 (<see cref="Format"/>): an index of them, with the SHA-256 of each (<see cref="BackupDocumentIndex"/>).
+/// Each document is kept once in the backup folder beside the archive (<see cref="BackupStore"/>), so the folder and the
+/// recovery key restore everything on replacement hardware.</item>
+/// <item>Format 2 (<see cref="InlineDocumentsFormat"/>): the documents themselves, exactly as they are on disk, and in some
+/// backups the SHA-256 of each (<see cref="DocumentHashesEntry"/>). Still read; one such file and its recovery key restore
+/// everything. The backup before an update is still written so, without documents, for the version updated from.</item>
+/// </list>
 /// </summary>
 public static class BackupArchive
 {
-    public const int Format = 2;
+    /// <summary>The format written: documents listed in <see cref="DocumentIndexEntry"/>, kept in the backup folder.</summary>
+    public const int Format = 3;
+
+    /// <summary>The format before: documents inside the archive, under <see cref="DocumentsPrefix"/>. Still read.</summary>
+    public const int InlineDocumentsFormat = 2;
+
+    public const string DocumentIndexEntry = "documents.idx";
     public const string ManifestEntry = "manifest.json";
     public const string KeyEntry = "keys/field-master.key";
     public const string RingKeyPrefix = "keys/" + FieldKeyRing.FolderName + "/";
@@ -112,9 +138,9 @@ public static class BackupArchive
     public const string DocumentsPrefix = "files/";
 
     /// <summary>
-    /// The SHA-256 of every document, written after the documents as each was copied: one line each, as sha256sum writes
-    /// them (<c>&lt;hash&gt;  files/2026/09/&lt;id&gt;.bin</c>), so the archive's own record of every document can be checked
-    /// with ordinary tools once it is decrypted.
+    /// Format 2 only: the SHA-256 of every document, after the documents, as each was copied: one line each, as sha256sum
+    /// writes them (<c>&lt;hash&gt;  files/2026/09/&lt;id&gt;.bin</c>). Read, never written now: format 3 records each
+    /// document's SHA-256 in its index.
     /// </summary>
     public const string DocumentHashesEntry = "documents.sha256";
 
@@ -156,21 +182,11 @@ public static class BackupArchive
             .ToList();
     }
 
-    public static Task WriteAsync(
-        Stream output,
-        BackupManifest manifest,
-        byte[] masterKey,
-        IReadOnlyList<byte[]> ringKeys,
-        byte[]? auditSealKey,
-        string databaseDumpPath,
-        string documentsFolder,
-        IReadOnlyList<BackupDocument> documents,
-        CancellationToken ct) =>
-        WriteAsync(output, manifest, masterKey, ringKeys, auditSealKey, databaseDumpPath, documentsFolder, documents, new BackupExtras(), ct);
-
     /// <summary>
-    /// Writes a whole archive, with <paramref name="extras"/> beside the keys. The manifest's record of what follows it (the
-    /// erasure ledger's hash, that the documents' hashes are recorded) is made here, from what is written.
+    /// Writes a format 2 archive, with the documents inside, as every earlier version reads it: the manifest, the keys, the
+    /// database dump and the documents, and nothing else. The backup before an update is written so, without documents,
+    /// because undoing the update restores it with the version updated from (DEPLOYMENT.md section 7, "Going back"). Full
+    /// backups are written with <see cref="WriteIndexedAsync(Stream, BackupManifest, byte[], IReadOnlyList{byte[]}, byte[], string, IReadOnlyList{BackupIndexedDocument}, BackupExtras, CancellationToken)"/>.
     /// </summary>
     public static async Task WriteAsync(
         Stream output,
@@ -181,20 +197,86 @@ public static class BackupArchive
         string databaseDumpPath,
         string documentsFolder,
         IReadOnlyList<BackupDocument> documents,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
+        var inline = manifest with { Format = InlineDocumentsFormat, DocumentIndexSha256 = null, DocumentHashes = false, ErasureLedger = null, HospitalCa = null };
+        await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(inline, Json)), ct);
+        await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
+        foreach (var key in ringKeys)
+        {
+            await WriteEntryAsync(tar, RingKeyPrefix + FieldMasterKey.Fingerprint(key) + ".key", new MemoryStream(key, writable: false), ct);
+        }
+
+        if (auditSealKey is not null)
+        {
+            await WriteEntryAsync(tar, AuditSealKeyEntry, new MemoryStream(auditSealKey, writable: false), ct);
+        }
+        await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
+        foreach (var document in documents)
+        {
+            var source = OpenForReading(Path.Combine(documentsFolder, document.RelativePath));
+            if (source.Length != document.Length)
+            {
+                await source.DisposeAsync();
+                throw new InvalidOperationException($"Document {document.RelativePath} changed while it was being backed up.");
+            }
+
+            await WriteEntryAsync(tar, DocumentsPrefix + document.RelativePath, source, ct);
+        }
+    }
+
+    /// <summary>A format 3 archive without anything besides the database, the keys and the index (<see cref="BackupExtras"/>).</summary>
+    public static Task<BackupManifest> WriteIndexedAsync(
+        Stream output,
+        BackupManifest manifest,
+        byte[] masterKey,
+        IReadOnlyList<byte[]> ringKeys,
+        byte[]? auditSealKey,
+        string databaseDumpPath,
+        IReadOnlyList<BackupIndexedDocument>? documents,
+        CancellationToken ct) =>
+        WriteIndexedAsync(output, manifest, masterKey, ringKeys, auditSealKey, databaseDumpPath, documents, new BackupExtras(), ct);
+
+    /// <summary>
+    /// Writes a format 3 archive: the manifest, the keys, the hospital CA and the erasure ledger (<paramref name="extras"/>),
+    /// the index of the documents (for a full backup), which records the SHA-256 and length of each, and the database dump.
+    /// The documents themselves must be in the backup folder already. The manifest is completed here, so its format, document
+    /// count, bytes, index hash and the hashes of what it carries always agree with what is written.
+    /// </summary>
+    /// <param name="documents">The documents the backup needs, or null for a backup without documents (before an update).</param>
+    public static async Task<BackupManifest> WriteIndexedAsync(
+        Stream output,
+        BackupManifest manifest,
+        byte[] masterKey,
+        IReadOnlyList<byte[]> ringKeys,
+        byte[]? auditSealKey,
+        string databaseDumpPath,
+        IReadOnlyList<BackupIndexedDocument>? documents,
         BackupExtras extras,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
         ArgumentNullException.ThrowIfNull(extras);
-        await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
+        var index = new MemoryStream();
+        var indexSha256 = documents is null ? null : BackupDocumentIndex.Write(index, documents);
 
         // The manifest says what follows, so a restore can tell an archive cut short from an older one.
-        manifest = manifest with
+        var written = manifest with
         {
-            DocumentHashes = true,
+            Format = Format,
+            IncludesDocuments = documents is not null,
+            DocumentCount = documents?.Count ?? 0,
+            DocumentBytes = documents?.Sum(d => d.Length) ?? 0,
+            DocumentIndexSha256 = indexSha256,
+            DocumentHashes = false,
             ErasureLedger = extras.ErasureLedger is { } ledger ? Convert.ToHexStringLower(SHA256.HashData(ledger)) : null,
             HospitalCa = extras.HospitalCa?.Fingerprint,
         };
-        await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest, Json)), ct);
+
+        await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
+        await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(written, Json)), ct);
         await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
         foreach (var key in ringKeys)
         {
@@ -216,32 +298,23 @@ public static class BackupArchive
             await WriteEntryAsync(tar, ErasureLedgerEntry, new MemoryStream(erasures, writable: false), ct);
         }
 
-        await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
-
-        // Each document is hashed as it is copied, so its hash is that of the very bytes in the archive, read once.
-        var hashes = new StringBuilder();
-        foreach (var document in documents)
+        if (documents is not null)
         {
-            var source = OpenForReading(Path.Combine(documentsFolder, document.RelativePath));
-            if (source.Length != document.Length)
-            {
-                await source.DisposeAsync();
-                throw new InvalidOperationException($"Document {document.RelativePath} changed while it was being backed up.");
-            }
-
-            var hashing = new HashingReadStream(source);
-            await WriteEntryAsync(tar, DocumentsPrefix + document.RelativePath, hashing, ct);
-            hashes.Append(hashing.Sha256).Append("  ").Append(DocumentsPrefix).Append(document.RelativePath).Append('\n');
+            index.Position = 0;
+            await WriteEntryAsync(tar, DocumentIndexEntry, index, ct);
         }
 
-        await WriteEntryAsync(tar, DocumentHashesEntry, new MemoryStream(Encoding.UTF8.GetBytes(hashes.ToString()), writable: false), ct);
+        await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
+        return written;
     }
 
     /// <summary>
-    /// Reads a whole archive: the manifest first, then the key (which must match the manifest's fingerprint), the database
-    /// dump and the documents, whose count and size must match the manifest, and whose hashes must match those the archive
-    /// records. Documents already present in <see cref="BackupReadTargets.DocumentsFolder"/> are left as they are; a restore
-    /// reads into an empty folder and compares them itself (<see cref="BackupRestore"/>).
+    /// Reads a whole archive: the manifest first, then the key (which must match the manifest's fingerprint), what it
+    /// carries besides (each matching the hash or fingerprint its manifest names), the database dump and the documents:
+    /// format 3's index, whose hash must be the manifest's, or format 2's documents, whose hashes must match those the
+    /// archive records when it records them; either way their count and size must match the manifest. Documents already
+    /// present in <see cref="BackupReadTargets.DocumentsFolder"/> are left as they are; a restore reads into an empty folder
+    /// and compares them itself (<see cref="BackupRestore"/>).
     /// </summary>
     /// <exception cref="InvalidDataException">The archive is incomplete or does not match its manifest.</exception>
     public static async Task<BackupContents> ReadAsync(Stream payload, BackupReadTargets targets, CancellationToken ct)
@@ -253,6 +326,7 @@ public static class BackupArchive
         var hasDatabase = false;
         var documentCount = 0;
         var documentBytes = 0L;
+        IReadOnlyList<BackupIndexedDocument>? index = null;
         var documentHashes = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string>? recordedHashes = null;
         byte[]? erasureLedger = null;
@@ -330,7 +404,19 @@ public static class BackupArchive
                         await CopyEntryAsync(entry, targets.DatabaseDumpPath, overwrite: true, hash: false, ct);
                         break;
 
-                    case var name when name.StartsWith(DocumentsPrefix, StringComparison.Ordinal) && IsSafeRelativePath(name[DocumentsPrefix.Length..]):
+                    case DocumentIndexEntry when manifest.Format == Format && index is null && entry.DataStream is not null:
+                        (index, var indexSha256) = await BackupDocumentIndex.ReadAsync(entry.DataStream, ct);
+                        if (!string.Equals(indexSha256, manifest.DocumentIndexSha256, StringComparison.Ordinal))
+                        {
+                            throw new InvalidDataException("The backup's document index does not match its manifest.");
+                        }
+
+                        documentCount = index.Count;
+                        documentBytes = index.Sum(d => d.Length);
+                        break;
+
+                    case var name when manifest.Format == InlineDocumentsFormat
+                        && name.StartsWith(DocumentsPrefix, StringComparison.Ordinal) && IsSafeRelativePath(name[DocumentsPrefix.Length..]):
                         documentCount++;
                         documentBytes += entry.Length;
                         var relative = name[DocumentsPrefix.Length..];
@@ -343,7 +429,7 @@ public static class BackupArchive
 
                         break;
 
-                    case DocumentHashesEntry when recordedHashes is null:
+                    case DocumentHashesEntry when manifest.Format == InlineDocumentsFormat && recordedHashes is null:
                         recordedHashes = await ReadDocumentHashesAsync(entry, ct);
                         break;
 
@@ -382,16 +468,28 @@ public static class BackupArchive
             throw new InvalidDataException("The backup is incomplete: the hospital CA its manifest lists is missing.");
         }
 
+        // Format 3: a full backup has an index, and its manifest its hash; a backup without documents has neither.
+        if (manifest.Format == Format
+            && (manifest.IncludesDocuments != (manifest.DocumentIndexSha256 is not null) || manifest.IncludesDocuments != (index is not null)))
+        {
+            throw new InvalidDataException("The backup is incomplete: the document index its manifest lists is missing.");
+        }
+
         if (documentCount != manifest.DocumentCount || documentBytes != manifest.DocumentBytes)
         {
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
         }
 
-        CheckDocumentHashes(manifest, documentHashes, recordedHashes);
+        if (manifest.Format == InlineDocumentsFormat)
+        {
+            CheckDocumentHashes(manifest, documentHashes, recordedHashes);
+        }
+
         return new BackupContents(manifest, masterKey, documentCount, documentBytes)
         {
             RingKeys = listed.Select(id => ringKeys[id]).ToList(),
             AuditSealKey = auditSealKey,
+            Index = index ?? [],
             DocumentHashes = documentHashes,
             ErasureLedger = erasureLedger,
             HospitalCa = hospitalCa,
@@ -399,8 +497,8 @@ public static class BackupArchive
     }
 
     /// <summary>
-    /// Every document read must be the one whose hash the archive records, and every hash it records must be of a document
-    /// it holds. An older backup records none: its documents are then known by the hash of what was read.
+    /// Format 2: every document read must be the one whose hash the archive records, and every hash it records must be of a
+    /// document it holds. A backup that records none is known by the hash of what was read.
     /// </summary>
     private static void CheckDocumentHashes(BackupManifest manifest, Dictionary<string, string> read, Dictionary<string, string>? recorded)
     {
@@ -505,7 +603,9 @@ public static class BackupArchive
     {
         var json = await ReadSmallAsync(entry, 1024 * 1024, ct);
         var manifest = JsonSerializer.Deserialize<BackupManifest>(json, Json) ?? throw new InvalidDataException("The backup manifest is empty.");
-        return manifest.Format == Format ? manifest : throw new InvalidDataException($"Backup format {manifest.Format} is not supported by this version of HC360.");
+        return manifest.Format is Format or InlineDocumentsFormat
+            ? manifest
+            : throw new InvalidDataException($"Backup format {manifest.Format} is not supported by this version of HC360.");
     }
 
     private static async Task<byte[]> ReadSmallAsync(TarEntry entry, int maxLength, CancellationToken ct)
@@ -557,89 +657,11 @@ public static class BackupArchive
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(target))!);
         return new FileStream(target, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
     }
-
-    /// <summary>
-    /// A document's file as the tar writer reads it, hashed (SHA-256) on the way through. It tells the file's length and
-    /// position, as the file does, because the writer puts the size in the entry's header before it copies the data.
-    /// </summary>
-    private sealed class HashingReadStream(FileStream file) : Stream
-    {
-        private readonly IncrementalHash _sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-
-        /// <summary>The SHA-256 (lower-case hex) of everything read, once the writer has disposed of the stream.</summary>
-        public string? Sha256 { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => file.CanSeek;
-
-        public override bool CanWrite => false;
-
-        public override long Length => file.Length;
-
-        public override long Position
-        {
-            get => file.Position;
-            set => throw new NotSupportedException();
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
-
-        public override int Read(Span<byte> buffer)
-        {
-            var read = file.Read(buffer);
-            _sha256.AppendData(buffer[..read]);
-            return read;
-        }
-
-        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-            ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-        {
-            var read = await file.ReadAsync(buffer, cancellationToken);
-            _sha256.AppendData(buffer.Span[..read]);
-            return read;
-        }
-
-        public override void Flush()
-        {
-        }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing && Sha256 is null)
-            {
-                Sha256 = Convert.ToHexStringLower(_sha256.GetHashAndReset());
-                _sha256.Dispose();
-                file.Dispose();
-            }
-
-            base.Dispose(disposing);
-        }
-
-        public override async ValueTask DisposeAsync()
-        {
-            if (Sha256 is null)
-            {
-                Sha256 = Convert.ToHexStringLower(_sha256.GetHashAndReset());
-                _sha256.Dispose();
-                await file.DisposeAsync();
-            }
-
-            await base.DisposeAsync();
-        }
-    }
 }
 
-/// <summary>The outcome of <see cref="BackupRestore.RestoreAsync"/>.</summary>
+/// <summary>The outcome of <see cref="BackupRestore.RestoreAsync(string, byte[], string, DataDirectories, IDataProtectionProvider, IDataProtectionProvider, TimeProvider, CancellationToken, string)"/>.</summary>
 /// <param name="Manifest">Null for a version 1 backup, which holds the database only.</param>
+/// <param name="DocumentsAlreadyPresent">Documents that were here already, their bytes those the backup records.</param>
 /// <param name="PreviousKeyKeptAs">The file name the replaced field key was kept under, when a different key was installed.</param>
 public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, int DocumentsRestored, int DocumentsAlreadyPresent, bool KeyInstalled, string? PreviousKeyKeptAs)
 {
@@ -667,7 +689,7 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
     /// <summary>Where the files the backup's documents replaced are kept, when any were; null otherwise.</summary>
     public string? ReplacedDocumentsKeptIn { get; init; }
 
-    /// <summary>Whether the backup carries the erasure ledger (older backups do not).</summary>
+    /// <summary>Whether the backup carries the erasure ledger (older backups, and the one before an update, do not).</summary>
     public bool ErasureLedgerCarried { get; init; }
 
     /// <summary>The copy of the erasure ledger found beside the backup file, whose lines were taken too; null when there was none.</summary>
@@ -684,23 +706,20 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 }
 
 /// <summary>
-/// Restores a backup on a Server Node, with the HC360 service stopped (the Server CLI's <c>backup restore</c>, run by
-/// Restore-HC360.ps1). The whole archive is read and checked into a staging folder first; only then is the field master
-/// key installed (wrapped for this machine) and are the documents moved into place, so a damaged backup changes nothing.
-/// The database dump is written for pg_restore, which the script runs next.
-/// </summary>
-/// <summary>
-/// Puts back what a backup holds besides its database, on the Server Node with the service stopped: the stored documents,
-/// the erasures of its erasure ledger (added to this server's, which the next start applies), then the field encryption
-/// key, and last the hospital CA the devices trust. The whole archive is read and checked first, and the key comes last of
-/// what the database needs, so a failure never
-/// leaves this machine with the backup's key but not its database. Restore-HC360.ps1 restores the database first, runs
-/// this after it succeeds, and puts the previous database back if this fails.
+/// Puts back what a backup holds besides its database, on the Server Node with the service stopped (the Server CLI's
+/// <c>backup restore</c>, run by Restore-HC360.ps1): the stored documents, the erasures of its erasure ledger (added to this
+/// server's, which the next start applies), then the field encryption key, and last the hospital CA the devices trust. The
+/// whole archive is read and checked into a staging folder first, a format 3 backup's documents with it from its backup
+/// folder (each against the SHA-256 its index records), so a damaged backup changes nothing; and the key comes last of
+/// what the database needs, so a failure never leaves this machine with the backup's key but not its database.
+/// Restore-HC360.ps1 restores the database first, runs this after it succeeds, and puts the previous database back if this
+/// fails.
 /// </summary>
 public static class BackupRestore
 {
     /// <summary>Restores a backup on a single Server Node, whose hospital CA is protected with the same key ring as its other keys.</summary>
     /// <param name="databaseDumpPath">Where to write the database dump as well, or null to only check it.</param>
+    /// <param name="blobsFolder">Where a format 3 backup's documents are, when not in the folder the archive is in.</param>
     public static Task<BackupRestoreResult> RestoreAsync(
         string backupFile,
         byte[] recoveryKey,
@@ -708,8 +727,9 @@ public static class BackupRestore
         DataDirectories directories,
         IDataProtectionProvider dataProtection,
         TimeProvider time,
-        CancellationToken ct) =>
-        RestoreAsync(backupFile, recoveryKey, databaseDumpPath, directories, dataProtection, dataProtection, time, ct);
+        CancellationToken ct,
+        string? blobsFolder = null) =>
+        RestoreAsync(backupFile, recoveryKey, databaseDumpPath, directories, dataProtection, dataProtection, time, ct, blobsFolder);
 
     /// <param name="databaseDumpPath">Where to write the database dump as well, or null to only check it.</param>
     /// <param name="dataProtection">The key ring that protects the keys (<see cref="HospitalDataProtection.CreateProvider"/>).</param>
@@ -717,6 +737,7 @@ public static class BackupRestore
     /// The key ring of this machine alone, which protects its hospital CA (<see cref="HospitalDataProtection.CreateNodeProvider"/>):
     /// the same as <paramref name="dataProtection"/> on a single Server Node.
     /// </param>
+    /// <param name="blobsFolder">Where a format 3 backup's documents are, when not in the folder the archive is in.</param>
     public static async Task<BackupRestoreResult> RestoreAsync(
         string backupFile,
         byte[] recoveryKey,
@@ -725,7 +746,8 @@ public static class BackupRestore
         IDataProtectionProvider dataProtection,
         IDataProtectionProvider nodeProtection,
         TimeProvider time,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? blobsFolder = null)
     {
         await using var input = new FileStream(backupFile, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
         await using var payload = await BackupEncryption.OpenAsync(input, recoveryKey, ct);
@@ -750,6 +772,11 @@ public static class BackupRestore
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(databaseDumpPath, staging), ct);
             try
             {
+                // A format 3 backup's documents are in the backup folder beside it: each is copied into the staging folder
+                // and checked there (its SHA-256, and that the backup holds the key it is encrypted with) before anything
+                // on this machine changes, as the documents inside a format 2 backup are.
+                await BackupBlobs.CopyAsync(blobsFolder ?? BackupBlobs.FolderOf(backupFile), contents, staging, ct);
+
                 // A version 3 backup names its recovery key in a header every chunk authenticates. A version 2 backup was
                 // encrypted with the original recovery key, which comes from the key inside it.
                 if (payload.Version == BackupEncryption.ArchiveVersion)
@@ -762,7 +789,7 @@ public static class BackupRestore
                 // this machine keeps the key its current database was encrypted with.
                 var keptFolder = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(directories.Files))!,
                     string.Create(CultureInfo.InvariantCulture, $"files-replaced-{time.GetUtcNow():yyyyMMdd-HHmmss}"));
-                var documents = MoveDocuments(staging, directories.Files, contents.DocumentHashes, keptFolder);
+                var documents = MoveDocuments(staging, directories.Files, ExpectedHashes(contents), keptFolder);
                 string? keptAs;
                 ErasureLedgerRestore ledger;
                 try
@@ -888,6 +915,16 @@ public static class BackupRestore
     }
 
     /// <summary>
+    /// The SHA-256 each document the backup restores must have, by its path relative to the documents folder: a format 3
+    /// backup's index records it (it names the document's copy in the backup folder); a format 2 backup records it beside
+    /// its documents, or is known by the hash of its own copy (<see cref="BackupContents.DocumentHashes"/>).
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ExpectedHashes(BackupContents contents) =>
+        contents.Manifest.Format == BackupArchive.Format
+            ? contents.Index.ToDictionary(d => d.RelativePath, d => d.BlobId, StringComparer.Ordinal)
+            : contents.DocumentHashes;
+
+    /// <summary>
     /// Puts the backup's documents in place from <paramref name="staging"/>. One missing here is moved in. One here is
     /// compared with the hash the backup records for it: left when its bytes are the backup's, replaced when they are not
     /// (damaged on disk, or encrypted again with another key since the backup was made, which the restored database does
@@ -999,5 +1036,197 @@ public static class BackupRestore
                 // An empty folder left behind does no harm.
             }
         }
+    }
+}
+
+/// <summary>
+/// Finds the documents a format 3 backup needs (<see cref="BackupContents.Index"/>) in a backup folder, whatever its layout:
+/// <c>blobs\ab\cd\&lt;id&gt;.blob</c> (<see cref="BackupStore"/>), the generations of an append-only destination
+/// (<c>gen-*\blobs\…</c>), and the second copies written beside one cut short there (<c>&lt;id&gt;.1.blob</c>, …). A copy is
+/// taken only when its length and SHA-256 are the index's, so where it was found does not matter, and a restore from any
+/// one copy of the folder (the server's, a USB disk, a download of the bucket) gets the same bytes.
+/// </summary>
+public static class BackupBlobs
+{
+    /// <summary>The folder a backup's documents are looked for in by default: the folder the archive is in.</summary>
+    public static string FolderOf(string archivePath) => Path.GetDirectoryName(Path.GetFullPath(archivePath))!;
+
+    /// <summary>Where a copy of <paramref name="blobId"/> may be in <paramref name="folder"/>, the plain layout first.</summary>
+    public static IEnumerable<string> Candidates(string folder, string blobId)
+    {
+        if (!BackupStore.IsBlobId(blobId))
+        {
+            yield break;
+        }
+
+        var roots = new List<string> { folder };
+        if (Directory.Exists(folder))
+        {
+            roots.AddRange(Directory.EnumerateDirectories(folder, "gen-*").Order(StringComparer.Ordinal).Reverse());
+        }
+
+        foreach (var root in roots)
+        {
+            var directory = Path.Combine(root, BackupStore.BlobsFolder, blobId[..2], blobId[2..4]);
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            var first = Path.Combine(directory, blobId + BackupStore.BlobExtension);
+            if (File.Exists(first))
+            {
+                yield return first;
+            }
+
+            foreach (var other in Directory.EnumerateFiles(directory, blobId + ".*" + BackupStore.BlobExtension).Order(StringComparer.Ordinal))
+            {
+                yield return other;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies every document of a format 3 backup into <paramref name="staging"/> at its storage path, each from the first
+    /// copy whose length and SHA-256 match the index, checking that the backup holds the key it is encrypted with.
+    /// </summary>
+    /// <exception cref="InvalidDataException">A document has no good copy in the folder, or is encrypted with a key the backup does not hold.</exception>
+    public static async Task CopyAsync(string folder, BackupContents contents, string staging, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        var problems = new List<string>();
+        foreach (var document in contents.Index)
+        {
+            var target = Path.Combine(staging, document.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            var problem = await CopyOneAsync(folder, document, contents.Manifest, target, ct);
+            if (problem is not null)
+            {
+                problems.Add(problem);
+            }
+        }
+
+        if (problems.Count > 0)
+        {
+            throw new InvalidDataException(Missing(folder, problems, contents.Index.Count));
+        }
+    }
+
+    /// <summary>
+    /// Checks every document of a format 3 backup in the folder, as <see cref="CopyAsync"/> would, without writing
+    /// anything. Returns what is wrong, one line a document; empty when every document has a good copy.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> CheckAsync(string folder, BackupContents contents, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        var problems = new List<string>();
+        foreach (var document in contents.Index)
+        {
+            if (await CopyOneAsync(folder, document, contents.Manifest, null, ct) is { } problem)
+            {
+                problems.Add(problem);
+            }
+        }
+
+        return problems;
+    }
+
+    /// <summary>The message for documents without a good copy: how many, the first few, and where they were looked for.</summary>
+    public static string Missing(string folder, IReadOnlyList<string> problems, int documents)
+    {
+        ArgumentNullException.ThrowIfNull(problems);
+        return $"{problems.Count} of the backup's {documents} documents have no good copy in {folder}: {string.Join("; ", problems.Take(3))}" +
+            (problems.Count > 3 ? "; …" : "") +
+            ". The documents are kept beside the archive in its backup folder: copy the whole folder, not only the .hc360bak file, " +
+            "or name the folder with --blobs.";
+    }
+
+    private static async Task<string?> CopyOneAsync(string folder, BackupIndexedDocument document, BackupManifest manifest, string? target, CancellationToken ct)
+    {
+        var tried = false;
+        foreach (var candidate in Candidates(folder, document.BlobId))
+        {
+            tried = true;
+            if (new FileInfo(candidate).Length != document.Length)
+            {
+                continue;
+            }
+
+            var temp = target is null ? null : target + ".restoring";
+            try
+            {
+                string? keyProblem = null;
+                string sha256;
+                await using (var source = new FileStream(candidate, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true))
+                await using (var output = temp is null ? null : new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+                {
+                    using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                    var buffer = new byte[1 << 16];
+                    var first = true;
+                    int read;
+                    while ((read = await source.ReadAsync(buffer, ct)) > 0)
+                    {
+                        if (first)
+                        {
+                            keyProblem = KeyProblem(buffer.AsSpan(0, read), manifest, document);
+                            first = false;
+                        }
+
+                        hash.AppendData(buffer, 0, read);
+                        if (output is not null)
+                        {
+                            await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                        }
+                    }
+
+                    sha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
+                }
+
+                if (!string.Equals(sha256, document.BlobId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (keyProblem is not null)
+                {
+                    return keyProblem;
+                }
+
+                if (temp is not null)
+                {
+                    File.Move(temp, target!, overwrite: true);
+                }
+
+                return null;
+            }
+            finally
+            {
+                if (temp is not null)
+                {
+                    File.Delete(temp);
+                }
+            }
+        }
+
+        return tried ? $"{document.RelativePath} (every copy found is damaged)" : $"{document.RelativePath} (no copy)";
+    }
+
+    /// <summary>
+    /// A stored document starts with the protector's version (1: the original key, which every backup holds; 2: then the
+    /// 8-byte id of the key it is encrypted with). A document naming a key the backup does not hold would not be readable
+    /// after the restore. Only that is refused: a header of another form is left to the file store to read.
+    /// </summary>
+    private static string? KeyProblem(ReadOnlySpan<byte> start, BackupManifest manifest, BackupIndexedDocument document)
+    {
+        if (start.Length >= 9 && start[0] == 2)
+        {
+            var keyId = Convert.ToHexString(start.Slice(1, 8));
+            return manifest.RingKeys?.Contains(keyId, StringComparer.OrdinalIgnoreCase) == true
+                || string.Equals(keyId, manifest.KeyFingerprint, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : $"{document.RelativePath} (encrypted with key {keyId}, which the backup does not hold)";
+        }
+
+        return null;
     }
 }

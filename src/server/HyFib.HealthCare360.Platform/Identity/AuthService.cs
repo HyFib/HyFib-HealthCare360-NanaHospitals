@@ -1432,6 +1432,10 @@ public sealed class AuthService(
         return (raw, entity);
     }
 
+    /// <remarks>
+    /// The token names the roles in use (<see cref="RolesInUse"/>), what the person works as now. Nothing is allowed by a
+    /// role's name: permissions are read on the server for every request (<see cref="IPermissionService"/>).
+    /// </remarks>
     private static AccessTokenSubject Subject(User user, IReadOnlyList<string> roles, UserSession session, string? restriction) => new(
         user.Id,
         user.UserName,
@@ -1442,7 +1446,7 @@ public sealed class AuthService(
         session.DeviceId,
         user.PractitionerId,
         user.PatientId,
-        roles,
+        RolesInUse(user, roles),
         restriction);
 
     private async Task<AuthUser> BuildAuthUserAsync(User user, IReadOnlyList<string> roles, Guid? facilityId, Guid? deviceId, string? restriction, CancellationToken ct)
@@ -1468,7 +1472,7 @@ public sealed class AuthService(
             facilities.FirstOrDefault(f => f.Id == facilityId)?.Name,
             user.PractitionerId,
             user.PatientId,
-            roles,
+            RolesInUse(user, roles),
             granted,
             facilities,
             user.MfaEnabled,
@@ -1815,7 +1819,21 @@ public sealed class AuthService(
             Severity = AuditSeverity.Warning,
         }, ct);
 
+    /// <summary>
+    /// Every role the account holds, in use or not: what a role requires of its holders (two-step verification, signing in
+    /// from an enrolled workstation, its idle lock) still applies while it is turned off (<see cref="Role.IsActive"/>).
+    /// </summary>
     private static List<string> RoleNames(User user) => user.Roles.Where(r => r.Role is not null).Select(r => r.Role!.Name).ToList();
+
+    /// <summary>
+    /// Of <paramref name="roles"/> (<see cref="RoleNames"/>), those in use: what the token and the apps say the person
+    /// works as. A role turned off gives nothing, so it is not shown as one of theirs.
+    /// </summary>
+    private static List<string> RolesInUse(User user, IReadOnlyList<string> roles)
+    {
+        var off = user.Roles.Where(r => r.Role is { IsActive: false }).Select(r => r.Role!.Name).ToHashSet(StringComparer.Ordinal);
+        return off.Count == 0 ? [.. roles] : [.. roles.Where(r => !off.Contains(r))];
+    }
 
     /// <summary>A request to the patient portal's address, which refreshes and signs out the portal's own sessions.</summary>
     internal static bool IsPortalRequest(HttpRequest request) => ClientTypeOf(request.HttpContext) == "portal";

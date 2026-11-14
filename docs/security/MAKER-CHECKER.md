@@ -22,7 +22,8 @@ packages, check-ups, the PM-JAY HBP master, doctor-fee rules, the non-payable li
 third party paying on cover verified by a second person, goods receipts, purchase requisitions and orders, stock
 adjustments and expiry write-offs, asset condemnation, drug class changes, an item's NPPA ceiling price raised or removed and its GST rate
 changed (a scheduled medicine not received or sold above its ceiling), user and role grants (all facilities among them, a
-grant of its own since an empty list gave every facility at once: SECURITY.md, "Access is given by two people"), patient merge, lab
+grant of its own since an empty list gave every facility at once: SECURITY.md, "Access is given by two people") and a role
+turned back on, patient merge, lab
 corrections where a separate verifier is required (and there, an override of failed QC for the day, a critical limit
 loosened, automatic verification switched on, and who acknowledges a critical result), death certificates, high-alert drug and transfusion bedside
 co-signatures, blood released from quarantine, issued, and released uncrossmatched, NDPS witnesses, payroll runs, leave

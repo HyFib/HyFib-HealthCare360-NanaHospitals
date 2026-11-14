@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -121,6 +123,9 @@ internal static class BackupOffsite
 
     /// <summary>The metadata each copy carries: the id of the recovery key that opens it.</summary>
     public const string RecoveryKeyMetadata = "hc360-recovery-key";
+
+    /// <summary>The generation of the bucket (<c>gen-yyyyMMdd</c>) a format 3 backup's documents are in, to download with it.</summary>
+    public const string GenerationMetadata = "hc360-generation";
 
     /// <summary>
     /// How long a request may take: a part of a large backup on a slow uplink takes minutes, and a connection that stalls
@@ -561,8 +566,15 @@ internal sealed class BackupOffsiteUploader(
     DataDirectories directories,
     IOptions<PlatformOptions> options,
     TimeProvider time,
-    ILogger<BackupOffsiteUploader> logger)
+    ILogger<BackupOffsiteUploader> logger,
+    IFieldKeyEscrow? keys = null)
 {
+    /// <summary>
+    /// The folder in the primary backup folder that records, for each generation in the bucket, the documents confirmed
+    /// there (HC360's key may not list the bucket): <c>gen-yyyyMMdd-&lt;location hash&gt;.ids</c>.
+    /// </summary>
+    public const string LedgerFolder = "offsite";
+
     /// <summary>
     /// Copies that finished but did not match the backup, after which a backup is no longer uploaded again by itself: a
     /// store whose ETags are not MD5s (a bucket encrypted with KMS keys) would otherwise have every backup uploaded over
@@ -692,6 +704,14 @@ internal sealed class BackupOffsiteUploader(
         if (run.RecoveryKeyId is { Length: > 0 } keyId)
         {
             metadata[BackupOffsite.RecoveryKeyMetadata] = keyId;
+        }
+
+        // The documents a format 3 backup needs go up first, into the bucket's generation, which the backup's metadata then
+        // names: the backup is uploaded only once every one of them is confirmed there, so a backup off site always has its
+        // documents (F22), and a restore downloads that generation with it.
+        if (await UploadDocumentsAsync(client, settings, run, file, location, metadata, save, ct) is { } stopped)
+        {
+            return stopped;
         }
 
         try
@@ -917,6 +937,111 @@ internal sealed class BackupOffsiteUploader(
             : null;
     }
 
+    /// <summary>
+    /// Uploads the documents a format 3 backup needs (its <c>.refs</c> list, beside it) that the bucket's current generation
+    /// does not have yet, each checked against its SHA-256 before it goes, locked until its generation's last backup has
+    /// expired, and read back. Returns null when all are there; otherwise the outcome the backup's upload stops with.
+    /// An older backup, with its documents inside, has no list and needs none uploaded.
+    /// </summary>
+    private async Task<Outcome?> UploadDocumentsAsync(
+        S3Client client, BackupOffsiteSettings settings, BackupRun run, string archive, string location, Dictionary<string, string> metadata,
+        Func<CancellationToken, Task> save, CancellationToken ct)
+    {
+        var folder = Path.GetDirectoryName(archive)!;
+        var fileName = Path.GetFileName(archive);
+        if (!File.Exists(Path.ChangeExtension(archive, BackupStore.ReferencesExtension)))
+        {
+            return File.Exists(Path.Combine(folder, BackupStore.MarkerFileName))
+                ? await FileProblemAsync(run, save, $"{fileName} has no list of the documents it needs beside it, so it is not uploaded without them.")
+                : null;
+        }
+
+        if (keys is null)
+        {
+            return await FileProblemAsync(run, save, $"The list of the documents {fileName} needs cannot be checked on this server, so it is not uploaded.");
+        }
+
+        IReadOnlyList<string> ids;
+        var masterKey = keys.ExportMasterKey();
+        var referencesKey = FieldMasterKey.DeriveKey(masterKey, BackupStore.ReferencesKeyPurpose);
+        try
+        {
+            var store = BackupStore.Open(folder, keys.Fingerprint, referencesKey, time);
+            ids = store.ReadReferences(fileName, referencesKey) ?? [];
+        }
+        catch (Exception ex) when (ex is InvalidDataException or BackupStoreException)
+        {
+            return await FileProblemAsync(run, save, $"The list of the documents {fileName} needs cannot be used, so it is not uploaded: {ex.Message}");
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(masterKey);
+            CryptographicOperations.ZeroMemory(referencesKey);
+        }
+
+        if (ids.Count == 0)
+        {
+            return null;
+        }
+
+        var prefix = settings.Prefix?.Trim();
+        var ledger = OffsiteLedger.Open(Path.Combine(directories.Backups, LedgerFolder), client.Location.Describe(BackupOffsite.ObjectKey(prefix, "")), time.GetUtcNow());
+        var objectLock = settings.RetainDays > 0
+            ? new S3ObjectLock(ledger.Started + TimeSpan.FromDays(settings.RetainDays + BackupStore.GenerationDays))
+            : null;
+        var uploaded = 0;
+        foreach (var id in ids.Where(id => !ledger.Has(id)))
+        {
+            ct.ThrowIfCancellationRequested();
+            byte[]? body = null;
+            foreach (var candidate in BackupBlobs.Candidates(folder, id))
+            {
+                var data = await File.ReadAllBytesAsync(candidate, ct);
+                if (string.Equals(SigV4.HexSha256(data), id, StringComparison.Ordinal))
+                {
+                    body = data;
+                    break;
+                }
+            }
+
+            if (body is null)
+            {
+                return await FileProblemAsync(run, save,
+                    $"A document {fileName} needs ({id}) has no good copy in {folder}, so the backup is not uploaded: the disk may be failing.");
+            }
+
+            var key = BackupOffsite.ObjectKey(prefix, $"{ledger.Generation}/{BackupStore.BlobsFolder}/{id[..2]}/{id[2..4]}/{id}{BackupStore.BlobExtension}");
+            try
+            {
+                await client.PutObjectAsync(key, body, body.Length, objectLock,
+                    new Dictionary<string, string>(StringComparer.Ordinal) { [BackupOffsite.Sha256Metadata] = id }, ct);
+                var stored = await client.HeadObjectAsync(key, ct);
+                if (Mismatch(stored, body.Length, Convert.ToHexStringLower(S3Client.Md5(body)), id) is { } mismatch)
+                {
+                    throw new IOException($"A document's copy in the bucket does not match what was sent: {mismatch}");
+                }
+            }
+            catch (Exception ex) when (ex is S3Exception or HttpRequestException or IOException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+            {
+                return await StoreFailedAsync(run, save, location, ex,
+                    $"The documents of {fileName} are going up into {ledger.Generation} ({uploaded} so far this run); one failed: " + (ex is HttpRequestException http
+                        ? $"the store could not be reached: {http.Message}"
+                        : ex.Message));
+            }
+
+            ledger.Add(id);
+            uploaded++;
+        }
+
+        if (uploaded > 0)
+        {
+            logger.LogInformation("Uploaded {Count} new documents of backup {File} into {Generation} off site", uploaded, fileName, ledger.Generation);
+        }
+
+        metadata[BackupOffsite.GenerationMetadata] = ledger.Generation;
+        return null;
+    }
+
     /// <summary>The backup file: on this server's disk, else on the second disk or NAS, where a backup another server made is copied too.</summary>
     internal string? Locate(string fileName)
     {
@@ -980,5 +1105,68 @@ internal sealed class BackupOffsiteJob(BackupOffsiteUploader uploader, ILogger<B
         {
             logger.LogError(ex, "The off-site backup run failed");
         }
+    }
+}
+
+/// <summary>
+/// The documents confirmed in the bucket's current generation (docs/design/incremental-backup.md, section 5.6), kept on the
+/// server since HC360's key may not list the bucket: one file a generation and location, the location on its first line
+/// and one SHA-256 a line, each added once its copy is read back from the store. A generation lasts
+/// <see cref="BackupStore.GenerationDays"/> days; a new one, or a change of bucket or prefix, starts with every document again.
+/// </summary>
+internal sealed class OffsiteLedger
+{
+    private readonly string _path;
+    private readonly HashSet<string> _ids;
+
+    private OffsiteLedger(string path, string generation, DateTimeOffset started, HashSet<string> ids)
+    {
+        _path = path;
+        Generation = generation;
+        Started = started;
+        _ids = ids;
+    }
+
+    /// <summary>The generation's folder in the bucket: <c>gen-yyyyMMdd</c>.</summary>
+    public string Generation { get; }
+
+    /// <summary>The start of the generation's day (UTC): its copies are locked from here for the backup period and a generation.</summary>
+    public DateTimeOffset Started { get; }
+
+    public static OffsiteLedger Open(string folder, string location, DateTimeOffset now)
+    {
+        Directory.CreateDirectory(folder);
+        var tag = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(location)))[..8];
+        var generation = BackupStore.CurrentGeneration(folder, now, $"-{tag}.ids");
+        var date = BackupStore.GenerationDate(generation)!.Value;
+        var path = Path.Combine(folder, $"{generation}-{tag}.ids");
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        if (File.Exists(path))
+        {
+            var lines = File.ReadAllLines(path);
+            if (lines.Length > 0 && lines[0] == "location " + location)
+            {
+                ids.UnionWith(lines.Skip(1).Where(BackupStore.IsBlobId));
+            }
+        }
+        else
+        {
+            File.WriteAllText(path, "location " + location + "\n");
+        }
+
+        return new OffsiteLedger(path, generation, new DateTimeOffset(date.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero), ids);
+    }
+
+    public bool Has(string id) => _ids.Contains(id);
+
+    public void Add(string id)
+    {
+        using (var file = new FileStream(_path, FileMode.Append, FileAccess.Write, FileShare.Read))
+        {
+            file.Write(Encoding.UTF8.GetBytes(id + "\n"));
+            file.Flush(flushToDisk: true);
+        }
+
+        _ids.Add(id);
     }
 }

@@ -96,7 +96,8 @@ internal sealed record BackupRestoreTestOutcome(Guid RunId, string FileName, boo
 /// once no test restore has passed for <see cref="BackupTestRestoreOptions.EveryDays"/>, the newest verified full backup
 /// is opened as a restore opens it, its database restored by pg_restore, which stops at its first error, into a scratch
 /// database on the hospital's PostgreSQL (<see cref="IScratchDatabase"/>), and its key tables' rows counted against those
-/// its manifest recorded when it was made (<see cref="BackupRowCounts"/>). The scratch database holds every patient's
+/// its manifest recorded when it was made (<see cref="BackupRowCounts"/>); every document it lists must be in its backup
+/// folder too, as a restore from that folder needs (<see cref="MissingDocuments"/>). The scratch database holds every patient's
 /// record, so it is dropped afterwards whatever happened; one left by a test that was cut off (a power cut, a restart)
 /// is dropped by the next. One test at a time for the hospital: a lock in the database is held for the whole test. The
 /// outcome is recorded on the backup, which the Backups list shows; a failure is told to the administrators in the app,
@@ -218,12 +219,12 @@ internal sealed class BackupRestoreTest(
             Directory.CreateDirectory(directories.Temp);
             var file = Locate(run.FileName!)
                        ?? throw new ScratchDatabaseException($"{run.FileName} is no longer on this server's disk, nor on the second disk or NAS, so it could not be restored.");
-            var manifest = await ReadAsync(file, dump, ct);
+            var contents = await ReadAsync(file, dump, ct);
             database = await scratch.CreateAsync((2 * await postgres.GetDatabaseSizeAsync(ct)) + (1L << 30), ct);
             logger.LogInformation("Test-restoring backup {File} into the scratch database {Database}", run.FileName, database);
             await scratch.RestoreAsync(database, dump, ct);
             TryDelete(dump);
-            (passed, note) = await CheckAsync(database, manifest, started, ct);
+            (passed, note) = MissingDocuments(file, contents) is { } missing ? (false, missing) : await CheckAsync(database, contents.Manifest, started, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -293,8 +294,28 @@ internal sealed class BackupRestoreTest(
                 $"{recorded.Values.Sum():N0} rows recorded when the backup was made."));
     }
 
+    /// <summary>
+    /// The documents a format 3 backup lists that its backup folder has no copy of, of the length its index gives: a restore
+    /// from that folder would not put them back (<see cref="BackupBlobs"/>). Null when every one is there, or the backup holds
+    /// its documents itself. Their content is read back by the upkeep on the second disk, and by <c>backup verify</c>.
+    /// </summary>
+    internal static string? MissingDocuments(string archive, BackupContents contents)
+    {
+        if (contents.Index.Count == 0)
+        {
+            return null;
+        }
+
+        var folder = BackupBlobs.FolderOf(archive);
+        var missing = contents.Index.Where(d => !BackupBlobs.Candidates(folder, d.BlobId).Any(path => new FileInfo(path).Length == d.Length)).ToList();
+        return missing.Count == 0
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"The database restored, but {missing.Count} of the backup's {contents.Index.Count} documents have no copy in its backup folder ({folder}), so a restore from it would not put them back: the first is {missing[0].RelativePath}.");
+    }
+
     /// <summary>Opens the backup as a restore opens it, checks it in full, and writes its database dump to <paramref name="dump"/>.</summary>
-    private async Task<BackupManifest> ReadAsync(string file, string dump, CancellationToken ct)
+    private async Task<BackupContents> ReadAsync(string file, string dump, CancellationToken ct)
     {
         var key = recoveryKeys.Current();
         try
@@ -313,7 +334,12 @@ internal sealed class BackupRestoreTest(
                 CryptographicOperations.ZeroMemory(sealKey);
             }
 
-            return contents.Manifest;
+            if (contents.HospitalCa is { } ca)
+            {
+                CryptographicOperations.ZeroMemory(ca);
+            }
+
+            return contents;
         }
         finally
         {

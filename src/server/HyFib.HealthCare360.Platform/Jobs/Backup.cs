@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -91,9 +92,9 @@ public sealed class BackupRun
 
     /// <summary>
     /// Its copies on the second disk or NAS (JSON, a list of <see cref="BackupCopy"/>): the disk each is on, by the id it
-    /// was given on first use (<see cref="BackupDisk"/>), when it was made, and when it was last read back and whether it
-    /// still matched. Two disks that are swapped each get their copies; null before any copy, and for backups made before
-    /// disks were told apart.
+    /// was given on first use (<see cref="BackupDisk"/>), when it was made, and when it was last read back and whether it,
+    /// and the documents it needs there, still matched. Two disks that are swapped each get their copies; null before any
+    /// copy, and for backups made before disks were told apart.
     /// </summary>
     public string? SecondaryCopies { get; set; }
 
@@ -166,13 +167,14 @@ internal sealed record BackupResult(
     string? SecondaryDisk = null);
 
 /// <summary>
-/// Encrypted backups (DED-16). Each one is a single <see cref="BackupArchive"/> with the pg_dump of the database, an escrow
-/// copy of the field encryption key and the stored documents, encrypted with the current recovery key, which
-/// administrators keep offline (<see cref="RecoveryKeyStore"/>) and the file names. The file is written under a temporary
-/// name, then read back in full and its database dump listed by pg_restore; only a backup that passes becomes the finished
-/// file, is copied to the secondary location (USB/NAS), is uploaded to the off-site bucket when one is set up
-/// (<see cref="BackupOffsiteUploader"/>, within 15 minutes) and counts for retention. Restore with Restore-HC360.ps1, which
-/// runs the Server CLI's <c>backup restore</c>.
+/// Encrypted backups (DED-16). Each one is a <see cref="BackupArchive"/> with the pg_dump of the database, an escrow copy of
+/// the field encryption keys, the hospital CA, the erasure ledger and the index of the stored documents, encrypted with the
+/// current recovery key, which administrators keep offline (<see cref="RecoveryKeyStore"/>) and the file names. The
+/// documents themselves are kept once in the backup folder beside it (<see cref="BackupStore"/>). The file is written under
+/// a temporary name, then read back in full and its database dump listed by pg_restore; only a backup that passes becomes
+/// the finished file, is copied with the documents it needs to the secondary location (USB/NAS), is uploaded to the
+/// off-site bucket when one is set up (<see cref="BackupOffsiteUploader"/>, within 15 minutes) and counts for retention
+/// (<see cref="BackupRetention"/>). Restore with Restore-HC360.ps1, which runs the Server CLI's <c>backup restore</c>.
 /// </summary>
 internal sealed class BackupService(
     IDbContextFactory<HospitalDbContext> contextFactory,
@@ -204,6 +206,12 @@ internal sealed class BackupService(
     internal const string OldCopiesKeptNote = "Copied to the secondary directory; older copies there were not removed: ";
 
     /// <summary>
+    /// Starts the note of a backup after which no unused document was removed from a backup folder, because an archive
+    /// there has no list of its documents or a list that does not verify (<see cref="BackupStore.Prune"/>). Not a failed copy.
+    /// </summary>
+    internal const string UnusedKeptNote = "Unused documents were kept: ";
+
+    /// <summary>
     /// Replaces the failed copy's note once the copy is made later, when the second disk or NAS is back
     /// (<see cref="BackupUpkeep"/>).
     /// </summary>
@@ -218,9 +226,16 @@ internal sealed class BackupService(
 
     /// <summary>
     /// One backup at a time on this server: the nightly one, one taken by hand, the one before an update and a missed one
-    /// caught up each run a pg_dump and read the whole database, so the one that comes second waits for the first.
+    /// caught up each run a pg_dump and read the whole database, so the one that comes second waits for the first. The
+    /// backup folders' own lock (<see cref="BackupStore.Lock"/>) keeps out another server's backup.
     /// </summary>
     internal static readonly SemaphoreSlim Gate = new(1, 1);
+
+    /// <summary>
+    /// Called at each step of a backup with the step's name, for the tests that stop a backup at every step as a crash would
+    /// (BackupModelTests). Null in the server.
+    /// </summary>
+    internal Action<string>? Checkpoint { get; init; }
 
     private static readonly string ServerVersion =
         typeof(BackupService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
@@ -379,34 +394,70 @@ internal sealed class BackupService(
         var dump = Path.Combine(directories.Temp, $"{Guid.NewGuid():N}.dump");
         var recoveryKey = recoveryKeys.Current();
         var backupKey = recoveryKey.Key;
+        var referencesKey = ReferencesKey();
         IAsyncDisposable? documentsHeld = null;
         try
         {
-            await EnsureRoomAsync(includeDocuments ? BackupArchive.ListDocuments(directories.Files).Sum(d => d.Length) : 0, ct);
+            // The backup folder keeps each stored document once (BackupStore, docs/design/incremental-backup.md); the
+            // archive lists the documents it needs. Holding the folder keeps a second backup on this server out of it.
+            var store = BackupStore.Open(directories.Backups, keys.Fingerprint, referencesKey, time);
+            using var held = store.Lock();
+            var hashesPath = Path.Combine(directories.Backups, BackupHashCache.FileName);
+            var hashes = includeDocuments ? BackupHashCache.Load(hashesPath) : BackupHashCache.Empty();
+
+            await EnsureRoomAsync(includeDocuments ? NewDocumentBytes(store, hashes) : 0, ct);
+
             // The key tables' rows, counted in the snapshot the dump holds, for a test restore to check (BackupRestoreTest).
             var rowCounts = await postgres.DumpAsync(dump, lowPriority, ct);
+            Checkpoint?.Invoke("dumped");
 
             // The documents are listed after the database snapshot. The file store writes a document in full before its row
             // is committed and never removes it, so every document the dump refers to is on disk by now. One saved since is
             // not in the dump and is only an extra file in the backup. Moving documents to a new key rewrites them, so
-            // that waits while they are copied.
+            // that waits while they are hashed and copied.
             if (includeDocuments)
             {
                 documentsHeld = await documentsLock.HoldSharedAsync(ct);
             }
 
-            var documents = includeDocuments ? BackupArchive.ListDocuments(directories.Files) : [];
+            IReadOnlyList<BackupIndexedDocument>? index = null;
+            var copied = 0;
+            if (includeDocuments)
+            {
+                var documents = BackupArchive.ListDocuments(directories.Files);
+                var listed = new List<BackupIndexedDocument>(documents.Count);
+                foreach (var document in documents)
+                {
+                    var id = await hashes.HashAsync(directories.Files, document, ct);
+                    if (await store.AddAsync(held, Path.Combine(directories.Files, document.RelativePath), id, ct))
+                    {
+                        copied++;
+                    }
+
+                    listed.Add(new BackupIndexedDocument(document.RelativePath, id, document.Length));
+                    Checkpoint?.Invoke("document copied");
+                }
+
+                hashes.KeepOnly(documents.Select(d => d.RelativePath).ToHashSet(StringComparer.Ordinal));
+                index = listed;
+            }
 
             // The erasure ledger after the dump: an erasure committed since is in the ledger and not the dump, and a restore
-            // of this backup carries it out again. And the hospital CA the devices trust.
-            var extras = new BackupExtras(ErasureLedgerFiles.ReadForBackup(directories, options.Value.Backup), ExportHospitalCa());
+            // of this backup carries it out again. And the hospital CA the devices trust. The backup before an update
+            // carries neither: it is for going back on this machine, whose ledger and CA the update leaves as they are, and
+            // is written for the version updated from (below), which may know neither.
+            var extras = includeDocuments
+                ? new BackupExtras(ErasureLedgerFiles.ReadForBackup(directories, options.Value.Backup), ExportHospitalCa())
+                : new BackupExtras();
 
-            // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores.
+            // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores. The
+            // ring is exported after the documents are listed: a key a rotation adds meanwhile is in it, and a document
+            // listed is never encrypted with a key retired since (retiring needs nothing left on it).
             var ring = keys.ExportRing();
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
-                includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint,
+                includeDocuments, 0, 0, keys.Fingerprint,
                 ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint,
-                rowCounts.Count == 0 ? null : rowCounts);
+                RowCounts: rowCounts.Count == 0 ? null : rowCounts);
 
             string sha256;
             var masterKey = keys.ExportMasterKey();
@@ -415,9 +466,21 @@ internal sealed class BackupService(
             {
                 await using var file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
-                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, directories.Files, documents, extras, ct);
+                if (includeDocuments)
+                {
+                    await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, extras, ct);
+                }
+                else
+                {
+                    // The backup before an update has no documents, and is restored by the version updated from when the
+                    // update is undone (DEPLOYMENT.md section 7, "Going back"): format 2, which every earlier version reads.
+                    await BackupArchive.WriteAsync(encryptor, manifest with { DocumentCount = 0, DocumentBytes = 0 }, masterKey, ring.Keys, sealKey, dump,
+                        directories.Files, [], ct);
+                }
+
                 await encryptor.CompleteAsync(ct);
                 sha256 = encryptor.Sha256!;
+                Checkpoint?.Invoke("archive written");
             }
             finally
             {
@@ -442,32 +505,52 @@ internal sealed class BackupService(
 
             File.Delete(dump);
             var warning = await VerifyAsync(partial, backupKey, ct);
+            Checkpoint?.Invoke("archive verified");
+            CheckDocumentsPresent(store, index ?? []);
+
+            // The list first, then the archive: an archive in the folder always has its list, so its documents are never
+            // taken for unused.
+            var ids = (index ?? []).Select(d => d.BlobId).ToList();
+            store.WriteReferences(held, fileName, ids, referencesKey);
+            Checkpoint?.Invoke("list written");
             File.Move(partial, target);
+            Checkpoint?.Invoke("archive in place");
             var verifiedAt = time.GetUtcNow();
+            if (includeDocuments)
+            {
+                hashes.Save(hashesPath);
+                logger.LogInformation("Backup {File}: {Copied} of {Documents} documents were new and copied to the backup folder", fileName, copied, ids.Count);
+            }
 
             var secondaryCopied = false;
             string? disk = null;
             if (options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary)
             {
-                (secondaryCopied, var note, disk) = CopyToSecondary(target, secondary, RemoveOld, time.GetUtcNow(), logger);
+                (secondaryCopied, var note, disk) = await CopyToSecondaryAsync(store, target, sha256, index ?? [], secondary, referencesKey, ct);
                 if (note is not null)
                 {
                     warning = Join(warning, note);
                 }
             }
 
+            Checkpoint?.Invoke("before prune");
             try
             {
-                RemoveOld(directories.Backups);
+                var pruned = store.Prune(held, options.Value.Backup.Retention, Zone, referencesKey);
+                if (pruned.SweepSkipped is { } skipped)
+                {
+                    logger.LogWarning("Unused documents were not removed from {Directory}: {Reason}", directories.Backups, skipped);
+                    warning = Join(warning, UnusedKeptNote + skipped);
+                }
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                // The backup is made all the same; the next one tries again.
+                // The backup is made all the same; the next one, or the night's upkeep, tries again.
                 logger.LogWarning(ex, "Backups that retention no longer keeps could not all be removed from {Directory}", directories.Backups);
             }
 
             return new BackupResult(kind, startedAt, time.GetUtcNow(), fileName, new FileInfo(target).Length, sha256,
-                includeDocuments ? documents.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId, disk);
+                includeDocuments ? ids.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId, disk);
         }
         finally
         {
@@ -477,10 +560,13 @@ internal sealed class BackupService(
             }
 
             CryptographicOperations.ZeroMemory(backupKey);
+            CryptographicOperations.ZeroMemory(referencesKey);
             File.Delete(dump);
             File.Delete(partial);
         }
     }
+
+    private TimeZoneInfo Zone => PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone);
 
     /// <summary>
     /// The hospital CA for the backup to carry, inside its encryption, so a server restored from it on new hardware serves a
@@ -498,6 +584,148 @@ internal sealed class BackupService(
             logger.LogWarning(ex, "The hospital CA could not be read, so this backup does not carry it");
             return null;
         }
+    }
+
+    /// <summary>
+    /// The key that seals each archive's list of documents (<see cref="BackupStore.ReferencesKeyPurpose"/>): derived from
+    /// the original field key, which is never retired, so it is the same on every server restored from these backups.
+    /// </summary>
+    private byte[] ReferencesKey() => ReferencesKeyOf(keys);
+
+    /// <inheritdoc cref="ReferencesKey"/>
+    internal static byte[] ReferencesKeyOf(IFieldKeyEscrow keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+        var masterKey = keys.ExportMasterKey();
+        try
+        {
+            return FieldMasterKey.DeriveKey(masterKey, BackupStore.ReferencesKeyPurpose);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(masterKey);
+        }
+    }
+
+    /// <summary>
+    /// About how many bytes of documents tonight's backup will copy: those the hash cache does not know unchanged, or knows
+    /// but the folder does not have. Nothing is read, so the estimate is quick; it errs towards counting a document.
+    /// </summary>
+    private long NewDocumentBytes(BackupStore store, BackupHashCache hashes) =>
+        BackupArchive.ListDocuments(directories.Files)
+            .Where(d => hashes.Lookup(d.RelativePath, new FileInfo(Path.Combine(directories.Files, d.RelativePath))) is not { } id || !store.Contains(id, d.Length))
+            .Sum(d => d.Length);
+
+    /// <summary>Every document the archive lists is in the folder in full. Its content was hashed as it was copied in.</summary>
+    private static void CheckDocumentsPresent(BackupStore store, IReadOnlyList<BackupIndexedDocument> index)
+    {
+        if (index.FirstOrDefault(d => !store.Contains(d.BlobId, d.Length)) is { } missing)
+        {
+            throw new InvalidOperationException(
+                $"The backup was written but the document {missing.RelativePath} is missing from the backup folder, so it was discarded.");
+        }
+    }
+
+    /// <summary>
+    /// Copies a finished backup to the secondary directory (<see cref="BackupStore.CopyArchiveAsync"/>): the documents it
+    /// needs that are not there yet (from the primary folder, hashed again as they are copied), then its list, then the
+    /// archive, hashed as it is read and under a temporary name until complete. Then the archives there that retention no
+    /// longer keeps, and the documents none of the remaining ones needs, are removed.
+    /// </summary>
+    /// <returns>Whether it was copied, the backup's note about it, and the id of the disk it went to (<see cref="BackupDisk"/>).</returns>
+    private async Task<(bool Copied, string? Note, string? Disk)> CopyToSecondaryAsync(
+        BackupStore primary, string archive, string sha256, IReadOnlyList<BackupIndexedDocument> index, string secondary, byte[] referencesKey, CancellationToken ct)
+    {
+        BackupStore? store = null;
+        BackupStoreLock? held = null;
+        try
+        {
+            var outcome = await CopyToSecondary(
+                async () =>
+                {
+                    store = BackupStore.Open(secondary, keys.Fingerprint, referencesKey, time, options.Value.Backup.SecondaryAppendOnly);
+                    held = store.Lock();
+                    var ids = index.Select(d => d.BlobId).Distinct(StringComparer.Ordinal).ToList();
+
+                    // The night's upkeep reads the copy back (BackupUpkeep), as it does every copy not read back yet.
+                    if (await store.CopyArchiveAsync(held, primary, archive, sha256, ids, referencesKey, readBack: false, Checkpoint, ct) is { } problem)
+                    {
+                        throw new IOException(problem);
+                    }
+                },
+                () => store!.AppendOnly
+                    ? throw new UnauthorizedAccessException(AppendOnlyReason(store.Generation!))
+                    : store.Prune(held!, options.Value.Backup.Retention, Zone, referencesKey),
+                secondary,
+                logger);
+
+            // Each disk is given an id on its first copy, so swapped disks are told apart.
+            var disk = outcome.Copied ? BackupDisk.Identify(secondary, time.GetUtcNow(), logger) : null;
+            var note = store is not null && FileSystemNote(store.Directory) is { } fileSystem ? Join(outcome.Note, fileSystem) : outcome.Note;
+            return (outcome.Copied, note, disk);
+        }
+        finally
+        {
+            held?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// The outcome of a copy to the secondary directory, as the backup's note says it. A copy that could not be made is
+    /// <see cref="CopyFailedNote"/>, which System health warns of (<see cref="BackupCopies"/>). A share that let the server
+    /// add the copy but refused to delete older ones (an append-only share, DEPLOYMENT.md section 8) is not a failed copy:
+    /// <see cref="OldCopiesKeptNote"/>. Documents kept because a list was missing or did not verify are
+    /// <see cref="UnusedKeptNote"/>.
+    /// </summary>
+    internal static async Task<(bool Copied, string? Note)> CopyToSecondary(Func<Task> copy, Func<BackupPruneResult> removeOld, string secondary, ILogger logger)
+    {
+        try
+        {
+            await copy();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            logger.LogWarning(ex, "Backup copy to secondary location {Directory} failed", secondary);
+            return (false, CopyFailedNote + ex.Message);
+        }
+
+        try
+        {
+            var pruned = removeOld();
+            return (true, pruned.SweepSkipped is { } skipped ? UnusedKeptNote + skipped : null);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogInformation("Older backup copies in {Directory} were not removed: {Reason}", secondary, ex.Message);
+            return (true, OldCopiesKeptNote + ex.Message);
+        }
+    }
+
+    /// <summary>Why nothing is removed from an append-only secondary folder, in the backup's note.</summary>
+    private string AppendOnlyReason(string generation) => string.Create(CultureInfo.InvariantCulture,
+        $"the folder only lets HC360 add files, so its own retention removes old copies (keep each file {BackupRetention.AppendOnlyMinimumDays(options.Value.Backup.Retention)} days or more); tonight's documents went into {generation}.");
+
+    /// <summary>A note when the secondary disk is FAT or exFAT, which suit a backup folder badly; null otherwise.</summary>
+    private string? FileSystemNote(string directory)
+    {
+        string? format;
+        try
+        {
+            format = new DriveInfo(Path.GetPathRoot(directory)!).DriveFormat;
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        if (!BackupStore.UnsuitableFileSystem(format))
+        {
+            return null;
+        }
+
+        logger.LogWarning("The backup disk {Directory} is {Format}; format it NTFS", directory, format);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"The secondary disk is {format}, which has no journal and wastes space on every stored document: format it NTFS.");
     }
 
     /// <summary>
@@ -608,49 +836,6 @@ internal sealed class BackupService(
     private static string Truncate(string text) => text.Length > 2000 ? text[..2000] : text;
 
     private static string Join(string? first, string second) => first is null ? second : first + " " + second;
-
-    /// <summary>
-    /// Copies the finished <paramref name="backup"/> to the secondary directory, then removes the copies there past their
-    /// time with <paramref name="removeOld"/>. A share that lets the server add copies but not delete them (an append-only
-    /// share, DEPLOYMENT.md section 8) refuses the second step, which is what it is for: the copy succeeded, and its note
-    /// says so, and that the older copies stay for the share's own retention to remove. It is never taken for a failed
-    /// copy (<see cref="BackupCopies"/>), which only <see cref="CopyFailedNote"/> is.
-    /// </summary>
-    /// <returns>
-    /// Whether the copy was made, the backup's note about it (why it failed, or that older copies were kept), and the id of
-    /// the disk it went to (<see cref="BackupDisk"/>), written there on its first copy.
-    /// </returns>
-    internal static (bool Copied, string? Note, string? Disk) CopyToSecondary(string backup, string secondary, Action<string> removeOld, DateTimeOffset now,
-        ILogger logger)
-    {
-        try
-        {
-            Directory.CreateDirectory(secondary);
-            File.Copy(backup, Path.Combine(secondary, Path.GetFileName(backup)), overwrite: true);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            logger.LogWarning(ex, "Backup copy to secondary location {Directory} failed", secondary);
-            return (false, CopyFailedNote + ex.Message, null);
-        }
-
-        var disk = BackupDisk.Identify(secondary, now, logger);
-        try
-        {
-            removeOld(secondary);
-            return (true, null, disk);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            logger.LogInformation("Older backup copies in {Directory} were not removed: {Reason}", secondary, ex.Message);
-            return (true, OldCopiesKeptNote + ex.Message, disk);
-        }
-    }
-
-    /// <summary>The backups in <paramref name="directory"/> past their time, grandfather-father-son (<see cref="BackupRetention"/>).</summary>
-    private void RemoveOld(string directory) =>
-        BackupRetention.Apply(directory, options.Value.Backup.Retention, PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone),
-            time.GetUtcNow(), logger);
 }
 
 [DisallowConcurrentExecution]

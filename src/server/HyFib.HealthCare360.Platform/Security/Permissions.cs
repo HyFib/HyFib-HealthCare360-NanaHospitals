@@ -77,6 +77,13 @@ public static class SystemRoles
         (MisAnalyst, "MIS reports and BI dashboards"),
         (Patient, "Patient portal user"),
     ];
+
+    /// <summary>
+    /// The roles never turned off (<c>Role.IsActive</c>): the Super Administrator's, which is how the hospital is
+    /// administered, and the Patient role, which every portal account holds (the patient portal's own switch turns patients
+    /// off). Every other role, built-in or the hospital's own, can be.
+    /// </summary>
+    public static IReadOnlyList<string> AlwaysInUse { get; } = [SuperAdmin, Patient];
 }
 
 /// <summary>All permissions known to this server (platform + loaded modules).</summary>

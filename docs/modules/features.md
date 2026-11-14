@@ -2,7 +2,9 @@
 
 Parts of HealthCare360 an administrator can turn off for the whole hospital, under **Hospital setup > Features** in the
 staff app. A switch that is off is enforced by the server: the endpoints of the feature refuse to work, and the staff
-app and the patient portal hide the feature and explain why instead of showing errors.
+app and the patient portal hide the feature and explain why instead of showing errors. To keep something from some
+people rather than from the whole hospital, change their roles' permissions, turn a whole role off, or deactivate an
+account ([ROLES.md](../security/ROLES.md)).
 
 | | |
 |---|---|

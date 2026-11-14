@@ -105,7 +105,7 @@ internal sealed partial record LabInstrumentSettings
     /// <summary>Serial: the COM port and line settings the agent opens.</summary>
     public LabSerialSettings? Serial { get; init; }
 
-    /// <summary><c>latin1</c> (default) or <c>utf-8</c>.</summary>
+    /// <summary><c>latin1</c> (default, or the ASTM dialect's: UTF-8 for the Yumizen H500) or <c>utf-8</c>.</summary>
     public string? Encoding { get; init; }
 
     /// <summary>HL7 only: where the sample barcode is, in order of preference (default SPM-2, SAC-3, OBR-3, OBR-2).</summary>
@@ -113,6 +113,12 @@ internal sealed partial record LabInstrumentSettings
 
     /// <summary>HL7 only: the message orders are sent in, <c>OML^O21</c> (HL7 2.5.1, default) or <c>ORM^O01</c> (2.3.1).</summary>
     public string? OrderMessage { get; init; }
+
+    /// <summary>
+    /// ASTM only: the analyser model's departures from E1394 (<see cref="Astm.AstmDialect"/>): none (E1394 as written,
+    /// the default), <c>YumizenC150</c> (HORIBA Yumizen C150) or <c>YumizenH500</c> (HORIBA Yumizen H500 / H500E).
+    /// </summary>
+    public string? AstmDialect { get; init; }
 
     /// <summary>
     /// Retired. Host queries and order download follow Bidirectional in Lab setup. A stored <c>false</c> (set before
@@ -130,6 +136,11 @@ internal sealed partial record LabInstrumentSettings
         if (!Enum.IsDefined(Protocol))
         {
             return "protocol must be Hl7v2 or Astm";
+        }
+
+        if (!Astm.AstmDialect.IsKnown(AstmDialect))
+        {
+            return $"the ASTM dialect must be one of {string.Join(", ", Astm.AstmDialect.Names)}, or none";
         }
 
         return Transport switch
@@ -231,7 +242,9 @@ internal sealed record LabRuntimeOptions(Encoding Encoding, int MaxMessageBytes,
     public TimeSpan Hl7ReplyTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
     public static LabRuntimeOptions From(LabGatewaySettings gateway, LabInstrumentSettings instrument) => new(
-        LabGatewaySettings.ResolveEncoding(instrument.Encoding),
+        instrument.Encoding is null && instrument.Protocol == LabProtocol.Astm && AstmDialect.For(instrument.AstmDialect).DefaultEncoding is { } dialectEncoding
+            ? dialectEncoding
+            : LabGatewaySettings.ResolveEncoding(instrument.Encoding),
         Math.Clamp(gateway.MaxMessageKilobytes, 16, 16 * 1024) * 1024,
         // A relayed serial line is always there: the relay's own keep-alives find a dead agent, so it never idles out.
         instrument.Transport == LabTransport.Serial ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(Math.Clamp(gateway.IdleTimeoutSeconds, 30, 86_400)),

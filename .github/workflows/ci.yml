@@ -186,6 +186,22 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-RestoreMarker.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      - name: Test what the restore drill decides from what it reads
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-RestoreDrill.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-RestoreDrill.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
+      - name: Test the backup sizing script's arithmetic
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-BackupSizing.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-BackupSizing.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       - name: Test the installers' restart of HC360 and PostgreSQL when they fail
         shell: pwsh
         run: |
@@ -304,11 +320,13 @@ jobs:
 
       # The secret scan reads every commit in the history of the commit under test, across the whole repository: on a
       # pull request, the merge GitHub makes with main, so the pull request's commits and all of main's. A commit only
-      # on another branch is scanned in that branch's pull request, with that branch's .gitleaks.toml, and does not fail
-      # this one. --log-opts=HEAD replaces gitleaks' own git log options (--full-history --all --diff-filter=tuxdb in
-      # 8.30.1); without the filter, a file that replaces a symlink is scanned too. The scan runs here because this job
-      # is on Linux. gitleaks comes from its GitHub release and is checked against the release's SHA-256: to update it,
-      # change both values below. Accepted findings (fake credentials in tests) are listed in .gitleaks.toml.
+      # on another branch is scanned in that branch's pull request, and daily by security-audit.yml, with that branch's
+      # .gitleaks.toml, and does not fail this one. --log-opts=HEAD replaces gitleaks' own git log options
+      # (--full-history --all --diff-filter=tuxdb in 8.30.1); without the filter, a file that replaces a symlink is
+      # scanned too. The scan runs here because this job is on Linux. gitleaks comes from its GitHub release and is
+      # checked against the release's SHA-256: to update it, change both values below and in security-audit.yml, which
+      # runs the same release (test_branch_secret_scan.py fails while they differ). Accepted findings (fake credentials
+      # in tests) are listed in .gitleaks.toml.
       - name: Scan every commit in this change's history for secrets
         working-directory: .
         env:
@@ -440,7 +458,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Test the patch-window check
+      # With the tests of the daily secret scan of the commits main does not hold (security-audit.yml), which pull requests
+      # do not otherwise run.
+      - name: Test the patch-window check and the branch secret scan
         run: python3 -m unittest discover -s .github/scripts -p "test_*.py" -v
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2

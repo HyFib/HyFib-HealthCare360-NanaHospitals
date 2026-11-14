@@ -409,9 +409,15 @@ are deleted, and HC360 says so, and keeps a restore from bringing it back.
 week for 8 weeks and of each month for 12 months, removed by the nightly backup and its upkeep. The oldest monthly
 backup is therefore at most 342 days old (`RetentionDays`, from the counts: 11 months of 31 days and the day between),
 and nothing older is kept but the newest full backup when backups have stopped. The last backup made before an erasure
-is gone at most `RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 343 by default). While the
-off-site copy is on (DEPLOYMENT.md section 8), each backup is also kept in the bucket, locked for `retainDays` (35 by
-default) and removed by the bucket's lifecycle the day after, so the backup period counted is the longer of the two
+is gone at most `RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 343 by default). The stored
+documents are kept once in each backup folder and removed from it once no remaining backup lists them, so the same
+holds for them: an erased document's copy goes with the last backup kept that lists it. While the off-site copy is on
+(DEPLOYMENT.md section 8), each backup is also kept in the bucket, locked for `retainDays` (35 by default) and removed
+by the bucket's lifecycle the day after. The documents there are kept in weekly generations
+(docs/design/incremental-backup.md, section 5.6), each locked until its last backup has expired, so an erased
+document's copy can stay a generation (7 days) longer there: 43 days. An append-only second copy
+(`Backup:SecondaryAppendOnly`) keeps each file for the share's own retention, set to at least 21 days
+(`Backup:Retention:Daily` + 7) and at most the 342 days above. The backup period counted is the longest of these
 (`BackupRetention`, in Platform): 342 days by default, a window of 343. The erasure answer (`ErasureService.BackupSentence`), the public notice
 (`PublicPrivacyInfo.backupWindowDays`) and the portal's privacy notice say so. It counts on the bucket's lifecycle
 expiring each copy as its lock passes, as DEPLOYMENT.md sets it; a backup uploaded late, after the line was down, is
@@ -423,7 +429,7 @@ own rules (`retainDays` 0), are outside this: keep those no longer than the noti
 copy beside the backups' second copy when one is set. One JSON object a line: the entry, the request, the patient, the
 items and when, by id only, with no name or number. Each line is sealed with the audit seal key (HMAC-SHA256); a line
 whose seal does not verify is reported and never applied. Should writing it fail, the erasure stands, the audit trail
-records `privacy.erasure_ledger_failed`, and the next replay writes it. Every backup carries the ledger, with the lines
+records `privacy.erasure_ledger_failed`, and the next replay writes it. Every nightly or manual backup carries the ledger, with the lines
 of its copy the ledger lacks, inside its encryption (`privacy/erasure-ledger.log` in the archive, named in its
 manifest), and `backup restore` adds its lines, and those of the copy beside the backup file, to the ledger of the
 server it restores onto (`ErasureLedgerFiles`, in Platform). So the replay below finds the erasures on new hardware
@@ -463,4 +469,4 @@ Restore-HC360.ps1 does, and proves the erasure comes back and is applied again, 
   permanently or for the years set; other security records deleted after a while). A request's `retainedUntil` and
   `retainedPermanently` describe what the law keeps only. The printed privacy notice must say the same: when the hospital updates its text, it raises
   `privacy.noticeVersion` so patients are shown the new version. Erased data also stays in backups until they expire
-  (at most 31 days by default, 37 with the off-site copy on; see Erasure and backups).
+  (at most 343 days by default, the off-site copy's within it; see Erasure and backups).

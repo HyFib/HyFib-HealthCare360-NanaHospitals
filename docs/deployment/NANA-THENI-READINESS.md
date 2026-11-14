@@ -118,7 +118,7 @@ Put them beside the registers the pharmacy signs today:
 | Windows | 11 Pro 25H2, build 26200.9711, 64-bit, installed 28-09-2025 | Windows 10 2004 or later; Pro or above for BitLocker | Meets |
 | Processor | Intel Core i5-12400: 6 cores, 12 threads | 40 staff at once is SRS 3.2 Medium (26 to 75 users): 8 cores | **Two cores short.** The load test decides (below) |
 | Memory | 32 GB (31.7 GB usable), 3200 MT/s | 32 GB (Medium) | Meets |
-| Storage | 1.39 TB in all, 218 GB used | A 1 TB NVMe SSD (mirrored for Medium), plus a second disk or NAS for backup copies | **To confirm.** 1.39 TB is not a usual size for one drive, so there are probably several disks. Which one holds Windows, and whether it is an SSD, is not shown. PostgreSQL and HC360's data go on the Windows disk |
+| Storage | 1.39 TB in all, 218 GB used | A 1 TB NVMe SSD (mirrored for Medium), plus a second disk or NAS for backup copies | **To confirm.** 1.39 TB is not a usual size for one drive, so there are probably several disks. Which one holds Windows, and whether it is an SSD, is not shown. PostgreSQL and HC360's data go on the Windows disk; the backup folder belongs on another (below, "How much backup space") |
 | Graphics | Intel UHD 730 | Not used | — |
 | Name | DESKTOP-RMI9PCM, a name Windows chose | A fixed name, e.g. HC360-SRV | Rename before installing |
 | BitLocker, TPM | Not shown (Windows 11 Pro has both) | On for every fixed disk, with the TPM, before HC360 holds patient data | **To confirm** |
@@ -191,15 +191,46 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
   nightly backup at 01:30, so a disk swapped in the day misses nothing. A night with no disk connected leaves that
   backup without its copy: the Backups screen shows "No" in its copy column, the administrators are told in the app the
   next morning, and System health warns. After three nights without a copy the warning turns critical and is told to
-  IT on-call by SMS (DEPLOYMENT.md section 8). Size the disks from the backups: the Backups screen shows each one's size
-  after the first week.
+  IT on-call by SMS (DEPLOYMENT.md section 8). Buy **2 TB disks and format them NTFS** (sizing below). Each disk keeps
+  one copy of every stored document and the backups made while it was connected, and catches up on the documents it
+  missed when it comes back.
 - **An off-site bucket.** The two disks are in the hospital most of the week, and a disk swapped by hand is easily
   forgotten. The owner asked that once online, the backups are backed up: HC360 uploads each night's backup, encrypted,
   to an S3-compatible bucket in India (AWS Mumbai or Hyderabad, OCI, or another store hosted in India) within 15
   minutes, locked there for 35 days so nobody can delete it. The hospital opens the account in its own name and keeps
-  its administrator login. It holds about 35 backups at a time; the Backups screen gives their size. The internet line
-  must carry a night's backup within the day: a 6 GB backup takes about 80 minutes at 10 Mbit/s.
+  its administrator login. It holds about 35 backups and six weekly copies of the documents (sizing below). The internet
+  line must carry a night's backup within the day, and once a week every document: 100 GB takes about 23 hours at 10
+  Mbit/s, so measure the line before relying on the bucket.
 - **A dedicated server**, if the hospital takes the recommendation above.
+
+### How much backup space
+
+Each nightly backup holds the database dump and a list of the stored documents. Each backup folder keeps one copy of
+every document, so a folder grows by about one dump and the day's new documents each night (DEPLOYMENT.md section 8;
+docs/design/incremental-backup.md, sections 2 and 5.7). Space needed, with *R* backups kept (about 30 once backups are
+a year old: every backup of the last 14 days, and the last of each of 8 weeks and of 12 months), a dump of *D* and
+documents of *Docs*:
+
+- **The server's backup folder, and each USB disk:** about *R* × *D* + *Docs*. Each USB disk keeps as many backups as
+  the server, since retention counts the backups each disk holds. After the data encryption key is rotated every
+  document is copied once more, and the old copies stay, *Docs* more, until the last backup made before the rotation
+  goes: up to 342 days, as the monthly backups are kept a year.
+- **The off-site bucket:** about 35 × *D* + 6 × *Docs*.
+
+The hospital's own figures are not measured yet. Run `deploy\windows\Measure-HC360BackupSizing.ps1 -MeasureDump` on
+this PC before go-live and again after the first month (docs/design/incremental-backup.md, Appendix A). It reads only,
+projects these figures from the hospital's own data, and writes a table to put here in place of the one below. Until then, the figures below assume **0.25 GB of documents a
+day**, with dumps of about 5 GB in year 1 and 15 GB in year 3.
+
+| | Year 1 | Year 3 | Before (every document in every backup), year 3 |
+|---|---|---|---|
+| Server's backup folder (30 backups) | 0.24 TB | 0.72 TB (1.0 TB after a key rotation) | 8.7 TB |
+| Each USB disk (as many backups, on each of two disks swapped weekly) | 0.24 TB | 0.72 TB (1.0 TB after a key rotation) | 8.7 TB |
+| Off-site bucket | 0.72 TB | 2.2 TB | 10 TB |
+
+What this means for this PC: by year 3 the documents (about 0.27 TB), the database and the backup folder no longer fit
+on one 1 TB disk together. Put the backup folder on a disk of its own (`HealthCare360:Backup:Directory`), not the
+Windows disk. Most of the backup space is then the 30 dumps, not the documents.
 
 ## 4. Deploying to this machine, step by step
 
@@ -284,13 +315,16 @@ monitor is set up. The dates are against the release on 23 November.
      keeps one copy; a second administrator (the medical director or the hospital administrator) keeps another outside
      the hospital, at home or in a bank locker, and types it in under Backups › Recovery key, *I hold this key*. Put the
      quarterly check, when each holder types the key in again, in both their calendars.
-   - Let the first night's backup run and go off site. On a spare PC, download it from the bucket with the hospital's
-     own login, check it with `backup verify`, and restore it with `Restore-HC360.ps1` (DEPLOYMENT.md section 8,
-     *Restoring from the off-site copy*).
+   - Let the first night's backup run and go off site. Right after it, export the row counts on the server
+     (`Invoke-HC360RestoreDrill.ps1 -ExportReference`). On a spare PC, download the backup and its generation from the
+     bucket with the hospital's own login (DEPLOYMENT.md section 8, *Restoring from the off-site copy*), and run the
+     restore drill on it (`Invoke-HC360RestoreDrill.ps1 -BackupFile ... -ReferenceFile ...`, section 8, *Restore drill
+     every quarter*). Do the same from one of the USB disks.
 
    *Check:* the night's backup shows Yes in the Backups screen's *Off site* column, and the bucket shows it locked for 35
    days. Backups › Recovery key lists both holders, and System health shows neither `backup.offsite_stale` nor
-   `backup.recovery_key_custodians`. The restored copy opens and holds what the original holds.
+   `backup.recovery_key_custodians`. Both drills say PASSED: every document in place and as saved, and no table missing or with
+   more rows than the server had. Keep their reports, with the time each restore took.
 9. **Build the item master in HC360.** No data comes from the current software. Set each scheduled drug's schedule
    from its molecule against the H1 list, and fill in its manufacturer.
    *Check:* the pharmacist-in-charge reviews the H1 and X list before it is used.
