@@ -15,7 +15,7 @@ vi.mock('../bridge/bridge', async (importOriginal) => ({
   bridge: desktop,
 }));
 
-const { desktopTarget, isQueuedBehindPrinter, printDocument, printHtml } = await import('./print');
+const { desktopTarget, isQueuedBehindPrinter, onPrintQueued, printDocument, printHtml } = await import('./print');
 const { roleForPageSize } = await import('./printers');
 
 const counter: PrinterSetupInfo = {
@@ -65,6 +65,30 @@ describe('printing on HC360 Desktop', () => {
     // An HC360 Desktop older than this answers nothing: as before, it is taken as printed.
     desktop.printHtml.mockResolvedValueOnce(null);
     expect(isQueuedBehindPrinter(await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true }))).toBe(false);
+  });
+
+  it('tells subscribers of a queued print, for screens that ignore the result, and not of one that printed', async () => {
+    desktop.getPrinterSetup.mockResolvedValue(counter);
+    const heard = vi.fn();
+    const stop = onPrintQueued(heard);
+
+    desktop.printHtml.mockResolvedValueOnce({ status: 'printed', printer: 'EPSON TM-T82 Receipt', message: null });
+    await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true });
+    expect(heard).not.toHaveBeenCalled();
+
+    const queued = {
+      status: 'queued_printer_offline',
+      printer: 'EPSON TM-T82 Receipt',
+      message: 'The printer is offline.',
+    } as const;
+    desktop.printHtml.mockResolvedValueOnce(queued);
+    await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true });
+    expect(heard).toHaveBeenCalledExactlyOnceWith(queued);
+
+    stop();
+    desktop.printHtml.mockResolvedValueOnce(queued);
+    await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true });
+    expect(heard).toHaveBeenCalledTimes(1);
   });
 
   it('asks with the print dialog when this computer has no printer for the kind of page', async () => {

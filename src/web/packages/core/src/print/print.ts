@@ -7,6 +7,35 @@ export type PrintOptions = Omit<PrintHtmlRequest, 'html'>;
 
 export type { PrintOutcome };
 
+type PrintQueuedListener = (outcome: PrintOutcome) => void;
+
+const queuedListeners = new Set<PrintQueuedListener>();
+
+/**
+ * Calls `listener` whenever HC360 Desktop accepts a print that is waiting behind a paused, offline or faulty printer, so one
+ * subscriber (the app shell) can tell the person for every screen that prints, whether or not that screen reads the result
+ * of `printHtml`. Returns a function that unsubscribes.
+ */
+export function onPrintQueued(listener: PrintQueuedListener): () => void {
+  queuedListeners.add(listener);
+  return () => {
+    queuedListeners.delete(listener);
+  };
+}
+
+function announceQueued(outcome: PrintOutcome | undefined): void {
+  if (!isQueuedBehindPrinter(outcome)) {
+    return;
+  }
+  for (const listener of [...queuedListeners]) {
+    try {
+      listener(outcome);
+    } catch {
+      // One subscriber failing must not turn an accepted print into an error.
+    }
+  }
+}
+
 /** Whether a print was accepted but is waiting behind a paused or offline printer, which the screen must say. */
 export function isQueuedBehindPrinter(outcome: PrintOutcome | undefined): outcome is PrintOutcome {
   return outcome !== undefined && outcome.status !== 'printed';
@@ -23,7 +52,9 @@ export async function printHtml(html: string, options: PrintOptions = {}): Promi
   if (bridge.isDesktop) {
     // Windows takes a job for a paused or offline printer and holds it: HC360 Desktop says so, and a screen that shows
     // the outcome (`isQueuedBehindPrinter`) tells the person to resume or reconnect the printer instead of "printed".
-    return (await bridge.printHtml({ html, ...(await desktopTarget(options)) })) ?? undefined;
+    const outcome = (await bridge.printHtml({ html, ...(await desktopTarget(options)) })) ?? undefined;
+    announceQueued(outcome);
+    return outcome;
   }
 
   return new Promise<undefined>((resolve) => {
