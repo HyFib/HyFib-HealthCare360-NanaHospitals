@@ -99,6 +99,9 @@ describe('the offline check of a PIN or password', () => {
     // The app starts again (the key the server gave is in memory only), or the verifier is copied to another computer.
     vi.resetModules();
     const fresh = await import('./offlineUnlock');
+    // False positive, in a test: the sealed verifier the module wrote (salt and HMAC of a PBKDF2 hash of a made-up PIN),
+    // put back to show it cannot be checked away from a live session. No secret is stored.
+    // codeql[js/clear-text-storage-of-sensitive-data]
     localStorage.setItem('hc360:offline-unlock', onComputer);
     expect(await fresh.checkOfflineSecret('u-asha', 'pin', '2468')).toEqual({ result: 'unavailable' });
 

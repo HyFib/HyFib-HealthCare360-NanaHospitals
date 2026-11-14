@@ -231,6 +231,10 @@ function read(): KeptVerifiers | null {
 
 function write(kept: KeptVerifiers): void {
   try {
+    // False positive: no secret is written. Each verifier is a random salt and an HMAC of PBKDF2-SHA512 of the PIN or
+    // password (210,000 rounds), keyed by a non-extractable key held only in memory; a copy can neither be reversed nor
+    // test a guess away from the live session. CodeQL does not take WebCrypto's PBKDF2 and HMAC for hashing.
+    // codeql[js/clear-text-storage-of-sensitive-data]
     localStorage.setItem(STORAGE_KEY, JSON.stringify(kept));
   } catch {
     // No storage: nothing is kept.
