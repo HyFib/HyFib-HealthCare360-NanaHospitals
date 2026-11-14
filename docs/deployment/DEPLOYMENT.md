@@ -1240,6 +1240,18 @@ to. They keep working: nothing is refused, so no ward is locked out mid-shift. B
 (major and minor: a 1.1.x server asks for 1.1.0); to set one, put `HealthCare360:Clients:MinimumDesktopVersion` and
 `HealthCare360:Clients:MinimumLabAgentVersion` (such as `1.0.5`) in `hc360.settings.json`.
 
+### What an upgrade changes in the database
+
+After 1.0.0, a release's database changes only add to the database: tables, columns (a required one with a default),
+longer text, NULL allowed where it was not. They take away nothing the release before it reads or writes, so that
+release still runs on the upgraded database (an *expand* step). A change that takes something away (drops or renames a
+table or a column, shortens a column or gives it another type, makes it NOT NULL, or drops a default that the release
+before inserts by) waits until the code has stopped using what it takes away for a whole release. It then comes as a
+reviewed *contract* step, which the release notes name with the release whose code stopped using it. HyFib's build
+refuses any other change that takes something away (`MigrationPolicyTests`, which lists the contract steps). So an
+upgrade loses nothing the release before still uses, and that release, though not an older one, can run on the upgraded
+database.
+
 ### Going back
 
 The way back from an upgrade is the previous version **and** the backup HC360 took just before the update changed the
