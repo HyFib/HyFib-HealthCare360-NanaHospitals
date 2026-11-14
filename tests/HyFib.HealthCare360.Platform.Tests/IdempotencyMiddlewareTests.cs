@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HyFib.HealthCare360.Platform.Tests;
@@ -21,6 +22,11 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
 {
     private const string Key = "attempt-1";
     private const string Receipt = """{"billId":"b1","amount":500,"mode":"Cash"}""";
+
+    /// <summary>A path whose encoded line break (%0D%0A) is decoded into it, to write a line of its own into the log.</summary>
+    private const string ForgedPath = "/api/v1/billing/receipts\r\n2026-11-14 09:00:00 [INF] The administrator signed in";
+
+    private static readonly Endpoint Receipts = new(null, EndpointMetadataCollection.Empty, "HTTP: POST /api/v1/billing/receipts");
 
     private readonly string _root = Path.Combine(Path.GetTempPath(), "hc360-tests", Guid.NewGuid().ToString("N"));
     private readonly ServiceProvider _services = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider();
@@ -240,6 +246,31 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
     }
 
     [Fact]
+    public async Task A_client_that_leaves_names_its_endpoint_in_the_log_never_the_path_it_sent()
+    {
+        var log = new LogLines();
+
+        await SendAsync(SaveReceiptAsync, clientLeavesWhenAnswered: true, endpoint: Receipts, path: ForgedPath, logger: log);
+
+        log.Lines.ShouldHaveSingleItem().ShouldBe(
+            "The client left before the answer to HTTP: POST /api/v1/billing/receipts reached it; a retry gets the recorded outcome");
+    }
+
+    [Fact]
+    public async Task An_attempt_that_never_finished_names_its_endpoint_in_the_log_never_the_path_it_sent()
+    {
+        var log = new LogLines();
+        _ = SendAsync(_ => new TaskCompletionSource().Task, endpoint: Receipts, path: ForgedPath);
+        _clock.Now += TimeSpan.FromMinutes(3);
+
+        await SendAsync(SaveReceiptAsync, endpoint: Receipts, path: ForgedPath, logger: log);
+
+        log.Lines.ShouldHaveSingleItem().ShouldStartWith(
+            "The attempt of HTTP: POST /api/v1/billing/receipts with idempotency key attempt-1, begun at ");
+        log.Lines.ShouldAllBe(line => !line.Contains('\r') && !line.Contains('\n'));
+    }
+
+    [Fact]
     public async Task An_answer_that_is_not_kept_is_not_sent_again_and_not_run_again()
     {
         var endpoint = new Endpoint(null, new EndpointMetadataCollection(NoStoredResponseMetadata.Instance), "dictation");
@@ -273,7 +304,9 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
         CancellationTokenSource? client = null,
         bool clientLeavesWhenAnswered = false,
         string body = Receipt,
-        Endpoint? endpoint = null)
+        Endpoint? endpoint = null,
+        string path = "/api/v1/billing/receipts",
+        ILogger<IdempotencyMiddleware>? logger = null)
     {
         client ??= new CancellationTokenSource();
         var http = new DefaultHttpContext
@@ -282,7 +315,7 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
             User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(HcClaims.UserId, _cashier.ToString())], "test")),
         };
         http.Request.Method = HttpMethods.Post;
-        http.Request.Path = "/api/v1/billing/receipts";
+        http.Request.Path = path;
         http.Request.ContentType = "application/json";
         http.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
         http.Request.Headers[IdempotencyMiddleware.HeaderName] = Key;
@@ -293,7 +326,7 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
             http.SetEndpoint(endpoint);
         }
 
-        var middleware = new IdempotencyMiddleware(handler, NullLogger<IdempotencyMiddleware>.Instance);
+        var middleware = new IdempotencyMiddleware(handler, logger ?? NullLogger<IdempotencyMiddleware>.Instance);
         await middleware.HandleAsync(http, Key, _store, new HttpCurrentUser(new HttpContextAccessor { HttpContext = http }), _protector, _clock);
         return http;
     }
@@ -308,6 +341,20 @@ public sealed class IdempotencyMiddlewareTests : IDisposable
     {
         using var document = JsonDocument.Parse(BodyOf(http));
         return document.RootElement.Clone();
+    }
+
+    /// <summary>The lines the middleware writes to its log, as a log file holds them.</summary>
+    private sealed class LogLines : ILogger<IdempotencyMiddleware>
+    {
+        public List<string> Lines { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Lines.Add(formatter(state, exception));
     }
 
     private sealed class Clock(DateTimeOffset now) : TimeProvider

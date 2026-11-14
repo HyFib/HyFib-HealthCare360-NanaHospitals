@@ -265,9 +265,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
             if (await store.TryAbandonAsync(existing.Id, CancellationToken.None))
             {
                 logger.LogWarning(
-                    "The attempt of {Method} {Path} with idempotency key {Key}, begun at {Begun}, did not finish; its retries are told to check whether it was saved",
-                    existing.Method,
-                    existing.Path,
+                    "The attempt of {Endpoint} with idempotency key {Key}, begun at {Begun}, did not finish; its retries are told to check whether it was saved",
+                    EndpointName(context),
                     key,
                     existing.CreatedAt);
                 await OutcomeUnknownAsync(context);
@@ -371,9 +370,15 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
         }
         catch (Exception ex) when (ex is OperationCanceledException or IOException)
         {
-            logger.LogDebug(ex, "The client left before the answer to {Method} {Path} reached it; a retry gets the recorded outcome", context.Request.Method, LoggedPath.Of(context));
+            logger.LogDebug(ex, "The client left before the answer to {Endpoint} reached it; a retry gets the recorded outcome", EndpointName(context));
         }
     }
+
+    /// <summary>
+    /// The request a log line names: its endpoint as the server defines it (method and route template), never the path the
+    /// client sent, which can hold line breaks once decoded and would write lines of the client's own into the log.
+    /// </summary>
+    private static string EndpointName(HttpContext context) => context.GetEndpoint()?.DisplayName ?? "a request with no endpoint";
 
     private static Task InProgressAsync(HttpContext context)
     {
