@@ -387,7 +387,7 @@ internal sealed class CriticalValuesReport : ReportDefinition
             select new CriticalRow(
                 r.PatientId, p.Uhid, p.FullName, DiagnosticKind.Laboratory, r.TestName, r.NumericValue, r.ValueText, r.Unit, r.Flag, r.EnteredAt!.Value,
                 c == null ? (DateTimeOffset?)null : c.InformedAt, c == null ? null : c.InformedPersonName, c == null ? (CommunicationMethod?)null : c.Method,
-                c != null && c.ReadBackConfirmed),
+                c != null && c.ReadBackConfirmed, p.IsVip, p.SensitiveCategories),
             ct);
         var findings = await ctx.ListAsync(
             from c in ctx.Db.Set<CriticalCallLog>().AsNoTracking().NotRemoved()
@@ -396,21 +396,12 @@ internal sealed class CriticalValuesReport : ReportDefinition
             orderby c.InformedAt descending
             select new CriticalRow(
                 c.PatientId, p.Uhid, p.FullName, c.Kind, c.Finding, null, null, null, null, c.CreatedAt, c.InformedAt, c.InformedPersonName, c.Method,
-                c.ReadBackConfirmed),
+                c.ReadBackConfirmed, p.IsVip, p.SensitiveCategories),
             ct);
 
         var all = lab.Concat(findings).OrderByDescending(r => r.FlaggedAt).ToList();
-        var rows = all
-            .Select(r =>
-            {
-                double? minutes = r.InformedAt is { } informed && informed >= r.FlaggedAt ? (informed - r.FlaggedAt).TotalMinutes : null;
-                return new object?[]
-                {
-                    r.FlaggedAt, r.Uhid, r.PatientName, Labels.Humanize(r.Kind.ToString()), r.Test, ResultText(r), r.InformedAt, Figures.Round1(minutes),
-                    r.InformedPerson ?? "Not documented", r.Method is { } method ? Labels.Humanize(method.ToString()) : null, r.InformedAt is null ? null : r.ReadBack ? "Yes" : "No",
-                };
-            })
-            .ToList();
+        var viewer = PatientView.Of(ctx);
+        var rows = all.Select(r => Row(r, viewer)).ToList();
 
         var informedMinutes = all
             .Where(r => r.InformedAt is { } informed && informed >= r.FlaggedAt)
@@ -430,6 +421,23 @@ internal sealed class CriticalValuesReport : ReportDefinition
         };
     }
 
+    /// <summary>
+    /// One register row, as the viewer may read it: a restricted patient by initials, and the test and result (or finding) of
+    /// a patient whose record the viewer may not open withheld. When and how fast they were told stays: it is the register's
+    /// purpose, and says nothing of what was found.
+    /// </summary>
+    internal static object?[] Row(CriticalRow r, PatientView viewer)
+    {
+        double? minutes = r.InformedAt is { } informed && informed >= r.FlaggedAt ? (informed - r.FlaggedAt).TotalMinutes : null;
+        return
+        [
+            r.FlaggedAt, r.Uhid, viewer.Name(r.PatientName, r.IsVip), Labels.Humanize(r.Kind.ToString()),
+            viewer.Clinical(r.IsVip, r.SensitiveCategories, r.Test), viewer.Clinical(r.IsVip, r.SensitiveCategories, ResultText(r)),
+            r.InformedAt, Figures.Round1(minutes), r.InformedPerson ?? "Not documented",
+            r.Method is { } method ? Labels.Humanize(method.ToString()) : null, r.InformedAt is null ? null : r.ReadBack ? "Yes" : "No",
+        ];
+    }
+
     private static string ResultText(CriticalRow r)
     {
         var value = r.NumericValue is { } number
@@ -438,7 +446,8 @@ internal sealed class CriticalValuesReport : ReportDefinition
         return r.Flag is { } flag ? $"{value} ({Labels.Humanize(flag.ToString()).ToLowerInvariant()})".Trim() : value;
     }
 
-    private sealed record CriticalRow(
+    internal sealed record CriticalRow(
         Guid PatientId, string Uhid, string PatientName, DiagnosticKind Kind, string Test, decimal? NumericValue, string? ValueText, string? Unit, ResultFlag? Flag,
-        DateTimeOffset FlaggedAt, DateTimeOffset? InformedAt, string? InformedPerson, CommunicationMethod? Method, bool ReadBack);
+        DateTimeOffset FlaggedAt, DateTimeOffset? InformedAt, string? InformedPerson, CommunicationMethod? Method, bool ReadBack, bool IsVip,
+        SensitiveCategory SensitiveCategories);
 }

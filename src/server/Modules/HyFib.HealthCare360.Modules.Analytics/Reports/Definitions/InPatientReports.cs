@@ -665,26 +665,13 @@ internal sealed class AdverseDischargesReport : ReportDefinition
             orderby a.DischargedAt descending
             select new RegisterRow(
                 a.PatientId, a.AdmissionNumber, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, a.DepartmentId, a.ConsultantPractitionerId, a.AdmittedAt,
-                a.DischargedAt!.Value, a.DischargeType, a.IsMlc),
+                a.DischargedAt!.Value, a.DischargeType, a.IsMlc, p.IsVip, p.SensitiveCategories),
             ct);
 
         var departments = await Names.DepartmentsAsync(ctx, list.Select(r => r.DepartmentId), ct);
         var doctors = await Names.PractitionersAsync(ctx, list.Select(r => r.ConsultantId), ct);
-        var rows = list
-            .Select(r =>
-            {
-                var admitted = AnalyticsClock.LocalDate(r.AdmittedAt);
-                var discharged = AnalyticsClock.LocalDate(r.DischargedAt);
-                var age = r.DateOfBirth is { } dob ? Age.Format(dob, discharged) : "—";
-                var within48 = r.Outcome == DischargeType.Expired && r.DischargedAt - r.AdmittedAt < TimeSpan.FromHours(48);
-                return new object?[]
-                {
-                    r.AdmissionNumber, r.Uhid, r.PatientName, $"{age} / {r.Gender.ToString()[..1]}", Labels.Name(departments, r.DepartmentId),
-                    Labels.Name(doctors, r.ConsultantId), r.AdmittedAt, r.DischargedAt, KpiMath.LengthOfStayDays(admitted, discharged),
-                    r.Outcome is { } type ? Labels.DischargeType(type) : "—", r.Outcome == DischargeType.Expired ? (within48 ? "Yes" : "No") : "—", r.IsMlc ? "Yes" : "No",
-                };
-            })
-            .ToList();
+        var viewer = PatientView.Of(ctx);
+        var rows = list.Select(r => Row(r, Labels.Name(departments, r.DepartmentId), Labels.Name(doctors, r.ConsultantId), viewer)).ToList();
 
         return new ReportData(rows)
         {
@@ -699,7 +686,28 @@ internal sealed class AdverseDischargesReport : ReportDefinition
         };
     }
 
-    private sealed record RegisterRow(
+    /// <summary>
+    /// One register row, as the viewer may read it: a restricted patient by initials, and the department, consultant, outcome
+    /// and medico-legal columns of a patient whose record the viewer may not open withheld (a death, a LAMA or an MLC says
+    /// what the record holds). The stay's dates and length stay, as on the bed board.
+    /// </summary>
+    internal static object?[] Row(RegisterRow r, string department, string consultant, PatientView viewer)
+    {
+        var admitted = AnalyticsClock.LocalDate(r.AdmittedAt);
+        var discharged = AnalyticsClock.LocalDate(r.DischargedAt);
+        var age = r.DateOfBirth is { } dob ? Age.Format(dob, discharged) : "—";
+        var within48 = r.Outcome == DischargeType.Expired && r.DischargedAt - r.AdmittedAt < TimeSpan.FromHours(48);
+        string? Clinical(string? value) => viewer.Clinical(r.IsVip, r.SensitiveCategories, value);
+        return
+        [
+            r.AdmissionNumber, r.Uhid, viewer.Name(r.PatientName, r.IsVip), $"{age} / {r.Gender.ToString()[..1]}", Clinical(department),
+            Clinical(consultant), r.AdmittedAt, r.DischargedAt, KpiMath.LengthOfStayDays(admitted, discharged),
+            Clinical(r.Outcome is { } type ? Labels.DischargeType(type) : "—"), Clinical(r.Outcome == DischargeType.Expired ? (within48 ? "Yes" : "No") : "—"),
+            Clinical(r.IsMlc ? "Yes" : "No"),
+        ];
+    }
+
+    internal sealed record RegisterRow(
         Guid PatientId, string AdmissionNumber, string Uhid, string PatientName, Gender Gender, DateOnly? DateOfBirth, Guid? DepartmentId, Guid? ConsultantId,
-        DateTimeOffset AdmittedAt, DateTimeOffset DischargedAt, DischargeType? Outcome, bool IsMlc);
+        DateTimeOffset AdmittedAt, DateTimeOffset DischargedAt, DischargeType? Outcome, bool IsMlc, bool IsVip, SensitiveCategory SensitiveCategories);
 }

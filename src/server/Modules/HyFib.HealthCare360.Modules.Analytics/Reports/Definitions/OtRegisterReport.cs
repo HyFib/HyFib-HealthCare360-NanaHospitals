@@ -192,7 +192,7 @@ internal static class OtRegister
     public const string None = "—";
 
     /// <summary>What a clinical column shows to someone the patient's record is closed to: no word of which category it is in.</summary>
-    public const string Withheld = "Withheld: confidential record";
+    public const string Withheld = PatientView.Withheld;
 
     /// <summary>How long after leaving the theatre a move to another bed is still where the theatre sent the patient.</summary>
     public static readonly TimeSpan PostOperativeMove = TimeSpan.FromHours(6);
