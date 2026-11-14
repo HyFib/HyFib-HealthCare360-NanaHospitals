@@ -363,6 +363,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddMonthlyPartitions(PartitionedTables.IntegrationLogs);
         services.AddScoped<BackupService>();
         services.AddScoped<IPreMigrationBackup>(sp => sp.GetRequiredService<BackupService>());
+        services.AddScoped<BackupUpkeep>();
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
         services.AddScoped<IRecoveryKeyCustodyWarnings, RecoveryKeyCustodyWarnings>();
@@ -456,6 +457,11 @@ public static class PlatformServiceCollectionExtensions
                     quartz.ScheduleJob<BackupCatchUpJob>(trigger => trigger
                         .WithIdentity("backup-catch-up")
                         .WithCronSchedule(BackupCatchUpJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+
+                    // After the nightly backup: the copies the second disk missed, and retention on a night without a backup.
+                    quartz.ScheduleJob<BackupUpkeepJob>(trigger => trigger
+                        .WithIdentity("backup-upkeep")
+                        .WithCronSchedule(options.Backup.UpkeepSchedule, cron => cron.InTimeZone(ResolveTimeZone(options.TimeZone))));
                 }
 
                 // Every quarter of an hour, whether nightly backups are on or not: a backup taken by hand goes off site too.

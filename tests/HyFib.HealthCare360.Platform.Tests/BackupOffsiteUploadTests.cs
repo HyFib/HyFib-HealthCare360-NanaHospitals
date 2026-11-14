@@ -490,29 +490,6 @@ public sealed class BackupOffsiteUploadTests : IDisposable
         (off.Enabled, off.Problem).ShouldBe((false, (string?)null));
     }
 
-    /// <summary>
-    /// What the privacy notice and the erasure answer say of erased data in backups (DPDP Act s8(7)) counts the off-site
-    /// copies too while they are on: locked for 35 days, and removed by the bucket's lifecycle the day after.
-    /// </summary>
-    [Fact]
-    public async Task How_long_backups_are_kept_counts_the_off_site_lock_while_it_is_on()
-    {
-        var settings = Substitute.For<ISettingsService>();
-        var options = new PlatformOptions();
-        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(30);
-
-        settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(Settings());
-        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(36);
-        options.Backup.RetentionDays = 60;
-        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(60);
-
-        options.Backup.RetentionDays = 30;
-        settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(Settings() with { Enabled = false });
-        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(30);
-        settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, Arg.Any<Guid?>(), Arg.Any<CancellationToken>()).Returns(Settings(retainDays: 0));
-        (await BackupRetention.DaysAsync(settings, options, Ct)).ShouldBe(30);
-    }
-
     [Theory]
     [InlineData("hc360/", "hc360/hc360-x.hc360bak")]
     [InlineData("hc360", "hc360/hc360-x.hc360bak")]

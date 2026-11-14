@@ -205,7 +205,7 @@ true until the report is recorded.
 | `records.mlc` | permanently | — | Kept |
 | `finance` | 8 years | 8 | Kept (used for erasure holds) |
 | `audit` | permanently, or the years super administrators set | 8 years once set | Kept (tamper-evident, never edited). Not editable here: holders of `admin.system.manage` set it, one asking and another approving (`/api/v1/admin/audit/retention`, ADR-015); months older than the period go only by a purge another approves, exported first |
-| `backups` | from `HealthCare360:Backup:RetentionDays` | — | Deleted by the backup job |
+| `backups` | from `HealthCare360:Backup:Retention` (342 days by default) | — | Deleted by the backup job and its nightly upkeep |
 
 The logs are kept 366 days, not 365: a year has at most 366 days, so every line is kept the full year the DPDP Rules 2025
 ask for (rules 6 and 8), across a 29 February too. A period changed to less before is read as 366.
@@ -404,12 +404,15 @@ a whole, and every backup escrows every key so it restores on new hardware (SECU
 per-patient key that a backup also escrows would still open that backup. So erased data stays in backups until they
 are deleted, and HC360 says so, and keeps a restore from bringing it back.
 
-**How long.** Backups older than `HealthCare360:Backup:RetentionDays` (30 by default) are deleted, on the Server Node
-and on the second copy, by the next nightly backup. The last backup made before an erasure is therefore gone at most
-`RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 31 by default). While the off-site copy is on
-(DEPLOYMENT.md section 8), each backup is also kept in the bucket, locked for `retainDays` (35 by default) and removed
-by the bucket's lifecycle the day after, so the backup period counted is the longer of the two (`BackupRetention`, in
-Platform): 36 days, a window of 37. The erasure answer (`ErasureService.BackupSentence`), the public notice
+**How long.** On the Server Node and on the second copy, backups are kept grandfather-father-son
+(`HealthCare360:Backup:Retention`, DEPLOYMENT.md section 8): every backup of the last 14 days, then the last of each
+week for 8 weeks and of each month for 12 months, removed by the nightly backup and its upkeep. The oldest monthly
+backup is therefore at most 342 days old (`RetentionDays`, from the counts: 11 months of 31 days and the day between),
+and nothing older is kept but the newest full backup when backups have stopped. The last backup made before an erasure
+is gone at most `RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 343 by default). While the
+off-site copy is on (DEPLOYMENT.md section 8), each backup is also kept in the bucket, locked for `retainDays` (35 by
+default) and removed by the bucket's lifecycle the day after, so the backup period counted is the longer of the two
+(`BackupRetention`, in Platform): 342 days by default, a window of 343. The erasure answer (`ErasureService.BackupSentence`), the public notice
 (`PublicPrivacyInfo.backupWindowDays`) and the portal's privacy notice say so. It counts on the bucket's lifecycle
 expiring each copy as its lock passes, as DEPLOYMENT.md sets it; a backup uploaded late, after the line was down, is
 kept its full lock from its upload. Copies a hospital moves elsewhere by hand, and a bucket that locks its copies by its

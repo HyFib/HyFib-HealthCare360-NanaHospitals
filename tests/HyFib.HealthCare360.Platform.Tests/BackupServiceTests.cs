@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -129,6 +131,37 @@ public sealed class BackupServiceTests : IDisposable
         (copied, removed).ShouldBe((false, false));
         note.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
         BackupCopies.Reason(note).ShouldNotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// After each backup, both copies keep what grandfather-father-son retention keeps (<see cref="BackupRetention"/>): of
+    /// two months of nightly backups, the newest days', a week's last and a month's last, on the server and the NAS alike,
+    /// rather than every backup of the last 30 days and nothing older.
+    /// </summary>
+    [Fact]
+    public async Task After_a_backup_both_copies_keep_what_retention_keeps()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var secondary = _options.Backup.SecondaryDirectory!;
+        Directory.CreateDirectory(secondary);
+        var today = DateTimeOffset.UtcNow;
+        var earlier = Enumerable.Range(1, 60)
+            .Select(daysAgo => string.Create(CultureInfo.InvariantCulture, $"hc360-{today.AddDays(-daysAgo):yyyyMMdd}-200000-scheduled.hc360bak"))
+            .ToList();
+        foreach (var name in earlier)
+        {
+            File.WriteAllText(Path.Combine(_directories.Backups, name), name);
+            File.WriteAllText(Path.Combine(secondary, name), name);
+        }
+
+        var result = await Service().CreateAsync(BackupKind.Manual, today, includeDocuments: true, [], ct);
+
+        var all = earlier.Append(result.FileName).Select(n => BackupFile.From(n)!).ToList();
+        var kept = all.Except(BackupRetention.ToRemove(all, _options.Backup.Retention, HospitalTimeZone.Zone, DateTimeOffset.UtcNow))
+            .Select(b => b.Path).ToList();
+        kept.Count.ShouldBeInRange(18, 26, "14 days, the weeks' and months' last backups");
+        Directory.EnumerateFiles(_directories.Backups, "*.hc360bak").Select(Path.GetFileName).ShouldBe(kept, ignoreOrder: true);
+        Directory.EnumerateFiles(secondary, "*.hc360bak").Select(Path.GetFileName).ShouldBe(kept, ignoreOrder: true);
     }
 
     [Fact]

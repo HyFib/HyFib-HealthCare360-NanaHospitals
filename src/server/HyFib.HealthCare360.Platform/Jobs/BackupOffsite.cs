@@ -466,34 +466,6 @@ internal static class BackupOffsite
         TimeZoneInfo.ConvertTime(at, zone).ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture);
 }
 
-/// <summary>
-/// How many days a backup is kept, wherever HC360 puts it: on the server and its second copy for
-/// <c>HealthCare360:Backup:RetentionDays</c>; and, while the off-site copy is on, in the bucket until its lock
-/// (<see cref="BackupOffsiteSettings.RetainDays"/>) has passed and the bucket's lifecycle removes it the day after
-/// (DEPLOYMENT.md section 8). What the privacy notice and the erasure answer say of erased data in backups is counted
-/// from it (DPDP Act s8(7)), so it never says less than the copies off site are kept.
-/// </summary>
-public static class BackupRetention
-{
-    public static async Task<int> DaysAsync(ISettingsService settings, PlatformOptions options, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(options);
-        var days = Math.Max(options.Backup.RetentionDays, 1);
-        BackupOffsiteSettings? offsite;
-        try
-        {
-            offsite = await settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, cancellationToken: ct);
-        }
-        catch (JsonException)
-        {
-            return days;
-        }
-
-        return offsite is { Enabled: true, RetainDays: > 0 } ? Math.Max(days, offsite.RetainDays + 1) : days;
-    }
-}
-
 /// <summary>A part of a multipart upload that the store holds: its number, the ETag it gave, and the MD5 of what was sent.</summary>
 internal sealed record OffsiteUploadPart(int Number, string ETag, string Md5);
 

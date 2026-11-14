@@ -161,7 +161,7 @@ internal sealed class BackupService(
     ILogger<BackupService> logger) : IPreMigrationBackup
 {
     public const string FileExtension = ".hc360bak";
-    private const string PartialExtension = ".partial";
+    internal const string PartialExtension = ".partial";
 
     /// <summary>
     /// Starts the part of a backup's note (<see cref="BackupRun.Error"/>) that says why its copy to the secondary directory
@@ -174,6 +174,12 @@ internal sealed class BackupService(
     /// afterwards: an append-only share does not let the server delete. Not a failed copy.
     /// </summary>
     internal const string OldCopiesKeptNote = "Copied to the secondary directory; older copies there were not removed: ";
+
+    /// <summary>
+    /// Replaces the failed copy's note once the copy is made later, when the second disk or NAS is back
+    /// (<see cref="BackupUpkeep"/>).
+    /// </summary>
+    internal const string CopiedLaterNote = "Copied to the secondary directory later, once it was back: ";
 
     /// <summary>
     /// How old the newest good backup may be before System health says no backup succeeded (<c>backup.stale</c>, critical):
@@ -368,14 +374,23 @@ internal sealed class BackupService(
             var secondaryCopied = false;
             if (options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary)
             {
-                (secondaryCopied, var note) = CopyToSecondary(target, secondary, CleanupOld, logger);
+                (secondaryCopied, var note) = CopyToSecondary(target, secondary, RemoveOld, logger);
                 if (note is not null)
                 {
                     warning = Join(warning, note);
                 }
             }
 
-            CleanupOld(directories.Backups);
+            try
+            {
+                RemoveOld(directories.Backups);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The backup is made all the same; the next one tries again.
+                logger.LogWarning(ex, "Backups that retention no longer keeps could not all be removed from {Directory}", directories.Backups);
+            }
+
             return new BackupResult(kind, startedAt, time.GetUtcNow(), fileName, new FileInfo(target).Length, sha256,
                 includeDocuments ? documents.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId);
         }
@@ -533,27 +548,10 @@ internal sealed class BackupService(
         }
     }
 
-    private void CleanupOld(string directory)
-    {
-        var cutoff = time.GetUtcNow().UtcDateTime.AddDays(-Math.Max(options.Value.Backup.RetentionDays, 1));
-        foreach (var file in Directory.EnumerateFiles(directory, "*" + FileExtension))
-        {
-            if (File.GetCreationTimeUtc(file) < cutoff)
-            {
-                File.Delete(file);
-            }
-        }
-
-        // Left behind only when the server stopped in the middle of a backup.
-        var stale = time.GetUtcNow().UtcDateTime.AddDays(-1);
-        foreach (var file in Directory.EnumerateFiles(directory, "*" + FileExtension + PartialExtension))
-        {
-            if (File.GetLastWriteTimeUtc(file) < stale)
-            {
-                File.Delete(file);
-            }
-        }
-    }
+    /// <summary>The backups in <paramref name="directory"/> past their time, grandfather-father-son (<see cref="BackupRetention"/>).</summary>
+    private void RemoveOld(string directory) =>
+        BackupRetention.Apply(directory, options.Value.Backup.Retention, PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone),
+            time.GetUtcNow(), logger);
 }
 
 [DisallowConcurrentExecution]

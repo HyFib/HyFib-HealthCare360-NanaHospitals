@@ -465,8 +465,9 @@ showed the original key on screen; System health says when backups still use tha
    so a key nobody wrote down never becomes the one they need. A mistake in the copy is caught here.
 
 The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
-on a NAS or USB drive and off site, are deleted: 30 days by default, 35 in the off-site bucket. Both steps are recorded
-in the audit log, without the key.
+on a NAS or USB drive and off site, are deleted: up to 342 days by default, as the last backup of each month is kept
+for 12 months (section 8), and 35 days in the off-site bucket. Both steps are recorded in the audit log, without the
+key.
 
 **Two people hold the key.** A key one person holds is lost with them. Give a copy to a second administrator (the
 medical director, or the hospital administrator), who keeps it outside the building, at home or in a bank locker, so a
@@ -1319,9 +1320,26 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
 ## 8. Backups and disaster recovery
 
-- An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST and is kept for 30 days. With
-  `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS, and once the off-site copy is set up
-  (below), it is uploaded to a bucket outside the building within 15 minutes.
+- An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST. With `-SecondaryBackupDir`, each backup is
+  also copied to the second disk or NAS, and once the off-site copy is set up (below), it is uploaded to a bucket
+  outside the building within 15 minutes.
+- **How long backups are kept.** On the server and on the second disk or NAS, grandfather-father-son: every backup of
+  the last 14 days, then the last backup of each week (Monday to Sunday) for 8 weeks, and of each month for 12 months.
+  So a problem found weeks or months late still has a backup from before it. A week's or month's backup is a full one,
+  never the database-only backup taken before an update. HC360 counts days, weeks and months that have a backup, so
+  if backups stop, the newest are not removed while nothing replaces them. Nothing is kept past the longest period,
+  342 days with these numbers, except the newest full backup, which is never removed. Each backup removes what is past
+  its time, on the server and on the second copy, and so does the nightly upkeep at 03:30. Change the numbers in
+  `hc360.settings.json` and restart HC360:
+
+  ```json
+  "HealthCare360": { "Backup": { "Retention": { "Daily": 14, "Weekly": 8, "Monthly": 12 } } }
+  ```
+
+  The longest period is what the privacy notice tells patients of erased data in backups (docs/modules/privacy.md),
+  so it changes with these numbers. Plan the disk space for about 34 backups on each copy. `Backup:RetentionDays`,
+  which kept every backup 30 days, is no longer read. The off-site bucket keeps its copies by its own lock and
+  lifecycle ("The off-site copy" below).
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
 - **A backup missed while the server was off** (a power cut, an update, a restart over 01:30) is caught up. HC360
@@ -1340,7 +1358,14 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
     and not put back is told on the Monday afternoon.
 
   Plug the disk back in, or bring the NAS back, then **Back up now**: the warning clears once a backup is copied.
-  Only full backups count, so a failed copy of the backup taken before an update raises nothing. With several servers
+  Only full backups count, so a failed copy of the backup taken before an update raises nothing.
+
+  **A disk that comes back gets the backups it missed.** Each night at 03:30 (`Backup:UpkeepSchedule`) HC360 copies
+  to the second disk or NAS the backups on the server that it lacks and that retention keeps there: those made while
+  it was unplugged, or while the other of two swapped disks was in. It copies the newest first, at most 7 a night, and
+  the rest the nights after. Each is checked against the SHA-256 it was verified with as it is read, so a backup
+  damaged on the server's disk is not spread to the second, and read back once written. Its **File / error** column
+  then says it was copied later, and the failed copy's warning clears. With several servers
   (section 10), give every node the same `Backup:SecondaryDirectory`, since **Back up now** runs on the node that
   answers it.
 - **At go-live, test the copy warning.** Unplug the backup disk (or point a NAS path at a share that is off) and press
@@ -1602,8 +1627,10 @@ server, and ransomware on it, can add copies there but not remove or change them
 - Better still, make the share a WORM folder (write once, read many: Synology's WriteOnce, QNAP's WORM), which keeps
   each file unchangeable for the days set, or take immutable snapshots of it every day. Then a copy cannot be
   overwritten either.
-- Let the NAS's own retention remove the copies after 30 days or more. HC360 cannot: each backup's note then says it was
-  copied and that the older copies there were not removed. That note is not a failed copy, and raises no warning.
+- Let the NAS's own retention remove the copies. HC360 cannot: each backup's note then says it was copied and that the
+  older copies there were not removed. That note is not a failed copy, and raises no warning. Keep what HC360 would
+  keep (14 days, the last of each week for 8 weeks and of each month for 12 months, which most NAS retention or
+  snapshot policies can do), and nothing past the longest period the privacy notice counts (342 days by default).
 - Keep the NAS's administrator account off the Server Node.
 
 ## 9. Warm standby and failover (optional)

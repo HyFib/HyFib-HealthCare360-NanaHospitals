@@ -446,12 +446,70 @@ public sealed class BackupOptions
     /// <summary>Secondary copy target (USB drive or NAS share).</summary>
     public string? SecondaryDirectory { get; set; }
 
-    public int RetentionDays { get; set; } = 30;
+    /// <summary>
+    /// Which backups are kept on the server and on the second disk or NAS, grandfather-father-son: every backup of the
+    /// newest days that have one, then the last of each of the newest weeks and months (<see cref="Jobs.BackupRetention"/>).
+    /// The off-site bucket keeps its copies by its own lock and lifecycle rules.
+    /// </summary>
+    public BackupRetentionOptions Retention { get; set; } = new();
+
+    /// <summary>
+    /// The longest a backup is kept on the server and its second copy, in days, from <see cref="Retention"/>: what the
+    /// privacy notice and the erasure answer count. It replaced the setting of this name, which kept every backup 30 days
+    /// and is no longer read.
+    /// </summary>
+    public int RetentionDays => Retention.LongestDays;
+
+    /// <summary>
+    /// When the backups' nightly upkeep runs (Quartz cron, default 03:30 every day, after the nightly backup): it copies to
+    /// the second disk or NAS the backups it missed while it was away (<see cref="Jobs.BackupUpkeep"/>).
+    /// </summary>
+    public string UpkeepSchedule { get; set; } = "0 30 3 * * ?";
 
     public string PgDumpPath { get; set; } = "pg_dump";
 
     /// <summary>pg_restore, used to verify each backup. By default the one next to pg_dump.</summary>
     public string? PgRestorePath { get; set; }
+}
+
+/// <summary>
+/// How many backups grandfather-father-son retention keeps (<see cref="BackupOptions.Retention"/>). Each count is of days,
+/// weeks or months that have a backup, not of days on the calendar, so backups that stop (a disk that failed, a server
+/// switched off) are not all removed while nothing replaces them.
+/// </summary>
+public sealed class BackupRetentionOptions
+{
+    public const int MaxDaily = 3650;
+    public const int MaxWeekly = 520;
+    public const int MaxMonthly = 120;
+
+    /// <summary>The most <see cref="LongestDays"/> can be: <see cref="MaxMonthly"/> months.</summary>
+    public const int MaxLongestDays = ((MaxMonthly - 1) * 31) + 1;
+
+    /// <summary>Every backup of the newest this many days that have one (at least 1).</summary>
+    public int Daily { get; set; } = 14;
+
+    /// <summary>The last backup of each of the newest this many weeks, Monday to Sunday (0: none past the daily ones).</summary>
+    public int Weekly { get; set; } = 8;
+
+    /// <summary>The last backup of each of the newest this many months (0: none past the weekly ones).</summary>
+    public int Monthly { get; set; } = 12;
+
+    /// <summary>The daily count in use: at least the newest day's backups, so a setting of 0 never removes them.</summary>
+    public int DailyKept => Math.Clamp(Daily, 1, MaxDaily);
+
+    public int WeeklyKept => Math.Clamp(Weekly, 0, MaxWeekly);
+
+    public int MonthlyKept => Math.Clamp(Monthly, 0, MaxMonthly);
+
+    /// <summary>
+    /// The longest a backup is kept with nightly backups, in days: the newest day's goes once as many newer days have one
+    /// (<see cref="DailyKept"/> days); the last of the oldest week kept, a Sunday, once the week after the newest has its
+    /// first, a Monday (7 days a week, and the day between); the last of the oldest month kept once the month after the
+    /// newest has its first (31 days a month, and the day between). A backup past it is removed even while the counts
+    /// would keep it, the newest full backup aside, so this holds when backups stop too.
+    /// </summary>
+    public int LongestDays => Math.Max(DailyKept, Math.Max(WeeklyKept > 0 ? ((WeeklyKept - 1) * 7) + 1 : 0, MonthlyKept > 0 ? ((MonthlyKept - 1) * 31) + 1 : 0));
 }
 
 /// <summary>
