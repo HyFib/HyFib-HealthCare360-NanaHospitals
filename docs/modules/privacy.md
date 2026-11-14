@@ -423,7 +423,11 @@ own rules (`retainDays` 0), are outside this: keep those no longer than the noti
 copy beside the backups' second copy when one is set. One JSON object a line: the entry, the request, the patient, the
 items and when, by id only, with no name or number. Each line is sealed with the audit seal key (HMAC-SHA256); a line
 whose seal does not verify is reported and never applied. Should writing it fail, the erasure stands, the audit trail
-records `privacy.erasure_ledger_failed`, and the next replay writes it.
+records `privacy.erasure_ledger_failed`, and the next replay writes it. Every backup carries the ledger, with the lines
+of its copy the ledger lacks, inside its encryption (`privacy/erasure-ledger.log` in the archive, named in its
+manifest), and `backup restore` adds its lines, and those of the copy beside the backup file, to the ledger of the
+server it restores onto (`ErasureLedgerFiles`, in Platform). So the replay below finds the erasures on new hardware
+too, restored from the second copy or the off-site one.
 
 **The replay** (`ErasureLedgerReplay`), as the database is brought up to date at start-up (a restore always ends with a
 start; a seeder after all others), every hour on the nodes that run jobs, and on request. An entry is in the database

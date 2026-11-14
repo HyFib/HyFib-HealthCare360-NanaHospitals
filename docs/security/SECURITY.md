@@ -1250,6 +1250,9 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     purpose, not per patient, and every backup escrows every key so it restores on new hardware.
   - Every erasure is appended to the erasure ledger outside the database (`privacy/erasure-ledger.log`, beside the audit
     anchors, and beside the backups' second copy when one is set), by id only, each line sealed with the audit seal key.
+  - Every backup carries the ledger inside its encryption, so the off-site copy has it too, and a restore adds its
+    erasures, and those of the ledger's copy beside the backup file, to the ledger of the server it restores onto. So
+    an erasure is applied again whichever copy the hospital recovers from, on new hardware too.
   - A database restored from a backup made before an erasure has it applied again as the server starts on it, before
     anyone uses the data, once, with a critical audit entry. A line whose seal does not verify is never applied, so
     write access to the folder alone cannot make the server erase someone's data. Keep the ledger with the audit

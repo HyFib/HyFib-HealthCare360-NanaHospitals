@@ -1406,7 +1406,7 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
 - To restore after a disk failure on new hardware:
   1. Install PostgreSQL and HC360 as above, with the old server's `-SecondaryBackupDir`: HC360 finds the copy of the
-     number series' high-water mark there ("After a restore" below).
+     number series' high-water mark there, and the erasure ledger's copy ("After a restore" below).
   2. Run:
 
      ```powershell
@@ -1424,6 +1424,14 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      the restored database does not know) is replaced by the backup's copy; one that matches is left. The script says
      how many it restored, left and replaced ("Documents: …"), and keeps each file it replaced in
      `files-replaced-<time>` beside the documents folder: delete that folder once the restored server is checked.
+
+     Erased data must not come back with a restore (DPDP Act 2023 s8(7)). Every backup carries the erasure ledger inside
+     its encryption, and the script adds its erasures, with those of the ledger's copy beside the backup file on the
+     second disk or NAS, to the new server's ledger ("Erasures: … added to this server's erasure ledger …"). As HC360
+     starts, it carries out again each one the restored database does not have ("After a restore" below). So restore
+     from the backup's own folder on the second disk or NAS, where the ledger's copy is kept: an erasure made after the
+     backup is only there once the server's disk is gone. From the off-site copy, restore the newest backup: the ledger
+     it carries holds every erasure made before it.
 
      A backup holds no server's part of System health, the heartbeat of the machines that made it: each server here
      writes its own as it starts, so System health shows the servers that run here, not the old ones. A backup made
@@ -1519,6 +1527,10 @@ can sign in, it:
    tells IT on-call of the restore.
 3. **Says so in System health**, as a critical warning (`system.restored`): the backup it was restored from, the series
    it moved with their next numbers, and that the messages are held. It lasts until the messages are released.
+4. **Carries out again every erasure the restored database does not have**, from the erasure ledger, which the restore
+   brought up to date with the ledger the backup carries and the ledger's copy beside the backup file. Each one is a
+   critical entry in the audit trail (`privacy.erasure_reapplied`), is told to the grievance officers, and is listed in
+   Privacy › Retention. This happens at every start, and every hour on the server that runs the jobs.
 
 Before the hospital works on the restored server:
 - Sign in, check the records entered last before the failure, and enter again from paper what is missing.

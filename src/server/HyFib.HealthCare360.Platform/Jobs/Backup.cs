@@ -395,6 +395,10 @@ internal sealed class BackupService(
 
             var documents = includeDocuments ? BackupArchive.ListDocuments(directories.Files) : [];
 
+            // The erasure ledger after the dump: an erasure committed since is in the ledger and not the dump, and a restore
+            // of this backup carries it out again.
+            var extras = new BackupExtras(ErasureLedgerFiles.ReadForBackup(directories, options.Value.Backup));
+
             // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores.
             var ring = keys.ExportRing();
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
@@ -409,7 +413,7 @@ internal sealed class BackupService(
             {
                 await using var file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
-                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, directories.Files, documents, ct);
+                await BackupArchive.WriteAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, directories.Files, documents, extras, ct);
                 await encryptor.CompleteAsync(ct);
                 sha256 = encryptor.Sha256!;
             }

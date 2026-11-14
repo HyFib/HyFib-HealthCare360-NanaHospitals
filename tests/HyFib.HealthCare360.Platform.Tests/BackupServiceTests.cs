@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -205,6 +206,29 @@ public sealed class BackupServiceTests : IDisposable
         var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(DocumentsFolder: restored), ct);
         contents.Manifest.DocumentCount.ShouldBe(1);
         File.ReadAllBytes(Path.Combine(restored, "2026", "09", "saved-during-dump.bin")).ShouldBe(File.ReadAllBytes(document));
+    }
+
+    /// <summary>
+    /// Every backup carries the erasure ledger (DPDP Act 2023 s8(7)), inside its encryption, with the lines of the ledger's
+    /// copy beside the second copy that the ledger lacks (one it lost with a disk), so a restore from any copy of the backup,
+    /// the off-site one included, can carry out the erasures again.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_carries_the_erasure_ledger_with_what_its_copy_has_that_it_lost()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ledger = ErasureLedgerFiles.PathIn(_directories);
+        Directory.CreateDirectory(Path.GetDirectoryName(ledger)!);
+        await File.WriteAllTextAsync(ledger, "{\"id\":\"A\"}\n", ct);
+        Directory.CreateDirectory(_options.Backup.SecondaryDirectory!);
+        await File.WriteAllTextAsync(ErasureLedgerFiles.MirrorPath(_options.Backup)!, "{\"id\":\"A\"}\n{\"id\":\"B\"}\n", ct);
+
+        var result = await Service().CreatePreMigrationAsync([], ct);
+
+        await using var input = File.OpenRead(Path.Combine(_directories.Backups, result.FileName));
+        await using var payload = await BackupEncryption.OpenAsync(input, _protector.DeriveKey("backup"), ct);
+        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
+        Encoding.UTF8.GetString(contents.ErasureLedger.ShouldNotBeNull()).ShouldBe("{\"id\":\"A\"}\n{\"id\":\"B\"}\n");
     }
 
     [Fact]

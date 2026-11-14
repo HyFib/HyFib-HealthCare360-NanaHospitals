@@ -27,7 +27,9 @@
        servers that stopped reporting, told to IT every day. Each server here writes its own as it starts.
     4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A document
        already here whose bytes are not those the backup recorded for it is replaced by the backup's copy, the file that
-       was there kept in files-replaced-<time> beside the documents. A different key already here is kept under a new
+       was there kept in files-replaced-<time> beside the documents. The erasures in the erasure ledger the backup carries,
+       and in the ledger's copy beside the backup file, are added to this server's ledger first: as it starts, HC360
+       carries out again each one the restored database does not have. A different key already here is kept under a new
        name, never deleted. On new hardware, later backups open with the recovery key entered here.
     5. Leaves the restore marker (restored.json) in the data folder, for HC360's next start. As it starts, HC360 moves
        every number series (UHIDs, visits, bills, receipts, GST invoices) past the numbers issued after the backup was

@@ -44,8 +44,10 @@ internal static class ServerCli
           backup restore --in <backup.hc360bak> [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
               Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
               rotations) on this Server Node, with the HC360 service stopped. A document already here whose bytes are not
-              those the backup records is replaced, and the file that was there kept in a folder of its own. A different key
-              already here is kept under a new name. The whole backup is checked first,
+              those the backup records is replaced, and the file that was there kept in a folder of its own. The erasures in
+              the backup's erasure ledger, and in the ledger's copy beside the backup file, are added to this server's
+              ledger, which HC360 applies as it starts. A different key already here is kept under a new name. The whole
+              backup is checked first,
               so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
               machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order. A machine without a recovery
               key of its own, such as new hardware, goes on backing up with the key the backup was opened with.
@@ -306,6 +308,18 @@ internal static class ServerCli
             Console.WriteLine($"The files the backup's documents replaced (damaged, or encrypted again since the backup was made) are kept in {replacedIn}.");
             Console.WriteLine("Delete that folder once the restored server is checked.");
         }
+
+        var ledgerFrom = (result.ErasureLedgerCarried, result.ErasureLedgerCopy) switch
+        {
+            (true, { } copy) => $"the backup's erasure ledger and the copy beside it ({copy})",
+            (true, null) => "the backup's erasure ledger",
+            (false, { } copy) => $"the erasure ledger's copy beside the backup ({copy}); the backup itself is older and carries none",
+            (false, null) => null,
+        };
+        Console.WriteLine(ledgerFrom is null
+            ? "This backup carries no erasure ledger (it is older), and none was found beside it."
+            : $"Erasures: {result.ErasureLedgerLinesAdded} added to this server's erasure ledger from {ledgerFrom}.");
+        Console.WriteLine("As HC360 starts, it carries out again every erasure in this server's ledger that the restored database does not have.");
 
         Console.WriteLine(result.RingKeysInstalled == 0
             ? $"Installed the backup's field encryption key in {directories.Keys}."

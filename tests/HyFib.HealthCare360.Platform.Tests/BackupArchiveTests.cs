@@ -437,6 +437,89 @@ public sealed class BackupArchiveTests : IDisposable
     }
 
     [Fact]
+    public async Task An_archive_carries_the_erasure_ledger_and_refuses_one_that_is_not_the_one_its_manifest_names()
+    {
+        var source = Machine("source");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var ledger = Encoding.UTF8.GetBytes("{\"id\":\"1\"}\n{\"id\":\"2\"}\n");
+        var payload = new MemoryStream();
+
+        await BackupArchive.WriteAsync(payload, Manifest(key, []), key, [], null, WriteDump(source), source.Files, [], new BackupExtras(ledger), CancellationToken.None);
+
+        payload.Position = 0;
+        var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None);
+        contents.ErasureLedger.ShouldBe(ledger);
+        contents.Manifest.ErasureLedger.ShouldBe(Convert.ToHexStringLower(SHA256.HashData(ledger)));
+
+        var manifest = contents.Manifest;
+        var changed = await ArchiveAsync(manifest, key, (BackupArchive.ErasureLedgerEntry, Encoding.UTF8.GetBytes("{\"id\":\"1\"}\n")),
+            (BackupArchive.DocumentHashesEntry, []));
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(changed, new BackupReadTargets(), CancellationToken.None)))
+            .Message.ShouldContain("erasure ledger in the backup does not match its manifest");
+
+        var lost = await ArchiveAsync(manifest, key, (BackupArchive.DocumentHashesEntry, []));
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupArchive.ReadAsync(lost, new BackupReadTargets(), CancellationToken.None)))
+            .Message.ShouldContain("erasure ledger its manifest lists is missing");
+    }
+
+    [Fact]
+    public async Task An_empty_erasure_ledger_is_carried_as_one()
+    {
+        var source = Machine("source");
+        var key = RandomNumberGenerator.GetBytes(32);
+        var payload = new MemoryStream();
+
+        await BackupArchive.WriteAsync(payload, Manifest(key, []), key, [], null, WriteDump(source), source.Files, [], new BackupExtras([]), CancellationToken.None);
+
+        payload.Position = 0;
+        (await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None)).ErasureLedger.ShouldBe([], "nothing erased yet, which an older backup cannot say");
+    }
+
+    /// <summary>
+    /// A restore makes the newest erasure ledger available this server's: it adds the lines of the ledger the backup carries,
+    /// and of the ledger's copy beside the backup file (where the backups' second copy keeps it), that this server's ledger
+    /// lacks. HC360's replay as it starts then carries out each erasure the restored database does not have.
+    /// </summary>
+    [Fact]
+    public async Task A_restore_adds_the_erasures_of_the_backups_ledger_and_of_the_copy_beside_it_to_the_servers_ledger()
+    {
+        var oldServer = Machine("old");
+        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var (backup, recoveryKey) = await BackupFileAsync(oldServer, masterKey, extras: new BackupExtras(Encoding.UTF8.GetBytes("{\"id\":\"A\"}\n{\"id\":\"B\"}\n")));
+        var secondCopy = Path.Combine(_root, "nas");
+        Directory.CreateDirectory(secondCopy);
+        var copied = Path.Combine(secondCopy, Path.GetFileName(backup));
+        File.Copy(backup, copied);
+        File.WriteAllText(Path.Combine(secondCopy, ErasureLedgerFiles.FileName), "{\"id\":\"A\"}\n{\"id\":\"B\"}\n{\"id\":\"D\"}\n");
+        var machine = Machine("machine");
+        var ledger = ErasureLedgerFiles.PathIn(machine);
+        Directory.CreateDirectory(Path.GetDirectoryName(ledger)!);
+        File.WriteAllText(ledger, "{\"id\":\"B\"}" + Environment.NewLine + "{\"id\":\"C\"}" + Environment.NewLine);
+
+        var result = await BackupRestore.RestoreAsync(copied, recoveryKey, null, machine, new EphemeralDataProtectionProvider(), TimeProvider.System,
+            TestContext.Current.CancellationToken);
+
+        (result.ErasureLedgerCarried, result.ErasureLedgerCopy, result.ErasureLedgerLinesAdded).ShouldBe((true, Path.Combine(secondCopy, ErasureLedgerFiles.FileName), 2));
+        File.ReadAllLines(ledger).ShouldBe(["{\"id\":\"B\"}", "{\"id\":\"C\"}", "{\"id\":\"A\"}", "{\"id\":\"D\"}"],
+            "nothing this server had is lost, and the erasures it did not have are added once");
+    }
+
+    [Fact]
+    public async Task A_restore_of_a_backup_older_than_the_ledger_takes_the_copy_beside_it()
+    {
+        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var (backup, recoveryKey) = await BackupFileAsync(Machine("old"), masterKey);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(backup)!, ErasureLedgerFiles.FileName), "{\"id\":\"A\"}\n");
+        var machine = Machine("machine");
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, null, machine, new EphemeralDataProtectionProvider(), TimeProvider.System,
+            TestContext.Current.CancellationToken);
+
+        (result.ErasureLedgerCarried, result.ErasureLedgerLinesAdded).ShouldBe((false, 1));
+        File.ReadAllLines(ErasureLedgerFiles.PathIn(machine)).ShouldBe(["{\"id\":\"A\"}"]);
+    }
+
+    [Fact]
     public async Task An_older_backup_restores_its_database()
     {
         var recoveryKey = RandomNumberGenerator.GetBytes(32);
@@ -551,7 +634,8 @@ public sealed class BackupArchiveTests : IDisposable
     /// An encrypted archive of the machine's documents, as the backup service writes it: with the original recovery key
     /// unless another is given, and in a file that names its key unless <paramref name="unnamed"/> (as before version 3).
     /// </summary>
-    private static async Task<(string File, byte[] RecoveryKey)> BackupFileAsync(DataDirectories machine, byte[] masterKey, byte[]? recoveryKey = null, bool unnamed = false)
+    private static async Task<(string File, byte[] RecoveryKey)> BackupFileAsync(
+        DataDirectories machine, byte[] masterKey, byte[]? recoveryKey = null, bool unnamed = false, BackupExtras? extras = null)
     {
         recoveryKey ??= BackupRecoveryKey.Original(masterKey);
         var documents = BackupArchive.ListDocuments(machine.Files);
@@ -559,7 +643,8 @@ public sealed class BackupArchiveTests : IDisposable
         await using (var output = File.Create(file))
         await using (var encryptor = unnamed ? BackupEncryption.CreateUnnamedEncryptor(output, recoveryKey) : BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
-            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, [], null, WriteDump(machine), machine.Files, documents, CancellationToken.None);
+            await BackupArchive.WriteAsync(encryptor, Manifest(masterKey, documents), masterKey, [], null, WriteDump(machine), machine.Files, documents,
+                extras ?? new BackupExtras(), CancellationToken.None);
             await encryptor.CompleteAsync(CancellationToken.None);
         }
 

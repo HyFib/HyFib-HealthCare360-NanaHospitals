@@ -27,6 +27,10 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// Whether the archive records the SHA-256 of each document as it was copied (<see cref="BackupArchive.DocumentHashesEntry"/>,
 /// after the documents); false in older backups. <see cref="BackupArchive.WriteAsync"/> sets it.
 /// </param>
+/// <param name="ErasureLedger">
+/// The SHA-256 of the erasure ledger the archive carries (<see cref="BackupArchive.ErasureLedgerEntry"/>); null in older
+/// backups. <see cref="BackupArchive.WriteAsync"/> sets it.
+/// </param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -42,10 +46,18 @@ public sealed record BackupManifest(
     string? CurrentKey = null,
     string? AuditSealKey = null,
     IReadOnlyDictionary<string, long>? RowCounts = null,
-    bool DocumentHashes = false);
+    bool DocumentHashes = false,
+    string? ErasureLedger = null);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);
+
+/// <summary>
+/// What a backup carries besides the database, the keys and the documents: what is kept outside the database and a restore
+/// on new hardware needs. Each is left out when null.
+/// </summary>
+/// <param name="ErasureLedger">The erasure ledger's lines, as <see cref="ErasureLedgerFiles.ReadForBackup"/> reads them.</param>
+public sealed record BackupExtras(byte[]? ErasureLedger = null);
 
 /// <summary>Where <see cref="BackupArchive.ReadAsync"/> writes what it reads; null reads and checks without writing.</summary>
 public sealed record BackupReadTargets(string? DatabaseDumpPath = null, string? DocumentsFolder = null);
@@ -64,12 +76,15 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
     /// hash the archive records, which its copy matched, or, in an older backup that records none, the hash of its copy.
     /// </summary>
     public IReadOnlyDictionary<string, string> DocumentHashes { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>The erasure ledger the backup carries, as the server had it when the backup was made; null in older backups.</summary>
+    public byte[]? ErasureLedger { get; init; }
 }
 
 /// <summary>
 /// The payload of an archive backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
-/// the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each already encrypted),
-/// followed by the SHA-256 of each as it was copied.
+/// the erasure ledger, the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each
+/// already encrypted), followed by the SHA-256 of each as it was copied.
 /// The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key administrators keep offline
 /// (<see cref="BackupRecoveryKey"/>), so one backup file and that key restore everything on replacement hardware.
 /// </summary>
@@ -89,6 +104,15 @@ public static class BackupArchive
     /// with ordinary tools once it is decrypted.
     /// </summary>
     public const string DocumentHashesEntry = "documents.sha256";
+
+    /// <summary>
+    /// The erasure ledger (DPDP Act 2023 s8(7)), as the server had it once the database was dumped: inside the encryption,
+    /// so every copy of the backup, the off-site one included, carries it to wherever the backup is restored.
+    /// </summary>
+    public const string ErasureLedgerEntry = "privacy/" + ErasureLedgerFiles.FileName;
+
+    /// <summary>The largest erasure ledger a backup carries: some 300,000 erasures, a line each.</summary>
+    private const int MaxErasureLedgerLength = 128 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -110,6 +134,22 @@ public static class BackupArchive
             .ToList();
     }
 
+    public static Task WriteAsync(
+        Stream output,
+        BackupManifest manifest,
+        byte[] masterKey,
+        IReadOnlyList<byte[]> ringKeys,
+        byte[]? auditSealKey,
+        string databaseDumpPath,
+        string documentsFolder,
+        IReadOnlyList<BackupDocument> documents,
+        CancellationToken ct) =>
+        WriteAsync(output, manifest, masterKey, ringKeys, auditSealKey, databaseDumpPath, documentsFolder, documents, new BackupExtras(), ct);
+
+    /// <summary>
+    /// Writes a whole archive, with <paramref name="extras"/> beside the keys. The manifest's record of what follows it (the
+    /// erasure ledger's hash, that the documents' hashes are recorded) is made here, from what is written.
+    /// </summary>
     public static async Task WriteAsync(
         Stream output,
         BackupManifest manifest,
@@ -119,12 +159,18 @@ public static class BackupArchive
         string databaseDumpPath,
         string documentsFolder,
         IReadOnlyList<BackupDocument> documents,
+        BackupExtras extras,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(extras);
         await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
 
         // The manifest says what follows, so a restore can tell an archive cut short from an older one.
-        manifest = manifest with { DocumentHashes = true };
+        manifest = manifest with
+        {
+            DocumentHashes = true,
+            ErasureLedger = extras.ErasureLedger is { } ledger ? Convert.ToHexStringLower(SHA256.HashData(ledger)) : null,
+        };
         await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest, Json)), ct);
         await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
         foreach (var key in ringKeys)
@@ -136,6 +182,12 @@ public static class BackupArchive
         {
             await WriteEntryAsync(tar, AuditSealKeyEntry, new MemoryStream(auditSealKey, writable: false), ct);
         }
+
+        if (extras.ErasureLedger is { } erasures)
+        {
+            await WriteEntryAsync(tar, ErasureLedgerEntry, new MemoryStream(erasures, writable: false), ct);
+        }
+
         await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
 
         // Each document is hashed as it is copied, so its hash is that of the very bytes in the archive, read once.
@@ -175,6 +227,7 @@ public static class BackupArchive
         var documentBytes = 0L;
         var documentHashes = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string>? recordedHashes = null;
+        byte[]? erasureLedger = null;
 
         await using (var tar = new TarReader(payload, leaveOpen: true))
         {
@@ -219,6 +272,17 @@ public static class BackupArchive
                         if (auditSealKey.Length != FieldMasterKey.Length || FieldMasterKey.Fingerprint(auditSealKey) != manifest.AuditSealKey)
                         {
                             throw new InvalidDataException("The audit seal key in the backup does not match its manifest.");
+                        }
+
+                        break;
+
+                    case ErasureLedgerEntry when erasureLedger is null:
+                        // An empty ledger (nothing erased yet) is an entry without data.
+                        erasureLedger = entry.Length == 0 ? [] : await ReadSmallAsync(entry, MaxErasureLedgerLength, ct);
+                        if (manifest.ErasureLedger is null
+                            || !string.Equals(Convert.ToHexStringLower(SHA256.HashData(erasureLedger)), manifest.ErasureLedger, StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new InvalidDataException("The erasure ledger in the backup does not match its manifest.");
                         }
 
                         break;
@@ -270,6 +334,11 @@ public static class BackupArchive
             throw new InvalidDataException("The backup is incomplete: the audit seal key its manifest lists is missing.");
         }
 
+        if (manifest.ErasureLedger is not null && erasureLedger is null)
+        {
+            throw new InvalidDataException("The backup is incomplete: the erasure ledger its manifest lists is missing.");
+        }
+
         if (documentCount != manifest.DocumentCount || documentBytes != manifest.DocumentBytes)
         {
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
@@ -281,6 +350,7 @@ public static class BackupArchive
             RingKeys = listed.Select(id => ringKeys[id]).ToList(),
             AuditSealKey = auditSealKey,
             DocumentHashes = documentHashes,
+            ErasureLedger = erasureLedger,
         };
     }
 
@@ -552,6 +622,15 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 
     /// <summary>Where the files the backup's documents replaced are kept, when any were; null otherwise.</summary>
     public string? ReplacedDocumentsKeptIn { get; init; }
+
+    /// <summary>Whether the backup carries the erasure ledger (older backups do not).</summary>
+    public bool ErasureLedgerCarried { get; init; }
+
+    /// <summary>The copy of the erasure ledger found beside the backup file, whose lines were taken too; null when there was none.</summary>
+    public string? ErasureLedgerCopy { get; init; }
+
+    /// <summary>How many lines of those ledgers this server's ledger did not have, added to it.</summary>
+    public int ErasureLedgerLinesAdded { get; init; }
 }
 
 /// <summary>
@@ -562,7 +641,8 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 /// </summary>
 /// <summary>
 /// Puts back what a backup holds besides its database, on the Server Node with the service stopped: the stored documents,
-/// then the field encryption key. The whole archive is read and checked first, and the key comes last, so a failure never
+/// the erasures of its erasure ledger (added to this server's, which the next start applies), then the field encryption
+/// key. The whole archive is read and checked first, and the key comes last, so a failure never
 /// leaves this machine with the backup's key but not its database. Restore-HC360.ps1 restores the database first, runs
 /// this after it succeeds, and puts the previous database back if this fails.
 /// </summary>
@@ -615,8 +695,13 @@ public static class BackupRestore
                     string.Create(CultureInfo.InvariantCulture, $"files-replaced-{time.GetUtcNow():yyyyMMdd-HHmmss}"));
                 var documents = MoveDocuments(staging, directories.Files, contents.DocumentHashes, keptFolder);
                 string? keptAs;
+                ErasureLedgerRestore ledger;
                 try
                 {
+                    // The erasures before the keys: the ledger is only ever added to, and the restore must not end with the
+                    // backup's key in place but without the erasures that keep erased data from coming back with it.
+                    ledger = RestoreErasureLedger(backupFile, contents.ErasureLedger, directories);
+
                     // The keys rotations added only ever join the ring (one already here stays), then the original key, then
                     // which key is current: data encrypted with any of them is readable once the database is back.
                     var protector = FieldMasterKey.CreateProtector(dataProtection);
@@ -669,6 +754,9 @@ public static class BackupRestore
                     RecoveryKeyProblem = recoveryKeyProblem,
                     DocumentsReplaced = documents.Replaced.Count,
                     ReplacedDocumentsKeptIn = documents.Replaced.Count > 0 ? keptFolder : null,
+                    ErasureLedgerCarried = contents.ErasureLedger is not null,
+                    ErasureLedgerCopy = ledger.Copy,
+                    ErasureLedgerLinesAdded = ledger.Added,
                 };
             }
             finally
@@ -757,6 +845,24 @@ public static class BackupRestore
 
         return documents;
     }
+
+    /// <summary>
+    /// Adds to this server's erasure ledger the lines of the ledger the backup carries and of the ledger's copy beside the
+    /// backup file (the one kept with the backups' second copy, which outlives the server's disk), each line it lacks. The
+    /// newest ledger available is then this server's, whichever it was: as HC360 starts, it applies again every erasure in
+    /// it that the restored database does not have (DPDP Act 2023 s8(7)).
+    /// </summary>
+    private static ErasureLedgerRestore RestoreErasureLedger(string backupFile, byte[]? carried, DataDirectories directories)
+    {
+        var path = ErasureLedgerFiles.PathIn(directories);
+        var lines = carried is null ? new List<string>() : new List<string>(ErasureLedgerFiles.Lines(carried));
+        var copy = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(backupFile))!, ErasureLedgerFiles.FileName);
+        IReadOnlyList<string> copyLines = string.Equals(copy, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase) ? [] : ErasureLedgerFiles.ReadLines(copy);
+        lines.AddRange(copyLines);
+        return new ErasureLedgerRestore(ErasureLedgerFiles.Merge(path, lines), copyLines.Count > 0 ? copy : null);
+    }
+
+    private sealed record ErasureLedgerRestore(int Added, string? Copy);
 
     private static string Sha256Of(string path)
     {

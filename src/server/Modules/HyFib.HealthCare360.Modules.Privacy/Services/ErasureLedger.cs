@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Jobs;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -27,6 +28,9 @@ public sealed record ErasureLedgerEntry(Guid Id, Guid RequestId, string RequestN
 /// <item>The file is beside the audit anchors, in the folder the servers share when there are several
 /// (<c>privacy/erasure-ledger.log</c>), and is copied, line by line as it is written, to the backups' second copy
 /// (<c>HealthCare360:Backup:SecondaryDirectory</c>) when one is set, so it outlives the Server Node's own disk.</item>
+/// <item>Every backup carries both, inside its encryption, and a restore adds their lines, with those of the copy beside
+/// the backup file, to the ledger of the server it restores onto (<see cref="ErasureLedgerFiles"/>), so the replay there
+/// applies them however the server that made them was lost: on new hardware, from the second disk or the off-site copy.</item>
 /// <item>One JSON object a line, appended and flushed to disk, never rewritten. Reading takes the union of both copies.</item>
 /// <item>Each line is sealed with the audit seal key (HMAC-SHA256); a line whose seal does not verify is reported and
 /// never replayed, so nobody who can write the folder but not read the key can make the server erase someone's data.</item>
@@ -34,17 +38,15 @@ public sealed record ErasureLedgerEntry(Guid Id, Guid RequestId, string RequestN
 /// </summary>
 public sealed class ErasureLedger(DataDirectories directories, IOptions<PlatformOptions> options, AuditSealKey key, ILogger<ErasureLedger> logger)
 {
-    public const string FileName = "erasure-ledger.log";
+    public const string FileName = ErasureLedgerFiles.FileName;
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly Lock Write = new();
 
-    /// <summary>The ledger beside the audit anchors (in the shared folder when there are several servers).</summary>
-    public string Path => System.IO.Path.Combine(directories.Shared ?? directories.Root, "privacy", FileName);
+    /// <summary>The ledger beside the audit anchors (in the shared folder when there are several servers), where backups take it from.</summary>
+    public string Path => ErasureLedgerFiles.PathIn(directories);
 
     /// <summary>The copy kept with the backups' second copy, or null when no second copy is set.</summary>
-    public string? MirrorPath => options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary
-        ? System.IO.Path.Combine(System.IO.Path.GetFullPath(Environment.ExpandEnvironmentVariables(secondary)), FileName)
-        : null;
+    public string? MirrorPath => ErasureLedgerFiles.MirrorPath(options.Value.Backup);
 
     /// <summary>What is sealed: the entry's fields in a fixed order, so the seal does not depend on JSON formatting.</summary>
     public static string Canonical(ErasureLedgerEntry entry)
