@@ -358,6 +358,30 @@ public sealed class PrivacyTests(HospitalServer server)
         hidden.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
+    [Fact]
+    public async Task A_request_for_oneself_is_taken_as_identity_checked_only_once_the_records_number_is_verified()
+    {
+        var (patient, phone) = await RegisterPatientAsync();
+        var portal = await server.SignInToPortalAsync(phone, numberVerified: false);
+        var asked = new PortalDataRequestCreate(
+            patient.Id, DataRequestType.Grievance, RequesterRelation.Self, null, "The address on the card is old.", null);
+
+        // Whoever holds the number may not be the patient (a shared or reissued number): nothing is filed in the patient's
+        // own name until the number is verified.
+        using (var refused = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/privacy/requests", asked))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        // Giving the UHID printed on the patient's card verifies the number, and the request is then the patient's own word.
+        await portal.PostAsync<JsonElement>("/api/v1/portal/records-to-confirm", new ConfirmRecordsRequest(null, patient.Uhid));
+        var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", asked);
+
+        var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var queue = await officer.GetAsync<PagedResult<DataRequestListItem>>($"/api/v1/privacy/requests?openOnly=true&search={created.RequestNumber}");
+        queue.Items.ShouldHaveSingleItem().IdentityVerified.ShouldBeTrue();
+    }
+
     private async Task<(PatientCreated Patient, string Phone)> RegisterPatientAsync()
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);

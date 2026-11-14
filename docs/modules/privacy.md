@@ -78,7 +78,8 @@ Types: `Access`, `Correction`, `Erasure`, `Grievance`. Statuses: `Submitted` →
 **Rules.** The deadline is the published response period (default 30 days, at most 90). Personal data is given out,
 changed or erased only after the requester's identity, and their authority to act for the patient, has been checked.
 A portal request the patient makes for themselves counts as checked (they signed in with a code sent to the patient's
-registered number); one made for a family member waits for staff. Declining needs no checked identity, and a grievance
+registered number, and that number is verified as the patient's: a record on a number that is not verified is not shown to the
+portal at all, so a shared or reissued number files nothing in the patient's own name); one made for a family member waits for staff. Declining needs no checked identity, and a grievance
 can be answered without one. A correction is completed only when every requested change is accepted or declined.
 Registration details are corrected by staff in the patient record, with its duplicate checks and audit. A health-record
 correction is answered by the clinical team, who add a correction rather than rewrite the record. Completing an access
@@ -145,7 +146,7 @@ The summary is built from `PersonalDataCatalogue`:
 | GET | `/summary?patientId=` | → `DataSummary` |
 | GET | `/requests?patientId=` (optional) | → `PortalDataRequestItem[] {id, requestNumber, patientId, type, status, receivedAt, dueAt, closedAt}` (newest first, at most 100) |
 | GET | `/requests/{id}` | → `PortalDataRequestDetail {id, requestNumber, patientId, type, status, requestedBy, requesterName, identityConfirmed, details, corrections[{field, currentValue, requestedValue, decision, note}], receivedAt, dueAt, closedAt, response, erasedItems[], retainedUntil, retainedPermanently, timeline[{at, kind, text}], canWithdraw, contact}`. Only the public history is shown: received, identity confirmed, started, erased, answered, withdrawn. `identityConfirmed` false on a request made for someone else means staff still have to confirm the requester may act for them |
-| POST | `/requests` | `PortalDataRequestCreate {patientId, type: Correction\|Erasure\|Grievance, requestedBy: Self\|ParentOrGuardian\|FamilyMember, requesterName?, details?, corrections?}` → 201 `{id, requestNumber, dueAt}`. A `Self` request is marked `PortalSignIn` only for a patient on the account's own number; for a family member seen through a family link (the code went to another number), staff confirm the identity |
+| POST | `/requests` | `PortalDataRequestCreate {patientId, type: Correction\|Erasure\|Grievance, requestedBy: Self\|ParentOrGuardian\|FamilyMember, requesterName?, details?, corrections?}` → 201 `{id, requestNumber, dueAt}`. A `Self` request is marked `PortalSignIn` only for a patient on the account's own number whose number is verified (`PortalPatientScope.OwnNumberPatientIdsAsync`; the integration test `A_request_for_oneself_is_taken_as_identity_checked_only_once_the_records_number_is_verified`); for a family member seen through a family link (the code went to another number), staff confirm the identity |
 | POST | `/requests/{id}/withdraw` | → 204 |
 | GET · PUT · DELETE | `/nominee` | GET/DELETE `?patientId=`; PUT `PortalNomineeRequest {patientId, name, relationship, phone?, email?}`; GET → `{nominee}` |
 | GET | `/notices?patientId=` (optional) · `/notices/{id}` | → `PortalBreachNotice {id, patientIds[], reference, title, notifiedAt, awareAt, occurredFrom, occurredTo, description, location, dataCategories[], consequences, mitigation, principalSteps, contact}`; `patientIds` are the people it concerns among those the user may act for |

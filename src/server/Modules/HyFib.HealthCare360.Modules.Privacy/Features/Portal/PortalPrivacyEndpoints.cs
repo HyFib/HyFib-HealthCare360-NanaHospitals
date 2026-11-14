@@ -113,8 +113,12 @@ internal static class PortalPrivacyEndpoints
         var facilityId = await db.Set<Patient>().Where(p => p.Id == r.PatientId).Select(p => p.RegisteredFacilityId).FirstAsync(ct);
 
         // Signing in with a code sent to the patient's registered number confirms a request the patient makes for
-        // themselves; one made for someone else, or from an account that sees the patient through a family link (its
-        // code went to another number), waits for staff to confirm the requester's identity and authority.
+        // themselves, but only when that number is verified as the patient's (OwnNumberPatientIdsAsync lists the records
+        // on the account's own number whose number is verified, and leaves out the rest: a number a family shares, or one
+        // the telco reissued, reaches whoever holds the phone). One made for someone else, from an account that sees the
+        // patient through a family link (its code went to another number, even where it is also the account's own number
+        // and not verified), waits for staff to confirm the requester's identity and authority. A record whose number is not
+        // verified is not shown to the account at all, so no request is made for it as the patient's own.
         var signedInAsPatient = r.RequestedBy == RequesterRelation.Self && (await scope.OwnNumberPatientIdsAsync(ct)).Contains(r.PatientId);
         var created = await requests.CreateAsync(new NewDataRequest(facilityId, r.Type, DataRequestChannel.Portal, r.PatientId, null, null, null,
             r.RequestedBy, r.RequesterName, r.Details, r.Corrections,
