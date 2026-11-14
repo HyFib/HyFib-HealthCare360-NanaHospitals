@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -300,6 +301,21 @@ public sealed class IrpClientTests : IDisposable
         {
             (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
         }
+    }
+
+    [Theory]
+    [InlineData("2026-12-31T23:50:00+05:30", 12)]
+    [InlineData("2027-01-01T00:10:00+05:30", 14)]
+    public async Task The_simulator_numbers_e_way_bills_with_14_digits_from_1_january_2027_as_the_portal_will(string at, int digits)
+    {
+        var simulator = new SimulatorIrp(new SimulatorIrpLedger(), _tracing.Trace, new TestClock(DateTimeOffset.Parse(at, CultureInfo.InvariantCulture)));
+        var hospital = SimulatorContext(Gstin);
+        var irn = (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Value!.Irn;
+        var request = new JsonObject { ["Irn"] = irn, ["Distance"] = 120, ["TransMode"] = "1", ["VehNo"] = "KL11AB1234", ["VehType"] = "R" };
+
+        var made = (await simulator.GenerateEwayBillAsync(hospital, request, Ct)).Value.ShouldNotBeNull();
+        made.EwbNo.ToString(CultureInfo.InvariantCulture).Length.ShouldBe(digits);
+        (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Value!.EwbNo.ShouldBe(made.EwbNo, "given back by the IRN whole");
     }
 
     [Fact]
