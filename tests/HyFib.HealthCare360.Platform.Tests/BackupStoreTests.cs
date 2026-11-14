@@ -337,6 +337,75 @@ public sealed class BackupStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task An_append_only_folder_keeps_documents_in_tonights_generation_written_once_and_undated()
+    {
+        var store = BackupStore.Open(Folder, Installation, Key, _time, appendOnly: true);
+        store.AppendOnly.ShouldBeTrue();
+        File.Exists(Path.Combine(Folder, BackupStore.AppendOnlyFlagFile)).ShouldBeTrue();
+        store.Generation.ShouldBe("gen-20270315");
+
+        var path = Document("one.bin", "document");
+        using var held = store.Lock();
+        (await store.AddAsync(held, path, Id("document"), CancellationToken.None)).ShouldBeTrue();
+        (await store.AddAsync(held, path, Id("document"), CancellationToken.None)).ShouldBeFalse();
+        var copy = store.PathOf(Id("document"));
+        copy.ShouldStartWith(Path.Combine(Folder, "gen-20270315", BackupStore.BlobsFolder));
+        File.ReadAllText(copy).ShouldBe("document");
+
+        // A share that removes files by date would remove one dated 2000 at once.
+        File.GetLastWriteTimeUtc(copy).ShouldNotBe(BackupStore.BlobTimestamp);
+        Directory.EnumerateFiles(Folder, "*.tmp", SearchOption.AllDirectories).ShouldBeEmpty();
+
+        var archive = ArchiveName(_time.GetUtcNow());
+        store.WriteReferences(held, archive, [Id("document")], Key);
+        store.ReadReferences(archive, Key).ShouldBe([Id("document")]);
+        Should.Throw<InvalidOperationException>(() => store.Prune(held, 30, Key));
+    }
+
+    [Fact]
+    public void Once_a_folder_is_known_to_be_append_only_it_stays_so()
+    {
+        _ = BackupStore.Open(Folder, Installation, Key, _time, appendOnly: true);
+
+        BackupStore.Open(Folder, Installation, Key, _time).AppendOnly.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(0, "gen-20270310")]
+    [InlineData(5, "gen-20270310")]
+    [InlineData(6, "gen-20270310")]
+    [InlineData(7, "gen-20270317")]
+    [InlineData(30, "gen-20270409")]
+    public void A_generation_is_used_for_seven_days_and_never_taken_up_again_after_a_gap(int daysLater, string expected)
+    {
+        // F25. A generation dated after today (a clock set wrong once) is not taken.
+        Directory.CreateDirectory(Path.Combine(Folder, "gen-20270310"));
+        Directory.CreateDirectory(Path.Combine(Folder, "gen-20990101"));
+
+        BackupStore.CurrentGeneration(Folder, new DateTimeOffset(2027, 3, 10, 1, 30, 0, TimeSpan.Zero).AddDays(daysLater)).ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task A_copy_cut_short_in_an_append_only_folder_is_kept_and_a_good_one_written_beside_it()
+    {
+        // F23: it cannot be deleted or replaced, so it is passed over.
+        var store = BackupStore.Open(Folder, Installation, Key, _time, appendOnly: true);
+        var path = Document("one.bin", "the whole document");
+        var id = Id("the whole document");
+        Directory.CreateDirectory(Path.GetDirectoryName(store.PathOf(id))!);
+        File.WriteAllText(store.PathOf(id), "the wh");
+
+        using var held = store.Lock();
+        (await store.AddAsync(held, path, id, CancellationToken.None)).ShouldBeTrue();
+
+        File.ReadAllText(store.PathOf(id)).ShouldBe("the wh");
+        var good = store.FindCopy(id, new FileInfo(path).Length).ShouldNotBeNull();
+        good.ShouldEndWith(id + ".1.blob");
+        File.ReadAllText(good).ShouldBe("the whole document");
+        BackupBlobs.Candidates(Folder, id).ShouldBe([store.PathOf(id), good]);
+    }
+
+    [Fact]
     public void Archive_dates_come_from_their_names()
     {
         BackupStore.ArchiveDate("hc360-20270315-013000-scheduled.hc360bak").ShouldBe(new DateTimeOffset(2027, 3, 15, 1, 30, 0, TimeSpan.Zero));

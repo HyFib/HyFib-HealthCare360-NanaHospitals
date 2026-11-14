@@ -42,10 +42,23 @@ internal sealed partial class BackupStore
     public const string BlobExtension = ".blob";
     public const string ReferencesExtension = ".refs";
 
+    /// <summary>
+    /// Present in a folder HC360 may add files to but not delete or rename (an append-only or WORM share): its documents are
+    /// kept in generations, never removed by HC360 (docs/design/incremental-backup.md, section 5.6). A file, not a field of
+    /// the marker, because such a folder lets a file be added but not the marker rewritten.
+    /// </summary>
+    public const string AppendOnlyFlagFile = "hc360-append-only";
+
+    /// <summary>How long a generation of an append-only folder is used before the next starts with every document again.</summary>
+    public const int GenerationDays = 7;
+
+    public const string GenerationPrefix = "gen-";
+
     /// <summary>The purpose the key that seals the lists is derived for, from the original field key (it never changes).</summary>
     public const string ReferencesKeyPurpose = "backup-refs";
 
     private const string TempExtension = ".tmp";
+    private const string BadExtension = ".bad";
     private const string PartialExtension = ".partial";
     private const string ReferencesHeader = "HC360REFS 1";
 
@@ -56,16 +69,27 @@ internal sealed partial class BackupStore
     private readonly TimeProvider _time;
     private BackupStoreLock? _held;
 
-    private BackupStore(string directory, BackupStoreMarker marker, TimeProvider time)
+    private BackupStore(string directory, BackupStoreMarker marker, TimeProvider time, bool appendOnly)
     {
         Directory = directory;
         Marker = marker;
         _time = time;
+        AppendOnly = appendOnly;
+        Generation = appendOnly ? CurrentGeneration(directory, time.GetUtcNow()) : null;
     }
 
     public string Directory { get; }
 
     public BackupStoreMarker Marker { get; }
+
+    /// <summary>Whether HC360 may only add files here (<see cref="AppendOnlyFlagFile"/>): documents go into <see cref="Generation"/>, and nothing is removed.</summary>
+    public bool AppendOnly { get; }
+
+    /// <summary>The generation tonight's documents go into in an append-only folder (<c>gen-yyyyMMdd</c>); null otherwise.</summary>
+    public string? Generation { get; }
+
+    /// <summary>Where the documents are kept: the folder itself, or tonight's generation in an append-only folder.</summary>
+    private string BlobRoot => Generation is null ? Directory : Path.Combine(Directory, Generation);
 
     /// <summary>
     /// Opens the folder, marking it as this installation's the first time. Archives already there were made before
@@ -73,8 +97,9 @@ internal sealed partial class BackupStore
     /// list keeps any document from being removed.
     /// </summary>
     /// <param name="installation">The fingerprint of the original field key, the same on every server restored from these backups.</param>
+    /// <param name="appendOnly">The folder is known to be append-only (<c>HealthCare360:Backup:SecondaryAppendOnly</c>).</param>
     /// <exception cref="BackupStoreException">The folder is another installation's, or of a later format.</exception>
-    public static BackupStore Open(string directory, string installation, ReadOnlySpan<byte> referencesKey, TimeProvider time)
+    public static BackupStore Open(string directory, string installation, ReadOnlySpan<byte> referencesKey, TimeProvider time, bool appendOnly = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(installation);
         var full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(directory));
@@ -82,31 +107,90 @@ internal sealed partial class BackupStore
         var markerPath = Path.Combine(full, MarkerFileName);
         if (ReadMarker(markerPath) is { } existing)
         {
-            return Check(new BackupStore(full, existing, time), installation);
+            return Check(new BackupStore(full, existing, time, MarkAppendOnly(full, appendOnly)), installation);
         }
 
+        // The first use of a folder finds out whether it lets HC360 rename and delete; one that does not is append-only.
+        appendOnly = MarkAppendOnly(full, appendOnly || !CanRenameAndDelete(full));
         var created = new BackupStoreMarker(Format, installation, time.GetUtcNow());
-        var store = new BackupStore(full, created, time);
+        var store = new BackupStore(full, created, time, appendOnly);
         foreach (var archive in store.ArchiveNames().Where(a => !File.Exists(store.ReferencesPath(a))))
         {
             store.WriteReferences(archive, [], referencesKey);
         }
 
-        var temp = markerPath + "." + Guid.NewGuid().ToString("N") + TempExtension;
-        WriteDurably(temp, JsonSerializer.SerializeToUtf8Bytes(created, Json));
         try
         {
-            File.Move(temp, markerPath, overwrite: false);
+            WriteDurably(markerPath, JsonSerializer.SerializeToUtf8Bytes(created, Json));
         }
         catch (IOException) when (File.Exists(markerPath))
         {
             // Another server marked it first: theirs is the one that counts.
-            File.Delete(temp);
-            return Check(new BackupStore(full, ReadMarker(markerPath)!, time), installation);
+            return Check(new BackupStore(full, ReadMarker(markerPath)!, time, appendOnly), installation);
         }
 
         return store;
     }
+
+    /// <summary>
+    /// Whether the folder is append-only, recording it when it is newly known to be: the setting says so, a probe found it,
+    /// or a delete was refused (<see cref="Prune"/>). Once recorded it stays so.
+    /// </summary>
+    private static bool MarkAppendOnly(string directory, bool appendOnly)
+    {
+        var flag = Path.Combine(directory, AppendOnlyFlagFile);
+        if (File.Exists(flag))
+        {
+            return true;
+        }
+
+        if (appendOnly)
+        {
+            WriteDurably(flag, "HC360 may add files to this folder but not delete or rename them: its backups keep their documents in weekly generations.\n"u8.ToArray());
+        }
+
+        return appendOnly;
+    }
+
+    private static bool CanRenameAndDelete(string directory)
+    {
+        var probe = Path.Combine(directory, $"hc360-probe-{Guid.NewGuid():N}{TempExtension}");
+        try
+        {
+            WriteDurably(probe, [0]);
+            File.Move(probe, probe + "2");
+            File.Delete(probe + "2");
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The generation to keep tonight's documents in: the newest one started less than <see cref="GenerationDays"/> days
+    /// ago, or a new one named for today. A generation is never taken up again after a longer gap (F25).
+    /// </summary>
+    internal static string CurrentGeneration(string directory, DateTimeOffset now)
+    {
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var newest = System.IO.Directory.Exists(directory)
+            ? System.IO.Directory.EnumerateDirectories(directory, GenerationPrefix + "*")
+                .Select(d => GenerationDate(Path.GetFileName(d)))
+                .Where(d => d is not null && d <= today)
+                .Max()
+            : null;
+        return newest is { } started && today.DayNumber - started.DayNumber < GenerationDays
+            ? GenerationPrefix + started.ToString("yyyyMMdd", CultureInfo.InvariantCulture)
+            : GenerationPrefix + today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+    }
+
+    internal static DateOnly? GenerationDate(string? name) =>
+        name is not null && name.StartsWith(GenerationPrefix, StringComparison.Ordinal)
+        && DateOnly.TryParseExact(name[GenerationPrefix.Length..], "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : null;
 
     private static BackupStore Check(BackupStore store, string installation)
     {
@@ -154,7 +238,17 @@ internal sealed partial class BackupStore
         var path = Path.Combine(Directory, LockFileName);
         try
         {
-            var file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            FileStream file;
+            try
+            {
+                file = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            }
+            catch (UnauthorizedAccessException) when (File.Exists(path))
+            {
+                // An append-only share lets HC360 create the lock file once, then only read it; reading holds it all the same.
+                file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+            }
+
             _held = new BackupStoreLock(this, file);
             return _held;
         }
@@ -198,14 +292,38 @@ internal sealed partial class BackupStore
             throw new ArgumentException($"'{id}' is not a document name in a backup folder.", nameof(id));
         }
 
-        return Path.Combine(Directory, BlobsFolder, id[..2], id[2..4], id + BlobExtension);
+        return Path.Combine(BlobRoot, BlobsFolder, id[..2], id[2..4], id + BlobExtension);
     }
 
-    /// <summary>Whether the document is here in full. Its content is checked by verify, not here.</summary>
-    public bool Contains(string id, long length)
+    /// <summary>Whether the document is here in full (in tonight's generation, in an append-only folder). Its content is checked by verify, not here.</summary>
+    public bool Contains(string id, long length) => FindCopy(id, length) is not null;
+
+    /// <summary>
+    /// A copy of the document here of the right length: <c>&lt;id&gt;.blob</c>, or in an append-only folder one written beside
+    /// a copy cut short (<c>&lt;id&gt;.1.blob</c>, …) and not marked bad.
+    /// </summary>
+    public string? FindCopy(string id, long length)
     {
-        var file = new FileInfo(PathOf(id));
-        return file.Exists && file.Length == length;
+        var first = PathOf(id);
+        if (Good(first, length))
+        {
+            return first;
+        }
+
+        if (!AppendOnly || !System.IO.Directory.Exists(Path.GetDirectoryName(first)))
+        {
+            return null;
+        }
+
+        return System.IO.Directory.EnumerateFiles(Path.GetDirectoryName(first)!, id + ".*" + BlobExtension)
+            .Order(StringComparer.Ordinal)
+            .FirstOrDefault(path => Good(path, length));
+
+        static bool Good(string path, long length)
+        {
+            var file = new FileInfo(path);
+            return file.Exists && file.Length == length && !File.Exists(path + BadExtension);
+        }
     }
 
     /// <summary>
@@ -225,6 +343,12 @@ internal sealed partial class BackupStore
         }
 
         System.IO.Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        if (AppendOnly)
+        {
+            await AddWithoutRenameAsync(sourcePath, id, ct);
+            return true;
+        }
+
         var temp = target + "." + Guid.NewGuid().ToString("N") + TempExtension;
         try
         {
@@ -257,6 +381,68 @@ internal sealed partial class BackupStore
         finally
         {
             File.Delete(temp);
+        }
+    }
+
+    /// <summary>
+    /// In an append-only folder a copy is written straight under its name, never renamed and never given a time (a share
+    /// that removes files by date would remove one dated 2000 at once). It is read back; one that does not match, or a copy
+    /// cut short by a crash, cannot be deleted, so it is marked bad and the next copy goes beside it.
+    /// </summary>
+    private async Task AddWithoutRenameAsync(string sourcePath, string id, CancellationToken ct)
+    {
+        var first = PathOf(id);
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var target = Next(first, id);
+            string written;
+            await using (var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true))
+            await using (var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+            {
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                var buffer = new byte[1 << 16];
+                int read;
+                while ((read = await source.ReadAsync(buffer, ct)) > 0)
+                {
+                    hash.AppendData(buffer, 0, read);
+                    await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                }
+
+                output.Flush(flushToDisk: true);
+                written = Convert.ToHexStringLower(hash.GetHashAndReset());
+            }
+
+            if (!string.Equals(written, id, StringComparison.Ordinal))
+            {
+                WriteDurably(target + BadExtension, []);
+                throw new InvalidDataException($"{sourcePath} changed while it was being backed up.");
+            }
+
+            if (string.Equals(await HashFileAsync(target, ct), id, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            WriteDurably(target + BadExtension, []);
+        }
+
+        throw new IOException($"The copy of a document could not be written correctly to {Directory} three times: the disk may be failing.");
+
+        static string Next(string first, string id)
+        {
+            if (!File.Exists(first))
+            {
+                return first;
+            }
+
+            for (var n = 1; ; n++)
+            {
+                var candidate = Path.Combine(Path.GetDirectoryName(first)!, $"{id}.{n}{BlobExtension}");
+                if (!File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
         }
     }
 
@@ -304,6 +490,13 @@ internal sealed partial class BackupStore
         var bytes = Encoding.UTF8.GetBytes(body.ToString());
         var text = body.Append("mac ").Append(Convert.ToHexStringLower(HMACSHA256.HashData(key, bytes))).Append('\n').ToString();
         var path = ReferencesPath(archiveName);
+        if (AppendOnly)
+        {
+            // Nothing is removed from an append-only folder, so a list is only ever read by a restore, which does not use it.
+            WriteDurably(path, Encoding.UTF8.GetBytes(text));
+            return;
+        }
+
         var temp = path + "." + Guid.NewGuid().ToString("N") + TempExtension;
         WriteDurably(temp, Encoding.UTF8.GetBytes(text));
         File.Move(temp, path, overwrite: true);
@@ -364,9 +557,31 @@ internal sealed partial class BackupStore
     /// always keeping the newest; removes what a crashed run left; then removes the documents no remaining archive's list
     /// names, unless an archive has no list or its list does not verify, when none is removed.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The folder is append-only: nothing is removed from it by HC360.</exception>
+    /// <exception cref="UnauthorizedAccessException">A delete was refused: the folder is then recorded as append-only (F24).</exception>
     public BackupPruneResult Prune(BackupStoreLock held, int retentionDays, ReadOnlySpan<byte> key)
     {
         RequireLock(held);
+        if (AppendOnly)
+        {
+            throw new InvalidOperationException($"{Directory} is append-only: HC360 removes nothing from it.");
+        }
+
+        try
+        {
+            return PruneDeletable(retentionDays, key);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // A folder that refuses a delete is append-only after all (a WORM share that allowed it for a while): from the next
+            // backup its documents go into generations, which its own retention cannot break.
+            MarkAppendOnly(Directory, appendOnly: true);
+            throw;
+        }
+    }
+
+    private BackupPruneResult PruneDeletable(int retentionDays, ReadOnlySpan<byte> key)
+    {
         var cutoff = _time.GetUtcNow() - TimeSpan.FromDays(Math.Max(retentionDays, 1));
 
         // Archives older than the cutoff, by their name, except the newest: a disk that was away longer than the backup
@@ -389,7 +604,10 @@ internal sealed partial class BackupStore
             leftovers++;
         }
 
-        foreach (var temp in System.IO.Directory.EnumerateFiles(Directory, "*" + TempExtension))
+        // Only the store's own temporary files: other features write into the secondary folder too (the erasure ledger's
+        // and the number series' mirrors).
+        foreach (var temp in System.IO.Directory.EnumerateFiles(Directory, "*" + ReferencesExtension + ".*" + TempExtension)
+            .Concat(System.IO.Directory.EnumerateFiles(Directory, "hc360-probe-*" + TempExtension + "*")))
         {
             File.Delete(temp);
             leftovers++;

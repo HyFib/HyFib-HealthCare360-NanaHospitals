@@ -219,6 +219,47 @@ public sealed class BackupServiceIncrementalTests : IDisposable
         File.Exists(Path.ChangeExtension(Path.Combine(Usb, result.FileName), ".refs")).ShouldBeTrue();
     }
 
+    [Fact]
+    public async Task An_append_only_secondary_keeps_weekly_generations_and_each_archive_restores_from_it_alone()
+    {
+        // 5.6: an append-only or WORM share removes files by age, so each week's archives use a generation of their own.
+        _options.Backup.SecondaryAppendOnly = true;
+        var clock = new ManualTime(_now);
+        AddDocuments(3, 5_000);
+        var monday = await Service(clock).CreateAsync(BackupKind.Scheduled, clock.GetUtcNow(), includeDocuments: true, [], Ct);
+        var firstGeneration = $"gen-{clock.GetUtcNow():yyyyMMdd}";
+
+        clock.Advance(TimeSpan.FromDays(3));
+        AddDocument(5_000);
+        var thursday = await Service(clock).CreateAsync(BackupKind.Scheduled, clock.GetUtcNow(), includeDocuments: true, [], Ct);
+
+        clock.Advance(TimeSpan.FromDays(5));
+        AddDocument(5_000);
+        var nextWeek = await Service(clock).CreateAsync(BackupKind.Scheduled, clock.GetUtcNow(), includeDocuments: true, [], Ct);
+        var secondGeneration = $"gen-{clock.GetUtcNow():yyyyMMdd}";
+
+        foreach (var result in new[] { monday, thursday, nextWeek })
+        {
+            result.SecondaryCopied.ShouldBeTrue();
+            result.Warning.ShouldNotBeNull().ShouldStartWith(BackupService.OldCopiesKeptNote);
+            BackupCopies.Reason(result.Warning).ShouldBeNull("an append-only share is not a failed copy");
+        }
+
+        BlobCount(Path.Combine(Usb, firstGeneration)).ShouldBe(4);
+        BlobCount(Path.Combine(Usb, secondGeneration)).ShouldBe(5, "a new generation starts with every document again");
+        Blobs(Usb).ShouldAllBe(f => File.GetLastWriteTimeUtc(f) != BackupStore.BlobTimestamp);
+        foreach (var result in new[] { monday, thursday, nextWeek })
+        {
+            var machine = Machine("restored-" + result.FileName);
+            var restored = await BackupRestore.RestoreAsync(Path.Combine(Usb, result.FileName), OriginalRecoveryKey(), Path.Combine(machine.Temp, "r.dump"),
+                machine, new EphemeralDataProtectionProvider(), TimeProvider.System, Ct);
+            restored.DocumentsRestored.ShouldBe(result.DocumentCount!.Value);
+        }
+
+        // The server's own folder is not append-only: one copy of each document there.
+        BlobCount(_directories.Backups).ShouldBe(5);
+    }
+
     private Task<BackupResult> NightAsync(int day) =>
         Service().CreateAsync(BackupKind.Scheduled, _now.AddDays(day), includeDocuments: true, ["20260928102924_InitialCreate"], Ct);
 
@@ -282,7 +323,7 @@ public sealed class BackupServiceIncrementalTests : IDisposable
         return directories;
     }
 
-    private BackupService Service() => new(
+    private BackupService Service(TimeProvider? time = null) => new(
         Substitute.For<IDbContextFactory<HospitalDbContext>>(),
         Options.Create(_options),
         _directories,
@@ -292,8 +333,17 @@ public sealed class BackupServiceIncrementalTests : IDisposable
         new NoDocumentsLock(),
         new FakePostgres(),
         Substitute.For<INotificationService>(),
-        TimeProvider.System,
+        time ?? TimeProvider.System,
         NullLogger<BackupService>.Instance);
+
+    private sealed class ManualTime(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan by) => _now += by;
+    }
 
     private sealed class FakePostgres : IPostgresTools
     {

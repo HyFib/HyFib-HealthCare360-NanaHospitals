@@ -449,7 +449,7 @@ internal sealed class BackupService(
             var outcome = await CopyToSecondary(
                 async () =>
                 {
-                    store = BackupStore.Open(secondary, keys.Fingerprint, referencesKey, time);
+                    store = BackupStore.Open(secondary, keys.Fingerprint, referencesKey, time, options.Value.Backup.SecondaryAppendOnly);
                     held = store.Lock();
                     var ids = index.Select(d => d.BlobId).Distinct(StringComparer.Ordinal).ToList();
                     foreach (var id in ids)
@@ -460,10 +460,20 @@ internal sealed class BackupService(
                     var name = Path.GetFileName(archive);
                     store.WriteReferences(held, name, ids, referencesKey);
                     var copy = Path.Combine(store.Directory, name);
-                    File.Copy(archive, copy + PartialExtension, overwrite: true);
-                    File.Move(copy + PartialExtension, copy, overwrite: true);
+                    if (store.AppendOnly)
+                    {
+                        // Written once under its name: an append-only share refuses the rename.
+                        File.Copy(archive, copy, overwrite: false);
+                    }
+                    else
+                    {
+                        File.Copy(archive, copy + PartialExtension, overwrite: true);
+                        File.Move(copy + PartialExtension, copy, overwrite: true);
+                    }
                 },
-                () => store!.Prune(held!, options.Value.Backup.RetentionDays, referencesKey),
+                () => store!.AppendOnly
+                    ? throw new UnauthorizedAccessException(AppendOnlyReason(store.Generation!))
+                    : store.Prune(held!, options.Value.Backup.RetentionDays, referencesKey),
                 secondary,
                 logger);
             return store is not null && FileSystemNote(store.Directory) is { } fileSystem ? (outcome.Copied, Join(outcome.Note, fileSystem)) : outcome;
@@ -504,6 +514,10 @@ internal sealed class BackupService(
             return (true, OldCopiesKeptNote + ex.Message);
         }
     }
+
+    /// <summary>Why nothing is removed from an append-only secondary folder, in the backup's note.</summary>
+    private string AppendOnlyReason(string generation) => string.Create(CultureInfo.InvariantCulture,
+        $"the folder only lets HC360 add files, so its own retention removes old copies (keep it at {Math.Max(options.Value.Backup.RetentionDays, 1) + BackupStore.GenerationDays} days or more); tonight's documents went into {generation}.");
 
     /// <summary>A note when the secondary disk is FAT or exFAT, which suit a backup folder badly; null otherwise.</summary>
     private string? FileSystemNote(string directory)
