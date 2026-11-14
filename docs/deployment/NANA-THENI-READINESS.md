@@ -193,6 +193,12 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
   next morning, and System health warns. After three nights without a copy the warning turns critical and is told to
   IT on-call by SMS (DEPLOYMENT.md section 8). Size the disks from the backups: the Backups screen shows each one's size
   after the first week.
+- **An off-site bucket.** The two disks are in the hospital most of the week, and a disk swapped by hand is easily
+  forgotten. The owner asked that once online, the backups are backed up: HC360 uploads each night's backup, encrypted,
+  to an S3-compatible bucket in India (AWS Mumbai or Hyderabad, OCI, or another store hosted in India) within 15
+  minutes, locked there for 35 days so nobody can delete it. The hospital opens the account in its own name and keeps
+  its administrator login. It holds about 35 backups at a time; the Backups screen gives their size. The internet line
+  must carry a night's backup within the day: a 6 GB backup takes about 80 minutes at 10 Mbit/s.
 - **A dedicated server**, if the hospital takes the recommendation above.
 
 ## 4. Deploying to this machine, step by step
@@ -269,9 +275,22 @@ monitor is set up. The dates are against the release on 23 November.
    System health says it is back, and within a few minutes IT's phone gets one SMS that it is connected again, saying
    when it was lost and when it was back. The server reaches the SMS gateway over that cable, so the alert of the loss
    could not go while it was out: Administration › Notifications shows it suppressed, withdrawn.
-8. **Run a restore drill before go-live.** Let the first night's backup run, check it with `backup verify`, and restore
-   it on a spare PC with `Restore-HC360.ps1` (DEPLOYMENT.md section 8).
-   *Check:* the restored copy opens and holds what the original holds.
+8. **Send the backups off site, give the recovery key two holders, and run a restore drill from the off-site copy,
+   before go-live.**
+   - Set up the off-site copy (DEPLOYMENT.md section 8, *The off-site copy*): the bucket made with Object Lock, an access
+     key that may upload but not delete, and the settings under Administration › Backups, *Off-site copy*, approved by
+     the second administrator.
+   - Make a new recovery key (DEPLOYMENT.md section 3, *A new backup recovery key*). The IT administrator who makes it
+     keeps one copy; a second administrator (the medical director or the hospital administrator) keeps another outside
+     the hospital, at home or in a bank locker, and types it in under Backups › Recovery key, *I hold this key*. Put the
+     quarterly check, when each holder types the key in again, in both their calendars.
+   - Let the first night's backup run and go off site. On a spare PC, download it from the bucket with the hospital's
+     own login, check it with `backup verify`, and restore it with `Restore-HC360.ps1` (DEPLOYMENT.md section 8,
+     *Restoring from the off-site copy*).
+
+   *Check:* the night's backup shows Yes in the Backups screen's *Off site* column, and the bucket shows it locked for 35
+   days. Backups › Recovery key lists both holders, and System health shows neither `backup.offsite_stale` nor
+   `backup.recovery_key_custodians`. The restored copy opens and holds what the original holds.
 9. **Build the item master in HC360.** No data comes from the current software. Set each scheduled drug's schedule
    from its molecule against the H1 list, and fill in its manufacturer.
    *Check:* the pharmacist-in-charge reviews the H1 and X list before it is used.
@@ -330,8 +349,9 @@ None of these depends on HyFib's word:
 | The server's cable is right, and its loss is noticed | The preflight's *Network connection* at 1 Gbps; the cable pulled at step 7: System health, then the SMS on IT's phone that it is back, saying when it was lost |
 | Every workstation reaches the server | `Test-NetConnection HC360-SRV -Port 7360` from each, and its connection pill showing the cable |
 | It is fast enough | The load test on this machine (PERF-01), and pg_test_fsync's figures for its disk |
-| The data survives a failure | A backup verified, then restored on another PC |
-| Each night's backup leaves the server | At each weekly swap, the disk going off site holds the last night's backup file, and `backup verify --in` passes on it (DEPLOYMENT.md section 8). That a missing copy is noticed: the disk unplugged at step 7, and an alert drill's SMS on IT's phone for the critical alert |
+| The data survives a failure | A backup verified, downloaded from the off-site bucket, then restored on another PC (step 8) |
+| Each night's backup leaves the server | The Backups screen's *Off site* column says Yes for each night's backup, and the bucket holds it, locked for 35 days. At each weekly swap, the disk going off site holds the last night's backup file, and `backup verify --in` passes on it (DEPLOYMENT.md section 8). That a missing copy is noticed: the disk unplugged at step 7, System health's `backup.offsite_stale`, and an alert drill's SMS on IT's phone for the critical alert |
+| Two people hold the recovery key | Backups › Recovery key lists both, and System health shows no `backup.recovery_key_custodians`; once a quarter, each types it in again, or System health says so (`backup.recovery_key_unchecked`) |
 | The registers are right | The day-by-day reconciliation against the current software's printouts, signed by the pharmacist-in-charge, and then the Drugs Inspector |
 | Each drug is in the right schedule | The Schedule H1 list (G.S.R. 588(E), 2013, and later amendments), molecule by molecule |
 | Registered to send alert SMS (step 12, owner: IT head; by 20 November) | The DLT portal's approvals of the entity, the sender header and the `system.alert` template, with the template id written down; and the alert drill's SMS on IT's phone (step 16) |

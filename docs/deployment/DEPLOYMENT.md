@@ -448,7 +448,20 @@ showed the original key on screen; System health says when backups still use tha
    so a key nobody wrote down never becomes the one they need. A mistake in the copy is caught here.
 
 The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
-on a NAS or USB drive, are deleted: 30 days by default. Both steps are recorded in the audit log, without the key.
+on a NAS or USB drive and off site, are deleted: 30 days by default, 35 in the off-site bucket. Both steps are recorded
+in the audit log, without the key.
+
+**Two people hold the key.** A key one person holds is lost with them. Give a copy to a second administrator (the
+medical director, or the hospital administrator), who keeps it outside the building, at home or in a bank locker, so a
+fire takes at most one copy. The administrator who typed the new key back is its first holder. The second opens
+Administration › Backups, **Recovery key**, selects **I hold this key**, and types it in from their own copy; HC360
+records who and when, and never shows the key again. The dialog lists who has shown they hold the key. It needs the
+backups permission (`admin.backups.manage`), not `admin.system.manage`. System health warns
+(`backup.recovery_key_custodians`) until two different people have typed in the current key.
+
+**Check the copies every quarter.** Each holder finds their copy and types it in the same way. System health warns
+(`backup.recovery_key_unchecked`) once nobody has for 90 days. A copy that can no longer be read, or found, is a reason
+to make a new key now, while the current one still opens the backups.
 HC360 keeps the key protected on the Server Node, to encrypt new backups, and never shows it again. Until it is typed
 back, the new key waits, protected the same way, beside it in the keys folder; with several servers (section 10) that
 is the folder they share, so whichever server the reverse proxy sends the confirmation to finds it.
@@ -1235,7 +1248,8 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 ## 8. Backups and disaster recovery
 
 - An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST and is kept for 30 days. With
-  `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
+  `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS, and once the off-site copy is set up
+  (below), it is uploaded to a bucket outside the building within 15 minutes.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
 - **The copy to the second disk or NAS** is what survives if the server's own disk fails. The number series'
@@ -1360,6 +1374,160 @@ then release". To release them:
    messages go within seconds, on every server, as each provider answers.
 
 A hold set for any other reason works the same way, and its warning is critical: nothing else tells of it.
+
+### The off-site copy
+
+The second disk or NAS is in the same building as the server, so a fire, a flood, a theft, or ransomware on the server
+can take both. HC360 therefore also uploads every verified full backup to a bucket outside the building, in an
+S3-compatible object store: AWS in Mumbai (`ap-south-1`) or Hyderabad (`ap-south-2`), OCI in Mumbai or Hyderabad, or
+any S3-compatible store hosted in India. The backups are encrypted with the recovery key before they leave; the store
+never has that key.
+
+- **When.** The server that runs the background jobs looks every 15 minutes. It uploads the newest verified full backup
+  first, then older ones not yet off site that were made within the last 7 days (`backfillDays`), one at a time. The
+  backup taken before an update holds no documents and is not uploaded.
+- **Large backups on a slow line.** A backup over 16 MB goes up in parts of 8 MB or more. Each part the store takes is
+  recorded with the backup, so an upload cut off by a lost connection or a restart goes on from where it stopped. Size
+  the uplink so that a night's backup goes up within the day: a 6 GB backup takes about 80 minutes at 10 Mbit/s.
+- **Checked on the way and at the end.** Every request goes over https only, is signed with the access key, and carries
+  the SHA-256 and MD5 of what it sends, which the store checks: a part damaged on the way is refused, not stored. Before
+  the parts are joined, HC360 reads the backup file again and checks it against the SHA-256 it was verified with when
+  it was made. Afterwards it reads back the copy's size and checksum from the store. Only a copy that matches counts.
+- **Locked.** Each copy is locked for 35 days (`retainDays`) with S3 Object Lock in compliance mode: nobody can delete
+  or overwrite it before then, not HC360, not an administrator, not the owner of the store account. HC360's access key
+  cannot delete anything in any case.
+- **Shown.** The Backups screen's **Off site** column says Yes, with the time, or the store's answer to the last try.
+
+**Setting it up.**
+
+1. With the hospital's own administrator account for the store (never HC360's key), create the bucket with Object Lock
+   on. Versioning comes with it. With the AWS CLI:
+
+   ```powershell
+   aws s3api create-bucket --bucket nana-hc360-backups --region ap-south-1 `
+       --create-bucket-configuration LocationConstraint=ap-south-1 --object-lock-enabled-for-bucket
+   aws s3api put-public-access-block --bucket nana-hc360-backups `
+       --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+   aws s3api put-bucket-lifecycle-configuration --bucket nana-hc360-backups --lifecycle-configuration file://hc360-lifecycle.json
+   ```
+
+   `hc360-lifecycle.json` removes each copy as its lock passes, and the parts of uploads that never finished. Keep its
+   `Days` equal to `retainDays`: the privacy notice tells patients that erased data leaves the backups within
+   `retainDays` + 2 days (37) while the off-site copy is on, and counts on it (docs/modules/privacy.md).
+
+   ```json
+   {
+     "Rules": [
+       {
+         "ID": "hc360-backups",
+         "Status": "Enabled",
+         "Filter": { "Prefix": "hc360/" },
+         "Expiration": { "Days": 35 },
+         "NoncurrentVersionExpiration": { "NoncurrentDays": 1 },
+         "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+       }
+     ]
+   }
+   ```
+
+   Keep the bucket's default encryption with keys the store manages (SSE-S3), not KMS keys: HC360 checks each copy
+   against its ETag, which is a checksum only with SSE-S3.
+2. Make an access key for HC360 alone: an IAM user with this policy and nothing else. It may upload, finish or give up
+   an upload, and read back what it uploaded. It may not delete anything, list the bucket, or change the bucket, its
+   lock or its lifecycle.
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Sid": "HC360UploadsBackups",
+         "Effect": "Allow",
+         "Action": ["s3:PutObject", "s3:PutObjectRetention", "s3:GetObject", "s3:AbortMultipartUpload"],
+         "Resource": "arn:aws:s3:::nana-hc360-backups/hc360/*"
+       },
+       {
+         "Sid": "HC360NeverDeletes",
+         "Effect": "Deny",
+         "Action": ["s3:DeleteObject", "s3:DeleteObjectVersion", "s3:BypassGovernanceRetention", "s3:PutBucketObjectLockConfiguration", "s3:PutLifecycleConfiguration", "s3:PutBucketPolicy"],
+         "Resource": ["arn:aws:s3:::nana-hc360-backups", "arn:aws:s3:::nana-hc360-backups/*"]
+       }
+     ]
+   }
+   ```
+
+   `s3:PutObject` covers a multipart upload's start, parts and completion; `s3:AbortMultipartUpload` gives up one whose
+   backup file failed its check (it removes parts, never a finished copy). `s3:PutObjectRetention` lets each upload set
+   its copy's lock (in compliance mode a lock can be lengthened, never shortened), and `s3:GetObject` lets HC360 read back
+   what arrived. Keep the account's administrator credentials off the Server Node.
+3. In HC360, under Administration › Backups, **Off-site copy**: switch it on, enter the store address, region, bucket and
+   folder (`hc360/`), and the access key ID and secret access key, and save. The change waits for a second
+   administrator (MAKER-CHECKER.md), who approves it under Approvals; nothing is uploaded until then. The settings are
+   `backup.offsite` and, encrypted, `backup.offsite.secret`, for the whole hospital.
+4. Select **Back up now**. Within 15 minutes the backup's **Off site** column says Yes. Check that the bucket shows the
+   file under `hc360/`, with its lock date.
+
+| Store | Store address | Region | Path-style | Lock |
+|---|---|---|---|---|
+| AWS Mumbai | `https://s3.ap-south-1.amazonaws.com` | `ap-south-1` | Off | Object Lock, `retainDays` 35 |
+| AWS Hyderabad | `https://s3.ap-south-2.amazonaws.com` | `ap-south-2` | Off | Object Lock, `retainDays` 35 |
+| OCI Mumbai | `https://<namespace>.compat.objectstorage.ap-mumbai-1.oraclecloud.com` | `ap-mumbai-1` | On | A retention rule of 35 days on the bucket, and `retainDays` 0 |
+| OCI Hyderabad | `https://<namespace>.compat.objectstorage.ap-hyderabad-1.oraclecloud.com` | `ap-hyderabad-1` | On | As for OCI Mumbai |
+| Another S3-compatible store in India | Its S3 address, from its documentation | As it names it | As it says (On for MinIO-based stores) | Object Lock where it offers it; otherwise its own lock on the bucket, and `retainDays` 0 |
+
+On OCI, the access key is a customer secret key of a user whose group's policy allows only `OBJECT_CREATE`,
+`OBJECT_INSPECT` and `OBJECT_READ` in that bucket.
+
+**What System health says** (`backup.offsite_stale`):
+
+- A warning while the newest backup's upload fails, with the store's answer. HC360 tries again every 15 minutes.
+- Critical once no backup has reached the bucket for three and a half days (where none ever has, once uploads have
+  failed that long), or once the newest verified backup is still not off site a day after it was made, as on an uplink
+  too slow to carry a night's backup in a day, or a server that stopped trying. Critical warnings are told to IT on-call
+  by SMS and escalated (section 4, "Alerts that reach someone").
+- A warning, on a live server with nightly backups, while no off-site copy is set up: "No copy of the backups leaves the
+  building".
+
+| The store's answer | What it means |
+|---|---|
+| "The store could not be reached" | No internet, or a firewall or proxy in the way: the server must reach the store address on port 443. |
+| 403 `AccessDenied` | The access key, or its policy, does not allow uploads to that bucket and folder. |
+| 403 `SignatureDoesNotMatch` | The secret access key is wrong, or the server's clock is out (System health says so too). |
+| 301 `PermanentRedirect`, or "the bucket is in …" | The region is not the bucket's. |
+| 404 `NoSuchBucket` | The bucket's name, or path-style, is wrong. |
+| 400 `InvalidRequest` about Object Lock | The bucket was made without Object Lock: make a new one with it, or lock the bucket another way and set `retainDays` to 0. |
+| "does not match the backup" | The copy read back from the store differs from what was sent. HC360 uploads it again, and after three such copies stops and says so: check that the bucket encrypts with SSE-S3, not KMS keys. |
+| "no longer matches the SHA-256" | The backup file on the server's disk changed after it was checked: the disk may be failing. It is not uploaded; check the disk, and take a backup. |
+
+**Restoring from the off-site copy.** When the server and the second disk are both gone:
+
+1. On the new machine, with the hospital's own credentials for the store (not HC360's key), download the backup the
+   Backups list named, or the newest one, from the store's console or with the AWS CLI:
+
+   ```powershell
+   aws s3 cp s3://nana-hc360-backups/hc360/hc360-<date>-scheduled.hc360bak D:\Restore\
+   ```
+
+   The object's metadata names the backup's SHA-256 (`x-amz-meta-hc360-sha256`) and the recovery key that opens it
+   (`x-amz-meta-hc360-recovery-key`).
+2. Check it without restoring it: `backup verify --in D:\Restore\hc360-<date>-scheduled.hc360bak`, as above.
+3. Restore it with `.\Restore-HC360.ps1 -BackupFile D:\Restore\hc360-<date>-scheduled.hc360bak`, as above. No other tool
+   is needed.
+
+### A second copy the server cannot delete
+
+The off-site bucket's copies cannot be deleted by the server. The copy on the NAS can be made the same way, so the
+server, and ransomware on it, can add copies there but not remove or change them:
+
+- Give the server's computer account (`HOSPITAL\HC360-SRV$`) permission to create and write files in the share, but not
+  *Delete*, *Delete subfolders and files*, *Change permissions* or *Take ownership*. HC360 writes each copy once, under a
+  new name, and never changes it.
+- Better still, make the share a WORM folder (write once, read many: Synology's WriteOnce, QNAP's WORM), which keeps
+  each file unchangeable for the days set, or take immutable snapshots of it every day. Then a copy cannot be
+  overwritten either.
+- Let the NAS's own retention remove the copies after 30 days or more. HC360 cannot: each backup's note then says it was
+  copied and that the older copies there were not removed. That note is not a failed copy, and raises no warning.
+- Keep the NAS's administrator account off the Server Node.
 
 ## 9. Warm standby and failover (optional)
 
@@ -1880,6 +2048,9 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | Service will not start | The newest `hc360-server-<date>.json` in `%ProgramData%\HyFib\HealthCare360\logs\` (see "Reading the server log"), then Windows Event Viewer › Application (source *HyFib HealthCare360*) |
 | A restore says "This backup opens with recovery key …, not with the key entered" | Each backup opens with the key in use when it was made. Use the copy whose ID the message names; the Backups list names every backup's key |
 | "The backup of … was not copied to …" or "No backup has been copied to … since …" (System health), or "Backup not copied" in the app | The message gives Windows' reason. "Could not find a part of the path": the USB disk is unplugged, or came back with another drive letter (give both disks the same one in Disk Management). "The network path was not found": the NAS is off or unreachable. "Access … denied": HC360 may not write there: on the server that is `NT SERVICE\HC360Server`, on a NAS share the server's computer account (`HOSPITAL\HC360-SRV$`). Fix it, then **Back up now** (section 8) |
+| "Copied to the secondary directory; older copies there were not removed" in a backup's note | The share lets the server add copies but not delete them, as an append-only share should (section 8, "A second copy the server cannot delete"). Nothing failed; let the NAS's own retention remove the old copies |
+| "No copy of the backups leaves the building", or "has not reached the off-site copy" (System health, `backup.offsite_stale`) | Set up the off-site copy, or read the store's answer in the warning against the table in section 8, "The off-site copy" |
+| "Only … has shown they hold recovery key …" or "Nobody has typed in recovery key … since …" (System health) | A second administrator, or each holder at the quarterly check, types the key in under Backups › Recovery key, **I hold this key** (section 3, "A new backup recovery key") |
 | A restore says "The recovery key has a mistake in it" | A character was copied or typed wrong. The key has no letters I, L, O or U; an I or L is read as 1, and an O as 0 |
 | Service will not start, and the log says `SSPI authentication failed for user "hc360_app"` or `No password has been provided but the backend requires one` | PostgreSQL no longer has HC360's sign-in rules, for example after it was reinstalled or upgraded to a new version with a new data folder. Run `Install-HC360Server.ps1` again: it writes them again. To sign in with a password instead, run it with `-DatabaseSignIn Password` |
 | The installer warns "The server did not reach the database with its Windows account" | It put everything back, and HC360 signs in with its password as before. The HC360 log in `logs\` and PostgreSQL's log (`log\` in its data folder) say why. Send both to HyFib support; until then HC360 works as it did |

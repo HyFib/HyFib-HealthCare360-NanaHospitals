@@ -1598,6 +1598,24 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 ### Backups and keys
 - Nightly backups are **encrypted** (AES-256-GCM, chunked, every chunk authenticated) and optionally copied to a second
   disk or NAS.
+- **A copy leaves the building, and the server cannot delete it** (DEPLOYMENT.md section 8, "The off-site copy"). Each
+  verified full backup is uploaded to an S3-compatible bucket in India, already encrypted with the recovery key, which
+  the store never has.
+  - Only over https (TLS 1.2 or later, no redirect followed), each request signed with AWS Signature Version 4 and
+    carrying the SHA-256 and MD5 of its body, which the store checks. The access key is a secret setting
+    (`backup.offsite.secret`), encrypted like every credential; changing it, or where the backups go
+    (`backup.offsite`), waits for a second administrator.
+  - Each copy is locked with S3 Object Lock in compliance mode for 35 days, and the access key's policy allows uploads
+    but no delete, so a stolen key, an administrator, or ransomware on the server cannot remove the copies; neither can
+    the store account's owner before the lock passes. A copy counts only once the backup file has been read again and
+    matched its SHA-256 before the upload is finished, and the store's size and checksum of the copy match after.
+  - The copy on a NAS can be made append-only too (no delete for the server's account, or a WORM folder); HC360 then
+    notes that it kept the older copies, and nothing fails.
+- **Two people hold the recovery key, one copy outside the building.** Each proof that someone holds the current key
+  (they typed it in from their copy, when it was made or later, under Backups › Recovery key) is recorded with who and
+  when; the key is never shown again. System health warns until two different people have, and when nobody has for 90
+  days: the quarterly check of the copies. Typing a key in is open to holders of the backups permission; it changes
+  nothing and is audited, without the key.
 - Each backup is one archive holding the database, the stored documents (already encrypted) and escrow copies of the
   field encryption keys. So one backup file and its recovery key restore everything on replacement hardware, including
   identifiers such as Aadhaar and ABHA, which are unreadable without that key.
@@ -1674,7 +1692,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 |---|---|---|---|---|
 | Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; an earlier key retired there once nothing is encrypted with it, the original never |
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
-| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; the hospital keeps the copy offline | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed; each key kept as long as backups made with it |
+| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; two people keep a copy each offline, one of them outside the building, and type it in every quarter | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed or lost; each key kept as long as backups made with it |
+| Off-site upload key | The secret setting `backup.offsite.secret`; the store's console | The data encryption key, as every secret setting | Uploads to the off-site bucket, which its policy limits to adding copies and reading them back: no delete, and each copy locked | In the store's console, then entered under Administration › Backups (a second administrator approves), when someone who saw it leaves or it may be exposed |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through keys derived from it, of the addresses and mobile numbers whose failures are counted (in memory, or in the database with several servers) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers share it from the shared folder's `keys` |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI; with several servers, the ring in the shared folder is protected with the cluster key certificate (RSA, in each server's Local Computer store), and each server keeps its own DPAPI ring for its LAN certificates | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
@@ -1885,6 +1904,7 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | CA5359, certificate validation off | `ServerClient.FetchCaCertificateAsync` (Desktop) | Trust on first use: the CA it downloads is only trusted once its fingerprint matches IT policy or an administrator confirms it |
 | CA5359, certificate validation off | `ServerApi.FetchCaCertificateAsync` (lab agent) | The same, at enrolment: the CA it downloads is used only if its fingerprint equals the one IT passed to the installer |
 | CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
+| CA5351, MD5 | `S3Client.Md5` (Platform, the off-site backup copies) | S3's `Content-MD5` header and its ETags are MD5 by the protocol, and Object Lock requires the header: a check against damage on the way, beside the SHA-256 every request is signed with. Nothing secret depends on it |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
 | CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
 
@@ -1898,8 +1918,12 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 3. Give each person their own account and the smallest set of roles. Review users and roles every quarter, and
    deactivate leavers the same day.
 4. Turn on two-step verification for everyone who handles finance or administration, not only administrators.
-5. Store the backup recovery key and the postgres password offline, in the hospital safe. Run a restore test every
-   quarter.
+5. Give the backup recovery key two holders, each with a copy kept offline: one in the hospital safe, the other outside
+   the building (at a holder's home or in a bank locker), so a fire takes at most one. Both type it in under Backups ›
+   Recovery key when it is made, and again every quarter, which checks that each copy can still be found and read.
+   Keep the postgres password offline, in the hospital safe. Send the backups off site to a bucket with Object Lock and
+   an upload-only key (DEPLOYMENT.md section 8). Run a restore test every quarter, from the off-site copy at least once
+   a year.
 6. Review the audit log for break-the-glass and restricted-record access every month (NABH IMS).
 7. Record a suspected personal data breach in Privacy › Data breaches as soon as it is known: the Data Protection Board
    must be told without delay, and sent the detailed report within 72 hours. Report it to HyFib as well.
@@ -1908,7 +1932,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
    `privacy.breach.notice`); without them those SMS are not sent.
 9. Confirm the retention periods in Privacy › Retention with the medical records committee and a legal adviser, and
    review the charts it lists as past their period. Delete by hand, within the backup period, any copy of a backup
-   taken off the Server Node and its second copy: the erasure window the privacy notice states covers only those two.
+   taken off the Server Node and its second copy: the erasure window the privacy notice states covers only those two,
+   and the off-site bucket, whose lifecycle must expire each copy as its lock passes (DEPLOYMENT.md section 8).
    Keep the erasure ledger (`privacy/erasure-ledger.log`) with the audit anchor file, and set the backups' second copy
    so a copy of it outlives the Server Node's disk.
 10. If the modality worklist is used, open its port in the firewall for the modalities' addresses only, keep it on the
