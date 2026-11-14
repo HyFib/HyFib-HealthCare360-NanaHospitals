@@ -491,6 +491,9 @@ internal static class PeakMix
             return Get($"api/v1/pharmacy/stock?storeId={c.Fixtures.PharmacyStoreId}&inStockOnly=true&take=20");
         }
 
+        // The bill is the unit's MRP rounded to the rupee, as the server rounds an invoice (SalePricing.Total), and the payments
+        // must add up to it exactly; a bill that rounds to nothing takes no payment.
+        var bill = Math.Round(item.Mrp, 0, MidpointRounding.AwayFromZero);
         return Post("api/v1/pharmacy/sales/counter", new
         {
             storeId = c.Fixtures.PharmacyStoreId,
@@ -500,7 +503,7 @@ internal static class PeakMix
             prescription = (object?)null,
             lines = new[] { new { itemId = item.ItemId, quantity = 1, batchId = (Guid?)null } },
             discountPercent = 0,
-            payments = new[] { new { mode = "Cash", amount = item.Mrp, reference = (string?)null } },
+            payments = bill > 0 ? new object[] { new { mode = "Cash", amount = bill, reference = (string?)null } } : [],
             confirmControlledDrugs = false,
         });
     }

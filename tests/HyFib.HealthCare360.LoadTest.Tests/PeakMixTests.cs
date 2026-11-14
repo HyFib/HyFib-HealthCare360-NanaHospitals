@@ -251,8 +251,23 @@ public sealed class PeakMixTests
         request.RequestUri!.OriginalString.ShouldBe("api/v1/pharmacy/sales/counter");
         body.GetProperty("storeId").GetGuid().ShouldBe(fixtures.PharmacyStoreId!.Value);
         body.GetProperty("lines")[0].GetProperty("itemId").GetGuid().ShouldBe(fixtures.PharmacyItems[0].ItemId);
-        body.GetProperty("payments")[0].GetProperty("amount").GetDecimal().ShouldBe(12.5m);
+        // An MRP of 12.50 is a bill of 13: the server rounds the invoice to the rupee, half away from zero, and takes only
+        // payments that add up to it.
+        body.GetProperty("payments").GetArrayLength().ShouldBe(1);
+        body.GetProperty("payments")[0].GetProperty("amount").GetDecimal().ShouldBe(13m);
         body.GetProperty("confirmControlledDrugs").GetBoolean().ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task A_counter_sale_whose_bill_rounds_to_nothing_takes_no_payment()
+    {
+        var fixtures = FullFixtures();
+        fixtures.PharmacyItems = [new StockItem(Guid.NewGuid(), 0.35m)];
+
+        using var request = Step(PeakMix.Extra(), PeakMix.CounterSale).Request(ContextFor(fixtures));
+        var body = await request.Content.ShouldNotBeNull().ReadFromJsonAsyncForTest(TestContext.Current.CancellationToken);
+
+        body.GetProperty("payments").GetArrayLength().ShouldBe(0);
     }
 
     [Fact]
