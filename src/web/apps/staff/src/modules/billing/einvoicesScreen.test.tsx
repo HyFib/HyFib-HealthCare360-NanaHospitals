@@ -1,6 +1,6 @@
 import type * as Core from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -116,6 +116,29 @@ const CANCELLED_IN_TIME: EInvoiceDetail = {
     cancelRemark: 'Wrong buyer',
   },
 };
+
+/** An invoice of goods above the e-way bill threshold, three days old, with its live IRN and no e-way bill yet. */
+const goods = (portalConnected: boolean): EInvoiceDetail => ({
+  ...live(portalConnected),
+  date: new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10),
+  ewayBillNeeded: true,
+});
+
+/** The instant as a `datetime-local` value, the browser's local time, to the minute. */
+const localInput = (at: Date) => {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+};
+
+/** Enters an e-way bill from its print: its number and when it was generated (an hour ago); its validity left blank. */
+async function enterEwayBill(user: ReturnType<typeof userEvent.setup>, form: ReturnType<typeof within>, ewbNo: string) {
+  const number = form.getByRole('textbox', { name: /E-way bill number/ });
+  await user.clear(number);
+  await user.type(number, ewbNo);
+  fireEvent.change(form.getByLabelText(/Generated on/), {
+    target: { value: localInput(new Date(Date.now() - 3600_000)) },
+  });
+}
 
 /** A refusal as the server sends it: a business rule is a 422 with its code and its own sentence. */
 const refused = (code: string, detail: string, status = 422) =>
@@ -356,5 +379,84 @@ describe('GST e-invoices', SCREEN_TESTS, () => {
     await user.click(dialog.getByRole('button', { name: 'Record IRN' }));
     expect(await dialog.findByText('The IRN was not recorded', {}, SLOW)).toBeInTheDocument();
     expect(dialog.getByText(/The code's buyer GSTIN is 33AAACH7409R1Z8\./)).toBeInTheDocument();
+  });
+
+  it('not connected, records an e-way bill generated on the e-way bill portal from its print', async () => {
+    let detail = goods(false);
+    const { user, dialog } = await openBill({
+      [`GET ${DOC}`]: () => detail,
+      [`POST ${DOC}/ewaybill/record`]: () => {
+        detail = {
+          ...goods(false),
+          registration: { ...REGISTRATION, ewbNo: 331000123456, ewbDate: now, ewbValidTill: null },
+        };
+        return detail;
+      },
+    });
+
+    // Not connected, the portal cannot generate one: entering it from its print is the dialog's main action.
+    expect(dialog.queryByRole('button', { name: 'Generate e-way bill' })).not.toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Record an e-way bill generated elsewhere' })).not.toBeInTheDocument();
+    expect(dialog.getByText(/generate the e-way bill on the e-way bill portal/)).toBeInTheDocument();
+    const record = dialog.getByRole('button', { name: 'Record e-way bill' });
+    expect(record).toBeDisabled();
+    await enterEwayBill(user, dialog, '3310 0012 345');
+    expect(record).toBeDisabled();
+    expect(record).toHaveAttribute('title', expect.stringContaining('the 12 digits on its print'));
+    await enterEwayBill(user, dialog, '3310 0012 3456');
+    expect(record).toBeEnabled();
+    await expectNoAxeViolations();
+
+    await user.click(record);
+    expect(await dialog.findByText(/E-way bill 331000123456/, {}, SLOW)).toBeInTheDocument();
+    const sent = posted(`${DOC}/ewaybill/record`)[0]?.body as { ewbNo: string; generatedAt: string; validUntil: null };
+    expect(sent.ewbNo).toBe('3310 0012 3456');
+    expect(sent.validUntil).toBeNull();
+    expect(Date.now() - Date.parse(sent.generatedAt)).toBeGreaterThan(3500_000);
+    expect(dialog.queryByRole('button', { name: 'Record e-way bill' })).not.toBeInTheDocument();
+  });
+
+  it("connected, keeps recording one generated elsewhere under the portal's way, and says when the portal holds another", async () => {
+    let detail = goods(true);
+    const recordAnswers: unknown[] = [
+      refused(
+        'einvoice.ewaybill_unconfirmed',
+        "The portal holds e-way bill 331000999999 for this invoice's IRN, not 331000123456. Nothing was recorded.",
+      ),
+    ];
+    const { user, dialog } = await openBill({
+      [`GET ${DOC}`]: () => detail,
+      [`POST ${DOC}/ewaybill/record`]: () => recordAnswers.shift(),
+    });
+
+    // The portal's own way stays the main action; recording by hand is folded away under it.
+    expect(dialog.getByRole('button', { name: 'Generate e-way bill' })).toBeInTheDocument();
+    const byHand = dialog.getByRole('button', { name: 'Record an e-way bill generated elsewhere' });
+    expect(byHand).toHaveAttribute('aria-expanded', 'false');
+    await user.click(byHand);
+    const panel = within(dialog.getByRole('group', { name: 'Record an e-way bill generated elsewhere' }));
+    await enterEwayBill(user, panel, '331000123456');
+
+    // The portal holds another e-way bill for the IRN: refused in plain words, what was typed stays to be corrected.
+    const before = reads();
+    await user.click(panel.getByRole('button', { name: 'Record e-way bill' }));
+    expect(
+      await panel.findByText('Not recorded: the portal does not confirm this e-way bill', {}, SLOW),
+    ).toBeInTheDocument();
+    expect(panel.getByText(/holds e-way bill 331000999999 for this invoice's IRN/)).toBeInTheDocument();
+    await waitFor(() => expect(reads()).toBe(before + 1));
+    expect(panel.getByRole('textbox', { name: /E-way bill number/ })).toHaveValue('331000123456');
+    await expectNoAxeViolations();
+
+    // Corrected to the portal's number, it is recorded.
+    detail = {
+      ...goods(true),
+      registration: { ...REGISTRATION, ewbNo: 331000999999, ewbDate: now, ewbValidTill: null },
+    };
+    recordAnswers.push(detail);
+    await enterEwayBill(user, panel, '331000999999');
+    await user.click(panel.getByRole('button', { name: 'Record e-way bill' }));
+    expect(await dialog.findByText(/E-way bill 331000999999/, {}, SLOW)).toBeInTheDocument();
+    expect(dialog.queryByRole('button', { name: 'Record an e-way bill generated elsewhere' })).not.toBeInTheDocument();
   });
 });
