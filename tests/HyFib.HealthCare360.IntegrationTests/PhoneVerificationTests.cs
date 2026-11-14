@@ -47,11 +47,11 @@ public sealed class PhoneVerificationTests(HospitalServer server)
         var born = new DateOnly(1950, 1, 1).AddDays(Random.Shared.Next(18000));
         var patient = await RegisterAsync(frontOffice, "Selvi", phone, born);
 
-        var portal = await server.SignInToPortalAsync(phone, numberVerified: false);
+        var (portal, refreshCookie) = await server.SignInToPortalWithCookieAsync(phone, numberVerified: false);
 
         (await portal.GetAsync<List<PatientSummary>>(Profiles)).ShouldBeEmpty("nobody has shown that the number is the patient's");
         (await StatusAsync(portal, HealthRecords(patient.Id))).ShouldBe(HttpStatusCode.Forbidden);
-        (await portal.GetAsync<AuthUser>("/api/v1/auth/me")).DisplayName.ShouldBe(Phone.Mask(phone), "an unverified record gives the account no name");
+        (await PortalAccountAsync(refreshCookie)).DisplayName.ShouldBe(Phone.Mask(phone), "an unverified record gives the account no name");
         var waiting = await portal.GetAsync<RecordsToConfirmDto>(ToConfirm);
         (waiting.Unconfirmed, waiting.AttemptsLeft, waiting.RetryAfterSeconds).ShouldBe((1, PortalRecordConfirmation.MaxFailures, null));
 
@@ -76,6 +76,18 @@ public sealed class PhoneVerificationTests(HospitalServer server)
             .ShouldHaveSingleItem();
         failed.Severity.ShouldBe(AuditSeverity.Warning);
         $"{failed.Summary} {failed.Details} {verified.Summary} {verified.Details}".ShouldNotContain(born.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// The account a portal session signed in, as the portal reads it: from renewing the session on the portal's own address,
+    /// which serves no /api/v1/auth/me (ListenerPaths).
+    /// </summary>
+    private async Task<AuthUser> PortalAccountAsync(string refreshCookie)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/refresh");
+        request.Headers.Add("Cookie", refreshCookie);
+        using var renewed = await server.AnonymousOnPortal(ownAddress: true).Http.SendAsync(request, Ct);
+        return (await ApiClient.ReadAsync<AuthResult>(renewed, HttpMethod.Post, "/api/v1/auth/refresh")).User.ShouldNotBeNull();
     }
 
     [Fact]
