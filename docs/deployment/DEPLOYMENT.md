@@ -1544,28 +1544,35 @@ once a week HC360 restores the newest backup into a scratch database on the hosp
   database. The restore also writes as much WAL as the database holds: with WAL archiving or a standby (section 9),
   plan the archive's space for that each week.
 
-**Set up once: an account that may create databases.** The account the server works as (`hc360_app`) may not create
-databases, so until this is done each test fails with "may not create databases". Give the test restores an account of
-their own, which may create databases and read PostgreSQL's settings, and nothing else. It cannot connect to the
-hospital's database. On the Server Node, in psql as `postgres`:
+**The account the test restores sign in as.** The account the server works as (`hc360_app`) may not create databases,
+so the test restores sign in as an account of their own, `hc360_restore`, which may create databases and read
+PostgreSQL's settings (to check the room), and nothing else. It cannot connect to the hospital's database. Where
+PostgreSQL is on the Server Node, the installer makes it with a random password, and writes its connection string,
+`ConnectionStrings:BackupRestoreTest`, protected like the others: with `-CreateDatabase`, or on an upgrade run once with
+`-PostgresSuperuserPassword (Read-Host -AsSecureString)`. Until then the installer warns, and each test fails with "may
+not create databases". Every run after keeps the account, its setting and its password; one given the superuser's
+password also checks that the account is still there, and makes it again, with a new password, if it is not.
+
+**Where the database is on another server** (section 10), the installer leaves the account to you, and says so: HC360
+cannot see that server's disk to check the room. Check it has the room, and set `Backup:TestRestore:CheckRoom` to
+false. Then make the account on that server, in psql as `postgres`; without the room check it needs no
+`pg_read_all_settings`:
 
 ```sql
 CREATE ROLE hc360_restore LOGIN CREATEDB PASSWORD '<a long random password>';
-GRANT pg_read_all_settings TO hc360_restore;
 ```
 
-Then add its connection string to `hc360.settings.json`, protect it as in section 3 ("Changing a protected setting"),
-and restart the `HC360Server` service:
+Add its connection string to `hc360.settings.json` on each server that may run the background jobs, with the host and
+TLS settings of `ConnectionStrings:Hospital` (section 3, "The database over TLS"), protect it as in section 3
+("Changing a protected setting"), and restart the `HC360Server` service:
 
 ```json
 "ConnectionStrings": {
-  "BackupRestoreTest": "Host=localhost;Port=5432;Database=postgres;Username=hc360_restore;Password=<the password>"
+  "BackupRestoreTest": "Host=<the database server>;Port=5432;Database=postgres;Username=hc360_restore;Password=<the password>;SSL Mode=VerifyFull;Root Certificate=<as in Hospital>"
 }
 ```
 
-Where the database is on another server (section 10), HC360 cannot see that server's disk: check it has the room, and
-set `Backup:TestRestore:CheckRoom` to false. `Backup:TestRestore:Enabled` set to false stops the test restores, and
-System health warns while they are off.
+`Backup:TestRestore:Enabled` set to false stops the test restores, and System health warns while they are off.
 
 ### After a restore
 

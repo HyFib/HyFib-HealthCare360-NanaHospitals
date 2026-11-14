@@ -239,7 +239,8 @@ internal sealed partial class PostgresTools(
 
         var name = ScratchPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
         var locale = collate.Length > 0 ? $" LC_COLLATE {Literal(collate)} LC_CTYPE {Literal(ctype)}" : string.Empty;
-        await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{name}\" TEMPLATE template0 ENCODING {Literal(encoding)}{locale}", connection))
+        // However long it takes: the account's connection string may give none, and Npgsql's default is 30 seconds.
+        await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{name}\" TEMPLATE template0 ENCODING {Literal(encoding)}{locale}", connection) { CommandTimeout = 0 })
         {
             await create.ExecuteNonQueryAsync(ct);
         }
@@ -291,7 +292,8 @@ internal sealed partial class PostgresTools(
             throw new ArgumentException($"{database} is not a scratch database of a test restore.", nameof(database));
         }
 
-        await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection);
+        // A copy of the whole database takes a while to remove from the disk.
+        await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection) { CommandTimeout = 0 };
         await drop.ExecuteNonQueryAsync(ct);
     }
 

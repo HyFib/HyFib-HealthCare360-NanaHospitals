@@ -28,7 +28,7 @@ if ($statement.Count -ne 1) { throw 'Install-HC360Server.ps1 no longer sets its 
 $setOwnSettings = [scriptblock]::Create(
     'param($settings, [string] $DataDir, [string] $pgBin, [int] $HttpsPort = 7360, [int] $PortalHttpsPort = 7361, [string] $FacilityCode = ''NH'', ' +
     '[string] $FacilityName = ''Nana Hospitals'', [string] $SecondaryBackupDir, [switch] $CreateDatabase, [string] $connectionString, ' +
-    '[string] $ownerConnectionString) ' +
+    '[string] $ownerConnectionString, [string] $restoreConnectionString) ' +
     [Environment]::NewLine + $statement[0].Extent.Text + [Environment]::NewLine + '$changed')
 
 $script:failures = 0
@@ -157,6 +157,21 @@ try {
     Assert ($table['HealthCare360:HttpsPort'] -ceq '7360' -and $table['HealthCare360:DefaultFacilityCode'] -ceq 'NHX' -and $table['HealthCare360:Backup:SecondaryDirectory'] -ceq '') 'with the values given'
     $differ = @($after.Keys | Where-Object { $changed -notcontains $_ -and $table[$_] -cne $after[$_] })
     Assert ($differ.Count -eq 0) "and nothing else ($($differ -join ', '))"
+
+    Write-Host 'The test restores'' account'
+    # The installer gives $restoreConnectionString only when it made the account, or gave it a new password; on every
+    # other run the connection, and the password in it, stay as they are.
+    Write-TextFile $path $serverFile $true
+    $first = 'Host=localhost;Port=5432;Database=postgres;Username=hc360_restore;Password=r1;Timeout=15'
+    $changed = Invoke-ConfigurationStep $path @{ restoreConnectionString = $first }
+    Assert ($changed -contains 'ConnectionStrings:BackupRestoreTest') "its connection is written when the account is made ($($changed -join ', '))"
+    Assert ((Read-Table $path)['ConnectionStrings:BackupRestoreTest'] -ceq $first) 'as made, for settings protect to protect'
+    Assert ((Read-Table $path)['ConnectionStrings:Hospital'] -ceq 'dpapi:AQAAANCMnd8BFdERjHoAwE/Cl+sBAAAA') 'beside the protected connection of the server'
+    $changed = Invoke-ConfigurationStep $path
+    Assert ($changed -notcontains 'ConnectionStrings:BackupRestoreTest' -and (Read-Table $path)['ConnectionStrings:BackupRestoreTest'] -ceq $first) 'an upgrade that makes no new password keeps it, with its password'
+    $again = $first.Replace('Password=r1', 'Password=r2')
+    $changed = Invoke-ConfigurationStep $path @{ restoreConnectionString = $again }
+    Assert ($changed -contains 'ConnectionStrings:BackupRestoreTest' -and (Read-Table $path)['ConnectionStrings:BackupRestoreTest'] -ceq $again) 'an account PostgreSQL lost, made again with a new password, replaces it'
 
     Write-Host 'Encoding'
     Write-TextFile $path ('{ "HealthCare360": { "DefaultFacilityName": "' + $hindi + '" } }') $false
