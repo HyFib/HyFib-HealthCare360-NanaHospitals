@@ -219,6 +219,8 @@ public sealed class SystemHealthService(
             databaseWarnings.AddRange(StandbyReplication.Warnings(replication));
         }
 
+        databaseWarnings.AddRange(await SystemHealthArchive.WarningsAsync(db, directories, now, ct));
+
         var backupWarnings = new List<HealthWarning>();
         if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > TimeSpan.FromHours(36)))
         {

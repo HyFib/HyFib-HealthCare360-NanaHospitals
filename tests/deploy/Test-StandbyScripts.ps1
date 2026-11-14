@@ -1,7 +1,8 @@
 ﻿<#
 .SYNOPSIS
     Checks the warm standby scripts' own functions (SRS DED-20, REL-02): what Enable-HC360Replication.ps1 writes in
-    pg_hba.conf and postgresql.conf on the primary, the SCRAM verifier and the TLS certificate it makes, what
+    pg_hba.conf, pg_ident.conf and postgresql.conf on the primary, with a standby or for the WAL archive alone, the SCRAM
+    verifier, the TLS certificate and the service SID it makes, what
     New-HC360Standby.ps1 writes on the standby, and when Install-HC360Server.ps1 refuses to run on a standby. CI runs it in
     Windows PowerShell 5.1 and in PowerShell 7, the two the scripts run in.
 
@@ -47,6 +48,7 @@ foreach ($name in 'Get-PgCtlDataDirectory', 'Get-PostgresSetting', 'Read-TextLin
 foreach ($name in 'Get-PgCtlBinDirectory', 'Resolve-AccountSid', 'Get-CertificateFingerprint') {
     Assert ($primary.ContainsKey($name) -and $primary[$name] -ceq $standby[$name]) "both scripts have the same $name"
 }
+Assert ($primary.ContainsKey('ConvertTo-SspiName') -and $primary['ConvertTo-SspiName'] -ceq $installer['ConvertTo-SspiName']) 'Enable-HC360Replication.ps1 names a Windows account for SSPI as the installer does'
 Assert ((Get-PgCtlBinDirectory '"C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" runservice -N "postgresql-x64-17" -D "C:\Program Files\PostgreSQL\17\data" -w') -ceq 'C:\Program Files\PostgreSQL\17\bin') 'the bin folder of the PostgreSQL Windows installer''s service'
 Assert ((Get-PgCtlBinDirectory 'C:\pgsql\bin\pg_ctl.exe runservice -N pgsql -D D:\pgdata -w') -ceq 'C:\pgsql\bin') 'an unquoted one'
 Assert ((Resolve-AccountSid 'LocalSystem') -ceq 'S-1-5-18' -and (Resolve-AccountSid 'NT AUTHORITY\NetworkService') -ceq 'S-1-5-20' -and (Resolve-AccountSid 'NT AUTHORITY\LocalService') -ceq 'S-1-5-19') 'the service accounts PostgreSQL runs as, by SID'
@@ -116,6 +118,44 @@ $mineFirst = Set-HbaBlock (Set-ReplicationHbaBlock $fresh 'hc360_replicator' '10
 $installerFirst = Set-ReplicationHbaBlock (Set-HbaBlock $fresh 'hc360_app' 'hc360') 'hc360_replicator' '10.0.5.12'
 Assert (($mineFirst -join "`n") -ceq ($installerFirst -join "`n")) 'run in either order, the two scripts leave the same file'
 Assert (((Set-ReplicationHbaBlock (Set-HbaBlock $mineFirst 'hc360_app' 'hc360') 'hc360_replicator' '10.0.5.12') -join "`n") -ceq ($mineFirst -join "`n")) 'and run again, they change nothing'
+
+Write-Host 'The WAL archive without a standby, and the account HC360''s base backups sign in as (SRS REL-02)'
+$baseBlock = @('# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.',
+    '# HC360 takes base backups as hc360_basebackup, signed in as its service''s Windows account from this machine only (SSPI, mapped in pg_ident.conf); the account opens no database.',
+    'host      replication   hc360_basebackup   127.0.0.1/32   sspi   map=hc360_basebackup',
+    'host      replication   hc360_basebackup   ::1/128        sspi   map=hc360_basebackup',
+    'host      replication   hc360_basebackup   all            reject',
+    'host      all           hc360_basebackup   all            reject',
+    'local     all           hc360_basebackup                  reject',
+    '# END HC360 replication')
+$archiveOnly = Set-ReplicationHbaBlock $hba 'hc360_replicator' '' 'hc360_basebackup' 'hc360_basebackup'
+$start = [array]::IndexOf($archiveOnly, $baseBlock[0])
+Assert ($start -eq 9 -and (($archiveOnly[$start..($start + 7)]) -join "`n") -ceq ($baseBlock -join "`n")) 'without a standby the block takes only the base backup account, from this machine, as the HC360 service''s Windows account'
+Assert (@($archiveOnly | Where-Object { $_ -like 'hostssl*' }).Count -eq 0) 'and nothing from the network'
+Assert (((Remove-ReplicationHbaBlock $archiveOnly) -join "`n") -ceq ($hba -join "`n")) 'the rest of the file stays as it was'
+$both = Set-ReplicationHbaBlock $hba 'hc360_replicator' '10.0.5.12' 'hc360_basebackup' 'hc360_basebackup'
+$bothStart = [array]::IndexOf($both, $block[0])
+Assert ((($both[$bothStart..($bothStart + 11)]) -join "`n") -ceq (($block[0..4] + $baseBlock[1..7]) -join "`n")) 'with a standby too, the standby''s rules come first, then the base backup account''s, in one block'
+Assert (((Set-ReplicationHbaBlock $once 'hc360_replicator' '' '' '') -join "`n") -ceq ($hba -join "`n")) 'with neither, there is no block'
+Assert ((Get-ReplicationStandbyAddress $once 'hc360_replicator') -ceq '10.0.5.12' -and $null -eq (Get-ReplicationStandbyAddress $archiveOnly 'hc360_replicator')) 'the standby''s address is read back from the block an earlier run wrote'
+Assert ((Get-ReplicationStandbyAddress (Set-ReplicationHbaBlock $hba 'hc360_replicator' 'fd00::12') 'hc360_replicator') -ceq 'fd00::12') 'an IPv6 one too'
+$archiveAdded = Set-ReplicationHbaBlock $once 'hc360_replicator' (Get-ReplicationStandbyAddress $once 'hc360_replicator') 'hc360_basebackup' 'hc360_basebackup'
+Assert (($archiveAdded -join "`n") -ceq ($both -join "`n")) 'so a run that turns archiving on alone keeps the standby''s rule'
+Assert (Test-Throws { Set-ReplicationHbaBlock $hba 'hc360_replicator' '' 'hc360 basebackup' 'hc360_basebackup' } 'cannot be named') 'a base backup account pg_hba.conf would read differently is refused'
+$ident = @('# PostgreSQL User Name Maps', '# MAPNAME       SYSTEM-USERNAME         PG-USERNAME')
+$mapped = Set-ReplicationIdentBlock $ident 'hc360_basebackup' 'HC360Server@NT SERVICE' 'hc360_basebackup'
+Assert (($mapped[2..4] -join "`n") -ceq (@('# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.', 'hc360_basebackup   "HC360Server@NT SERVICE"   hc360_basebackup', '# END HC360 replication') -join "`n")) 'pg_ident.conf maps the HC360 service''s Windows account to the base backup account'
+Assert (((Set-ReplicationIdentBlock $mapped 'hc360_basebackup' 'HC360Server@NT SERVICE' 'hc360_basebackup') -join "`n") -ceq ($mapped -join "`n")) 'a second run writes the same file'
+$withInstaller = Set-IdentBlock $mapped 'hc360' 'HC360Server@NT SERVICE' 'hc360_app'
+Assert (((Remove-InstallerBlock $withInstaller 'pg_ident.conf') -join "`n") -ceq ($mapped -join "`n") -and ((Remove-ReplicationIdentBlock $withInstaller) -join "`n") -ceq ((Set-IdentBlock $ident 'hc360' 'HC360Server@NT SERVICE' 'hc360_app') -join "`n")) 'the installer''s block and this one leave each other as they are'
+Assert (((Remove-ReplicationIdentBlock $mapped) -join "`n") -ceq ($ident -join "`n")) 'removing the block gives back the file as it was'
+Assert (Test-Throws { Remove-ReplicationIdentBlock @($mapped | Where-Object { $_ -ne '# END HC360 replication' }) } "without its '# END HC360 replication' line") 'a block without its END line stops the script'
+Assert (Test-Throws { Set-ReplicationIdentBlock $ident 'hc360_basebackup' 'odd"name@X' 'hc360_basebackup' } 'cannot be named') 'an account pg_ident.conf would read differently is refused'
+Assert ((ConvertTo-SspiName 'NT SERVICE\HC360Server') -ceq 'HC360Server@NT SERVICE') 'the HC360 service''s account is named as SSPI names it'
+Assert ((Get-ServiceSid 'TrustedInstaller') -ceq 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464') 'a service''s own SID is worked out as Windows does (TrustedInstaller''s is well known)'
+Assert ((Get-ServiceSid 'TrustedInstaller') -ceq (New-Object System.Security.Principal.NTAccount 'NT SERVICE\TrustedInstaller').Translate([System.Security.Principal.SecurityIdentifier]).Value) 'and is the one this Windows gives'
+Assert ((Resolve-ServiceAccountSid 'NT SERVICE\HC360Server') -ceq 'S-1-5-80-2239682907-211999219-2105212348-2982575704-2533218302') 'so the WAL archive opens to the HC360 service even before it is installed'
+Assert ((Resolve-ServiceAccountSid 'LocalSystem') -ceq 'S-1-5-18') 'any other account is looked up'
 
 Write-Host 'postgresql.conf on the primary'
 Assert ((Add-ListenAddress 'localhost' '10.0.5.11') -ceq 'localhost,10.0.5.11') 'the address towards the standby is added, localhost kept'

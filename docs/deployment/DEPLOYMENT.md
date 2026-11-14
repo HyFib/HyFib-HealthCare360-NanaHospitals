@@ -1664,57 +1664,82 @@ time (`replay_lag` above) is visible only to `postgres` and the `pg_read_all_sta
 given.
 
 To stop streaming to the standby: `.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -Remove` on the primary. It
-removes the slot, the account, the `pg_hba.conf` rule, the firewall rule, the address it listened on, TLS, and WAL
-archiving if it set that up.
+removes the slot, the account, the `pg_hba.conf` rule, the firewall rule, the address it listened on, and TLS. WAL
+archiving (below) stays, as it needs no standby: add `-NoWalArchive` to end it too.
 
-### WAL archiving: a recovery point within 15 minutes
+### WAL archiving: a restore to any moment
 
-Optional, and off by default. With it, PostgreSQL copies each finished WAL file (its record of every change) to a
-folder on another disk or a share, at least every 15 minutes, so a restore can replay changes up to a chosen moment:
-at most 15 minutes are lost even when the primary's disk is lost and there is no standby, or when a mistake must be
-undone (SRS REL-02). On the primary:
+Optional, and off by default, and it needs no standby. With it, PostgreSQL copies each finished WAL file (its record of
+every change) to a folder on the server's own disk, at least every 15 minutes, and HC360 takes a **base backup**, a copy
+of PostgreSQL's whole data folder, at once and then every Sunday at 03:30. From the newest base backup and the WAL
+archived since, the database can be restored to any moment: a mistake undone to the minute before it, not to last
+night's backup (SRS REL-02). On the Server Node, or on the primary:
 
 ```powershell
-.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -WalArchiveDirectory D:\HC360-WAL
+.\Enable-HC360Replication.ps1 -WalArchive
 ```
 
-`-NoWalArchive` turns it off again. For a local folder, the script lets PostgreSQL's service account write there. A
-share must let the primary's computer account (`HOSPITAL\HC360-SRV$`) write, which needs a domain; in a workgroup, use
-a second disk. The script archives one file at once to check, and System health warns while archiving fails: PostgreSQL
-then keeps every WAL file until it is archived, and its disk fills. The archive holds the database's changes: limit the
-share to the Server Nodes and administrators. Each file never replaces one already archived; a file with the same name
+It asks for the `postgres` password, and PostgreSQL restarts once (HC360 is unavailable for those seconds). It:
+- archives to `%ProgramData%\HyFib\HealthCare360\wal-archive` (`-WalArchiveDirectory` names another folder on the
+  server's own disk), which only PostgreSQL's and HC360's service accounts, Administrators and SYSTEM can open: the WAL
+  holds patient data. It archives one file at once to check;
+- creates the account `hc360_basebackup`, which may only stream the database and opens none of it, and which signs in
+  only as the HC360 service's Windows account, from this machine, with no password (SSPI): one more block in
+  `pg_hba.conf` and one in `pg_ident.conf`, each between `# BEGIN HC360 replication` and `# END HC360 replication`.
+
+With a standby too, give both: `.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -WalArchive`. Run it again
+whenever you like: it leaves archiving on. `-NoWalArchive` turns it off and removes the account; the base backups made
+stay. System health warns while archiving fails (*WAL archiving is failing*, critical): PostgreSQL then keeps every WAL
+file until it is archived, and its disk fills. Each file never replaces one already archived; a file with the same name
 and other content fails, and PostgreSQL's log says so.
 
-**Space.** Each file is 16 MB, and PostgreSQL closes one at least every 15 minutes while HC360 runs: at least 1.5 GB a
-day, plus the hospital's own changes. Watch the folder for a week, and keep enough for the WAL since the oldest base
-backup you keep (below); PostgreSQL never deletes from it. With `-WalArchiveDirectory` given to `New-HC360Standby.ps1`
-too, a standby that was away too long catches up from the archive.
+**Base backups.** HC360 makes each one with `pg_basebackup`, signed in as `hc360_basebackup`, encrypts it with the
+backup recovery key current at the time, as the nightly backups are, reads it back to check it, and keeps it in
+`%ProgramData%\HyFib\HealthCare360\backups\base\<system identifier>\` for as long as nightly backups are kept (30
+days), and the newest always. The plain copy `pg_basebackup` writes stays on the server's own disk, in HC360's `temp`
+folder, only until it is encrypted. A file's name gives its time and the WAL file it starts from:
+`hc360-base-20261115-220000-000000010000000000000042.hc360base`. System health warns, and the administrators are told in
+the app, when one fails (`pitr.base_backup_failed`; HC360 tries again after 6 hours); while there is none of the
+database's current timeline (`pitr.no_base_backup`: just after archiving is turned on, and after a failover), until
+HC360 has taken one; and when the weekly one has not been made for over a week (`pitr.base_backup_stale`).
 
-**A restore to a point in time** starts from a base backup, a copy of PostgreSQL's data folder, not from the nightly
-`.hc360bak` backup (which holds a dump of the database). Take one after turning archiving on, and every week:
+**Space.** Each WAL file is 16 MB, and PostgreSQL closes one at least every 15 minutes while HC360 runs: at least 1.5 GB
+a day, plus the hospital's own changes, and a base backup is about the size of the database. Watch the folders for a
+week. PostgreSQL never deletes from the archive: delete the files older than the oldest base backup kept, the one named
+in its file name, with `pg_archivecleanup %ProgramData%\HyFib\HealthCare360\wal-archive 000000010000000000000042`.
+With `-WalArchiveDirectory` given to `New-HC360Standby.ps1` too, a standby that was away too long catches up from the
+archive.
 
-```powershell
-& 'C:\Program Files\PostgreSQL\17\bin\pg_basebackup.exe' -h localhost -U postgres -D "D:\HC360-Base\$(Get-Date -Format yyyyMMdd)" -Ft -z -X fetch -c fast
-```
-
-Delete the archive's files older than the oldest base backup kept, with `pg_archivecleanup D:\HC360-WAL <the file named
-in that backup's .backup file>`. To restore to 10:45 today, for example, on a machine with the same PostgreSQL version:
+**A restore to a point in time** starts from a base backup, not from the nightly `.hc360bak` backup (which holds a dump
+of the database), and needs the same PostgreSQL version. To restore to 10:45 today, for example:
 
 1. Stop `HC360Server` and PostgreSQL. Move PostgreSQL's data folder aside.
-2. Make a new data folder and extract the base backup into it: `tar -xzf D:\HC360-Base\<date>\base.tar.gz -C <data
-   folder>`. Give it the permissions the old one had (PostgreSQL's service account, Administrators and SYSTEM).
-3. Add to its `postgresql.auto.conf`:
+2. Decrypt the newest base backup made before 10:45 into a new folder on the server's own disk:
+
+   ```powershell
+   & "$env:ProgramFiles\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe" backup decrypt-base `
+       --in "$env:ProgramData\HyFib\HealthCare360\backups\base\<system identifier>\hc360-base-<time>-<WAL file>.hc360base" --out C:\HC360-Restore
+   ```
+
+   It asks for the recovery key that was current when the base backup was made, as a nightly backup of that day needs,
+   checks the whole file, and writes `base.tar.gz`, `pg_wal.tar.gz` and `backup_manifest`.
+3. Make a new data folder, and extract both into it: `tar -xzf C:\HC360-Restore\base.tar.gz -C <data folder>`, then
+   `tar -xzf C:\HC360-Restore\pg_wal.tar.gz -C <data folder>\pg_wal`. Give it the permissions the old one had
+   (PostgreSQL's service account, Administrators and SYSTEM). Delete `C:\HC360-Restore`: it holds the database in plain.
+4. Add to its `postgresql.auto.conf`:
 
    ```
-   restore_command = 'copy "D:\\HC360-WAL\\%f" "%p"'
+   restore_command = 'copy "C:\\ProgramData\\HyFib\\HealthCare360\\wal-archive\\%f" "%p"'
    recovery_target_time = '2026-10-12 10:45:00+05:30'
    recovery_target_action = 'promote'
    ```
 
    and create an empty file `recovery.signal` in it.
-4. Start PostgreSQL. It replays the archived changes up to 10:45, then opens. Its log says when it got there.
-5. Take the three lines out of `postgresql.auto.conf` again, and start HC360. On other hardware, put the keys and
-   documents back first, as for a failover (step 3 below).
+5. Start PostgreSQL. It replays the archived changes up to 10:45, then opens, on a new timeline. Its log says when it
+   got there.
+6. Take the three lines out of `postgresql.auto.conf` again, and start HC360. It takes a base backup of the new timeline
+   within a quarter of an hour. On other hardware, put the keys and documents back first, as for a failover (step 3
+   below).
 
 ### Failing over to the standby
 

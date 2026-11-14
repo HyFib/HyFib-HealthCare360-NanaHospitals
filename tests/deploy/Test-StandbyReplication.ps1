@@ -10,13 +10,16 @@
     leaves a standby machine. Both machines' address is 127.0.0.1. The primary's pg_hba.conf is first made as
     Install-PostgreSQL.ps1 leaves it (no rules for replication), and listen_addresses localhost only.
     Then, in order:
-      - Enable-HC360Replication.ps1 on the primary, with WAL archiving to a folder; and again, which changes nothing.
+      - Enable-HC360Replication.ps1 on the primary, with WAL archiving to a folder; and again, which changes nothing. The
+        account HC360's base backups sign in as takes the runner's Windows account (standing in for the HC360 service's)
+        over SSPI, for replication only.
       - New-HC360Standby.ps1 for the standby, which reads the primary's archive too.
       - A row written on the primary is read on the standby; the standby takes no write; the primary takes the replication
         account over TLS only, and for replication only.
       - The built HC360 server, given the standby's database, stops at once and says why.
       - The standby is promoted, and takes writes.
-      - Enable-HC360Replication.ps1 -Remove on the primary.
+      - Enable-HC360Replication.ps1 -Remove on the primary, which leaves the WAL archive; -NoWalArchive, which ends it; and
+        -WalArchive alone, with no standby (SRS REL-02), then -NoWalArchive again.
     Needs administrator rights and a PostgreSQL service it may restart: CI runs it last in its Windows job. Everything it
     makes is removed again. Exit code 1 when a check fails.
 
@@ -30,7 +33,8 @@ Set-StrictMode -Version Latest
 
 $installer = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\deploy\windows\Install-HC360Server.ps1')).Path
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [ref] $null, [ref] $null)
-$functions = 'Get-PgCtlDataDirectory', 'Get-PostgresSetting', 'Read-TextLines', 'Write-TextLines', 'Find-PostgresService', 'Select-PostgresService', 'Test-StandbyDatabase'
+$functions = 'Get-PgCtlDataDirectory', 'Get-PostgresSetting', 'Read-TextLines', 'Write-TextLines', 'Find-PostgresService', 'Select-PostgresService', 'Test-StandbyDatabase',
+    'ConvertTo-SspiName'
 foreach ($function in $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
     if ($functions -contains $function.Name) { . ([scriptblock]::Create($function.Extent.Text)) }
 }
@@ -65,6 +69,9 @@ $archive = Join-Path $work 'wal-archive'
 $standbyName = 'hc360-standby-ci'
 $standbyPort = 5433
 $hbaBefore = [System.IO.File]::ReadAllBytes($primary.HbaFile)
+$identBefore = if (Test-Path -LiteralPath $primary.IdentFile) { [System.IO.File]::ReadAllBytes($primary.IdentFile) } else { $null }
+# The runner's account stands in for the HC360 service's, which takes the base backups: the CI job lets it sign in with SSPI.
+$runner = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 Write-Host "Primary: PostgreSQL service $($primary.Name) ($($primaryService.StartName)), data folder $($primary.DataDirectory)"
 
 function Invoke-Sql([int] $Port, [string] $Sql) {
@@ -121,14 +128,20 @@ try {
     Assert ((Invoke-Sql 5432 'SHOW listen_addresses') -eq 'localhost') 'it listens on localhost only'
 
     Write-Host 'Enable-HC360Replication.ps1 on the primary'
-    $enable = "-StandbyAddress 127.0.0.1 -ListenAddress 127.0.0.1 -Port 5432 -PostgresSuperuser $superuser -WalArchiveDirectory '$archive'"
+    $enable = "-StandbyAddress 127.0.0.1 -ListenAddress 127.0.0.1 -Port 5432 -PostgresSuperuser $superuser -WalArchiveDirectory '$archive' -HC360ServiceAccount '$runner'"
     Assert ((Invoke-DeployScript 'Enable-HC360Replication.ps1' $enable $bothSecrets) -eq 0) 'it runs to the end'
     Assert ((Invoke-Sql 5432 'SHOW listen_addresses') -eq 'localhost,127.0.0.1') 'PostgreSQL listens on the address towards the standby too, after a restart'
     Assert ((Invoke-Sql 5432 'SHOW ssl') -eq 'on') 'TLS is on'
     Assert ((Invoke-Sql 5432 "SELECT rolreplication::text || rolsuper::text || rolcanlogin::text || (rolpassword LIKE 'SCRAM-SHA-256`$4096:%')::text FROM pg_authid WHERE rolname = 'hc360_replicator'") -eq 'truefalsetruetrue') 'the replication account may replicate and sign in, nothing more, with a SCRAM verifier'
     Assert ((Invoke-Sql 5432 "SELECT active::text || wal_status FROM pg_replication_slots WHERE slot_name = 'hc360_standby'") -eq 'falsereserved') 'the slot keeps WAL for the standby'
     Assert ((Invoke-Sql 5432 'SHOW max_slot_wal_keep_size') -eq '20GB') 'up to 20 GB'
-    Assert ((Invoke-Sql 5432 "SELECT type || ' ' || array_to_string(database, ',') || ' ' || array_to_string(user_name, ',') || ' ' || address || ' ' || auth_method FROM pg_hba_file_rules WHERE 'replication' = ANY (database)") -eq 'hostssl replication hc360_replicator 127.0.0.1 scram-sha-256') 'pg_hba.conf takes replication from the standby alone, over TLS, with a password'
+    $replicationRules = "SELECT type || ' ' || array_to_string(database, ',') || ' ' || array_to_string(user_name, ',') || ' ' || coalesce(address, '') || ' ' || auth_method FROM pg_hba_file_rules WHERE 'replication' = ANY (database) ORDER BY line_number"
+    $baseBackupRules = 'host replication hc360_basebackup 127.0.0.1 sspi; host replication hc360_basebackup ::1 sspi; host replication hc360_basebackup all reject'
+    Assert ((@(Invoke-Sql 5432 $replicationRules) -join '; ') -eq "hostssl replication hc360_replicator 127.0.0.1 scram-sha-256; $baseBackupRules") 'pg_hba.conf takes replication from the standby alone, over TLS, with a password, and the base backup account from this machine alone, with SSPI'
+    Assert ((Invoke-Sql 5432 "SELECT rolreplication::text || rolsuper::text || rolcanlogin::text || (rolpassword IS NULL)::text FROM pg_authid WHERE rolname = 'hc360_basebackup'") -eq 'truefalsetruetrue') 'the base backup account may replicate and sign in, nothing more, and has no password'
+    Assert ((Invoke-Sql 5432 "SELECT sys_name || ' ' || pg_username FROM pg_ident_file_mappings WHERE map_name = 'hc360_basebackup'") -eq "$(ConvertTo-SspiName $runner) hc360_basebackup") 'pg_ident.conf maps the HC360 service''s Windows account (here the runner''s) to it'
+    Assert ((Test-SignIn 'host=localhost port=5432 user=hc360_basebackup dbname=replication replication=true' 'IDENTIFY_SYSTEM' '') -eq 0) 'that account signs in with SSPI and no password, for replication, as HC360''s base backups do'
+    Assert ((Test-SignIn 'host=localhost port=5432 user=hc360_basebackup dbname=postgres' 'SELECT 1' '') -ne 0) 'and opens no database'
     $rule = Get-NetFirewallRule -Group 'HyFib HealthCare360 replication'
     $address = $rule | Get-NetFirewallAddressFilter
     $port = $rule | Get-NetFirewallPortFilter
@@ -231,9 +244,28 @@ try {
     Assert ((Invoke-DeployScript 'Enable-HC360Replication.ps1' "-StandbyAddress 127.0.0.1 -ListenAddress 127.0.0.1 -Port 5432 -PostgresSuperuser $superuser -Remove" $superuserSecret) -eq 0) 'it runs to the end'
     Assert ((Invoke-Sql 5432 "SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'hc360_standby'") -eq '0') 'the slot is gone'
     Assert ((Invoke-Sql 5432 "SELECT count(*) FROM pg_roles WHERE rolname = 'hc360_replicator'") -eq '0') 'the replication account is gone'
-    Assert ((Invoke-Sql 5432 "SELECT count(*) FROM pg_hba_file_rules WHERE 'replication' = ANY (database)") -eq '0') 'pg_hba.conf takes no replication'
+    Assert ((@(Invoke-Sql 5432 $replicationRules) -join '; ') -eq $baseBackupRules) 'pg_hba.conf takes no replication from the standby, and still the base backup account''s'
     Assert (-not (Get-NetFirewallRule -Group 'HyFib HealthCare360 replication' -ErrorAction SilentlyContinue)) 'the firewall rule is gone'
-    Assert ((Invoke-Sql 5432 'SHOW listen_addresses') -eq 'localhost' -and (Invoke-Sql 5432 'SHOW ssl') -eq 'off' -and (Invoke-Sql 5432 'SHOW archive_mode') -eq 'off') 'PostgreSQL listens on localhost only again, without TLS or archiving'
+    Assert ((Invoke-Sql 5432 'SHOW listen_addresses') -eq 'localhost' -and (Invoke-Sql 5432 'SHOW ssl') -eq 'off') 'PostgreSQL listens on localhost only again, without TLS'
+    Assert ((Invoke-Sql 5432 'SHOW archive_mode') -eq 'on') 'and still archives the WAL, which needs no standby'
+
+    Write-Host 'Enable-HC360Replication.ps1 -NoWalArchive, then -WalArchive with no standby (SRS REL-02)'
+    $noArchive = "-Port 5432 -PostgresSuperuser $superuser -NoWalArchive"
+    Assert ((Invoke-DeployScript 'Enable-HC360Replication.ps1' $noArchive $superuserSecret) -eq 0) '-NoWalArchive runs to the end'
+    Assert ((Invoke-Sql 5432 'SHOW archive_mode') -eq 'off') 'PostgreSQL archives no more'
+    Assert ((Invoke-Sql 5432 "SELECT count(*) FROM pg_hba_file_rules WHERE 'replication' = ANY (database)") -eq '0' -and (Invoke-Sql 5432 "SELECT count(*) FROM pg_roles WHERE rolname = 'hc360_basebackup'") -eq '0' -and (Invoke-Sql 5432 "SELECT count(*) FROM pg_ident_file_mappings WHERE map_name = 'hc360_basebackup'") -eq '0') 'and the base backup account, its rules and its mapping are gone'
+    $archiveAlone = Join-Path $work 'wal-archive-alone'
+    Assert ((Invoke-DeployScript 'Enable-HC360Replication.ps1' "-WalArchive -WalArchiveDirectory '$archiveAlone' -Port 5432 -PostgresSuperuser $superuser -HC360ServiceAccount '$runner'" $superuserSecret) -eq 0) '-WalArchive with no standby runs to the end'
+    Assert ((Invoke-Sql 5432 'SHOW archive_mode') -eq 'on' -and @(Get-ChildItem -LiteralPath $archiveAlone -File | Where-Object { $_.Name -match '^[0-9A-F]{24}$' }).Count -ge 1) 'PostgreSQL archives the WAL to the folder'
+    Assert ((@(Invoke-Sql 5432 $replicationRules) -join '; ') -eq $baseBackupRules) 'pg_hba.conf takes the base backup account alone, from this machine'
+    Assert ((Invoke-Sql 5432 "SELECT count(*) FROM pg_roles WHERE rolname = 'hc360_replicator'") -eq '0' -and (Invoke-Sql 5432 "SELECT count(*) FROM pg_replication_slots WHERE slot_name LIKE 'hc360%'") -eq '0' -and -not (Get-NetFirewallRule -Group 'HyFib HealthCare360 replication' -ErrorAction SilentlyContinue)) 'and nothing of a standby: no replication account, slot or firewall rule'
+    Assert ((Invoke-Sql 5432 'SHOW listen_addresses') -eq 'localhost' -and (Invoke-Sql 5432 'SHOW ssl') -eq 'off') 'PostgreSQL still listens on localhost only, without TLS'
+    Assert ((Test-SignIn 'host=localhost port=5432 user=hc360_basebackup dbname=replication replication=true' 'IDENTIFY_SYSTEM' '') -eq 0) 'HC360''s base backups sign in as before'
+    $folderAcl = Get-Acl -LiteralPath $archiveAlone
+    $folderReaders = @($folderAcl.Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } | Sort-Object -Unique)
+    $runnerSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    Assert ($folderAcl.AreAccessRulesProtected -and -not @($folderReaders | Where-Object { $_ -notin @('S-1-5-18', 'S-1-5-32-544', $serviceSid, $runnerSid) })) "the archive folder opens to SYSTEM, Administrators, PostgreSQL's account and HC360's alone (found: $($folderReaders -join ', '))"
+    Assert ((Invoke-DeployScript 'Enable-HC360Replication.ps1' $noArchive $superuserSecret) -eq 0 -and (Invoke-Sql 5432 'SHOW archive_mode') -eq 'off') '-NoWalArchive turns it off again'
 }
 finally {
     # Whatever failed, the runner's PostgreSQL is left as it was, and the standby removed.
@@ -244,10 +276,12 @@ finally {
     Get-NetFirewallRule -Group 'HyFib HealthCare360 replication' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     # pg_hba.conf first: each new connection reads it on Windows, so the statements below can sign in again.
     [System.IO.File]::WriteAllBytes($primary.HbaFile, $hbaBefore)
+    if ($null -ne $identBefore) { [System.IO.File]::WriteAllBytes($primary.IdentFile, $identBefore) }
     try {
         $null = Invoke-Sql 5432 "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'hc360_standby' AND NOT active"
         $null = Invoke-Sql 5432 'DROP TABLE IF EXISTS hc360_standby_ci'
         $null = Invoke-Sql 5432 'DROP ROLE IF EXISTS hc360_replicator'
+        $null = Invoke-Sql 5432 'DROP ROLE IF EXISTS hc360_basebackup'
         foreach ($setting in 'listen_addresses', 'ssl', 'ssl_cert_file', 'ssl_key_file', 'archive_mode', 'archive_command', 'archive_timeout', 'max_slot_wal_keep_size') {
             $null = Invoke-Sql 5432 "ALTER SYSTEM RESET $setting"
         }

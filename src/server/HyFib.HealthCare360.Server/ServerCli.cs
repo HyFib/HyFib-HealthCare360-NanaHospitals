@@ -49,6 +49,12 @@ internal static class ServerCli
               machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order. A machine without a recovery
               key of its own, such as new hardware, goes on backing up with the key the backup was opened with.
 
+          backup decrypt-base --in <hc360-base-....hc360base> --out <new folder> [--key <recovery-key>]
+              Checks a base backup in full and writes the files pg_basebackup made (base.tar.gz, pg_wal.tar.gz,
+              backup_manifest) into a new folder, for a restore to a point in time with the WAL archived since
+              (docs/deployment/DEPLOYMENT.md, "A restore to a point in time"). Nothing else changes. It opens with the
+              recovery key that was current when it was made, as the nightly backups of the time do.
+
         The recovery key that opens a backup is the one that was current when the backup was made. A new key is shown once,
         when it is made in Administration > Backups > Recovery key, as 14 groups of 4 letters and digits; keep each one
         offline for as long as backups made with it are kept. The Backups list, and this tool when it is given another key,
@@ -178,6 +184,8 @@ internal static class ServerCli
                 ["backup", "verify", ..] when options.ContainsKey("in") => await VerifyAsync(options),
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
+                ["backup", "decrypt-base", ..] when options.ContainsKey("in") && options.ContainsKey("out") =>
+                    await PointInTimeCli.DecryptBaseAsync(options["in"], options["out"], () => ReadRecoveryKey(options)),
                 ["audit", "verify-export", ..] when options.ContainsKey("in") => AuditCli.VerifyExport(options["in"], options.GetValueOrDefault("anchors")),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
                 ["loadtest", "patients", ..] when options.ContainsKey("count") => await LoadTestCli.AddPatientsAsync(options["count"]),
