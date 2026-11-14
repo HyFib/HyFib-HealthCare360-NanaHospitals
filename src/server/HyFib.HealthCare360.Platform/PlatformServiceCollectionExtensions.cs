@@ -507,6 +507,7 @@ public static class PlatformServiceCollectionExtensions
         NumberSeriesEndpoints.Map(endpoints);
         PrintTemplateEndpoints.Map(endpoints);
         NotificationEndpoints.Map(endpoints);
+        OutboxHoldEndpoints.Map(endpoints);
         ApprovalEndpoints.Map(endpoints);
         RecordHistoryEndpoints.Map(endpoints);
         FileEndpoints.Map(endpoints);

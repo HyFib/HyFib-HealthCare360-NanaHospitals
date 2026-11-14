@@ -6,9 +6,18 @@ namespace HyFib.HealthCare360.Platform.Integrations;
 
 public sealed record SendResult(bool Success, string? ProviderMessageId = null, string? Error = null)
 {
+    /// <summary>
+    /// The send failed for want of an answer: the provider could not be reached, or did not answer in time. The outbox
+    /// counts these towards the provider's cool-down (<see cref="Messaging.ProviderUnreachableException"/>).
+    /// </summary>
+    public bool ProviderUnreachable { get; init; }
+
     public static SendResult Ok(string? providerMessageId = null) => new(true, providerMessageId);
 
     public static SendResult Fail(string error) => new(false, null, error);
+
+    /// <summary>A failure for want of an answer (<see cref="ProviderUnreachable"/>).</summary>
+    public static SendResult Unreachable(string error) => new(false, null, error) { ProviderUnreachable = true };
 }
 
 // ---------- SMS ----------

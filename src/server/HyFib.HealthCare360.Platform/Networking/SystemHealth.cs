@@ -55,7 +55,11 @@ public sealed record StorageInfo(string DataDirectory, long? FreeBytes, long? To
 
 public sealed record BackupInfo(bool Enabled, DateTimeOffset? LastSuccessAt, DateTimeOffset? LastFailureAt, string? LastError, long? LastSizeBytes);
 
-public sealed record OutboxInfo(int Pending, int FailedLast24Hours, DateTimeOffset? OldestPendingAt);
+/// <param name="ExpiredLast24Hours">Messages whose time was up before they could be tried, in the last day (<see cref="SystemHealthOutbox"/>).</param>
+/// <param name="Hold">While outgoing messages are held after a restore, the hold (<see cref="OutboxHold"/>); else null.</param>
+/// <param name="HeldMessages">How many messages the hold holds: those on the internet lane queued before it began.</param>
+public sealed record OutboxInfo(
+    int Pending, int FailedLast24Hours, DateTimeOffset? OldestPendingAt, int ExpiredLast24Hours = 0, OutboxHold? Hold = null, int HeldMessages = 0);
 
 /// <summary>
 /// The hospital CA and the server certificate it issued. <see cref="CaExpiresAt"/> is null with an administrator-supplied
@@ -156,6 +160,7 @@ public sealed class SystemHealthService(
     ServerClock clock,
     IAdministrationDesktops administrationDesktops,
     ISettingsService settings,
+    IEnumerable<IOutboxHandler> outboxHandlers,
     TimeProvider time,
     JobLeadership? jobs = null)
 {
@@ -197,14 +202,7 @@ public sealed class SystemHealthService(
         var database = await ReadDatabaseAsync(ct);
         var backup = await ReadBackupAsync(ct);
 
-        var dayAgo = now.AddDays(-1);
-        var outbox = new OutboxInfo(
-            await db.Set<OutboxMessage>().CountAsync(m => m.Status == OutboxStatus.Pending, ct),
-            // When it failed, not when it was queued: a message is retried for up to its lifetime (days) before
-            // it fails.
-            await db.Set<OutboxMessage>()
-                .CountAsync(m => m.Status == OutboxStatus.Failed && (m.ProcessedAt ?? m.CreatedAt) > dayAgo, ct),
-            await db.Set<OutboxMessage>().Where(m => m.Status == OutboxStatus.Pending).OrderBy(m => m.CreatedAt).Select(m => (DateTimeOffset?)m.CreatedAt).FirstOrDefaultAsync(ct));
+        var outbox = await SystemHealthOutbox.ReadAsync(db, settings, outboxHandlers, now, ct);
 
         var integrations = await integrationHealth.ListAsync(ct);
 
@@ -232,17 +230,8 @@ public sealed class SystemHealthService(
             backupWarnings.Add(notCopied);
         }
 
-        var messageWarnings = new List<HealthWarning>();
-        if (outbox.FailedLast24Hours > 0)
-        {
-            messageWarnings.Add(new("outbox.failed", "warning", $"{outbox.FailedLast24Hours} outbound message(s) failed in the last 24 hours."));
-        }
-
-        if (outbox.OldestPendingAt is { } oldest && now - oldest > TimeSpan.FromMinutes(30))
-        {
-            messageWarnings.Add(new("outbox.backlog", "warning", "Outbound messages are queued for more than 30 minutes (internet down?)."));
-        }
-
+        // Held after a restore (how many), ended unsent (failed or expired), or queued for long.
+        var messageWarnings = new List<HealthWarning>(SystemHealthOutbox.Warnings(outbox, now));
         messageWarnings.AddRange(IntegrationWarnings(integrations));
 
         // Whether a critical warning reaches IT at all (audit P2): who it goes to and how, the heartbeat that tells someone

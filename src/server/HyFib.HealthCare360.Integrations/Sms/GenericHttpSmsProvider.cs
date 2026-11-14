@@ -71,7 +71,7 @@ internal sealed class GenericHttpSmsProvider(HttpClient http, IntegrationTrace t
         {
             var error = IntegrationErrors.Describe(ex, "the SMS gateway");
             await trace.LogAsync(IntegrationNames.Sms, Key, "send", false, started, message.Reference, summary, error: error);
-            return SendResult.Fail(error);
+            return IntegrationErrors.Failed(ex, error);
         }
     }
 

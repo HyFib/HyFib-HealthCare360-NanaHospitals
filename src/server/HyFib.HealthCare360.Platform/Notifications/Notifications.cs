@@ -645,6 +645,9 @@ internal abstract class NotificationDeliveryHandler(
 
     public abstract string Type { get; }
 
+    /// <summary>The channel's provider (<see cref="OutboxProviders"/>): on the internet lane, its failures to answer counted together.</summary>
+    public abstract string Provider { get; }
+
     protected HospitalDbContext Db => db;
 
     public async Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
@@ -720,7 +723,10 @@ internal abstract class NotificationDeliveryHandler(
         if (!result.Success)
         {
             logger.LogWarning("Notification {TemplateKey} via {Channel} failed: {Error}", delivery.TemplateKey, delivery.Channel, result.Error);
-            throw new InvalidOperationException(result.Error ?? "Delivery failed.");
+
+            // A provider that did not answer is told apart from one that refused, so the outbox can let it cool down.
+            var error = result.Error ?? "Delivery failed.";
+            throw result.ProviderUnreachable ? new ProviderUnreachableException(error) : new InvalidOperationException(error);
         }
     }
 
@@ -779,6 +785,8 @@ internal sealed class SmsDeliveryHandler(
 {
     public override string Type => NotificationService.SmsType;
 
+    public override string Provider => OutboxProviders.Sms;
+
     protected override Task<SendResult> SendAsync(
         NotificationDelivery delivery, RenderedNotification message, NotificationFile? document, CancellationToken cancellationToken) =>
         sms.SendAsync(new SmsMessage(delivery.To, message.Body, message.Template?.DltTemplateId, null, delivery.LogId.ToString("N"), delivery.FacilityId), cancellationToken);
@@ -790,6 +798,8 @@ internal sealed class WhatsAppDeliveryHandler(
     : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.WhatsAppType;
+
+    public override string Provider => OutboxProviders.WhatsApp;
 
     /// <summary>
     /// A number that replied STOP gets only essential messages on WhatsApp, and reminders and campaigns go only to numbers
@@ -838,6 +848,8 @@ internal sealed class EmailDeliveryHandler(
     : NotificationDeliveryHandler(db, renderer, documents, time, logger)
 {
     public override string Type => NotificationService.EmailType;
+
+    public override string Provider => OutboxProviders.Email;
 
     protected override bool CarriesDocument(NotificationTemplate? template) => true;
 

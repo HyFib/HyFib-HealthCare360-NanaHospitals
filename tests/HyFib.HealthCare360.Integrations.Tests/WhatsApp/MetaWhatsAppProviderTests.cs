@@ -43,6 +43,20 @@ public sealed class MetaWhatsAppProviderTests
 
     private MetaWhatsAppProvider Provider => new(_http.Client(), _tracing.Trace);
 
+    [Fact]
+    public async Task A_graph_api_out_of_reach_is_a_failure_for_want_of_an_answer_and_a_refusal_is_not()
+    {
+        _http.Throw(new HttpRequestException(HttpRequestError.ConnectionError, "No connection could be made."))
+            .Respond(HttpStatusCode.BadRequest, """{"error":{"code":132001,"message":"Template name does not exist in the translation"}}""");
+        var message = new WhatsAppTemplateMessage("+919876543210", "appointment_confirmed", "en", ["Dear Ravi, your appointment is confirmed."], "log-21");
+
+        var unreachable = await Provider.SendTemplateAsync(message, Settings, Secrets, Ct);
+        var refused = await Provider.SendTemplateAsync(message, Settings, Secrets, Ct);
+
+        (unreachable.Success, unreachable.ProviderUnreachable).ShouldBe((false, true));
+        (refused.Success, refused.ProviderUnreachable).ShouldBe((false, false));
+    }
+
     /// <summary>The parameters of the body component of the one template message sent.</summary>
     private JsonElement[] SentBodyParameters() =>
         [.. _http.Requests.ShouldHaveSingleItem().Json().GetProperty("template").GetProperty("components").EnumerateArray()

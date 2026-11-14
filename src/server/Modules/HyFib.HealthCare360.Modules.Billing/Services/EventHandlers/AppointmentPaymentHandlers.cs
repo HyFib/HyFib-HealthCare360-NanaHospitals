@@ -61,6 +61,9 @@ internal sealed class AppointmentPrepaymentOutboxHandler(AdvanceService advances
 {
     public string Type => AdvanceService.PrepaymentMessage;
 
+    /// <summary>Receipts and refund requests in the database, approvers told in the app: nothing goes to the gateway.</summary>
+    public OutboxLane Lane => OutboxLane.Local;
+
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken) =>
         advances.SyncAppointmentAsync(message.Read<AppointmentPrepayment>(), cancellationToken);
 }
