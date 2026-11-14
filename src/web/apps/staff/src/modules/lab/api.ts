@@ -113,6 +113,7 @@ export const UNMATCHED_REASONS = [
   'DiffersFromVerified',
   'InvalidValue',
   'RepeatedInMessage',
+  'Withdrawn',
   'PatientMismatch',
 ] as const;
 export type UnmatchedResultReason = (typeof UNMATCHED_REASONS)[number];

@@ -42,7 +42,9 @@ public sealed record AlertReport(
 /// those whose warning has gone, and takes each open one a step further (<see cref="AlertEscalation.Next"/>): told in the
 /// app and to IT on-call, escalated to the second contact and then HyFib support while nobody acknowledges it, and told
 /// again a day later while it lasts. Each step is decided from what the incident records, under one lock across the
-/// servers, so a restart, a missed check or a second server neither repeats nor skips one.
+/// servers, so a restart, a missed check or a second server neither repeats nor skips one. The alert of a server that had
+/// stopped reporting is over when it reports again, and everyone it reached is told so, by the same messages
+/// (<see cref="IsBack"/>).
 /// </summary>
 public sealed class AlertIncidents(
     HospitalDbContext db, IAuditLogger audit, ICurrentUser user, TimeProvider time, INotificationService notifications, ISettingsService settings)
@@ -53,28 +55,59 @@ public sealed class AlertIncidents(
     /// <summary>How many of the alerts that cleared the report lists, the latest first.</summary>
     public const int Listed = 500;
 
+    /// <summary>
+    /// Why a message of a server's alert for not reporting, not sent yet when the server reports again, is withdrawn: the
+    /// alert of its return says both when it was not reporting and when it was again, so the two never arrive the wrong way
+    /// round.
+    /// </summary>
+    internal const string WithdrawnBecauseBack =
+        "Withdrawn: the server was reporting again before this alert went. The alert of its return says when it was not reporting and when it was again.";
+
+    /// <summary>
+    /// Why the alert of a server's return, not sent yet when the server stops reporting again, is withdrawn: it is no
+    /// longer true, and it would reach the phone around the new alert that says so.
+    /// </summary>
+    internal const string WithdrawnBecauseSilentAgain =
+        "Withdrawn: the server had stopped reporting again before this went. The new alert says so.";
+
     private const string Entity = "AlertIncident";
 
     /// <summary>
     /// One check against the critical warnings at <paramref name="now"/> (the alerts' own clock): opens and closes incidents,
     /// and takes the step each open one is due. Returns the warnings told in the app and to IT on-call, first or again.
     /// </summary>
-    internal async Task<IReadOnlyList<HealthWarning>> CheckAsync(IReadOnlyList<HealthWarning> critical, DateTimeOffset now, CancellationToken ct)
+    /// <param name="reporting">
+    /// With several servers (SCAL-01), the names of those that report now: a server whose alert for not reporting clears is
+    /// back only if it is among them. Null on a single Server Node, where none is told back.
+    /// </param>
+    internal async Task<IReadOnlyList<HealthWarning>> CheckAsync(
+        IReadOnlyList<HealthWarning> critical, DateTimeOffset now, IReadOnlyCollection<string>? reporting, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(critical);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await TakeTurnAsync(db, ct);
         var present = critical.GroupBy(Key).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var open = await db.Set<AlertIncident>().Where(i => i.ClearedAt == null).ToListAsync(ct);
+        var back = new List<AlertIncident>();
         foreach (var gone in open.Where(i => !present.ContainsKey(Key(i))))
         {
             gone.ClearedAt = now;
+            if (IsBack(gone, reporting))
+            {
+                back.Add(gone);
+            }
         }
 
         var current = new List<(AlertIncident Incident, HealthWarning Warning)>();
         foreach (var (key, warning) in present)
         {
-            current.Add((open.FirstOrDefault(i => Key(i) == key) ?? Raise(warning, now), warning));
+            if (open.FirstOrDefault(i => Key(i) == key) is not { } incident)
+            {
+                incident = Raise(warning, now);
+                await WithdrawUnsentReturnAsync(incident, ct);
+            }
+
+            current.Add((incident, warning));
         }
 
         var escalation = await AlertEscalation.ReadAsync(settings, ct);
@@ -119,6 +152,28 @@ public sealed class AlertIncidents(
                         $"Not acknowledged at the hospital {Minutes(incident, now)} min after it was told: {warning.Message}")];
                     Audit(incident, escalation.SupportPhone!, "HyFib support", now);
                     break;
+            }
+        }
+
+        // Back: everyone the alert reached is told it is over, by the same messages, queued in this transaction with the
+        // alert's clearing, so that it goes once. Its messages not sent yet are withdrawn: the outbox sends what is due
+        // first, and one of them tried again after a failure would reach the phone after the return.
+        foreach (var incident in back)
+        {
+            await NotificationLogs.WithdrawAsync(db, AllMessageIds(incident), WithdrawnBecauseBack, ct);
+            var message = BackMessage(incident.Server, incident.ToldAt!.Value, now);
+            await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, SystemHealthAlerts.BackTitle,
+                Body(message, incident.Server), "/admin/system", "system", "info", ct);
+            incident.OnCallMessageIds = [.. incident.OnCallMessageIds, .. QueueOnCall(onCall, incident.Server, message)];
+            if (incident.SecondContactAt is not null && escalation.SecondContactPhone is { } secondContact)
+            {
+                incident.SecondContactMessageIds = [.. incident.SecondContactMessageIds, .. Page(secondContact, "Second contact", incident.Server, message)];
+            }
+
+            if (incident.SupportAt is not null && escalation.SupportPhone is { } support)
+            {
+                hospital ??= await HospitalAsync(ct);
+                incident.SupportMessageIds = [.. incident.SupportMessageIds, .. Page(support, "HyFib support", $"{hospital}, {incident.Server}", message)];
             }
         }
 
@@ -215,6 +270,27 @@ public sealed class AlertIncidents(
     }
 
     /// <summary>
+    /// Acknowledges the open alert of a server that stopped reporting, as someone removes it from System health
+    /// (<see cref="ServerRemoval"/>): they are on it, so nobody further is paged, and the alerts report says who. Its warning
+    /// goes with the server, and the alert clears at the next check without a word: the server is gone, not back. Saved with
+    /// the caller's changes, in its transaction, which holds the alerts' turn.
+    /// </summary>
+    internal static async Task AcknowledgeRemovedServerAsync(
+        HospitalDbContext db, IAuditLogger audit, ICurrentUser user, TimeProvider time, string server, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        ArgumentNullException.ThrowIfNull(time);
+        var key = Clip(server, AlertIncident.ServerLength);
+        var open = await db.Set<AlertIncident>()
+            .Where(i => i.Code == SystemHealthService.NotReportingCode && i.Server == key && i.ClearedAt == null && i.AcknowledgedAt == null)
+            .ToListAsync(ct);
+        foreach (var incident in open)
+        {
+            Acknowledge(audit, user, incident, time.GetUtcNow());
+        }
+    }
+
+    /// <summary>
     /// Whether a message in this state has reached someone or may still: queued, sent or delivered. One that failed (its
     /// last attempt, though the outbox may try again), was skipped or was suppressed (the number opted out of WhatsApp)
     /// has not, and a critical alert does not wait on the retries.
@@ -225,6 +301,36 @@ public sealed class AlertIncidents(
     /// <summary>The nearest-rank percentile of <paramref name="sorted"/>; null when it is empty.</summary>
     internal static double? Percentile(IReadOnlyList<double> sorted, double p) =>
         sorted.Count == 0 ? null : sorted[Math.Clamp((int)Math.Ceiling(p * sorted.Count) - 1, 0, sorted.Count - 1)];
+
+    /// <summary>
+    /// Whether an alert that cleared was told for a server that had stopped reporting
+    /// (<see cref="SystemHealthService.NotReportingCode"/>) and reports again: it is among <paramref name="reporting"/>.
+    /// Its warning also goes when the server is stopped on purpose, which removes it from the servers, and when someone
+    /// removes it from System health (<see cref="ServerRemoval"/>); neither is back, and nobody is told so.
+    /// </summary>
+    internal static bool IsBack(AlertIncident incident, IReadOnlyCollection<string>? reporting)
+    {
+        ArgumentNullException.ThrowIfNull(incident);
+        return incident.Code == SystemHealthService.NotReportingCode
+            && incident.ToldAt is not null
+            && reporting is not null
+            && reporting.Any(name => string.Equals(Clip(name, AlertIncident.ServerLength), incident.Server, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// What the alert of a server's return says: that it reports again, which it does only while it is on, its HC360Server
+    /// service runs and it reaches the database; and when it was not reporting (its alert went) and when it was again, in
+    /// the hospital's time, with the day when they differ. It says both, so it stands alone when the alert of its silence
+    /// was withdrawn before it went.
+    /// </summary>
+    internal static string BackMessage(string server, DateTimeOffset toldAt, DateTimeOffset backAt)
+    {
+        var told = TimeZoneInfo.ConvertTime(toldAt, HospitalTimeZone.Zone);
+        var back = TimeZoneInfo.ConvertTime(backAt, HospitalTimeZone.Zone);
+        var format = told.Date == back.Date ? "HH:mm" : "d MMM HH:mm";
+        return $"{server} is reporting again: it is on, its HC360Server service runs and it reaches the database. "
+            + $"Not reporting at {told.ToString(format, CultureInfo.InvariantCulture)}, reporting again at {back.ToString(format, CultureInfo.InvariantCulture)}.";
+    }
 
     private static void Acknowledge(IAuditLogger audit, ICurrentUser user, AlertIncident incident, DateTimeOffset now)
     {
@@ -260,15 +366,45 @@ public sealed class AlertIncidents(
     {
         await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, SystemHealthAlerts.Title, Body(warning.Message, warning.Server),
             "/admin/system", "system", "critical", ct);
+        return QueueOnCall(onCall, warning.Server ?? Environment.MachineName, warning.Message);
+    }
 
-        // Tried through an internet outage until the reminder after it is due, which takes its place while the warning
-        // lasts: the outage ends with one message, not one for every day it lasted.
-        return string.IsNullOrWhiteSpace(onCall.Phone)
+    /// <summary>
+    /// To IT on-call by SMS (and WhatsApp where chosen); nothing when no number is set. Tried through an internet outage
+    /// until the reminder after it is due, which takes its place while the warning lasts: the outage ends with one message,
+    /// not one for every day it lasted.
+    /// </summary>
+    private IReadOnlyList<Guid> QueueOnCall(OnCallAlerts onCall, string server, string message) =>
+        string.IsNullOrWhiteSpace(onCall.Phone)
             ? []
             : notifications.Queue(AlertReadiness.AlertTemplate, new NotificationRecipient(Phone.Normalize(onCall.Phone), null, null, "IT on-call"),
-                new Dictionary<string, string> { ["server"] = warning.Server ?? Environment.MachineName, ["message"] = warning.Message },
+                new Dictionary<string, string> { ["server"] = server, ["message"] = message },
                 onCall.WhatsApp ? [NotificationChannel.Sms, NotificationChannel.WhatsApp] : [NotificationChannel.Sms], SystemHealthAlerts.RemindAfter);
+
+    /// <summary>
+    /// A server's alert for not reporting raised again: the alert of its last return, if it has not gone yet, is withdrawn,
+    /// so that "reporting again" never reaches a phone after the new alert that it is not. Its other messages not sent by
+    /// then are withdrawn with it: the new alert takes their place.
+    /// </summary>
+    private async Task WithdrawUnsentReturnAsync(AlertIncident raised, CancellationToken ct)
+    {
+        if (raised.Code != SystemHealthService.NotReportingCode)
+        {
+            return;
+        }
+
+        var last = await db.Set<AlertIncident>().AsNoTracking()
+            .Where(i => i.Code == raised.Code && i.Server == raised.Server && i.ClearedAt != null)
+            .OrderByDescending(i => i.ClearedAt)
+            .FirstOrDefaultAsync(ct);
+        if (last is not null)
+        {
+            await NotificationLogs.WithdrawAsync(db, AllMessageIds(last), WithdrawnBecauseSilentAgain, ct);
+        }
     }
+
+    private static List<Guid> AllMessageIds(AlertIncident incident) =>
+        [.. incident.OnCallMessageIds, .. incident.SecondContactMessageIds, .. incident.SupportMessageIds];
 
     /// <summary>An escalation, by SMS with the same DLT-registered template, so it needs no registration of its own.</summary>
     private IReadOnlyList<Guid> Page(string phone, string name, string server, string message) =>

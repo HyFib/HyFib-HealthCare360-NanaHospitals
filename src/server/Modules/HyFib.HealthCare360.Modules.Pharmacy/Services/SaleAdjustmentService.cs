@@ -38,7 +38,9 @@ public sealed class SaleAdjustmentService(
     StockService stock,
     ControlledDrugRegisterService register,
     IEInvoiceRegister einvoices,
+    IEInvoiceQueue einvoiceQueue,
     CashLimit cashLimit,
+    ICounterTerminal terminal,
     IApprovals approvals,
     IOutbox outbox,
     IAuditLogger audit,
@@ -74,9 +76,15 @@ public sealed class SaleAdjustmentService(
             return cash;
         }
 
-        var collected = sale.CollectPayment(request.Mode, request.Amount, request.Reference, time.GetUtcNow(), currentUser.UserId);
+        var collected = sale.CollectPayment(request.Mode, request.Amount, request.Reference, time.GetUtcNow(), currentUser.UserId, request.TerminalSaleId);
         if (collected.IsSuccess)
         {
+            var terminalPaid = await PharmacyTerminalPayments.UseAsync(terminal, sale, [sale.Payments[^1]], ct);
+            if (terminalPaid.IsFailure)
+            {
+                return terminalPaid;
+            }
+
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
         }
@@ -422,6 +430,13 @@ public sealed class SaleAdjustmentService(
         saleReturn.RefundMode = main?.Mode ?? PaymentMode.Cash;
         saleReturn.RefundReference = main?.Reference;
         db.Add(saleReturn);
+        var returnedOn = HospitalClock.ToLocalDate(now);
+        if (sale.BuyerGstin is not null && returnedOn <= GstCreditNotes.LastDay(HospitalClock.ToLocalDate(sale.SoldAt)))
+        {
+            // The return of a B2B sale is a credit note, an e-invoice too (GST rule 48(4)): its IRN is asked for once it is made.
+            await einvoiceQueue.QueueAsync(PharmacyReturnEInvoiceSource.Key, saleReturn.Id, saleReturn.FacilityId, returnedOn, ct);
+        }
+
         await RecordRegisterAsync(sale, restocked, StockMovementType.Return, inward: true, reference, now, ct);
         await RecordRegisterAsync(sale, cameBack, StockMovementType.Return, inward: true, writeOff, now, ct);
         foreach (var group in writtenOff.GroupBy(w => w.Type))

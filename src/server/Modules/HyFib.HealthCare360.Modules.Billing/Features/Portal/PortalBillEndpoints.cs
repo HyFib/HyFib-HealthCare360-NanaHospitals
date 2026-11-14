@@ -95,7 +95,7 @@ internal static class PortalBillEndpoints
     /// <summary>The bill as a PDF: the same A4 document the counter prints, for the bills the patient can see above.</summary>
     private static async Task<IResult> Pdf(
         Guid id, PortalPatientScope scope, HospitalDbContext db, DocumentAssets assets, IPdfRenderer renderer, IAuditLogger audit, TimeProvider time, HttpContext http,
-        CancellationToken ct)
+        IEInvoiceRegister einvoices, CancellationToken ct)
     {
         var bill = await FindVisibleAsync(db, scope, id, ct);
         if (bill.IsFailure)
@@ -103,7 +103,7 @@ internal static class PortalBillEndpoints
             return bill.Error!.ToProblem();
         }
 
-        var detail = await BillQueries.DetailAsync(db, id, time, ct);
+        var detail = await BillQueries.DetailAsync(db, id, time, einvoices, ct);
         if (detail is null)
         {
             return Error.NotFound(nameof(Bill), id).ToProblem();

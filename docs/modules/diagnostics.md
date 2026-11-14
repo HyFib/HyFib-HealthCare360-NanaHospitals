@@ -130,7 +130,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?status&search` | results.enter or results.verify | → `PagedResult<UnmatchedResultDto>` (analyser, sample barcode as sent, the tube and patient when known, the result it was for, channel, value, the analyser's unit, flags, status and comment, resulted and received times, reason, detail, status, who resolved it and how), newest first; `status` Open (default), Assigned or Discarded; `search` is a sample barcode, an analyser code or a channel code |
-| POST | `/{id}/assign` | `lab.results.enter` | `AssignUnmatchedResultRequest` (resultId) → 204; the value is entered on that result as an analyser's, never auto-validated; 422 `lab.result_verified` (a pathologist reopens it first), `lab.unmatched_value_invalid`, `lab.unmatched_resolved`, or the result entry refusals (`lab.item_cancelled`, `lab.result_released`, `lab.sample_not_in_lab`); audited `lab.unmatched.assigned` |
+| POST | `/{id}/assign` | `lab.results.enter` | `AssignUnmatchedResultRequest` (resultId) → 204; the value is entered on that result as an analyser's, never auto-validated; 422 `lab.result_verified` (a pathologist reopens it first), `lab.unmatched_value_invalid`, `lab.unmatched_resolved`, `lab.unmatched_withdrawn` (the analyser's withdrawal of a verified result, which is only discarded), or the result entry refusals (`lab.item_cancelled`, `lab.result_released`, `lab.sample_not_in_lab`); audited `lab.unmatched.assigned` |
 | POST | `/{id}/discard` | `lab.results.enter` | `DiscardUnmatchedResultRequest` (reason, 5 to 300 characters) → 204; 422 `lab.unmatched_resolved`; audited `lab.unmatched.discarded` |
 
 ### Reports — `/api/v1/lab/reports`
@@ -408,7 +408,11 @@ diagnostics screen.
 * **Critical values**: verifying a critical result (or signing a critical imaging/cardiology finding) requires a
   documented call with read-back (`CriticalCallLog`). The ordering doctor gets the `lab.critical` /
   `diagnostics.critical_finding` SMS in the same transaction, plus in-app alerts to the doctor's user and to holders of
-  `diagnostics.critical.alerts` after commit. Critical results are never auto-validated.
+  `diagnostics.critical.alerts` after commit. Critical results are never auto-validated. An analyser result the analyser
+  flagged critical (`HH`, `LL` or `AA`, HL7 OBX-8 or ASTM R.7) that is kept among the unmatched results is on no test,
+  so no pathologist hears of it: holders of `lab.results.enter` are told to match it now, with the analyser, sample id
+  and channel, through the outbox in the transaction that keeps it (once, as a resend keeps nothing more). A failed
+  look-up of the patient for an alert after commit sends the alert without the name; it never fails the caller.
 * **Release**: tests are released as soon as they are verified (a CBC is not held back by a culture); the report is
   "Released" and `isPartial` while other tests are pending. Each released test raises `DiagnosticReportReleased` with
   the clinical `OrderItemId`. The QR code is assigned at first release. Corrections after release are numbered
@@ -634,7 +638,18 @@ acknowledged:
 | `DiffersFromVerified` | The test is verified and the analyser sent another value, or the same value with another unit, flags, status or comment (a correction, status `C`), or for a result typed in or from another analyser. Only the reading on the test sent again (after a lost acknowledgement) changes nothing |
 | `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers, nor one of them as analysers write it) |
 | `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
-| `PatientMismatch` | The analyser named another patient for the sample than the tube's: another registered patient's UHID, or no UHID to go by and a name that cannot be the tube patient's (see *Patient identity check*). Every result of the message is kept, and nothing of the tube changes |
+| `Withdrawn` | The analyser withdrew its result (HL7 OBX-11 `W` posted in error, `D` deleted) for a test verified, or released, with its value: the result stands until a person checks it, and reopens or amends it. Never assigned to a test, only discarded |
+| `PatientMismatch` | The analyser named another patient for the sample than the tube's: another registered patient's UHID, or no UHID to go by and a name that cannot be the tube patient's (see *Patient identity check*). Every value of the message is kept, and nothing of the tube changes, not even what the message withdraws |
+
+**Withdrawn results and results not obtained.** The gateway passes on what an analyser says of a test instead of a
+value (`InstrumentResult.Kind`, read from the protocol's status: HL7 OBX-11 `W` and `D` withdraw a result, HL7 and ASTM
+`X` could not obtain one; ASTM `W` is a validity warning on a value). A withdrawal clears that analyser's value from a
+test not yet verified: the test is pending again, with "… withdrew its result …: run the test again or enter the result
+by hand" in `heldReasons`, shown under the test on the result sheet, and the audit trail keeps the value. A verified
+value of its own stands, and the withdrawal is kept as `Withdrawn` above; its values kept aside for that sample id on
+that channel are discarded with the reason, so none is assigned. A result not obtained is noted the same way on a test
+not yet verified. Neither is kept aside as a value, and neither changes anything when sent again or when the analyser
+has no value on the test (one typed in, or from another analyser, is left as it is).
 
 The same result sent again for the same sample id (the same channel, value, unit, flags, status, comment and time, as
 stored) is kept once; one differing in any of them is kept too, and results without a sample id are each kept, since
@@ -667,14 +682,17 @@ patient must be able to be the tube's before any result goes on it:
   `R. Sharma`, `Ravi K Sharma` and `Ravi Kumar Sharm` can all be Ravi Kumar Sharma, while `Ravi Verma` and
   `Meera Sharma` cannot. A name that only lacks parts is not another patient's, nor is one with no part to compare
   (another script than the Latin one, digits only).
-* **On a mismatch** every result of the message is kept as `PatientMismatch`, with the tube and its patient on the
+* **On a mismatch** every value of the message is kept as `PatientMismatch`, with the tube and its patient on the
   row and a detail naming whom the analyser sent ("EM360 sent sample 000000123 for patient NAN26000999 (VERMA MEERA),
-  not the sample's patient Ravi Kumar Sharma (NAN26000123)."). Nothing of the tube changes: a collected tube is not
-  received, and no orders go to other analysers. The check comes as soon as the tube is found, before whether it is in
-  the lab, so a misread barcode that lands on a rejected tube shows as the patient mismatch it is. The analyser is
-  acknowledged, a resend is kept once, and the server log gets a warning with the analyser and the barcode only, never
-  the names or ids. A message that names no patient (no PID or P record, or empty ones), or names one who can be the
-  tube's, is taken as before.
+  not the sample's patient Ravi Kumar Sharma (NAN26000123)."); a critical one alerts whoever matches results, as any
+  value kept aside does. Nothing of the tube changes: a collected tube is not received, no orders go to other analysers,
+  and a result the message withdraws or could not obtain is not applied to the tube's tests either, since it may concern
+  another patient's sample (the analyser's values kept aside for that sample id on that channel are still discarded, as
+  the analyser withdrew them). The check comes as soon as the tube is found, before whether it is in the lab, so a
+  misread barcode that lands on a rejected tube shows as the patient mismatch it is. The analyser is acknowledged, a
+  resend is kept once, and the server log gets a warning with the analyser and the barcode only (and the channels of
+  anything withdrawn or not obtained), never the names or ids. A message that names no patient (no PID or P record, or
+  empty ones), or names one who can be the tube's, is taken as before.
 * **Assigning one anyway** (the analyser held stale details, and the tube is right) goes through result entry like
   any unmatched result, and the result waits for a pathologist with a second held reason, "The analyser named another
   patient for the sample:" and the detail, so whoever verifies it sees what was overridden. The audit entry

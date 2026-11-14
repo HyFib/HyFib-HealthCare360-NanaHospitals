@@ -11,17 +11,23 @@ import {
   Input,
   MessageBar,
   MessageBarBody,
+  MessageBarTitle,
   Select,
   Spinner,
   Text,
   Textarea,
 } from '@fluentui/react-components';
-import { ArrowDownloadRegular, DocumentCheckmarkRegular } from '@fluentui/react-icons';
+import {
+  ArrowDownloadRegular,
+  ChevronDownRegular,
+  ChevronRightRegular,
+  DocumentCheckmarkRegular,
+} from '@fluentui/react-icons';
 import { formatDateOnly, formatDateTime, formatInr, todayIso } from '@hc360/core';
 import { DataTable, FilterBar, Page, PageHeader, Section, StatusBadge, useNotify } from '@hc360/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import {
   CANCEL_REASONS,
   documentLabel,
@@ -29,11 +35,13 @@ import {
   einvoiceApi,
   einvoiceKeys,
   einvoiceQueries,
+  irnAnswer,
   irnProblems,
   STATE_LABELS,
   type EInvoiceCancelReason,
   type EInvoiceRow,
   type EInvoiceState,
+  type IrnAction,
 } from '@/modules/billing/einvoiceApi';
 import { RequirePermission } from '@/modules/hr/shared/NoAccess';
 import { gstStateName } from '@/modules/inventory/gst';
@@ -149,6 +157,119 @@ function EInvoicesPage() {
   );
 }
 
+/** A refused record, generate or cancel: what it means in plain words, then the server's own sentence. */
+function IrnAnswerBar({ action, error }: { action: IrnAction; error: unknown }) {
+  const answer = irnAnswer(action, error);
+  return (
+    <MessageBar intent={answer.intent} layout="multiline">
+      <MessageBarBody>
+        <MessageBarTitle>{answer.title}</MessageBarTitle>
+        {answer.detail}
+      </MessageBarBody>
+    </MessageBar>
+  );
+}
+
+/** A way round the dialog's main action, folded away under its button until asked for. */
+function Disclosure({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <>
+      <Button
+        appearance="subtle"
+        icon={open ? <ChevronDownRegular /> : <ChevronRightRegular />}
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((shown) => !shown)}
+        style={{ alignSelf: 'flex-start' }}
+      >
+        {label}
+      </Button>
+      <div
+        id={id}
+        role="group"
+        aria-label={label}
+        hidden={!open}
+        // Indented under the button's words, past its chevron.
+        style={{ display: open ? 'flex' : 'none', flexDirection: 'column', gap: 12, paddingLeft: 38 }}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
+
+/** Why the IRN is cancelled, in the portal's own reasons, and the remark the portal takes with it. */
+function CancelFields({
+  reason,
+  onReason,
+  remark,
+  onRemark,
+}: {
+  reason: EInvoiceCancelReason;
+  onReason: (value: EInvoiceCancelReason) => void;
+  remark: string;
+  onRemark: (value: string) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+      <Field label="Reason">
+        <Select value={reason} onChange={(_, v) => onReason(v.value as EInvoiceCancelReason)}>
+          {CANCEL_REASONS.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field label="Remark" required>
+        <Input value={remark} maxLength={100} onChange={(_, v) => onRemark(v.value)} />
+      </Field>
+    </div>
+  );
+}
+
+/** The JSON to upload on the portal's own screens, and what the portal gives back for it. */
+function HandRecordFields({
+  canDownload,
+  onDownload,
+  ackNo,
+  onAckNo,
+  qr,
+  onQr,
+}: {
+  canDownload: boolean;
+  onDownload: () => void;
+  ackNo: string;
+  onAckNo: (value: string) => void;
+  qr: string;
+  onQr: (value: string) => void;
+}) {
+  return (
+    <>
+      <Button
+        icon={<ArrowDownloadRegular />}
+        disabled={!canDownload}
+        onClick={onDownload}
+        style={{ alignSelf: 'flex-start' }}
+      >
+        Download e-invoice JSON
+      </Button>
+      <Field label="Acknowledgement number" required>
+        <Input value={ackNo} maxLength={20} inputMode="numeric" onChange={(_, v) => onAckNo(v.value)} />
+      </Field>
+      <Field
+        label="Signed QR code"
+        required
+        hint="Paste the SignedQRCode the portal returned. It must name this invoice."
+      >
+        <Textarea value={qr} rows={4} maxLength={8000} onChange={(_, v) => onQr(v.value)} />
+      </Field>
+    </>
+  );
+}
+
 function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => void }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -157,6 +278,8 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
   const [qr, setQr] = useState('');
   const [reason, setReason] = useState<EInvoiceCancelReason>('DataEntryMistake');
   const [remark, setRemark] = useState('');
+  // Read the document again after every answer, a refusal included: what the server holds is what the dialog shows
+  // (an IRN whose answer was lost on the way here and is now recorded, a cancellation the portal has settled).
   const refresh = () => void queryClient.invalidateQueries({ queryKey: einvoiceKeys.all });
 
   const download = useMutation({
@@ -179,6 +302,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       notify.success('IRN recorded', 'The invoice now prints its IRN and signed QR code.');
       refresh();
     },
+    onError: refresh,
   });
   const generate = useMutation({
     mutationFn: () => einvoiceApi.generate(row.source, row.id),
@@ -186,6 +310,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       notify.success('IRN received', 'The portal registered the document; it now prints its IRN and signed QR code.');
       refresh();
     },
+    onError: refresh,
   });
   const [distance, setDistance] = useState('');
   const [vehicle, setVehicle] = useState('');
@@ -212,6 +337,19 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       notify.success('IRN cancellation recorded', 'Cancel the invoice here and issue a new one with a new number.');
       refresh();
     },
+    onError: refresh,
+  });
+  // Past the 24 hours the same request only asks the portal whether a cancellation made in time went through.
+  const askCancelled = useMutation({
+    mutationFn: (version: number) => einvoiceApi.cancel(row.source, row.id, reason, remark.trim(), version),
+    onSuccess: () => {
+      notify.success(
+        'IRN cancellation recorded',
+        'The portal had cancelled it within the 24 hours. Cancel the invoice here and issue a new one with a new number.',
+      );
+      refresh();
+    },
+    onError: refresh,
   });
 
   const d = detail.data;
@@ -289,11 +427,32 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 {!live && d.state !== 'NotNeeded' && d.portalConnected && (
                   <>
                     <Text>This facility is connected to the e-invoice portal: HC360 asks it for the IRN.</Text>
-                    {generate.error && (
-                      <MessageBar intent="error">
-                        <MessageBarBody>{errorMessage(generate.error, 'The portal gave no IRN.')}</MessageBarBody>
-                      </MessageBar>
-                    )}
+                    {generate.error && <IrnAnswerBar action="generate" error={generate.error} />}
+                    {/* Recording by hand is the way round the portal's API: folded away under the portal's own button. */}
+                    <Disclosure label="Record an IRN generated on the portal">
+                      <Caption1>
+                        When the IRN was generated on the portal&apos;s own screens: upload this JSON there, then enter
+                        what the portal gives back. HC360 checks a recent IRN with the portal before recording it.
+                      </Caption1>
+                      <HandRecordFields
+                        canDownload={d.problems.length === 0 && !download.isPending}
+                        onDownload={() => download.mutate()}
+                        ackNo={ackNo}
+                        onAckNo={setAckNo}
+                        qr={qr}
+                        onQr={setQr}
+                      />
+                      {record.error && <IrnAnswerBar action="record" error={record.error} />}
+                      <Button
+                        icon={<DocumentCheckmarkRegular />}
+                        disabled={problems.length > 0 || record.isPending}
+                        title={problems.join(' ')}
+                        onClick={() => record.mutate()}
+                        style={{ alignSelf: 'flex-start' }}
+                      >
+                        Record IRN
+                      </Button>
+                    </Disclosure>
                   </>
                 )}
                 {live && d.ewayBillNeeded && !registration.ewbNo && (
@@ -328,29 +487,15 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 )}
                 {!live && d.state !== 'NotNeeded' && !d.portalConnected && (
                   <>
-                    <Button
-                      icon={<ArrowDownloadRegular />}
-                      disabled={d.problems.length > 0 || download.isPending}
-                      onClick={() => download.mutate()}
-                      style={{ alignSelf: 'flex-start' }}
-                    >
-                      Download e-invoice JSON
-                    </Button>
-                    <Field label="Acknowledgement number" required>
-                      <Input value={ackNo} maxLength={20} inputMode="numeric" onChange={(_, v) => setAckNo(v.value)} />
-                    </Field>
-                    <Field
-                      label="Signed QR code"
-                      required
-                      hint="Paste the SignedQRCode the portal returned. It must name this invoice."
-                    >
-                      <Textarea value={qr} rows={4} maxLength={8000} onChange={(_, v) => setQr(v.value)} />
-                    </Field>
-                    {record.error && (
-                      <MessageBar intent="error">
-                        <MessageBarBody>{errorMessage(record.error, 'The IRN could not be recorded.')}</MessageBarBody>
-                      </MessageBar>
-                    )}
+                    <HandRecordFields
+                      canDownload={d.problems.length === 0 && !download.isPending}
+                      onDownload={() => download.mutate()}
+                      ackNo={ackNo}
+                      onAckNo={setAckNo}
+                      qr={qr}
+                      onQr={setQr}
+                    />
+                    {record.error && <IrnAnswerBar action="record" error={record.error} />}
                   </>
                 )}
                 {live && registration.canCancel && (
@@ -361,33 +506,34 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                         ? 'HC360 cancels it on the portal and records it.'
                         : 'Cancel it there first, then record it here.'}
                     </Caption1>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
-                      <Field label="Reason">
-                        <Select value={reason} onChange={(_, v) => setReason(v.value as EInvoiceCancelReason)}>
-                          {CANCEL_REASONS.map((r) => (
-                            <option key={r.value} value={r.value}>
-                              {r.label}
-                            </option>
-                          ))}
-                        </Select>
-                      </Field>
-                      <Field label="Remark" required>
-                        <Input value={remark} maxLength={100} onChange={(_, v) => setRemark(v.value)} />
-                      </Field>
-                    </div>
-                    {cancel.error && (
-                      <MessageBar intent="error">
-                        <MessageBarBody>
-                          {errorMessage(cancel.error, 'The cancellation could not be recorded.')}
-                        </MessageBarBody>
-                      </MessageBar>
-                    )}
+                    <CancelFields reason={reason} onReason={setReason} remark={remark} onRemark={setRemark} />
+                    {cancel.error && <IrnAnswerBar action="cancel" error={cancel.error} />}
                   </>
                 )}
                 {live && !registration.canCancel && (
-                  <Caption1>
-                    More than 24 hours have passed: the IRN stays, and a credit note undoes the invoice.
-                  </Caption1>
+                  <>
+                    <Caption1>
+                      More than 24 hours have passed: the IRN stays, and a credit note undoes the invoice.
+                    </Caption1>
+                    {/* A cancellation made in time whose answer was lost: the portal still says whether it went through. */}
+                    {d.portalConnected && (
+                      <Disclosure label="Ask the portal whether it was cancelled">
+                        <Caption1>
+                          A cancellation made on the portal within the 24 hours, whose answer was lost, is recorded here
+                          once the portal confirms it. Give the reason and remark it was made with.
+                        </Caption1>
+                        <CancelFields reason={reason} onReason={setReason} remark={remark} onRemark={setRemark} />
+                        {askCancelled.error && <IrnAnswerBar action="askCancelled" error={askCancelled.error} />}
+                        <Button
+                          disabled={!remark.trim() || askCancelled.isPending}
+                          onClick={() => askCancelled.mutate(registration.version)}
+                          style={{ alignSelf: 'flex-start' }}
+                        >
+                          Ask the portal
+                        </Button>
+                      </Disclosure>
+                    )}
+                  </>
                 )}
               </>
             )}

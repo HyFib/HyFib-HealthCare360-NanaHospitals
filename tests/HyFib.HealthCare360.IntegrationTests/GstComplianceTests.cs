@@ -30,7 +30,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// <summary>
 /// GST compliance over the real API, with the Invoice Registration Portal's training simulator: the register asks the
 /// portal for a bill's IRN and records the signed QR code it answers (once, however often it asks); the portal cancels an
-/// IRN only within 24 hours; a pharmacy B2B invoice above the threshold gets its e-way bill from its IRN; a debit note
+/// IRN only within 24 hours; a pharmacy B2B invoice above the threshold gets its e-way bill from its IRN, once, its lost
+/// answer read back from the portal; a debit note
 /// raises a corporate's bill and is a DBN e-invoice; a payer credit note credits the GST of what the payer disallowed;
 /// GSTR-1 lists them; and a GST invoice series refuses a format longer than 16 characters.
 /// </summary>
@@ -49,15 +50,17 @@ public sealed class GstComplianceTests(HospitalServer server)
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
 
-        // Not connected: the IRN is asked for nowhere, and the hospital is told to upload the JSON by hand.
+        // Not connected: the IRN is asked for nowhere (the request queued as the bill was finalized ends there), and the
+        // hospital is told to upload the JSON by hand.
         var first = await BillAsync(company, service);
-        await using (await PortalAsync(enabled: false))
+        await server.EInvoiceQueueSettledAsync(first.Id, Ct);
+        await using (await server.IrpPortalAsync(enabled: false))
         {
             using var off = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{first.Id}/irn/generate");
             (await CodeAsync(off)).ShouldBe("einvoice.irp_not_connected");
         }
 
-        await using var portal = await PortalAsync(enabled: true);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
         (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}")).PortalConnected.ShouldBeTrue();
         var registered = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}/irn/generate");
         registered.State.ShouldBe(EInvoiceState.Registered);
@@ -78,7 +81,7 @@ public sealed class GstComplianceTests(HospitalServer server)
 
         // A day and an hour later the portal no longer cancels it: a credit note undoes the invoice instead.
         var late = await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}");
-        await BackdateAsync(irn.Irn, TimeSpan.FromHours(25));
+        await server.BackdateIrnAsync(irn.Irn, TimeSpan.FromHours(25), Ct);
         late = await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}");
         late.Registration!.CanCancel.ShouldBeFalse();
         using (var refused = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{first.Id}/irn/cancel",
@@ -89,7 +92,7 @@ public sealed class GstComplianceTests(HospitalServer server)
 
         // Within the day, the IRN is cancelled on the portal and here.
         var second = await BillAsync(company, service);
-        var live = (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{second.Id}/irn/generate")).Registration!;
+        var live = (await billing.IrnFromThePortalAsync("bill", second.Id, Ct)).Registration!;
         var cancelled = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{second.Id}/irn/cancel",
             new CancelIrnRequest(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", live.Version));
         cancelled.State.ShouldBe(EInvoiceState.IrnCancelled);
@@ -100,14 +103,16 @@ public sealed class GstComplianceTests(HospitalServer server)
     public async Task A_pharmacy_b2b_invoice_above_the_threshold_gets_its_e_way_bill_from_its_irn()
     {
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
-        await using var portal = await PortalAsync(enabled: true);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
         var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
         var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
         var sold = await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter",
             new CounterSaleRequest(medicine.StoreId, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
                 [new SalePayment(PharmacyPaymentMode.Cash, Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero), null)], false,
                 new B2bBuyer(EInvoicing.KeralaCompany, "Sree Clinic", "32", "Sree Clinic, 22 Beach Road, Kozhikode 673001")));
-        await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{sold.Id}/irn/generate");
+        // The sale gets its IRN on its own once it is saved: the outbox asks the portal.
+        var registered = await pharmacist.EInvoiceWhenAsync("pharmacy", sold.Id, d => d.State == EInvoiceState.Registered, "the sale's IRN", Ct);
+        registered.Registration!.RecordedByName.ShouldBe(EInvoiceAutomation.RecordedBy);
         var request = new GenerateEwayBillRequest(450, TransportMode.Road, "KL11AB1234", null, null, null, null);
 
         // One strip is far below ₹50,000: it moves without an e-way bill.
@@ -129,13 +134,62 @@ public sealed class GstComplianceTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task An_e_way_bill_whose_answer_is_lost_is_read_back_from_the_portal_and_recorded_once_even_on_retry()
+    {
+        await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
+        await using var threshold = await SettingAsync(EInvoiceService.EwayBillThresholdSetting, 1m);
+        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
+        var request = new GenerateEwayBillRequest(450, TransportMode.Road, "KL11AB1234", null, null, null, null);
+
+        // The portal generates the e-way bill and its answer is lost: HC360 asks it for the IRN's e-way bill and records that.
+        var (first, firstIrn) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        using (ledger.Fail(SimulatorIrpOperations.EwayBill, SimulatorIrpFault.LoseAnswer, irn: firstIrn))
+        {
+            var recorded = await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{first}/ewaybill", request);
+            recorded.Registration!.EwbNo.ShouldBe(ledger.Entries[firstIrn].Irn.EwbNo.ShouldNotBeNull());
+        }
+
+        // Not reached: the portal holds no e-way bill for the IRN, and staff are told none was generated.
+        var (second, irn) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        var path = $"{Register}/pharmacy/{second}/ewaybill";
+        using (ledger.Fail(SimulatorIrpOperations.EwayBill, SimulatorIrpFault.Down, irn: irn))
+        {
+            using var down = await pharmacist.SendRawAsync(HttpMethod.Post, path, request);
+            (await CodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
+            (await down.Content.ReadAsStringAsync(Ct)).ShouldContain($"holds no e-way bill for IRN {irn}");
+        }
+
+        ledger.Entries[irn].Irn.EwbNo.ShouldBeNull();
+
+        // Generated with its answer lost, and the portal not answering when asked for it either: the outcome is not known,
+        // and staff are not told that nothing was done.
+        using (ledger.Fail(SimulatorIrpOperations.EwayBill, SimulatorIrpFault.LoseAnswer, irn: irn))
+        using (ledger.Fail(SimulatorIrpOperations.GetEwayBill, SimulatorIrpFault.Down, irn: irn))
+        {
+            using var unknown = await pharmacist.SendRawAsync(HttpMethod.Post, path, request);
+            (await CodeAsync(unknown)).ShouldBe("einvoice.irp_ewaybill_unknown");
+        }
+
+        var made = ledger.Entries[irn].Irn.EwbNo.ShouldNotBeNull("the portal did generate it");
+        (await pharmacist.GetAsync<EInvoiceDetail>($"{Register}/pharmacy/{second}")).Registration!.EwbNo.ShouldBeNull();
+
+        // Tried again: the portal refuses a second e-way bill for the IRN (4002), and HC360 records the one it holds.
+        var retried = (await pharmacist.PostAsync<EInvoiceDetail>(path, request)).Registration!;
+        (retried.EwbNo, retried.EwbValidTill).ShouldBe((made, ledger.Entries[irn].Irn.EwbValidTill));
+        ledger.Entries[irn].Irn.EwbNo.ShouldBe(made, "the portal still holds the one e-way bill");
+    }
+
+    [Fact]
     public async Task A_debit_note_raises_the_corporates_bill_goes_to_the_portal_as_a_dbn_and_into_gstr1()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var service = await TaxedServiceAsync(admin);
         var company = await CompanyAsync(admin);
         await using var einvoicing = await server.EInvoicingAsync(EInvoicing.Today().AddDays(-1), Ct);
-        await using var portal = await PortalAsync(enabled: true);
+        await using var portal = await server.IrpPortalAsync(enabled: true);
         var bill = await BillAsync(company, service);
         var line = bill.Lines.Single(l => l.ServiceItemId == service.Id);
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
@@ -159,11 +213,11 @@ public sealed class GstComplianceTests(HospitalServer server)
         note.Number.Length.ShouldBeLessThanOrEqualTo(16, "GST rule 46");
         after.PayerDebitAmount.ShouldBe(236m);
 
-        // The debit note goes after its invoice: the bill's IRN first, then the note's, as a DBN naming the bill.
-        (await billing.GetAsync<EInvoiceDetail>($"{Register}/debitnote/{note.Id}")).Problems.ShouldContain(p => p.Contains("has no IRN yet", StringComparison.Ordinal));
-        await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}/irn/generate");
-        var dbn = await billing.PostAsync<EInvoiceDetail>($"{Register}/debitnote/{note.Id}/irn/generate");
-        (dbn.Type, dbn.Against, dbn.State).ShouldBe(("DBN", bill.BillNumber, EInvoiceState.Registered));
+        // Both go to the portal on their own, the bill's IRN first and then the note's, as a DBN naming the bill (a note
+        // waiting for its invoice's IRN: EInvoiceRegisterTests).
+        await billing.EInvoiceWhenAsync("bill", bill.Id, d => d.State == EInvoiceState.Registered, "the bill's IRN", Ct);
+        var dbn = await billing.EInvoiceWhenAsync("debitnote", note.Id, d => d.State == EInvoiceState.Registered, "the debit note's IRN", Ct);
+        (dbn.Type, dbn.Against).ShouldBe(("DBN", bill.BillNumber));
 
         // GSTR-1 of the month: the bill in B2B and the debit note in CDNR, and both in the offline tool's JSON.
         var month = $"{EInvoicing.Today():yyyy-MM}";
@@ -286,16 +340,15 @@ public sealed class GstComplianceTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
-    /// <summary>The e-invoice portal set to the training simulator (or switched off) for the rest of the test, then put back.</summary>
-    private async Task<IAsyncDisposable> PortalAsync(bool enabled)
+    /// <summary>A pharmacy counter sale to a buyer with a GSTIN, once it has the IRN the register asked the portal for on its own.</summary>
+    private static async Task<(Guid Sale, string Irn)> B2bSaleWithIrnAsync(ApiClient pharmacist, OwnMedicine medicine)
     {
-        const string key = "integrations.irp";
-        var admin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var before = (await admin.GetAsync<List<SettingDto>>($"/api/v1/admin/settings?prefix={key}"))
-            .FirstOrDefault(s => s.Key == key && s.FacilityId is null)?.Value;
-        await server.SaveSettingAsync(admin, key, new SaveSettingRequest(new JsonObject { ["enabled"] = enabled, ["provider"] = "simulator" }, null, false, null));
-        return new Restore(async () =>
-            await server.SaveSettingAsync(admin, key, new SaveSettingRequest(before?.DeepClone() ?? new JsonObject { ["enabled"] = false }, null, false, null)));
+        var sold = await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter",
+            new CounterSaleRequest(medicine.StoreId, null, "Sree Clinic", null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
+                [new SalePayment(PharmacyPaymentMode.Cash, Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero), null)], false,
+                new B2bBuyer(EInvoicing.KeralaCompany, "Sree Clinic", "32", "Sree Clinic, 22 Beach Road, Kozhikode 673001")));
+        var registered = await pharmacist.EInvoiceWhenAsync("pharmacy", sold.Id, d => d.State == EInvoiceState.Registered, "the sale's IRN", Ct);
+        return (sold.Id, registered.Registration!.Irn);
     }
 
     private async Task<IAsyncDisposable> SettingAsync(string key, decimal value)
@@ -318,16 +371,6 @@ public sealed class GstComplianceTests(HospitalServer server)
                 await store.SetAsync<decimal?>(key, null, facility, cancellationToken: CancellationToken.None);
             }
         });
-    }
-
-    /// <summary>Moves an IRN's generation back by <paramref name="age"/>, here and on the simulated portal.</summary>
-    private async Task BackdateAsync(string irn, TimeSpan age)
-    {
-        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
-        var entry = ledger.Entries[irn];
-        var at = DateTimeOffset.UtcNow - age;
-        ledger.Entries[irn] = entry with { Irn = entry.Irn with { AckDate = at } };
-        await WithDbAsync(db => db.Set<EInvoice>().Where(e => e.Irn == irn).ExecuteUpdateAsync(s => s.SetProperty(e => e.AckDate, at), Ct));
     }
 
     private async Task WithDbAsync(Func<HospitalDbContext, Task> work)

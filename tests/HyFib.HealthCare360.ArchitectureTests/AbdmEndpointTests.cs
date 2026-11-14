@@ -10,7 +10,8 @@ namespace HyFib.HealthCare360.ArchitectureTests;
 
 /// <summary>
 /// ABDM health records (SRS EHR-08): every <c>/api/v1/abdm</c> endpoint stops with the ABDM switch, which is off until an
-/// administrator turns it on; exporting a record and linking records to a patient's ABHA need <c>abdm.export</c>, and
+/// administrator turns it on; exporting a record, and linking records to a patient's ABHA, listing a patient's link
+/// requests and sending a failed one again, need <c>abdm.export</c>, and
 /// the gateway's set-up is for those who manage integrations. The scan-and-share queue is the registration desk's
 /// (<c>patients.register</c>, and the contact permission for a share's full details); checking a patient's ABHA with
 /// ABDM needs the identity permission, as an Aadhaar check does. The gateway's callbacks (the answers
@@ -51,15 +52,18 @@ public sealed class AbdmEndpointTests
             "GET /api/v1/abdm/links/{id:guid}",
             "GET /api/v1/abdm/patients/{patientId:guid}/abha-checks",
             "GET /api/v1/abdm/patients/{patientId:guid}/consent-requests",
+            "GET /api/v1/abdm/patients/{patientId:guid}/links",
             "GET /api/v1/abdm/patients/{patientId:guid}/received-records",
             "GET /api/v1/abdm/patients/{patientId:guid}/received-records/{recordId:guid}",
             "GET /api/v1/abdm/shares/",
             "GET /api/v1/abdm/shares/{id:guid}",
             "POST /api/v1/abdm/abha-checks/{id:guid}/code",
             "POST /api/v1/abdm/links/",
+            "POST /api/v1/abdm/links/{id:guid}/retry",
             "POST /api/v1/abdm/patients/{patientId:guid}/abha-checks",
             "POST /api/v1/abdm/patients/{patientId:guid}/consent-artefacts/{artefactId}/records-requests",
             "POST /api/v1/abdm/patients/{patientId:guid}/consent-requests",
+            "POST /api/v1/abdm/patients/{patientId:guid}/consent-requests/{id:guid}/retry",
             "POST /api/v1/abdm/shares/{id:guid}/dismiss",
             "POST /api/v1/abdm/shares/{id:guid}/registered",
         ]);
@@ -101,6 +105,7 @@ public sealed class AbdmEndpointTests
             var route = Route(endpoint);
             var expected = route.StartsWith("/api/v1/abdm/bundles/", StringComparison.Ordinal)
                 || route.StartsWith("/api/v1/abdm/links/", StringComparison.Ordinal)
+                || route.EndsWith("/links", StringComparison.Ordinal)
                 ? InteropPermissions.AbdmExport
                 : route.StartsWith("/api/v1/abdm/shares/", StringComparison.Ordinal)
                 ? PatientsPermissions.Register

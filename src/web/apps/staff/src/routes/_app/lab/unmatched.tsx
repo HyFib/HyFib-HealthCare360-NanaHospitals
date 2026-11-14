@@ -224,7 +224,7 @@ function UnmatchedResultsPage() {
               </MenuTrigger>
               <MenuPopover>
                 <MenuList>
-                  {canResolve && row.status === 'Open' && (
+                  {canResolve && row.status === 'Open' && row.reason !== 'Withdrawn' && (
                     <MenuItem icon={<LinkRegular />} onClick={() => setAssigning(row)}>
                       Assign to a test
                     </MenuItem>

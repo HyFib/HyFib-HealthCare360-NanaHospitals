@@ -262,6 +262,38 @@ describe('bill prints', () => {
     expect(html).not.toContain('<script>alert');
     expect(html).toContain('&lt;script&gt;');
   });
+
+  it('says in place of the IRN that a bill due one is not a valid tax invoice for the buyer, until the IRN prints', () => {
+    const taxed = { isTaxInvoice: true, payerName: 'Malabar Traders Ltd' };
+    const pending = buildCounterBillHtml(bill({ ...taxed, missingIrn: 'Pending' }), facility);
+    expect(pending).toContain(
+      '<div class="einvoice-due">E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).</div>',
+    );
+    expect(pending).not.toContain('Signed QR code of the e-invoice');
+
+    const cancelled = buildCounterBillHtml(bill({ ...taxed, missingIrn: 'IrnCancelled' }), facility);
+    expect(cancelled).toContain(
+      '<div class="einvoice-due">IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).</div>',
+    );
+
+    const registered = buildCounterBillHtml(
+      bill({
+        ...taxed,
+        missingIrn: 'Pending',
+        eInvoice: {
+          irn: 'b'.repeat(64),
+          ackNo: '112610087654321',
+          ackDate: '2026-09-25T07:00:00Z',
+          signedQrCode: 'eyJ.e30.c2ln',
+          qrCodeSvg: 'data:image/svg+xml;base64,PHN2Zy8+',
+        },
+      }),
+      facility,
+    );
+    expect(registered).toContain(`IRN ${'b'.repeat(64)}`);
+    expect(registered).not.toContain('class="einvoice-due"');
+    expect(buildCounterBillHtml(bill(taxed), facility)).not.toContain('class="einvoice-due"');
+  });
 });
 
 describe('receipt prints', () => {

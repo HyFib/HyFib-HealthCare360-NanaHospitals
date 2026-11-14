@@ -2,10 +2,11 @@ import type { Gender, PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
-import type { EInvoiceStamp } from '@/modules/billing/einvoiceApi';
+import type { EInvoiceStamp, MissingIrn } from '@/modules/billing/einvoiceApi';
 import type { BatchStock, ExpiringBatch } from '@/modules/inventory/api';
 import type { DrugSchedule, StockMovementType } from '@/modules/inventory/labels';
 import type { PatientSummary } from '@/modules/patients/api';
+import type { CounterTerminalSale, StartTerminalSaleRequest, TerminalSaleApi } from '@/lib/terminal/types';
 
 // ---------------------------------------------------------------------------------------------- enums
 
@@ -125,6 +126,8 @@ export interface SalePayment {
   mode: PaymentMode;
   amount: number;
   reference: string | null;
+  /** A card/UPI payment taken on the terminal: the server takes RRN, approval code and card digits from it. */
+  terminalSaleId?: string | null;
 }
 
 export interface DispenseLineRequest {
@@ -269,6 +272,10 @@ export interface PharmacyPaymentDto {
   mode: PaymentMode;
   amount: number;
   reference: string | null;
+  /** Taken on the card terminal: what the terminal reported. */
+  terminalSaleId?: string | null;
+  approvalCode?: string | null;
+  cardLast4?: string | null;
   receivedAt: string;
   isRefund: boolean;
   /** A refund: the payment it paid back, in that payment's mode (none on refunds made before refunds named it). */
@@ -318,6 +325,8 @@ export interface PharmacySaleDetail {
   buyerAddress?: string | null;
   /** The IRN the e-invoice portal gave this B2B invoice. */
   eInvoice?: EInvoiceStamp | null;
+  /** Set when the invoice is due an IRN and has none: its print says it is not a valid tax invoice for the buyer. */
+  missingIrn?: MissingIrn | null;
   /** Why the medicines were given free of cost by law (BNSS 2023 s.397, with the MLC entry); no payment was taken. */
   freeTreatmentReason?: string | null;
   /** The date written on the outside prescription sold against at the counter. */
@@ -808,6 +817,16 @@ export const pharmacyQueries = {
 };
 
 // ---------------------------------------------------------------------------------------------- commands
+
+/** The card/UPI terminal of the pharmacy counter (see `TerminalSaleDialog`). */
+export const pharmacyTerminalApi: TerminalSaleApi = {
+  queryKey: ['pharmacy', 'terminal-sales'],
+  start: (request: StartTerminalSaleRequest, options) =>
+    api.post<CounterTerminalSale>(`${BASE}/terminal-sales`, request, options),
+  get: (id, signal) => api.get<CounterTerminalSale>(`${BASE}/terminal-sales/${id}`, { signal }),
+  cancel: (id) => api.post<CounterTerminalSale>(`${BASE}/terminal-sales/${id}/cancel`),
+  unused: (signal) => api.get<CounterTerminalSale[]>(`${BASE}/terminal-sales/unused`, { signal }),
+};
 
 export const pharmacyApi = {
   dispense: (entryId: string, body: DispenseRequest) =>

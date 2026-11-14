@@ -45,7 +45,8 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   every router refuses it as it does a disabled integration; labels go to the workstations' printers, and the
   training analyser takes no results. `TrainingSimulators` (Platform) holds the rule.
 * **Integration log.** Every external call, inbound webhook and analyser message writes one row through the platform
-  `IIntegrationLogger`, via the internal `IntegrationTrace` helper. Rows record integration, provider, operation,
+  `IIntegrationLogger`, via the `IntegrationTrace` helper (Platform, so a module calling an outside service of its own
+  logs it the same way: Interop's ABDM gateway client). Rows record integration, provider, operation,
   direction, success, duration, reference and summaries. Adapters build their own summaries: masked recipient,
   template name, counts and status codes. They never log message bodies, patient names or credentials, nor the
   provider's answer: SMS gateways echo the recipient and the text, so their row's response is the HTTP status and the
@@ -118,7 +119,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `parameters` (`text` \| `positional` \| `named`; `text`: how the templates are registered, see [Template parameters](#template-parameters)), `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
 | `integrations.payment` | `enabled`, `provider` (`razorpay` \| `cashfree` \| `simulator`: the gateway new payments go through), `baseUrl`, `keyId` (Razorpay), `cashfreeBaseUrl` (`https://api.cashfree.com/pg`; `https://sandbox.cashfree.com/pg` for its test mode), `cashfreeClientId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false; Razorpay's and Cashfree's own SMS/e-mail), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret`; Cashfree's `clientSecret` in its own row, `integrations.payment.cashfree.secret`, so replacing one gateway's credentials never wipes the other's |
-| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
+| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5, at most 30), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
@@ -470,6 +471,23 @@ Pine Labs Plutus Cloud-style push-to-terminal:
 * **Upload**: the billed transaction goes to the terminal. The body carries the security token and is never logged.
 * **Poll**: status codes are mapped, and `pendingResponseCodes` means the customer is still paying.
 * **Cancel**: cancels the transaction with its original amount.
+* **Approved, not recorded**: when the bill or admission refuses an approved sale's receipt (an advance for a stay whose
+  account closed meanwhile, say), Billing keeps the reason on the sale, the counter warns not to take the money again,
+  and a `UnrecordedPayment` exception keyed on the transaction id alerts the accountants, as for an online payment.
+  A receipt recorded later clears it.
+
+* **Counters' sales**: the pharmacy and the canteen take card and UPI payments on the same terminal through the Platform
+  contract `ICounterTerminal` (below), not through `IPosTerminal`.
+
+A status code that is neither 0 nor in `pendingResponseCodes` ends the sale (declined, or cancelled or timed out when the
+message says so). Pine Labs' Cloud Integration document (v1.36) confirms the payment-mode codes HC360 sends (`0` all
+modes, `1` card, `10` UPI sale; several joined with `|`), the cancel request, and the `RRN`, `ApprovalCode` and
+`Card Number` tags it reads; it says only that a non-zero status code is not a success (it shows `1008` "TXN VOIDED"
+and `1077` "PAYLATER_TXN_INITIATED") and lists no code for a sale still waiting. That code is therefore checked in UAT
+before going live (DEPLOYMENT.md, "Card and UPI terminals (Pine Labs)"): a waiting sale reported with a code not in
+`pendingResponseCodes` would otherwise end while the customer can still pay. The same API can send a linked refund of a
+card sale to the terminal (`TxnType` 3 with the sale's transaction id); HC360 does not use it yet, so a card refund is
+made on the terminal and recorded with its RRN.
 
 Transaction ids encode what status and cancel need (`OPD-1:987654:125075`, meaning terminal, provider reference and
 paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id. A lost
@@ -480,6 +498,34 @@ would prompt a customer at a counter.
 facility). Billing's `PosRecheckJob` uses it to ask about sales the counter stopped polling with the sale's facility's
 terminal, and to cancel those nobody paid within `billing.pos.recheck` (see
 [billing.md](billing.md#outbox-jobs-and-notifications)); its log rows count against that facility.
+
+**Counters that bill their own sales.** The pharmacy and the canteen use the terminal through the Platform contract
+`ICounterTerminal`, which Billing implements (`CounterTerminalService` over `PosService`), so a counter's sale has the
+same lifecycle as Billing's: pushed, polled every two seconds, cancelled, followed by `PosRecheckJob` when the counter
+stops polling, and cancelled and timed out after `billing.pos.recheck`. Billing keeps every terminal sale in
+`billing.pos_transactions`; a counter's has `owner` set to the counter (`pharmacy` or `canteen`), no receipt, and no
+patient for a walk-in. The contract's methods:
+
+| Method | Does |
+|---|---|
+| `StartAsync(CounterTerminalStart)` | Pushes the amount (counter, amount, terminal id, card or UPI, patient if registered) to the terminal; the signed-in facility's settings apply |
+| `RefreshAsync(counter, id)` | The sale as the terminal has it now |
+| `CancelAsync(counter, id)` | Cancels it on the terminal; a sale the customer paid first stays approved |
+| `UnusedAsync(counter)` | The counter's approved sales that no payment records yet and the accountants have not closed, within two days, newest first |
+| `UseAsync(CounterTerminalUse)` | Marks the approved sale as recorded by the counter's payment and returns what the terminal reported (`CounterTerminalPayment`: RRN, approval code, card digits) |
+
+`UseAsync` is staged in the counter's own unit of work, so the sale is recorded in the same database transaction as the
+invoice or bill, once (unique index on `owner_payment_id`). It is refused when the sale is another counter's or unknown
+(`pos.sale_unknown`), the customer has not paid yet (`pos.sale_pending`), it was declined, cancelled or timed out
+(`pos.sale_not_paid`), it is of another amount or mode (`pos.sale_amount`, `pos.sale_mode`), the accountants closed its
+unrecorded-payment exception (refunded on the terminal, say: `pos.sale_closed`; all 422), or an invoice already records
+it (`pos.sale_used`, 409). Only a counter that reports its card and UPI payments to the settlement match
+(`ICounterSalesSource`) may take terminal payments. The Platform helper `MapCounterTerminalSales` gives each counter the
+endpoints `POST …/terminal-sales`, `GET …/terminal-sales/{id}`, `POST …/terminal-sales/{id}/cancel` and
+`GET …/terminal-sales/unused` (see [pharmacy.md](pharmacy.md) and [supportservices.md](supportservices.md)), returning
+`CounterTerminalSale`. An approved sale that no invoice records within the timeout is shown to the accountants as an
+unrecorded payment (see [billing.md](billing.md#outbox-jobs-and-notifications)). Without Billing, `NullCounterTerminal`
+refuses with `pos.unavailable` and the counter's payment is typed from the slip.
 
 **Reconcile.** The terminal's RRN and approval code are kept with the receipt, and Billing matches them with the
 acquirer's settlement report, which an accountant imports; see *Card and UPI reconciliation* in
@@ -618,6 +664,63 @@ builds the import file.
 * The simulator keeps a company per `companyName` in `integrations.simulator_tally_vouchers` (one row per company and
   REMOTEID, so an import alters as Tally does) and answers the read-back from it, so the whole flow can be tried
   without Tally.
+
+### E-invoice portal (IRP, GST rule 48(4))
+
+The Invoice Registration Portal gives a B2B tax invoice, credit note or debit note its IRN. Billing keeps the register
+and decides when to ask ([billing.md](billing.md#gst-e-invoicing)); this module only talks to the portal, behind the
+Platform contract `IInvoiceRegistrationPortal`, through `IrpRouter` and the provider named per facility in
+`integrations.irp` (its credentials, per GSTIN, in `integrations.irp.secret`):
+* **`nic` / `gsp`** (`NicIrpClient`): the NIC e-invoice API v1.03, directly (encrypted as NIC requires, `NicIrpCrypto`)
+  or through a GST suvidha provider passing it on (plain JSON unless `encrypt`). The token and session key are kept per
+  facility, GSTIN and credential; 1005 (token not valid) signs in again, once.
+* **`simulator`** (`SimulatorIrp`), on training and test servers only: the portal's IRN hash, 2150 with the IRN it
+  holds, 2270 after 24 hours, an IRN's details as `ACT` or `CNL` (with when) to its own GSTIN only, and e-way bills:
+  one per IRN (4002 after), given back by the IRN to its own GSTIN (4005 while there is none).
+
+What HC360 relies on from the portal, and where it comes from:
+
+| Behaviour | Used for | Source |
+|---|---|---|
+| A document asked for twice is refused with 2150 and the IRN the portal holds (`InfoDtls`, `DUPIRN`) | Asking again after a lost answer never makes a second IRN | NIC API v1.03, as built in `NicIrpClient` |
+| An IRN is cancelled only within 24 hours of its generation (2270 after) | The cancel window | NIC API v1.03 |
+| An IRN's details (`Invoice/irn/{irn}`) carry its `Status`: `ACT` or `CNL` (`IrpIrn.IsActive`, `IrpIrn.IsCancelled`; an answer without it confirms neither), and a cancelled one's `CancelDate` | Reading back a cancellation whose answer was lost; checking an IRN recorded by hand | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
+| The details are given for about three days after the IRN's generation (`IrpIrn.DetailsWindow`: HC360 asks within two) | Whether an IRN recorded by hand is checked with the portal | GSP documentation of the NIC API; to be confirmed on NIC's sandbox |
+| Documents more than 30 days old are refused from taxpayers with an aggregate turnover of ₹10 crore or more (from 1 April 2025) | The register's due dates and the morning reminder | GSTN advisory of 5 November 2024 |
+| A second e-way bill asked for from an IRN is refused with 4002 ("EwayBill is already generated for this IRN") | Asking again after a lost answer never makes a second e-way bill | GSP documentation of the NIC API (Logitax, *Generate E-way bill by IRN*, a 4002 sample); to be confirmed on NIC's sandbox |
+| An IRN's e-way bill (GET `/eiewb/v1.03/ewaybill/irn/{irn}`, `NicIrpClient.GetEwayBillAsync`) answers `EwbNo`, `Status` (`ACT` or `CNL`, `IrpEwayBill.IsCancelled`), `GenGstin`, `EwbDt` and `EwbValidTill` (null on a sample cancelled one), or 4005 ("Eway Bill details are not found") when there is none | Reading back an e-way bill request that failed (`EwayBillRequests`) | GSP documentation of the NIC API (Vayana's and Logitax's *Get EWB details by IRN*, with samples; `EwbNo` comes as a number in one and a string in the other); to be confirmed on NIC's sandbox |
+
+`IrpAnswers.Irn` reads an IRN's details whoever passed them on: a live IRN needs its acknowledgement and signed QR code,
+while a cancelled one is read for its state alone, since the portal may give it without them.
+
+**What a failed call means.** `IrpError.Unreachable` is a call that got no usable answer (a timeout, a broken
+connection, an answer that could not be read or decrypted): the portal may have done what was asked. Billing asks again
+where the portal makes that safe (generation, through 2150) and reads back what the portal holds where it does not: the
+IRN after a cancellation, and the IRN's e-way bill after an e-way bill request, whose second asking the portal refuses
+(4002); it never takes an unanswered call for nothing done. `IrpError.NotConnected` is a connection that cannot be used
+(switched off, credentials missing). Anything else is the portal's refusal, in its own code and words; Billing does not
+repeat a refused request, but still reads back a refused cancellation or e-way bill request, since the portal refuses
+to cancel an IRN it already cancelled and to make a second e-way bill.
+
+**Practising the failures.** The simulator's ledger takes faults (`SimulatorIrpLedger.Fail`) on the next calls of an
+operation (`SimulatorIrpOperations`: `irn.generate`, `irn.cancel`, `irn.get`, `ewaybill.generate`, `ewaybill.get`), for
+one IRN or for any: the portal does what was asked and loses its answer (`LoseAnswer`), or is not reached and does
+nothing (`Down`). Each failed call is in the integration log as the real portal's would be. The integration tests drive
+the lost answers end to end with them (`EInvoiceRegisterTests`; e-way bills in `GstComplianceTests`).
+
+**Not yet confirmed on NIC's sandbox.** The rows sourced to GSP documentation are GSPs' accounts of NIC's API, not NIC's
+own: its pages and sandbox (`einv-apisandbox.nic.in`) could not be reached when they were written, and the sandbox needs
+the hospital's credentials. For the e-way bill read-back, run these against the sandbox with an invoice of goods, and
+move each row's source to NIC once it holds:
+1. Generate the e-way bill from the IRN, then GET `…/ewaybill/irn/{irn}`: the fields above, `Status` `ACT`, the dates as
+   `yyyy-MM-dd HH:mm:ss` India time, and whether `Data` comes under the session key like the other answers.
+2. Generate again: 4002, and whether that refusal itself names the e-way bill (HC360 reads it back either way).
+3. GET for an IRN without an e-way bill: 4005.
+4. Cancel the e-way bill on the e-way bill portal, then GET: `CNL`; then whether the IRN gives a second e-way bill, and
+   which of the two GET answers with afterwards (HC360 records only an `ACT` one).
+5. Generate an e-way bill on the e-way bill portal for the same document, not from the IRN: whether GET by IRN finds it,
+   and what generating from the IRN then answers.
+6. How long after its generation GET still answers (an IRN's own details are given for about three days).
 
 ### PACS (INT-PACS)
 
@@ -1267,8 +1370,9 @@ Permissions:
 
 ## DI registrations (`IntegrationsServiceCollectionExtensions.AddIntegrations`)
 
-* **Scoped helpers**: `IntegrationSettingsReader`, `IntegrationTrace`, `SimulatorInbox`, `NotificationLogUpdater`,
-  `WhatsAppInboundStore`, `IntegrationStatusService`, `IntegrationTestService`.
+* **Scoped helpers**: `IntegrationSettingsReader`, `SimulatorInbox`, `NotificationLogUpdater`,
+  `WhatsAppInboundStore`, `IntegrationStatusService`, `IntegrationTestService`. `IntegrationTrace` is registered by
+  Platform, with the `IIntegrationLogger` it writes through.
 * **Typed HTTP clients** with the standard resilience handler: `Msg91SmsProvider`, `TwilioSmsProvider`,
   `GenericHttpSmsProvider`, `MetaWhatsAppProvider`, `RazorpayGateway`, `PineLabsPosTerminal`, `DicomWebPacsProvider`
   and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both.
@@ -1282,6 +1386,7 @@ Permissions:
   * `IAccountingProvider`: tally, simulator.
   * `IPacsProvider`: dicomweb, simulator.
   * `IAadhaarAuthProvider`: uidai (a typed HTTP client, 60 s), simulator.
+  * `IIrpProvider`: nic and gsp (`NicIrpClient`, a typed HTTP client), simulator (with the singleton `SimulatorIrpLedger`).
 * **Platform contracts** (scoped routers):
   * `ISmsSender` → `SmsRouter` (with `ISmsTemplateCatalog` → `SmsTemplateCatalog`)
   * `IWhatsAppSender` → `WhatsAppRouter`
@@ -1292,6 +1397,7 @@ Permissions:
   * `IAccountingExporter` → `AccountingExporterRouter`
   * `IPacsClient` → `PacsClientRouter`
   * `IIcdLookup` → `IcdLookupRouter`
+  * `IInvoiceRegistrationPortal` → `IrpRouter`
   * `IAadhaarAuthenticator` → `AadhaarAuthRouter` (Platform's fallback, without this module, is
     `UnconfiguredAadhaarAuthenticator`, which refuses every check)
   * `ILabelPrinterService` → `LabelPrinterService`, a singleton

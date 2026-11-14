@@ -253,6 +253,8 @@ Points we would most like checked:
 | 198 | `doc.cardiology.recommendations` | Recommendations | பரிந்துரைகள் | |
 | 199 | `doc.cardiology.one_recording` | 1 device recording is stored with this report. | இந்த அறிக்கையுடன் கருவியின் 1 பதிவு சேமிக்கப்பட்டுள்ளது. | |
 | 200 | `doc.cardiology.recordings` | {count} device recordings are stored with this report. | இந்த அறிக்கையுடன் கருவியின் {count} பதிவுகள் சேமிக்கப்பட்டுள்ளன. | |
+| 201 | `doc.bill.einvoice_pending` | E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)). | மின்-விலைப்பட்டியல் நிலுவையில் உள்ளது: இது இன்னும் வாங்குபவருக்குச் செல்லுபடியாகும் வரி விலைப்பட்டியல் அல்ல (GST விதி 48(5)). | |
+| 202 | `doc.bill.einvoice_irn_cancelled` | IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)). | IRN ரத்து செய்யப்பட்டது: இது வாங்குபவருக்குச் செல்லுபடியாகும் வரி விலைப்பட்டியல் அல்ல (GST விதி 48(5)). | |
 
 ## Server messages shown on the patient portal
 

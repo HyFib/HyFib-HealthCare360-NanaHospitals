@@ -2,20 +2,29 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Integrations.Irp;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.EInvoices;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
+using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Documents;
+using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Organization;
+using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -119,6 +128,57 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_bill_due_an_irn_prints_that_it_is_not_a_valid_tax_invoice_until_its_irn_is_recorded()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
+            $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
+        var company = await server.CreatePayerAsync(admin, new SavePayerRequest(
+            $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
+            null, "4/12 MG Road, Ernakulam, Kochi, Kerala 682016", KeralaCompany, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null,
+            IsActive: true, Notes: null, Version: null));
+        var accounts = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // E-invoicing starts tomorrow: today's bill is not due an IRN, and its print says nothing of one.
+        await using (await EInvoicingAsync(from: Today().AddDays(1)))
+        {
+            var early = await BillAsync(company, service);
+            early.MissingIrn.ShouldBeNull();
+            (await PrintAsync(accounts, early.Id)).ShouldNotContain("class=\"einvoice-due");
+        }
+
+        await using var _ = await EInvoicingAsync(from: Today().AddDays(-1));
+        var bill = await BillAsync(company, service);
+
+        // The portal is not connected, so nothing asks for the IRN: the bill as finalized (which the counter prints at
+        // once) and its A4 print say it is not yet a valid tax invoice for the buyer, where the IRN goes.
+        (await accounts.GetAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}")).PortalConnected.ShouldBeFalse();
+        bill.MissingIrn.ShouldBe(MissingIrn.Pending);
+        var waiting = await PrintAsync(accounts, bill.Id);
+        waiting.ShouldContain($"<div class=\"einvoice-due keep\">{PendingNotice}</div>");
+        waiting.ShouldNotContain("class=\"einvoice-qr\"");
+
+        // Recorded by hand, the IRN prints in the notice's place.
+        var irn = Irn();
+        var recorded = await accounts.PostAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}/irn",
+            new RecordIrnRequest("112610012345680", Qr(bill.BillNumber!, bill.NetAmount, KeralaCompany, irn, bill.Lines.Count)));
+        var registered = await accounts.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}");
+        (registered.EInvoice?.Irn, registered.MissingIrn).ShouldBe((irn, (MissingIrn?)null));
+        var printed = await PrintAsync(accounts, bill.Id);
+        printed.ShouldContain(irn);
+        printed.ShouldContain("class=\"einvoice-qr\"");
+        printed.ShouldNotContain("class=\"einvoice-due");
+
+        // Its IRN cancelled on the portal, it is no valid tax invoice again, and the portal never registers its number again.
+        await accounts.PostAsync<EInvoiceDetail>($"{Register}/bill/{bill.Id}/irn/cancel",
+            new CancelIrnRequest(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", recorded.Registration!.Version));
+        (await accounts.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).MissingIrn.ShouldBe(MissingIrn.IrnCancelled);
+        var cancelled = await PrintAsync(accounts, bill.Id);
+        cancelled.ShouldContain("<div class=\"einvoice-due keep\">IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).</div>");
+        cancelled.ShouldNotContain(irn);
+    }
+
+    [Fact]
     public async Task A_pharmacy_b2b_sale_needs_the_buyers_pin_code_and_gets_its_irn_like_a_bill()
     {
         await using var _ = await EInvoicingAsync(from: Today().AddDays(-1));
@@ -137,6 +197,8 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         (await ProblemCodeAsync(refused)).ShouldBe("einvoice.invalid");
 
         var sold = await SellAsync("Sree Clinic, 22 Beach Road, Kozhikode 673001");
+        (await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}")).MissingIrn
+            .ShouldBe(MissingIrn.Pending, "until it has an IRN, the invoice the counter prints says it is not yet valid for the buyer");
         var invoice = (await JsonAsync(pharmacist, $"{Register}/pharmacy/{sold.Id}/json")).AsArray().ShouldHaveSingleItem()!;
         var item = invoice["ItemList"]![0]!;
         (item["IsServc"]!.GetValue<string>(), item["Unit"]!.GetValue<string>()).ShouldBe(("N", "NOS"));
@@ -148,11 +210,337 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
             new RecordIrnRequest("112610087654321", Qr(invoice["DocDtls"]!["No"]!.GetValue<string>(), sold.NetAmount, KeralaCompany, irn, 1)));
         var sale = await pharmacist.GetAsync<PharmacySaleDetail>($"/api/v1/pharmacy/sales/{sold.Id}");
         sale.EInvoice.ShouldNotBeNull().Irn.ShouldBe(irn);
+        sale.MissingIrn.ShouldBeNull();
         sale.BuyerAddress.ShouldBe("Sree Clinic, 22 Beach Road, Kozhikode 673001");
         // Asked for by another pharmacist (whoever sold it may not ask), the cancellation is refused while the IRN stands.
         var secondPharmacist = await server.SignInAsync(HospitalServer.Users.SecondPharmacist);
         using var cancel = await secondPharmacist.SendRawAsync(HttpMethod.Post, $"/api/v1/pharmacy/sales/{sold.Id}/cancel", new { Reason = "Wrong buyer" });
         (await ProblemCodeAsync(cancel)).ShouldBe("einvoice.active");
+    }
+
+    [Fact]
+    public async Task A_cancellation_whose_answer_is_lost_is_read_back_from_the_portal_before_anyone_is_told_to_try_again()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await TaxedServiceAsync(admin);
+        var company = await CompanyAsync(admin);
+        await using var einvoicing = await EInvoicingAsync(from: Today().AddDays(-1));
+        await using var portal = await server.IrpPortalAsync(enabled: true);
+        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // The portal cancels the IRN and its answer is lost: HC360 asks how the portal holds the IRN, and records the
+        // cancellation at the portal's time.
+        var first = await BillAsync(company, service);
+        var live = (await billing.IrnFromThePortalAsync("bill", first.Id, Ct)).Registration!;
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, irn: live.Irn))
+        {
+            var cancelled = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{first.Id}/irn/cancel", Cancel(live.Version));
+            cancelled.State.ShouldBe(EInvoiceState.IrnCancelled);
+            cancelled.Registration!.CancelledAt!.Value.ShouldBe(ledger.Entries[live.Irn].CancelledAt!.Value, TimeSpan.FromMilliseconds(1));
+        }
+
+        // Its answer lost, and the portal not saying how it holds the IRN either: the outcome is not known, and staff are not
+        // told that nothing was done. Tried again, the portal refuses the IRN as no longer active; HC360 finds it cancelled
+        // there and records it.
+        var second = await BillAsync(company, service);
+        live = (await billing.IrnFromThePortalAsync("bill", second.Id, Ct)).Registration!;
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, irn: live.Irn))
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: live.Irn))
+        {
+            using var unknown = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{second.Id}/irn/cancel", Cancel(live.Version));
+            (await ProblemCodeAsync(unknown)).ShouldBe("einvoice.irp_cancel_unknown");
+        }
+
+        ledger.Entries[live.Irn].Cancelled.ShouldBeTrue("the portal did cancel it");
+        (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{second.Id}/irn/cancel", Cancel(live.Version))).State.ShouldBe(EInvoiceState.IrnCancelled);
+
+        // Not reached, the portal still holds the IRN as active: nothing was cancelled, and staff are told so.
+        var third = await BillAsync(company, service);
+        live = (await billing.IrnFromThePortalAsync("bill", third.Id, Ct)).Registration!;
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.Down, irn: live.Irn))
+        {
+            using var down = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{third.Id}/irn/cancel", Cancel(live.Version));
+            (await ProblemCodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
+            (await down.Content.ReadAsStringAsync(Ct)).ShouldContain($"The portal still holds IRN {live.Irn} as active, so nothing was cancelled.");
+        }
+
+        // A cancellation made in time with its answer lost is found on the portal even when tried again after the 24 hours.
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, irn: live.Irn))
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: live.Irn))
+        {
+            using var lost = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{third.Id}/irn/cancel", Cancel(live.Version));
+            (await ProblemCodeAsync(lost)).ShouldBe("einvoice.irp_cancel_unknown");
+        }
+
+        await server.BackdateIrnAsync(live.Irn, TimeSpan.FromHours(25), Ct);
+        var late = (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{third.Id}")).Registration!;
+        late.CanCancel.ShouldBeFalse();
+        (await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{third.Id}/irn/cancel", Cancel(late.Version))).State.ShouldBe(EInvoiceState.IrnCancelled);
+
+        // After the 24 hours, a portal that does not say how it holds the IRN leaves it unknown whether it was cancelled in
+        // time: staff are not told to issue a credit note outright, but to look on the portal first. Holding it as active,
+        // the portal cancels it no more, and a credit note undoes the invoice.
+        var fourth = await BillAsync(company, service);
+        live = (await billing.IrnFromThePortalAsync("bill", fourth.Id, Ct)).Registration!;
+        await server.BackdateIrnAsync(live.Irn, TimeSpan.FromHours(25), Ct);
+        late = (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{fourth.Id}")).Registration!;
+        await using (await server.IrpPortalAsync(enabled: true, provider: "nic"))
+        {
+            using var unsaid = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{fourth.Id}/irn/cancel", Cancel(late.Version));
+            (await ProblemCodeAsync(unsaid)).ShouldBe("einvoice.irp_cancel_unknown");
+            (await unsaid.Content.ReadAsStringAsync(Ct)).ShouldContain("Check the IRN on the portal: while it is active there, issue a credit note");
+        }
+
+        using var active = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{fourth.Id}/irn/cancel", Cancel(late.Version));
+        (await ProblemCodeAsync(active)).ShouldBe("einvoice.cancel_window");
+    }
+
+    [Fact]
+    public async Task Connected_to_the_portal_an_irn_recorded_by_hand_must_be_one_the_portal_holds_active_for_the_document()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await TaxedServiceAsync(admin);
+        var company = await CompanyAsync(admin);
+        await using var einvoicing = await EInvoicingAsync(from: Today().AddDays(-10));
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // Bills finalized before the hospital connected to the portal: their IRNs are then generated on the portal by hand.
+        var bills = new List<BillDetail>();
+        for (var i = 0; i < 4; i++)
+        {
+            var bill = await BillAsync(company, service);
+            await server.EInvoiceQueueSettledAsync(bill.Id, Ct);
+            bills.Add(bill);
+        }
+
+        await using var portal = await server.IrpPortalAsync(enabled: true);
+        var ledger = server.Services.GetRequiredService<SimulatorIrpLedger>();
+
+        // Generated on the portal and recorded here: the portal holds it, active, for this bill. Pasted with its signature
+        // damaged, which HC360 cannot check, the code kept and printed is still the portal's own, with its signed invoice and
+        // its time.
+        var confirmed = bills[0];
+        var onThePortal = await OnThePortalAsync(billing, confirmed);
+        var parts = onThePortal.SignedQrCode.Split('.');
+        var damaged = $"{parts[0]}.{parts[1]}.ZGFtYWdlZA";
+        var recorded = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{confirmed.Id}/irn", new RecordIrnRequest(onThePortal.AckNo, damaged));
+        (recorded.State, recorded.Registration!.Irn, recorded.Registration.Provider).ShouldBe((EInvoiceState.Registered, onThePortal.Irn, EInvoice.ManualProvider));
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var kept = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<EInvoice>().SingleAsync(e => e.Irn == onThePortal.Irn, Ct);
+            (kept.SignedQrCode, kept.SignedInvoice, kept.AckDate).ShouldBe((onThePortal.SignedQrCode, onThePortal.SignedInvoice, onThePortal.AckDate.ToUniversalTime()));
+        }
+
+        // Cancelled on the portal since: it is not recorded as live.
+        var cancelled = bills[1];
+        var gone = await OnThePortalAsync(billing, cancelled);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            (await scope.ServiceProvider.GetRequiredService<IInvoiceRegistrationPortal>()
+                .CancelAsync(cancelled.FacilityId, EInvoicing.Hospital, gone.Irn, 2, "Wrong company", Ct)).IsSuccess.ShouldBeTrue();
+        }
+
+        using (var refused = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{cancelled.Id}/irn", new RecordIrnRequest(gone.AckNo, gone.SignedQrCode)))
+        {
+            (await ProblemCodeAsync(refused)).ShouldBe("einvoice.irp_unconfirmed");
+            (await refused.Content.ReadAsStringAsync(Ct)).ShouldContain("The portal holds it as cancelled.");
+        }
+
+        // An IRN the portal does not hold, and one it could not be asked about: neither is recorded.
+        var unknown = bills[2];
+        var madeUp = Irn();
+        var lines = unknown.Lines.Count;
+        using (var notHeld = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{unknown.Id}/irn",
+                   new RecordIrnRequest("112610012345678", Qr(unknown.BillNumber!, unknown.NetAmount, KeralaCompany, madeUp, lines))))
+        {
+            (await ProblemCodeAsync(notHeld)).ShouldBe("einvoice.irp_unconfirmed");
+        }
+
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: madeUp))
+        {
+            using var down = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{unknown.Id}/irn",
+                new RecordIrnRequest("112610012345678", Qr(unknown.BillNumber!, unknown.NetAmount, KeralaCompany, madeUp, lines)));
+            (await ProblemCodeAsync(down)).ShouldBe("einvoice.irp_unreachable");
+        }
+
+        // Switched on, a connection without its credentials cannot ask the portal: the IRN is not taken unchecked.
+        await using (await server.IrpPortalAsync(enabled: true, provider: "nic"))
+        {
+            using var unusable = await billing.SendRawAsync(HttpMethod.Post, $"{Register}/bill/{unknown.Id}/irn",
+                new RecordIrnRequest("112610012345678", Qr(unknown.BillNumber!, unknown.NetAmount, KeralaCompany, madeUp, lines)));
+            (await ProblemCodeAsync(unusable)).ShouldBe("einvoice.irp_not_connected");
+            (await unusable.Content.ReadAsStringAsync(Ct)).ShouldContain("nothing was recorded");
+        }
+
+        (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{unknown.Id}")).State.ShouldBe(EInvoiceState.Pending);
+
+        // Generated longer ago than the portal gives an IRN's details: recorded on its signed QR code, the portal not asked.
+        var older = bills[3];
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Bill>().Where(b => b.Id == older.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(b => b.FinalizedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddDays(-5)), Ct);
+        }
+
+        var olderDate = (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{older.Id}")).Date;
+        var unasked = Irn();
+        var late = await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{older.Id}/irn", new RecordIrnRequest("112610012345679",
+            EInvoicing.Qr(older.BillNumber!, older.NetAmount, KeralaCompany, unasked, older.Lines.Count, date: olderDate, generatedAt: DateTimeOffset.UtcNow.AddDays(-3))));
+        (late.State, late.Registration!.Irn).ShouldBe((EInvoiceState.Registered, unasked));
+        ledger.Entries.ContainsKey(unasked).ShouldBeFalse("the portal never held it, and was not asked");
+    }
+
+    [Fact]
+    public async Task A_b2b_bill_gets_its_irn_on_its_own_once_final_and_a_debit_note_against_it_waits_for_it()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await TaxedServiceAsync(admin);
+        var company = await CompanyAsync(admin);
+        await using var einvoicing = await EInvoicingAsync(from: Today().AddDays(-1));
+        await using var portal = await server.IrpPortalAsync(enabled: true);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
+
+        // Finalized, a bill to a company registered for GST gets its IRN with nobody asking: the outbox asks the portal.
+        var bill = await BillAsync(company, service);
+        var registered = await billing.EInvoiceWhenAsync("bill", bill.Id, d => d.State == EInvoiceState.Registered, "the bill's IRN", Ct);
+        (registered.Registration!.Provider, registered.Registration.RecordedByName).ShouldBe(("simulator", EInvoiceAutomation.RecordedBy));
+        (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}")).EInvoice.ShouldNotBeNull().Irn.ShouldBe(registered.Registration.Irn);
+
+        // One the portal would refuse (the company's address has no PIN code) is not asked for again: the billing desk is told
+        // at once, and the bill waits in the register.
+        var withoutPin = await CompanyAsync(admin, address: "4/12 MG Road, Ernakulam, Kochi");
+        var refused = await BillAsync(withoutPin, service);
+        var alert = await EventuallyAsync(async () => (await billing.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=100"))
+            .Items.FirstOrDefault(n => n.Title == $"Invoice {refused.BillNumber} did not get its IRN"), "the alert of the bill the portal would refuse");
+        (alert.Severity, alert.Link).ShouldBe(("warning", "/billing/einvoices"));
+        alert.Body.ShouldNotBeNull().ShouldContain("PIN code");
+        (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{refused.Id}")).State.ShouldBe(EInvoiceState.Pending);
+
+        // A debit note on it meanwhile waits for the bill's IRN, and goes on its own once the bill has one.
+        var line = refused.Lines.Single(l => l.ServiceItemId == service.Id);
+        await MakerChecker.ApproveAsync(accountant, await AskAsync(billing, $"/api/v1/billing/bills/{refused.Id}/debit-notes",
+            new IssueDebitNoteRequest(DebitNoteParty.Payer, "Lounge charged at last year's rate", [new DebitNoteLineRequest(line.Id, 200m)])), "Rate card checked");
+        var note = (await billing.GetAsync<BillDetail>($"/api/v1/billing/bills/{refused.Id}")).DebitNotes.ShouldNotBeNull().ShouldHaveSingleItem();
+        await EventuallyAsync(async () => await QueuedAsync(note.Id) is { Attempts: > 0, LastError: { } why } && why.Contains("has no IRN yet", StringComparison.Ordinal)
+            ? "waiting" : null, "the debit note waiting for its bill's IRN");
+
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Payer>().Where(p => p.Id == withoutPin.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.Address, "4/12 MG Road, Ernakulam, Kochi, Kerala 682016"), Ct);
+        }
+
+        await billing.PostAsync<EInvoiceDetail>($"{Register}/bill/{refused.Id}/irn/generate");
+        var debit = await billing.EInvoiceWhenAsync("debitnote", note.Id, d => d.State == EInvoiceState.Registered, "the debit note's IRN", Ct, TimeSpan.FromMinutes(3));
+        (debit.Type, debit.Against, debit.Registration!.RecordedByName).ShouldBe(("DBN", refused.BillNumber, EInvoiceAutomation.RecordedBy));
+    }
+
+    [Fact]
+    public async Task Each_morning_holders_of_the_register_hear_once_of_documents_waiting_too_long_for_an_irn()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var service = await TaxedServiceAsync(admin);
+        var company = await CompanyAsync(admin);
+        await using var einvoicing = await EInvoicingAsync(from: Today().AddDays(-40));
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+
+        // Bills waiting for their IRNs to be recorded by hand (the portal is not connected): one of 35 days ago, past the
+        // portal's 30; one of 26, due on it within the week; one of yesterday, within the two days the hospital allows.
+        var pastDue = await BillOfDaysAgoAsync(company, service, 35);
+        var dueSoon = await BillOfDaysAgoAsync(company, service, 26);
+        var recent = await BillOfDaysAgoAsync(company, service, 1);
+        (await billing.GetAsync<EInvoiceDetail>($"{Register}/bill/{dueSoon.Id}")).State.ShouldBe(EInvoiceState.Pending);
+
+        EInvoiceReminder reminder;
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            reminder = (await scope.ServiceProvider.GetRequiredService<EInvoiceService>().RemindAsync(pastDue.FacilityId, Today(), Ct)).ShouldNotBeNull();
+        }
+
+        reminder.Severity.ShouldBe("critical", "one can still reach the portal within the week");
+        reminder.Count.ShouldBeGreaterThanOrEqualTo(2);
+        reminder.Body.ShouldContain("past the portal's 30 days");
+        reminder.Body.ShouldNotContain(recent.BillNumber!);
+        var told = await EventuallyAsync(async () => (await billing.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=100"))
+            .Items.FirstOrDefault(n => n.Title == reminder.Title && n.Body == reminder.Body), "the reminder to the billing desk");
+        (told.Severity, told.Link).ShouldBe(("critical", "/billing/einvoices"));
+
+        // The morning job queues it once a day for each facility that e-invoices: asked again the same day (a second
+        // server, a restart), it queues nothing more.
+        var job = server.Services.GetServices<IHostedService>().OfType<EInvoiceReminderJob>().Single();
+        await job.QueueAsync(Today(), Ct);
+        (await job.QueueAsync(Today(), Ct)).ShouldBe(0);
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var dayStarted = BillingTime.StartOfDay(Today());
+            (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>()
+                .CountAsync(m => m.Type == EInvoiceReminderHandler.MessageType && m.FacilityId == pastDue.FacilityId && m.CreatedAt >= dayStarted, Ct)).ShouldBe(1);
+        }
+    }
+
+    /// <summary>A bill finalized <paramref name="days"/> ago, as if it had been (its date is the day it was finalized).</summary>
+    private async Task<BillDetail> BillOfDaysAgoAsync(PayerDetail company, ServiceItemDto service, int days)
+    {
+        var bill = await BillAsync(company, service);
+        await using var scope = server.Services.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<Bill>().Where(b => b.Id == bill.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.FinalizedAt, (DateTimeOffset?)DateTimeOffset.UtcNow.AddDays(-days)), Ct);
+        return bill;
+    }
+
+    private static CancelIrnRequest Cancel(uint version) => new(EInvoiceCancelReason.DataEntryMistake, "Billed to the wrong company", version);
+
+    private async Task<ServiceItemDto> TaxedServiceAsync(ApiClient admin) => await server.CreateServiceAsync(admin, new SaveServiceItemRequest(
+        $"SV-{Letters(8)}", "Executive lounge access", null, ServiceCategory.Miscellaneous, null, 1000m, 18m, "999799", true, false, null, true, null));
+
+    private async Task<PayerDetail> CompanyAsync(ApiClient admin, string address = "4/12 MG Road, Ernakulam, Kochi, Kerala 682016") =>
+        await server.CreatePayerAsync(admin, new SavePayerRequest(
+            $"CO{Letters(8).ToUpperInvariant()}", $"Malabar Traders {Letters(6).ToUpperInvariant()} Ltd", PayerCategory.Corporate, "Anil Menon", "9876543210",
+            null, address, KeralaCompany, null, CreditDays: 30, DefaultCoPayPercent: 0m, PortalUrl: null, IsActive: true, Notes: null, Version: null));
+
+    /// <summary>The document's IRN generated on the portal by hand, as the hospital does on the portal's own screens: HC360 records nothing.</summary>
+    private async Task<IrpIrn> OnThePortalAsync(ApiClient client, BillDetail bill)
+    {
+        var payload = (await JsonAsync(client, $"{Register}/bill/{bill.Id}/json")).AsArray().ShouldHaveSingleItem()!.AsObject();
+        await using var scope = server.Services.CreateAsyncScope();
+        var generated = await scope.ServiceProvider.GetRequiredService<IInvoiceRegistrationPortal>()
+            .GenerateAsync(bill.FacilityId, EInvoicing.Hospital, (JsonObject)payload.DeepClone(), Ct);
+        return generated.Value.ShouldNotBeNull();
+    }
+
+    /// <summary>The outbox's request for a document's IRN, as the outbox holds it.</summary>
+    private async Task<OutboxMessage?> QueuedAsync(Guid documentId)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<OutboxMessage>()
+            .FromSqlInterpolated($"SELECT * FROM platform.outbox_messages WHERE type = {EInvoiceGenerateHandler.MessageType} AND payload->>'id' = {documentId.ToString()}")
+            .AsNoTracking().SingleOrDefaultAsync(Ct);
+    }
+
+    private static async Task<ApprovalRequestDto> AskAsync(ApiClient maker, string path, object request)
+    {
+        using var response = await maker.SendRawAsync(HttpMethod.Post, path, request);
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync(Ct));
+        return (await response.Content.ReadFromJsonAsync<ApprovalRequestDto>(ApiClient.Json, Ct)).ShouldNotBeNull();
+    }
+
+    /// <summary>Polls until the outbox has delivered (it runs every two seconds), for at most a minute.</summary>
+    private static async Task<T> EventuallyAsync<T>(Func<Task<T?>> read, string failure)
+        where T : class
+    {
+        for (var waited = TimeSpan.Zero; waited < TimeSpan.FromMinutes(1); waited += TimeSpan.FromSeconds(1))
+        {
+            if (await read() is { } value)
+            {
+                return value;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+        }
+
+        throw new ShouldAssertException(failure);
     }
 
     /// <summary>A corporate visit with one charge of <paramref name="service"/>, billed and finalized by the billing desk.</summary>
@@ -178,7 +566,13 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
+    private const string PendingNotice = "E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).";
+
     private Task<IAsyncDisposable> EInvoicingAsync(DateOnly? from) => server.EInvoicingAsync(from, Ct);
+
+    /// <summary>The A4 bill as the counter prints it.</summary>
+    private static async Task<string> PrintAsync(ApiClient client, Guid billId) =>
+        (await client.GetAsync<PrintableDocumentDto>($"/api/v1/billing/bills/{billId}/document")).Html;
 
     private static async Task<JsonNode> JsonAsync(ApiClient client, string path)
     {

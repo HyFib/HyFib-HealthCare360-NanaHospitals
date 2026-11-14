@@ -127,6 +127,7 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
                 Mode = payment.Mode,
                 Amount = payment.Amount,
                 Reference = payment.Reference?.Trim(),
+                TerminalSaleId = payment.TerminalSaleId,
                 ReceivedAt = now,
                 ReceivedByUserId = userId,
             });
@@ -135,8 +136,8 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    /// <summary>Collects an outstanding (credit) balance later.</summary>
-    public Result CollectPayment(PaymentMode mode, decimal amount, string? reference, DateTimeOffset now, Guid? userId)
+    /// <summary>Collects an outstanding (credit) balance later; <paramref name="terminalSaleId"/> is the terminal sale a card or UPI payment was taken on.</summary>
+    public Result CollectPayment(PaymentMode mode, decimal amount, string? reference, DateTimeOffset now, Guid? userId, Guid? terminalSaleId = null)
     {
         if (Status == SaleStatus.Cancelled)
         {
@@ -153,7 +154,7 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
             return Error.Rule("payment.exceeds_due", $"The balance due on {InvoiceNumber} is Rs.{Money.FormatInr(DueAmount)}.");
         }
 
-        Payments.Add(new PharmacyPayment { PharmacySaleId = Id, Mode = mode, Amount = amount, Reference = reference?.Trim(), ReceivedAt = now, ReceivedByUserId = userId });
+        Payments.Add(new PharmacyPayment { PharmacySaleId = Id, Mode = mode, Amount = amount, Reference = reference?.Trim(), TerminalSaleId = terminalSaleId, ReceivedAt = now, ReceivedByUserId = userId });
         PaidAmount += amount;
         DueAmount -= amount;
         Status = SalePricing.StatusFor(PaidAmount, DueAmount);
@@ -382,6 +383,16 @@ public sealed class PharmacyPayment : Entity
     public PaymentMode Mode { get; set; }
     public decimal Amount { get; set; }
     public string? Reference { get; set; }
+
+    /// <summary>The terminal sale a card or UPI payment was taken on (Billing's record of it); null for a payment keyed in from a slip.</summary>
+    public Guid? TerminalSaleId { get; set; }
+
+    /// <summary>The approval code the terminal reported for the payment.</summary>
+    public string? ApprovalCode { get; set; }
+
+    /// <summary>The last four digits of the card the terminal reported; never more of the number.</summary>
+    public string? CardLast4 { get; set; }
+
     public DateTimeOffset ReceivedAt { get; set; }
     public Guid? ReceivedByUserId { get; set; }
     public bool IsRefund { get; set; }

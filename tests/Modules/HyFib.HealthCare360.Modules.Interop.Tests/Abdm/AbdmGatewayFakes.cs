@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Interop.Tests;
@@ -56,6 +57,13 @@ internal sealed class FakeGatewayHandler : HttpMessageHandler
         return this;
     }
 
+    /// <summary>Answers the next call by running <paramref name="respond"/> (to cancel the caller's token first, say).</summary>
+    public FakeGatewayHandler Respond(Func<HttpResponseMessage> respond)
+    {
+        _responses.Enqueue(respond);
+        return this;
+    }
+
     public HttpClient Client() => new(this, disposeHandler: false);
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -75,4 +83,21 @@ internal sealed class ManualTime(DateTimeOffset now) : TimeProvider
     public DateTimeOffset Now { get; set; } = now;
 
     public override DateTimeOffset GetUtcNow() => Now;
+}
+
+/// <summary>The integration log in memory: every row written, in order.</summary>
+internal sealed class RecordingIntegrationLogger : IIntegrationLogger
+{
+    public List<IntegrationLogEntry> Entries { get; } = [];
+
+    /// <summary>Everything written, for "never logs X" checks.</summary>
+    public string AllText => string.Join("\n", Entries.Select(e => $"{e.Operation}|{e.Reference}|{e.Request}|{e.Response}|{e.Error}"));
+
+    public IntegrationTrace Trace(TimeProvider time) => new(this, time);
+
+    public Task LogAsync(IntegrationLogEntry entry, CancellationToken cancellationToken = default)
+    {
+        Entries.Add(entry);
+        return Task.CompletedTask;
+    }
 }

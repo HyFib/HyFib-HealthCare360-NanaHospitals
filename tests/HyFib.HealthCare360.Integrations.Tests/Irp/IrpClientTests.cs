@@ -144,6 +144,165 @@ public sealed class IrpClientTests : IDisposable
     }
 
     [Fact]
+    public async Task The_portals_irn_details_say_whether_the_irn_is_active_or_cancelled()
+    {
+        var active = new string('a', 64);
+        var cancelled = new string('b', 64);
+        _http.Respond(HttpStatusCode.OK, """{"Status":1,"Data":{"AuthToken":"gsp-token"}}""")
+            .Respond(HttpStatusCode.OK,
+                $$$"""{"Status":1,"Data":{"Irn":"{{{active.ToUpperInvariant()}}}","AckNo":"112610012345678","AckDt":"2026-10-05 11:02:00","SignedInvoice":"a.b.c","SignedQRCode":"d.e.f","Status":"ACT"}}""")
+            .Respond(HttpStatusCode.OK, $$$"""{"Status":1,"Data":{"Irn":"{{{cancelled}}}","Status":"CNL","CancelDate":"2026-10-05 12:30:00"}}""")
+            .Respond(HttpStatusCode.OK, $$$"""{"Status":1,"Data":{"Irn":"{{{active}}}","Status":"ACT"}}""");
+        var context = Context("gsp");
+
+        var live = (await Client.GetByIrnAsync(context, active, Ct)).Value.ShouldNotBeNull();
+        (live.Irn, live.Status, live.IsCancelled, live.SignedQrCode).ShouldBe((active, "ACT", false, "d.e.f"));
+        live.CancelledAt.ShouldBeNull();
+        _http.Requests[^1].Uri.AbsolutePath.ShouldBe($"/eicore/v1.03/Invoice/irn/{active}");
+
+        // A cancelled IRN's details are its state: they are read without the acknowledgement or the QR code.
+        var gone = (await Client.GetByIrnAsync(context, cancelled, Ct)).Value.ShouldNotBeNull();
+        (gone.Irn, gone.IsCancelled).ShouldBe((cancelled, true));
+        gone.CancelledAt.ShouldBe(new DateTimeOffset(2026, 10, 5, 12, 30, 0, TimeSpan.FromHours(5.5)));
+
+        // A live IRN without them is not an answer HC360 can record.
+        (await Client.GetByIrnAsync(context, active, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+    }
+
+    [Fact]
+    public async Task The_simulator_gives_an_irns_details_to_its_own_gstin_and_says_when_it_was_cancelled()
+    {
+        var clock = new TestClock(new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero));
+        var simulator = new SimulatorIrp(new SimulatorIrpLedger(), _tracing.Trace, clock);
+        var hospital = SimulatorContext(Gstin);
+        var irn = (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Value!.Irn;
+
+        (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value!.Status.ShouldBe(IrpIrn.ActiveStatus);
+        (await simulator.GetByIrnAsync(SimulatorContext("29AABCN1234F1Z5"), irn, Ct)).IsSuccess.ShouldBeFalse("another GSTIN does not see it");
+
+        clock.Advance(TimeSpan.FromHours(2));
+        (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).IsSuccess.ShouldBeTrue();
+        var details = (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value.ShouldNotBeNull();
+        (details.IsCancelled, details.CancelledAt).ShouldBe((true, (DateTimeOffset?)clock.Now));
+    }
+
+    [Fact]
+    public async Task The_simulator_can_lose_its_answer_after_doing_the_work_or_not_be_reached_at_all()
+    {
+        var ledger = new SimulatorIrpLedger();
+        var simulator = new SimulatorIrp(ledger, _tracing.Trace, new TestClock(new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero)));
+        var hospital = SimulatorContext(Gstin);
+
+        // Not reached: nothing is registered.
+        using (ledger.Fail(SimulatorIrpOperations.Generate, SimulatorIrpFault.Down))
+        {
+            (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        ledger.Entries.ShouldBeEmpty();
+
+        // The answer lost: the IRN is registered all the same, and asked for again the document is a duplicate naming it.
+        using (ledger.Fail(SimulatorIrpOperations.Generate, SimulatorIrpFault.LoseAnswer))
+        {
+            (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        var irn = ledger.Entries.Keys.ShouldHaveSingleItem();
+        (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Error.ShouldBe(new IrpError(IrpError.DuplicateIrn, "Duplicate IRN", irn));
+
+        // A cancellation whose answer is lost is made; a fault is for the calls it was set on, and is cleared with its handle.
+        using (ledger.Fail(SimulatorIrpOperations.Cancel, SimulatorIrpFault.LoseAnswer, times: 2))
+        {
+            (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        (await simulator.GetByIrnAsync(hospital, irn, Ct)).Value!.IsCancelled.ShouldBeTrue();
+        (await simulator.CancelAsync(hospital, irn, 2, "Wrong buyer", Ct)).Error.ShouldBe(new IrpError("9999", "Invoice is not active."));
+
+        // A fault set for one IRN leaves the calls for others alone.
+        using (ledger.Fail(SimulatorIrpOperations.Get, SimulatorIrpFault.Down, irn: new string('f', 64)))
+        {
+            (await simulator.GetByIrnAsync(hospital, irn, Ct)).IsSuccess.ShouldBeTrue();
+            (await simulator.GetByIrnAsync(hospital, new string('F', 64), Ct)).Error!.Message.ShouldContain("set to be down");
+        }
+
+        _tracing.Entries.Count(e => e.Error?.StartsWith(IrpError.Unreachable, StringComparison.Ordinal) == true).ShouldBe(4, "each failed call is in the log");
+    }
+
+    /// <remarks>
+    /// The answers are as GSP documentation of the NIC API quotes them (NIC's own pages and sandbox were not reachable):
+    /// the live one from Vayana's "Get EWB Details by IRN", with <c>EwbNo</c> a number; the cancelled one from Logitax's,
+    /// with <c>EwbNo</c> a string and no validity; 4005 with the words of Vayana's not-found sample.
+    /// </remarks>
+    [Fact]
+    public async Task The_portal_gives_an_irns_e_way_bill_back_live_or_cancelled_and_4005_when_it_holds_none()
+    {
+        var irn = new string('a', 64);
+        var live = new JsonObject
+        {
+            ["EwbNo"] = 611009719079,
+            ["Status"] = "ACT",
+            ["GenGstin"] = "24AAAPI3182M002",
+            ["EwbDt"] = "2020-10-26 18:21:00",
+            ["EwbValidTill"] = "2020-10-27 23:59:00",
+        };
+        var cancelled = new JsonObject
+        {
+            ["EwbNo"] = "621009723114",
+            ["EwbDt"] = "2020-12-05 12:56:00",
+            ["EwbValidTill"] = null,
+            ["Status"] = "CNL",
+            ["GenGstin"] = "24AAAPI3182M002",
+        };
+        _http.Respond(HttpStatusCode.OK, """{"Status":1,"Data":{"AuthToken":"gsp-token"}}""")
+            .Respond(HttpStatusCode.OK, new JsonObject { ["Status"] = 1, ["Data"] = live.ToJsonString() }.ToJsonString())
+            .Respond(HttpStatusCode.OK, new JsonObject { ["Status"] = 1, ["Data"] = cancelled.ToJsonString() }.ToJsonString())
+            .Respond(HttpStatusCode.OK, """{"Status":0,"ErrorDetails":[{"ErrorCode":"4005","ErrorMessage":"Eway Bill details are not found"}]}""");
+        var context = Context("gsp");
+        var india = TimeSpan.FromHours(5.5);
+
+        var held = (await Client.GetEwayBillAsync(context, irn, Ct)).Value.ShouldNotBeNull();
+        (held.EwbNo, held.Status, held.IsCancelled).ShouldBe((611009719079L, IrpIrn.ActiveStatus, false));
+        (held.EwbDate, held.ValidTill).ShouldBe((new DateTimeOffset(2020, 10, 26, 18, 21, 0, india), (DateTimeOffset?)new DateTimeOffset(2020, 10, 27, 23, 59, 0, india)));
+        (_http.Requests[^1].Method, _http.Requests[^1].Uri.AbsolutePath, _http.Requests[^1].Body).ShouldBe((HttpMethod.Get, $"/eiewb/v1.03/ewaybill/irn/{irn}", (string?)null));
+
+        var gone = (await Client.GetEwayBillAsync(context, irn, Ct)).Value.ShouldNotBeNull();
+        (gone.EwbNo, gone.IsCancelled, gone.ValidTill).ShouldBe((621009723114L, true, (DateTimeOffset?)null));
+
+        (await Client.GetEwayBillAsync(context, irn, Ct)).Error.ShouldBe(new IrpError(IrpError.EwayBillNotFound, "Eway Bill details are not found"));
+        _tracing.Entries.Count(e => e.Operation == "ewaybill.get").ShouldBe(3, "each read-back is in the integration log");
+    }
+
+    [Fact]
+    public async Task The_simulator_gives_an_irns_e_way_bill_back_once_made_even_when_its_answer_was_lost()
+    {
+        var ledger = new SimulatorIrpLedger();
+        var simulator = new SimulatorIrp(ledger, _tracing.Trace, new TestClock(new DateTimeOffset(2026, 10, 5, 6, 0, 0, TimeSpan.Zero)));
+        var hospital = SimulatorContext(Gstin);
+        var irn = (await simulator.GenerateAsync(hospital, Invoice(), Ct)).Value!.Irn;
+        var request = new JsonObject { ["Irn"] = irn, ["Distance"] = 450, ["TransMode"] = "1", ["VehNo"] = "KL11AB1234", ["VehType"] = "R" };
+
+        (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Error.ShouldBe(new IrpError(IrpError.EwayBillNotFound, "Eway Bill details are not found"));
+
+        // Generated with its answer lost: the portal holds it, refuses a second, and gives it back to the IRN's GSTIN only.
+        using (ledger.Fail(SimulatorIrpOperations.EwayBill, SimulatorIrpFault.LoseAnswer, irn: irn))
+        {
+            (await simulator.GenerateEwayBillAsync(hospital, request, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+
+        (await simulator.GenerateEwayBillAsync(hospital, request, Ct)).Error!.Code.ShouldBe(IrpError.EwayBillExists);
+        var made = ledger.Entries[irn].Irn;
+        var held = (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Value.ShouldNotBeNull();
+        (held.EwbNo, held.EwbDate, held.ValidTill, held.Status).ShouldBe((made.EwbNo!.Value, made.EwbDate!.Value, made.EwbValidTill, IrpIrn.ActiveStatus));
+        (await simulator.GetEwayBillAsync(SimulatorContext("29AABCN1234F1Z5"), irn, Ct)).IsSuccess.ShouldBeFalse("another GSTIN does not see it");
+
+        using (ledger.Fail(SimulatorIrpOperations.GetEwayBill, SimulatorIrpFault.Down, irn: irn))
+        {
+            (await simulator.GetEwayBillAsync(hospital, irn, Ct)).Error!.Code.ShouldBe(IrpError.Unreachable);
+        }
+    }
+
+    [Fact]
     public async Task Missing_credentials_stop_the_call_before_it_is_sent()
     {
         var context = Context("nic") with { Secrets = new IrpSecrets() };
@@ -174,6 +333,9 @@ public sealed class IrpClientTests : IDisposable
         var training = await Router(live: false).GenerateAsync(facility, Gstin, Invoice(), Ct);
         training.Value!.Irn.ShouldBe(SimulatorIrp.IrnOf(Gstin, new DateOnly(2026, 10, 5), "INV", "NHOB26000001"));
     }
+
+    private static IrpContext SimulatorContext(string gstin) =>
+        new(Guid.NewGuid(), gstin, new IrpSettings { Enabled = true, Provider = "simulator" }, new IrpSecrets());
 
     private static JsonObject Invoice() => new()
     {

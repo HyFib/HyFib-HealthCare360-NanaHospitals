@@ -15,8 +15,8 @@
 Nana Hospitals told HyFib on 12 November 2026 that the Server Node and every workstation are on the hospital's cabled
 LAN. Revision 2.0 assumed WiFi (A-09). Revision 2.1 keeps every WiFi requirement for a node on WiFi, and makes the
 requirements about a node's link apply to its network cable too:
-* DED-06: the server monitors its network cable as well as its WiFi, and a WiFi card beside a cable that is up is not
-  its link;
+* DED-06: every server monitors its own network cables, each on its own, as well as its WiFi, and a WiFi card beside
+  a cable that is up is not its link;
 * DED-07: a workstation's connection indicator shows its cable, or its WiFi signal;
 * DED-15: the installer keeps every network card at full power, the cable's as well as the WiFi's;
 * DED-17: the health dashboard shows the server's link: its cable and its speed, or its WiFi;
@@ -143,7 +143,7 @@ All profiles: TPM 2.0 with BitLocker, UPS of at least 30 minutes, and an externa
 | DED-03 | HC360 Desktop shall discover servers automatically (mDNS), fall back to `localhost` (all-in-one) and to a manually configured address, and remember the last good server. | Must |
 | DED-04 | All client-server traffic, including on the LAN, shall use TLS 1.2+ (TLS 1.3 preferred). On first start the server shall generate a private hospital CA and a server certificate whose SANs cover the host name, `<host>.local` and current IPs, unless an administrator supplies a certificate. | Must |
 | DED-05 | Workstations shall enrol with the server once (administrator enrolment code). After that the Desktop app pins the server certificate fingerprint and refuses unknown certificates. | Must |
-| DED-06 | The server shall monitor its own network link every 30 seconds: its network cable (link state and speed) and its WiFi (SSID, BSSID, signal quality, receive/transmit rates, authentication type). It shall log drops or degraded periods, and alert administrators in-app and by SMS/WhatsApp when the link is lost, and when it is back, or the WiFi signal stays below a threshold. While a cable is up, the WiFi is not the server's link: its drops and signal raise no alert. | Must |
+| DED-06 | Every server (each of several, SCAL-01) shall monitor its own network link every 30 seconds: each of its network cables (link state and speed) and its WiFi (SSID, BSSID, signal quality, receive/transmit rates, authentication type). It shall log drops or degraded periods, and alert administrators in-app and by SMS/WhatsApp when the link or one of its cables is lost or the WiFi signal stays below a threshold, and when a cable is back, saying when it was lost (in-app when the WiFi is back). While a cable is up, the WiFi is not the server's link: its drops and signal raise no alert. | Must |
 | DED-07 | Workstations shall display a connection indicator (their link: network cable, or WiFi signal; server reachability, real-time channel state) and a non-blocking banner when connectivity is lost or degraded. | Must |
 | DED-08 | Every state-changing request shall carry an idempotency key. The server shall return the original result for a retried key, so a WiFi retry never duplicates a bill, payment, order or dispense. | Must |
 | DED-09 | The client shall retry transient failures with exponential backoff and jitter; real-time channels shall reconnect automatically and refresh stale data on reconnect. | Must |

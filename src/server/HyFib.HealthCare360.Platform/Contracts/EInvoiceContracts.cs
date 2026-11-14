@@ -103,8 +103,42 @@ public interface IEInvoiceSource
     Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// Asks the e-invoice register (kept by Billing) to get a document's IRN on its own once the document is final (GST rule
+/// 48(4)): the request goes out through the outbox when the caller's transaction commits, and the portal is asked when the
+/// facility is connected to it. A module calls it in the transaction that makes one of its B2B documents final; a document
+/// dated before e-invoicing applies is let go.
+/// </summary>
+public interface IEInvoiceQueue
+{
+    /// <param name="source">The document's <see cref="IEInvoiceSource.Source"/>.</param>
+    /// <param name="date">The document's date, the hospital's (IST) day.</param>
+    Task QueueAsync(string source, Guid id, Guid facilityId, DateOnly date, CancellationToken cancellationToken);
+}
+
 /// <summary>The IRN the portal gave an invoice, for its print. <paramref name="QrCodeSvg"/>: the signed QR code as an SVG data URI.</summary>
 public sealed record EInvoiceStamp(string Irn, string AckNo, DateTimeOffset AckDate, string SignedQrCode, string QrCodeSvg);
+
+/// <summary>
+/// Why a document that is due an IRN (GST rule 48(4)) has no live one, in the register's terms: <see cref="Pending"/>
+/// until its IRN is asked of the portal or recorded; <see cref="IrnCancelled"/> once its IRN was cancelled on the portal,
+/// which never registers the same document number again, so the document is cancelled here and issued again.
+/// </summary>
+public enum MissingIrn
+{
+    Pending,
+    IrnCancelled,
+}
+
+/// <summary>
+/// What a document's print says of its e-invoice: the live IRN with its signed QR code (<paramref name="Stamp"/>); or, for a
+/// document due an IRN that has none, why (<paramref name="Missing"/>), so the print says it is not a valid invoice for the
+/// buyer (GST rule 48(5)); or neither, for a document that is not an e-invoice.
+/// </summary>
+public sealed record EInvoicePrint(EInvoiceStamp? Stamp, MissingIrn? Missing)
+{
+    public static EInvoicePrint None { get; } = new(null, null);
+}
 
 /// <summary>
 /// The e-invoice register (kept by Billing), for the modules whose invoices it holds: the IRN to print, and whether one is
@@ -114,6 +148,14 @@ public interface IEInvoiceRegister
 {
     /// <summary>The live (not cancelled) IRN of the invoice, if it has one.</summary>
     Task<EInvoiceStamp?> FindAsync(string source, Guid id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// What the document's print says of its e-invoice, as the register sees it now: its live IRN; or, when it is due an
+    /// IRN and has none, why. Due is the register's own test: e-invoicing applies to the document's facility
+    /// (<c>gst.einvoice.from</c>) from its date or earlier, its <see cref="IEInvoiceSource"/> finds it a B2B e-invoice, and
+    /// it is not cancelled. A print asks when it is made, so the next one after the IRN is recorded carries the IRN.
+    /// </summary>
+    Task<EInvoicePrint> PrintAsync(string source, Guid id, CancellationToken cancellationToken);
 }
 
 /// <summary>Whether the facility is connected to the Invoice Registration Portal, through which provider, or why not.</summary>
@@ -123,6 +165,10 @@ public sealed record IrpConnection(bool Connected, string? Provider, bool IsSimu
 /// <summary>
 /// The IRN the portal gave a document (NIC e-invoice API v1.03, <c>Invoice</c> and <c>Invoice/irn</c>): the acknowledgement,
 /// the signed invoice and the signed QR code (both JWTs signed by the portal), and the e-way bill generated with it, if any.
+/// <paramref name="Status"/> is how the portal holds the IRN now, as its IRN details say it: <see cref="ActiveStatus"/> or
+/// <see cref="CancelledStatus"/>; null when the answer did not say, which confirms neither. <paramref name="CancelledAt"/>:
+/// when the portal cancelled it, where its answer gives the time. The details of a cancelled IRN may come without the acknowledgement or the QR code:
+/// then they are empty.
 /// </summary>
 public sealed record IrpIrn(
     string Irn,
@@ -132,13 +178,48 @@ public sealed record IrpIrn(
     string SignedQrCode,
     long? EwbNo = null,
     DateTimeOffset? EwbDate = null,
-    DateTimeOffset? EwbValidTill = null);
+    DateTimeOffset? EwbValidTill = null,
+    string? Status = null,
+    DateTimeOffset? CancelledAt = null)
+{
+    /// <summary>The portal's status of a live IRN.</summary>
+    public const string ActiveStatus = "ACT";
+
+    /// <summary>The portal's status of a cancelled IRN.</summary>
+    public const string CancelledStatus = "CNL";
+
+    /// <summary>The portal holds the IRN as active: its answer says so.</summary>
+    public bool IsActive => string.Equals(Status, ActiveStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The portal holds the IRN as cancelled.</summary>
+    public bool IsCancelled => string.Equals(Status, CancelledStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// How long after its generation the portal still gives an IRN's details (<c>Invoice/irn</c>). GSP documentation of the
+    /// NIC API gives three days; HC360 asks within two, so a lookup it relies on is never one the portal no longer answers.
+    /// Not yet confirmed on NIC's sandbox.
+    /// </summary>
+    public static readonly TimeSpan DetailsWindow = TimeSpan.FromDays(2);
+}
 
 /// <summary>The portal's answer to a cancellation: the IRN and when it was cancelled.</summary>
 public sealed record IrpCancellation(string Irn, DateTimeOffset CancelledAt);
 
-/// <summary>An e-way bill generated from an IRN (NIC API <c>ewaybill</c>): its number, date and the last moment it is valid.</summary>
-public sealed record IrpEwayBill(long EwbNo, DateTimeOffset EwbDate, DateTimeOffset? ValidTill);
+/// <summary>
+/// An e-way bill generated from an IRN (NIC API <c>ewaybill</c>, or read back by <c>ewaybill/irn/{irn}</c>): its number,
+/// date and the last moment it is valid, when the portal gives one. <paramref name="Status"/>, read back only: how the
+/// portal holds it now, with the IRN's codes (<see cref="IrpIrn.ActiveStatus"/>, <see cref="IrpIrn.CancelledStatus"/>);
+/// null when the answer did not say, which confirms neither. A cancelled one may come without its date: then it is
+/// <see cref="DateTimeOffset.MinValue"/>.
+/// </summary>
+public sealed record IrpEwayBill(long EwbNo, DateTimeOffset EwbDate, DateTimeOffset? ValidTill, string? Status = null)
+{
+    /// <summary>The portal holds the e-way bill as live: its answer says so.</summary>
+    public bool IsActive => string.Equals(Status, IrpIrn.ActiveStatus, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The portal holds the e-way bill as cancelled (on the e-way bill portal, within 24 hours of it: CGST rule 138(9)).</summary>
+    public bool IsCancelled => string.Equals(Status, IrpIrn.CancelledStatus, StringComparison.OrdinalIgnoreCase);
+}
 
 /// <summary>
 /// The portal refused the call: its error code (2150 duplicate IRN, 2270 past the cancellation window, and so on) and
@@ -148,6 +229,15 @@ public sealed record IrpError(string Code, string Message, string? ExistingIrn =
 {
     /// <summary>The portal's code for a document it already gave an IRN.</summary>
     public const string DuplicateIrn = "2150";
+
+    /// <summary>The portal's code for a cancellation asked for more than 24 hours after the IRN was generated.</summary>
+    public const string CancelWindowCrossed = "2270";
+
+    /// <summary>The portal's code for an e-way bill asked for from an IRN that already has one ("EwayBill is already generated for this IRN").</summary>
+    public const string EwayBillExists = "4002";
+
+    /// <summary>The portal's code when asked for the e-way bill of an IRN it holds none for ("Eway Bill details are not found").</summary>
+    public const string EwayBillNotFound = "4005";
 
     /// <summary>Not a code of the portal's: the call did not reach it or got no answer.</summary>
     public const string Unreachable = "unreachable";
@@ -170,7 +260,8 @@ public sealed record IrpResult<T>(T? Value, IrpError? Error) where T : class
 /// The Invoice Registration Portal (GST rule 48(4)), reached directly (NIC) or through a GST suvidha provider, configured
 /// per facility under Administration → Integrations (<c>integrations.irp</c>). It takes the e-invoice JSON Billing builds
 /// (INV-01) and answers with the IRN and the signed QR code; it cancels an IRN within 24 hours; it gives an IRN's details
-/// back; and it generates an e-way bill for goods from an IRN. The authentication token is the provider's business.
+/// back; it generates an e-way bill for goods from an IRN, and gives that e-way bill back. The authentication token is the
+/// provider's business.
 /// <paramref name="sellerGstin"/> on every call is the GSTIN the facility registers under, which the portal's credentials
 /// are for.
 /// </summary>
@@ -188,4 +279,10 @@ public interface IInvoiceRegistrationPortal
 
     /// <summary>Generates the e-way bill of a registered IRN; <paramref name="request"/> is the API's <c>ewaybill</c> body.</summary>
     Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(Guid facilityId, string sellerGstin, JsonObject request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The e-way bill the portal holds for <paramref name="irn"/>, with its status (NIC API <c>ewaybill/irn/{irn}</c>);
+    /// refused with <see cref="IrpError.EwayBillNotFound"/> when it holds none.
+    /// </summary>
+    Task<IrpResult<IrpEwayBill>> GetEwayBillAsync(Guid facilityId, string sellerGstin, string irn, CancellationToken cancellationToken);
 }

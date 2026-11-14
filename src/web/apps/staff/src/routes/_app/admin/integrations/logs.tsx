@@ -24,21 +24,21 @@ import { usePermission } from '@/lib/permissions';
 import { IntegrationsTabs } from '@/modules/admin/IntegrationsTabs';
 import {
   formatDuration,
-  INTEGRATION_LABELS,
-  INTEGRATION_NAMES,
   integrationLabel,
   integrationQueries,
-  isIntegrationName,
   isIsoDay,
+  isLogIntegrationName,
+  LOG_INTEGRATION_LABELS,
+  LOG_INTEGRATION_NAMES,
   LOG_PAGE_SIZE,
   pageFromUrl,
   type IntegrationLogDto,
-  type IntegrationName,
+  type LogIntegrationName,
 } from '@/modules/admin/integrationsApi';
 import { NoAccess } from '@/modules/admin/NoAccess';
 
 interface LogSearch {
-  integration?: IntegrationName;
+  integration?: LogIntegrationName;
   result?: 'ok' | 'failed';
   from?: string;
   to?: string;
@@ -48,7 +48,7 @@ interface LogSearch {
 
 export const Route = createFileRoute('/_app/admin/integrations/logs')({
   validateSearch: (s: Record<string, unknown>): LogSearch => ({
-    integration: isIntegrationName(s.integration) ? s.integration : undefined,
+    integration: isLogIntegrationName(s.integration) ? s.integration : undefined,
     result: s.result === 'ok' || s.result === 'failed' ? s.result : undefined,
     from: isIsoDay(s.from) ? s.from : undefined,
     to: isIsoDay(s.to) ? s.to : undefined,
@@ -139,12 +139,14 @@ function IntegrationLogPage() {
             <Field label="Integration">
               <Select
                 value={search.integration ?? ''}
-                onChange={(_, data) => filter({ integration: isIntegrationName(data.value) ? data.value : undefined })}
+                onChange={(_, data) =>
+                  filter({ integration: isLogIntegrationName(data.value) ? data.value : undefined })
+                }
               >
                 <option value="">All</option>
-                {INTEGRATION_NAMES.map((name) => (
+                {LOG_INTEGRATION_NAMES.map((name) => (
                   <option key={name} value={name}>
-                    {INTEGRATION_LABELS[name]}
+                    {LOG_INTEGRATION_LABELS[name]}
                   </option>
                 ))}
               </Select>

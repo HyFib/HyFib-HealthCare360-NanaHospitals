@@ -11,6 +11,8 @@ import {
   type Letterhead,
 } from '@hc360/core';
 import { printLabelJob } from '@/lib/labelPrinting';
+import { terminalDetailsLine } from '@/lib/terminal/labels';
+import { missingIrnNotice } from '@/modules/billing/einvoiceApi';
 import { dec, sum, toNumber } from '@/modules/inventory/decimal';
 import { formatExpiry, formatPercent, formatQty } from '@/modules/inventory/format';
 import { gstStateName } from '@/modules/inventory/gst';
@@ -62,7 +64,8 @@ const RECEIPT_STYLES = `
   .net td { font-weight: 800; font-size: 13px; padding-top: 3px; }
   .gst th, .gst td { font-size: 9px; padding: 0 2px; text-align: right; }
   .gst th:first-child, .gst td:first-child { text-align: left; }
-  .cancelled { border: 2px solid #b00; color: #b00; font-weight: 800; text-align: center; margin: 4px 0; }`;
+  .cancelled { border: 2px solid #b00; color: #b00; font-weight: 800; text-align: center; margin: 4px 0; }
+  .einvoice-due { font-weight: 800; font-size: 10.5px; border: 1.5px solid #000; padding: 2px 4px; margin: 4px 0; }`;
 
 /** 80 mm GST invoice / cash memo for a pharmacy sale (OP dispensing or counter sale), with the sales-invoice template. */
 export function buildReceiptHtml(
@@ -88,10 +91,12 @@ export function buildReceiptHtml(
   const substituted = sale.items.filter((i) => i.isSubstitution);
   const gst = gstSummaryByRate(sale.items);
   const interState = sale.igstAmount !== 0;
+  const terminalLine = (p: { cardLast4?: string | null; approvalCode?: string | null }) =>
+    terminalDetailsLine({ cardLast4: p.cardLast4, approvalCode: p.approvalCode });
   const payments = sale.payments
     .map(
       (p) =>
-        `<tr><td>${p.isRefund ? 'Refund' : 'Paid'} by ${escapeHtml(paymentModeLabel[p.mode])}${p.reference ? ` (${escapeHtml(p.reference)})` : ''}</td><td class="right">${escapeHtml(formatInr(p.isRefund ? -p.amount : p.amount))}</td></tr>`,
+        `<tr><td>${p.isRefund ? 'Refund' : 'Paid'} by ${escapeHtml(paymentModeLabel[p.mode])}${p.reference ? ` (${escapeHtml(p.reference)})` : ''}${terminalLine(p) ? `<br><span class="muted">${escapeHtml(terminalLine(p))}</span>` : ''}</td><td class="right">${escapeHtml(formatInr(p.isRefund ? -p.amount : p.amount))}</td></tr>`,
     )
     .join('');
   const body = `
@@ -143,7 +148,9 @@ export function buildReceiptHtml(
           ? `<div class="dash"></div><div class="center"><img src="${escapeHtml(sale.eInvoice.qrCodeSvg)}" alt="Signed QR code of the e-invoice" style="width:32mm;height:32mm"></div>
       <div class="small" style="word-break:break-all">IRN ${escapeHtml(sale.eInvoice.irn)}</div>
       <div class="small">Ack no. ${escapeHtml(sale.eInvoice.ackNo)} · ${escapeHtml(formatDateTime(sale.eInvoice.ackDate))}</div>`
-          : ''
+          : sale.missingIrn
+            ? `<div class="einvoice-due">${escapeHtml(missingIrnNotice(sale.missingIrn))}</div>`
+            : ''
       }
       ${substituted.length > 0 ? `<div class="small muted">* Substituted with the prescriber's consent for: ${substituted.map((i) => escapeHtml(i.prescribedDrugName ?? '')).join(', ')}</div>` : ''}
       ${sale.counsellingNotes ? `<div class="dash"></div><div class="small"><b>Advice:</b> ${escapeHtml(sale.counsellingNotes)}</div>` : ''}

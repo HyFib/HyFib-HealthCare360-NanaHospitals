@@ -6,16 +6,71 @@ using System.Text.Json.Nodes;
 
 namespace HyFib.HealthCare360.Integrations.Irp;
 
-/// <summary>What the IRP simulator has registered since the server started (it keeps nothing across restarts).</summary>
+/// <summary>The calls the IRP simulator answers, as its log names them, for <see cref="SimulatorIrpLedger.Fail"/>.</summary>
+internal static class SimulatorIrpOperations
+{
+    public const string Generate = "irn.generate";
+    public const string Cancel = "irn.cancel";
+    public const string Get = "irn.get";
+    public const string EwayBill = "ewaybill.generate";
+    public const string GetEwayBill = "ewaybill.get";
+}
+
+/// <summary>How the training portal fails a call, to practise and test what HC360 does when the portal's answer is missing.</summary>
+internal enum SimulatorIrpFault
+{
+    /// <summary>The portal does what was asked, and its answer is lost on the way back.</summary>
+    LoseAnswer,
+
+    /// <summary>The portal is not reached: nothing is done.</summary>
+    Down,
+}
+
+/// <summary>
+/// What the IRP simulator has registered since the server started (it keeps nothing across restarts), and the faults set
+/// on its next calls.
+/// </summary>
 internal sealed class SimulatorIrpLedger
 {
-    public sealed record Entry(JsonObject Payload, IrpIrn Irn, bool Cancelled, string? Gstin);
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<SimulatorIrpFault>> _faults = new(StringComparer.Ordinal);
+
+    public sealed record Entry(JsonObject Payload, IrpIrn Irn, bool Cancelled, string? Gstin, DateTimeOffset? CancelledAt = null);
 
     public ConcurrentDictionary<string, Entry> Entries { get; } = new(StringComparer.Ordinal);
 
     private long _sequence;
 
     public long Next() => Interlocked.Increment(ref _sequence);
+
+    /// <summary>
+    /// Makes the next <paramref name="times"/> calls of <paramref name="operation"/> (<see cref="SimulatorIrpOperations"/>)
+    /// fail as <paramref name="fault"/> says: the calls for <paramref name="irn"/> only when one is given (a document's IRN
+    /// for its generation), so that calls for other documents go on as usual. Disposing the handle clears what is left.
+    /// </summary>
+    public IDisposable Fail(string operation, SimulatorIrpFault fault, int times = 1, string? irn = null)
+    {
+        var key = Key(operation, irn);
+        var queue = _faults.GetOrAdd(key, _ => new ConcurrentQueue<SimulatorIrpFault>());
+        for (var i = 0; i < times; i++)
+        {
+            queue.Enqueue(fault);
+        }
+
+        return new Faults(() => _faults.TryRemove(key, out _));
+    }
+
+    /// <summary>The fault set on the next call of <paramref name="operation"/> for <paramref name="irn"/>, taken; null when it goes as usual.</summary>
+    public SimulatorIrpFault? TakeFault(string operation, string? irn) =>
+        Take(Key(operation, irn)) ?? Take(Key(operation, null));
+
+    private SimulatorIrpFault? Take(string key) => _faults.TryGetValue(key, out var queue) && queue.TryDequeue(out var fault) ? fault : null;
+
+    private static string Key(string operation, string? irn) => $"{operation}|{irn?.ToLowerInvariant() ?? "*"}";
+
+    private sealed class Faults(Action clear) : IDisposable
+    {
+        public void Dispose() => clear();
+    }
 }
 
 /// <summary>
@@ -23,9 +78,13 @@ internal sealed class SimulatorIrpLedger
 /// server refuses it before any call, <see cref="IntegrationSettingsReader"/>). It answers as the portal does in the cases
 /// HC360 relies on: the IRN is the portal's own hash (SHA-256 of the supplier's GSTIN, the financial year, the document
 /// type and its number), so the same document asked for twice is a duplicate (2150) that names the IRN it holds; the signed
-/// QR code carries the document's details; an IRN is cancelled only within 24 hours of its generation (2270 after); and
-/// an e-way bill is generated from a live IRN, valid one day for each 200 km. Its signatures are not the portal's: an IRN
-/// from it is not a real one, and the simulator sweep lists any found on a live server.
+/// QR code carries the document's details; an IRN is cancelled only within 24 hours of its generation (2270 after); its
+/// details say whether it is active (<c>ACT</c>) or cancelled (<c>CNL</c>, and when), to the GSTIN it belongs to only; and
+/// an e-way bill is generated from a live IRN, valid one day for each 200 km, once only (4002 after), and given back by the
+/// IRN to that GSTIN (4005 while there is none). A call can be made to fail as the portal's
+/// do (<see cref="SimulatorIrpLedger.Fail"/>): its answer lost after the work is done, or the portal not reached at all.
+/// Its signatures are not the portal's: an IRN from it is not a real one, and the simulator sweep lists any found on a live
+/// server.
 /// </summary>
 internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace trace, TimeProvider time) : IIrpProvider
 {
@@ -33,86 +92,140 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
 
     public IReadOnlyCollection<string> Keys { get; } = [ProviderKeys.Simulator];
 
-    public async Task<IrpResult<IrpIrn>> GenerateAsync(IrpContext context, JsonObject payload, CancellationToken cancellationToken)
-    {
-        var started = trace.Start();
-        var result = Generate(context, payload);
-        await LogAsync("irn.generate", started, result.Error, context);
-        return result;
-    }
+    public Task<IrpResult<IrpIrn>> GenerateAsync(IrpContext context, JsonObject payload, CancellationToken cancellationToken) =>
+        AnswerAsync(SimulatorIrpOperations.Generate, IrnOf(payload), context, () => Generate(context, payload));
 
-    public async Task<IrpResult<IrpCancellation>> CancelAsync(IrpContext context, string irn, int reason, string remark, CancellationToken cancellationToken)
+    public Task<IrpResult<IrpCancellation>> CancelAsync(IrpContext context, string irn, int reason, string remark, CancellationToken cancellationToken) =>
+        AnswerAsync(SimulatorIrpOperations.Cancel, irn, context, () => Cancel(irn));
+
+    /// <summary>The IRN's details as the portal gives them to the GSTIN it belongs to: active (<c>ACT</c>) or cancelled (<c>CNL</c>, with when).</summary>
+    public Task<IrpResult<IrpIrn>> GetByIrnAsync(IrpContext context, string irn, CancellationToken cancellationToken) =>
+        AnswerAsync(SimulatorIrpOperations.Get, irn, context, () => Details(context, irn));
+
+    public Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(IrpContext context, JsonObject request, CancellationToken cancellationToken) =>
+        AnswerAsync(SimulatorIrpOperations.EwayBill, IrpAnswers.Text(request["Irn"]), context, () => EwayBill(request));
+
+    /// <summary>The e-way bill generated from the IRN, as the portal gives it to the GSTIN the IRN belongs to; 4005 while there is none.</summary>
+    public Task<IrpResult<IrpEwayBill>> GetEwayBillAsync(IrpContext context, string irn, CancellationToken cancellationToken) =>
+        AnswerAsync(SimulatorIrpOperations.GetEwayBill, irn, context, () => HeldEwayBill(context, irn));
+
+    /// <summary>
+    /// Answers a call, or fails it as the fault set on its operation (for <paramref name="irn"/>, or for any) says: not
+    /// reached, nothing is done; the answer lost, the work is done and the caller hears nothing. Either way the caller gets
+    /// what an unanswered call to the portal gives.
+    /// </summary>
+    private async Task<IrpResult<T>> AnswerAsync<T>(string operation, string? irn, IrpContext context, Func<IrpResult<T>> call)
+        where T : class
     {
         var started = trace.Start();
-        IrpResult<IrpCancellation> result;
-        var now = time.GetUtcNow();
-        if (!ledger.Entries.TryGetValue(irn, out var entry))
+        var fault = ledger.TakeFault(operation, irn);
+        IrpResult<T> result;
+        if (fault == SimulatorIrpFault.Down)
         {
-            result = IrpResult<IrpCancellation>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
-        }
-        else if (entry.Cancelled)
-        {
-            result = IrpResult<IrpCancellation>.Fail("9999", "Invoice is not active.");
-        }
-        else if (now - entry.Irn.AckDate > TimeSpan.FromHours(24))
-        {
-            result = IrpResult<IrpCancellation>.Fail("2270", "The allowed cancellation time limit is crossed, you cannot cancel the IRN.");
+            result = IrpResult<T>.Fail(IrpError.Unreachable, "The e-invoice portal could not be reached (the training simulator was set to be down).");
         }
         else
         {
-            ledger.Entries[irn] = entry with { Cancelled = true };
-            result = IrpResult<IrpCancellation>.Ok(new IrpCancellation(irn, now));
+            result = call();
+            if (fault == SimulatorIrpFault.LoseAnswer)
+            {
+                result = IrpResult<T>.Fail(IrpError.Unreachable,
+                    "The e-invoice portal did not answer in time (the training simulator answered, and was set to lose its answer).");
+            }
         }
 
-        await LogAsync("irn.cancel", started, result.Error, context);
+        await LogAsync(operation, started, result.Error, context);
         return result;
     }
 
-    public async Task<IrpResult<IrpIrn>> GetByIrnAsync(IrpContext context, string irn, CancellationToken cancellationToken)
+    private IrpResult<IrpCancellation> Cancel(string irn)
     {
-        var started = trace.Start();
-        var result = ledger.Entries.TryGetValue(irn, out var entry)
-            ? IrpResult<IrpIrn>.Ok(entry.Irn)
-            : IrpResult<IrpIrn>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
-        await LogAsync("irn.get", started, result.Error, context);
-        return result;
+        var now = time.GetUtcNow();
+        if (!ledger.Entries.TryGetValue(irn, out var entry))
+        {
+            return IrpResult<IrpCancellation>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
+        }
+
+        if (entry.Cancelled)
+        {
+            return IrpResult<IrpCancellation>.Fail("9999", "Invoice is not active.");
+        }
+
+        if (now - entry.Irn.AckDate > TimeSpan.FromHours(24))
+        {
+            return IrpResult<IrpCancellation>.Fail("2270", "The allowed cancellation time limit is crossed, you cannot cancel the IRN.");
+        }
+
+        ledger.Entries[irn] = entry with { Cancelled = true, CancelledAt = now };
+        return IrpResult<IrpCancellation>.Ok(new IrpCancellation(irn, now));
     }
 
-    public async Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(IrpContext context, JsonObject request, CancellationToken cancellationToken)
+    private IrpResult<IrpIrn> Details(IrpContext context, string irn)
     {
-        var started = trace.Start();
-        IrpResult<IrpEwayBill> result;
+        if (!ledger.Entries.TryGetValue(irn, out var entry))
+        {
+            return IrpResult<IrpIrn>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
+        }
+
+        if (!string.Equals(entry.Gstin, context.Gstin, StringComparison.OrdinalIgnoreCase))
+        {
+            return IrpResult<IrpIrn>.Fail("9999", "The IRN is not one of the GSTIN these credentials are for.");
+        }
+
+        return IrpResult<IrpIrn>.Ok(entry.Irn with
+        {
+            Status = entry.Cancelled ? IrpIrn.CancelledStatus : IrpIrn.ActiveStatus,
+            CancelledAt = entry.CancelledAt,
+        });
+    }
+
+    private IrpResult<IrpEwayBill> EwayBill(JsonObject request)
+    {
         var irn = IrpAnswers.Text(request["Irn"]) ?? string.Empty;
         var distance = IrpAnswers.Number(request["Distance"]) ?? 0;
         if (!ledger.Entries.TryGetValue(irn, out var entry) || entry.Cancelled)
         {
-            result = IrpResult<IrpEwayBill>.Fail("9999", "An e-way bill is generated only from a live IRN.");
-        }
-        else if (entry.Irn.EwbNo is not null)
-        {
-            result = IrpResult<IrpEwayBill>.Fail("4002", "An e-way bill is already generated for this IRN.");
-        }
-        else if (distance is < 1 or > 4000)
-        {
-            result = IrpResult<IrpEwayBill>.Fail("9999", "The distance must be from 1 to 4000 km.");
-        }
-        else if (IrpAnswers.Text(request["TransId"]) is null && IrpAnswers.Text(request["VehNo"]) is null)
-        {
-            result = IrpResult<IrpEwayBill>.Fail("9999", "Give the transporter's id or the vehicle number.");
-        }
-        else
-        {
-            var now = time.GetUtcNow().ToOffset(India);
-            var number = 100000000000L + ledger.Next();
-            var days = (int)Math.Ceiling(distance / 200m);
-            var validTill = new DateTimeOffset(now.Date.AddDays(days - 1).AddHours(23).AddMinutes(59), India);
-            var bill = new IrpEwayBill(number, now, validTill);
-            ledger.Entries[irn] = entry with { Irn = entry.Irn with { EwbNo = number, EwbDate = now, EwbValidTill = validTill } };
-            result = IrpResult<IrpEwayBill>.Ok(bill);
+            return IrpResult<IrpEwayBill>.Fail("9999", "An e-way bill is generated only from a live IRN.");
         }
 
-        await LogAsync("ewaybill.generate", started, result.Error, context);
-        return result;
+        if (entry.Irn.EwbNo is not null)
+        {
+            return IrpResult<IrpEwayBill>.Fail(IrpError.EwayBillExists, "EwayBill is already generated for this IRN");
+        }
+
+        if (distance is < 1 or > 4000)
+        {
+            return IrpResult<IrpEwayBill>.Fail("9999", "The distance must be from 1 to 4000 km.");
+        }
+
+        if (IrpAnswers.Text(request["TransId"]) is null && IrpAnswers.Text(request["VehNo"]) is null)
+        {
+            return IrpResult<IrpEwayBill>.Fail("9999", "Give the transporter's id or the vehicle number.");
+        }
+
+        var now = time.GetUtcNow().ToOffset(India);
+        var number = 100000000000L + ledger.Next();
+        var days = (int)Math.Ceiling(distance / 200m);
+        var validTill = new DateTimeOffset(now.Date.AddDays(days - 1).AddHours(23).AddMinutes(59), India);
+        ledger.Entries[irn] = entry with { Irn = entry.Irn with { EwbNo = number, EwbDate = now, EwbValidTill = validTill } };
+        return IrpResult<IrpEwayBill>.Ok(new IrpEwayBill(number, now, validTill));
+    }
+
+    private IrpResult<IrpEwayBill> HeldEwayBill(IrpContext context, string irn)
+    {
+        if (!ledger.Entries.TryGetValue(irn, out var entry))
+        {
+            return IrpResult<IrpEwayBill>.Fail("9999", "The simulator holds no such IRN (it forgets them when the server restarts).");
+        }
+
+        if (!string.Equals(entry.Gstin, context.Gstin, StringComparison.OrdinalIgnoreCase))
+        {
+            return IrpResult<IrpEwayBill>.Fail("9999", "The IRN is not one of the GSTIN these credentials are for.");
+        }
+
+        return entry.Irn is { EwbNo: { } number, EwbDate: { } date }
+            ? IrpResult<IrpEwayBill>.Ok(new IrpEwayBill(number, date, entry.Irn.EwbValidTill, IrpIrn.ActiveStatus))
+            : IrpResult<IrpEwayBill>.Fail(IrpError.EwayBillNotFound, "Eway Bill details are not found");
     }
 
     private IrpResult<IrpIrn> Generate(IrpContext context, JsonObject payload)
@@ -168,10 +281,18 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
         };
         var signed = new IrpIrn(irn, ack, new DateTimeOffset(now.DateTime.AddTicks(-(now.Ticks % TimeSpan.TicksPerSecond)), India),
             Jwt(new JsonObject { ["data"] = payload.ToJsonString(), ["iss"] = "HC360 IRP simulator" }),
-            Jwt(new JsonObject { ["data"] = qrData.ToJsonString(), ["iss"] = "HC360 IRP simulator" }));
+            Jwt(new JsonObject { ["data"] = qrData.ToJsonString(), ["iss"] = "HC360 IRP simulator" }), Status: IrpIrn.ActiveStatus);
         ledger.Entries[irn] = new SimulatorIrpLedger.Entry(payload.DeepClone().AsObject(), signed, false, context.Gstin);
         return IrpResult<IrpIrn>.Ok(signed);
     }
+
+    /// <summary>The IRN the portal gives the document in <paramref name="payload"/>; null when it does not name one.</summary>
+    internal static string? IrnOf(JsonObject payload) =>
+        IrpAnswers.Text(payload["SellerDtls"]?["Gstin"]) is { } seller && IrpAnswers.Text(payload["DocDtls"]?["Typ"]) is { } type
+        && IrpAnswers.Text(payload["DocDtls"]?["No"]) is { } number
+        && DateOnly.TryParseExact(IrpAnswers.Text(payload["DocDtls"]?["Dt"]), "dd/MM/yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? IrnOf(seller, date, type, number)
+            : null;
 
     /// <summary>The portal's IRN: SHA-256 of the supplier's GSTIN, the financial year (2026-27), the document type and its number.</summary>
     internal static string IrnOf(string sellerGstin, DateOnly date, string type, string number)
@@ -226,6 +347,9 @@ internal sealed class IrpRouter(IntegrationSettingsReader settings, IEnumerable<
 
     public Task<IrpResult<IrpEwayBill>> GenerateEwayBillAsync(Guid facilityId, string sellerGstin, JsonObject request, CancellationToken cancellationToken) =>
         CallAsync(facilityId, sellerGstin, (p, c) => p.GenerateEwayBillAsync(c, request, cancellationToken), cancellationToken);
+
+    public Task<IrpResult<IrpEwayBill>> GetEwayBillAsync(Guid facilityId, string sellerGstin, string irn, CancellationToken cancellationToken) =>
+        CallAsync(facilityId, sellerGstin, (p, c) => p.GetEwayBillAsync(c, irn, cancellationToken), cancellationToken);
 
     private async Task<IrpResult<T>> CallAsync<T>(
         Guid facilityId, string sellerGstin, Func<IIrpProvider, IrpContext, Task<IrpResult<T>>> call, CancellationToken cancellationToken)

@@ -18,7 +18,10 @@ public interface IPostgresTools
     /// <summary>The database's size on disk (<c>pg_database_size</c>), to check a backup has room before it starts.</summary>
     Task<long> GetDatabaseSizeAsync(CancellationToken ct);
 
-    /// <summary>Dumps the hospital database in pg_dump's custom format.</summary>
+    /// <summary>
+    /// Dumps the hospital database in pg_dump's custom format, without the rows of the servers that made it
+    /// (<see cref="PostgresTools.ServerDataLeftOut"/>).
+    /// </summary>
     Task DumpAsync(string outputFile, CancellationToken ct);
 
     /// <summary>
@@ -31,6 +34,14 @@ public interface IPostgresTools
 internal sealed class PostgresTools(
     IConfiguration configuration, DatabaseCredentials credentials, IOptions<PlatformOptions> options, ILogger<PostgresTools> logger) : IPostgresTools
 {
+    /// <summary>
+    /// The table whose rows a backup leaves out, its schema kept: each server's part of System health
+    /// (<see cref="Networking.ServerNodeBoard"/>), the heartbeat of the machines that made the backup, not hospital data.
+    /// Restored on new hardware, those rows showed the old machines as servers that stopped reporting, told to IT every
+    /// day until someone removed each; restored on the same machines, they are written again within a minute of starting.
+    /// </summary>
+    internal const string ServerDataLeftOut = "platform.server_nodes";
+
     // With the current password, which Administration may have changed since the server started.
     private NpgsqlConnectionStringBuilder Connection => new(credentials.WithCurrentPassword(configuration.GetConnectionString("Hospital")!));
 
@@ -50,7 +61,7 @@ internal sealed class PostgresTools(
         var (exitCode, stderr) = await RunAsync(
             ResolvePgDump(),
             [
-                "--format=custom", "--compress=6", "--no-password",
+                "--format=custom", "--compress=6", "--no-password", $"--exclude-table-data={ServerDataLeftOut}",
                 $"--file={outputFile}", $"--host={connection.Host}", $"--port={connection.Port}",
                 $"--username={connection.Username}", $"--dbname={connection.Database}",
             ],

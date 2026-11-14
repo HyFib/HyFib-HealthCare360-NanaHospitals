@@ -73,6 +73,7 @@ internal sealed class AbdmConsentRequestService(
     AbdmGatewayConfiguration configuration,
     IAbdmGatewayClient gateway,
     AbdmHealthInformationService records,
+    IValidator<AbdmConsentRequestInput> validator,
     ICurrentUser user,
     IAuditLogger audit,
     TimeProvider time,
@@ -80,6 +81,13 @@ internal sealed class AbdmConsentRequestService(
 {
     public const string Requested = "abdm.consent_requested";
     public const string Decided = "abdm.consent_decided";
+    public const string GrantIgnored = "abdm.consent_grant_ignored";
+
+    /// <summary>Only a request that failed is asked again.</summary>
+    public const string NotFailedCode = "abdm.consent_not_failed";
+
+    /// <summary>A failed request's terms no longer hold today (its erase date has passed, say): ask with new ones.</summary>
+    public const string StaleTermsCode = "abdm.consent_terms_stale";
 
     /// <summary>The purposes of use a doctor may ask under, with ABDM's codes.</summary>
     public static readonly IReadOnlyDictionary<string, string> Purposes = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -179,6 +187,37 @@ internal sealed class AbdmConsentRequestService(
         return await ViewAsync(request.Id, ct);
     }
 
+    /// <summary>
+    /// Asks the patient again on a failed request's terms (purpose, kinds of records, dates, erase date), as a new request
+    /// by the caller, who must be a doctor as for any request. The terms are checked again as on the form: an erase date
+    /// that has passed since is refused (<see cref="StaleTermsCode"/>). A failed request whose on-init comes later goes
+    /// ahead as well (<see cref="OnInitAsync"/>), so the patient may find both in their ABHA app and decline one.
+    /// </summary>
+    public async Task<Result<AbdmConsentRequestView>> RetryAsync(Guid patientId, Guid id, CancellationToken ct)
+    {
+        var failed = await db.Set<AbdmConsentRequest>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.PatientId == patientId, ct);
+        if (failed is null)
+        {
+            return Error.NotFound("ABDM consent request", id);
+        }
+
+        if (failed.Status != AbdmConsentRequestStatus.Failed)
+        {
+            return Error.Rule(NotFailedCode, "Only a request that failed is asked again: the consent manager has this one.");
+        }
+
+        var input = new AbdmConsentRequestInput(
+            failed.Purpose,
+            failed.HiTypes.Split(',', StringSplitOptions.RemoveEmptyEntries),
+            DateOnly.FromDateTime(failed.DateFrom.UtcDateTime),
+            DateOnly.FromDateTime(failed.DateTo.UtcDateTime),
+            DateOnly.FromDateTime(failed.DataEraseAt.UtcDateTime));
+        var valid = await validator.ValidateAsync(input, ct);
+        return valid.IsValid
+            ? await RequestAsync(patientId, input, ct)
+            : Error.Rule(StaleTermsCode, $"{valid.Errors[0].ErrorMessage} Ask with new dates.");
+    }
+
     /// <summary>The patient's consent requests, newest first, with their artefacts.</summary>
     public async Task<IReadOnlyList<AbdmConsentRequestView>> ListAsync(Guid patientId, CancellationToken ct)
     {
@@ -244,6 +283,29 @@ internal sealed class AbdmConsentRequestService(
         var kept = await db.Set<AbdmConsentArtefact>().Where(a => a.ConsentRequestEntityId == request.Id).ToListAsync(ct);
         var toFetch = new List<AbdmConsentArtefact>();
         var ended = new List<Guid>();
+        if (status.Equals("GRANTED", StringComparison.OrdinalIgnoreCase)
+            && !AbdmConsentLifecycle.MayChange(request.Status, AbdmConsentRequestStatus.Granted))
+        {
+            // A consent that has ended stays ended: a late or repeated grant is acknowledged and changes nothing.
+            log.LogWarning("Ignored a grant for a consent request that is already {Status}", request.Status);
+            audit.Add(new AuditEntry(AuditCategories.PhiAccess, GrantIgnored, $"ABDM grant for a {request.Status.ToString().ToLowerInvariant()} consent request ignored")
+            {
+                PatientId = request.PatientId,
+                EntityType = "abdm.consent_request",
+                EntityId = request.Id.ToString("D"),
+                Details = new { api = "abdm", status = request.Status.ToString(), artefacts = artefactIds },
+            });
+            await db.SaveChangesAsync(ct);
+            var ignored = await gateway.AnswerHiuNotifyAsync(new AbdmGatewayMessages.HiuOnNotify(
+                [.. artefactIds.Select(id => new AbdmGatewayMessages.Acknowledgement("OK", id))], new AbdmGatewayMessages.RespRequest(requestId), null), ct);
+            if (ignored.IsFailure)
+            {
+                log.LogWarning("The consent decision was not acknowledged: {Reason}", ignored.Error!.Message);
+            }
+
+            return;
+        }
+
         switch (status.ToUpperInvariant())
         {
             case "GRANTED":

@@ -27,7 +27,7 @@ public sealed class Hl7ResultMapperTests
         message.SampleBarcode.ShouldBe("SMP-26090042");
         message.RawMessage.ShouldBe(LabSamples.HematologyOru);
         message.ReceivedAt.ShouldBe(LabSamples.ReceivedAt);
-        message.Results.Select(r => r.ChannelCode).ShouldBe(["WBC", "HGB", "RBC-MORPH"]);
+        message.Results.Select(r => r.ChannelCode).ShouldBe(["WBC", "HGB", "RBC-MORPH", "PLT"]);
     }
 
     [Fact]
@@ -44,12 +44,13 @@ public sealed class Hl7ResultMapperTests
     }
 
     [Fact]
-    public void Skips_encapsulated_data_and_results_that_could_not_be_obtained()
+    public void Skips_encapsulated_data_and_passes_on_a_result_that_could_not_be_obtained_as_such()
     {
-        var codes = Map(LabSamples.HematologyOru).Messages[0].Results.Select(r => r.ChannelCode);
+        var results = Map(LabSamples.HematologyOru).Messages[0].Results;
 
-        codes.ShouldNotContain("HIST");
-        codes.ShouldNotContain("PLT");
+        results.Select(r => r.ChannelCode).ShouldNotContain("HIST");
+        results.Where(r => r.Kind != InstrumentResultKind.Value).Select(r => (r.ChannelCode, r.Kind, r.Status))
+            .ShouldBe([("PLT", InstrumentResultKind.NotObtained, "X")]);
     }
 
     [Fact]
@@ -153,9 +154,56 @@ public sealed class Hl7ResultMapperTests
     }
 
     [Fact]
-    public void Deleted_or_corrected_away_results_leave_nothing_to_store() =>
-        Map(string.Join('\r', @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M6|P|2.5.1", "OBR|1||S-1", "OBX|1|NM|GLU||98|mg/dL|||||D")).Error
-            .ShouldBe("The message contains no usable results.");
+    public void A_message_that_only_deletes_a_result_is_passed_on_so_the_lis_withdraws_it()
+    {
+        var mapped = Map(string.Join('\r', @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M6|P|2.5.1", "OBR|1||S-1", "OBX|1|NM|GLU||98|mg/dL|||||D"));
+
+        mapped.Error.ShouldBeNull();
+        var result = mapped.Messages.ShouldHaveSingleItem().Results.ShouldHaveSingleItem();
+        (result.ChannelCode, result.Value, result.Kind, result.Status).ShouldBe(("GLU", "98", InstrumentResultKind.Withdrawn, "D"));
+    }
+
+    [Fact]
+    public void Results_posted_in_error_deleted_or_not_obtained_need_no_value_and_keep_what_the_analyser_said()
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|AU480|Beckman|HC360|Nana|20260925103000||ORU^R01|M9|P|2.5.1",
+            "OBR|1||S-1||||20260925102500",
+            "OBX|1|NM|K^Potassium||5.2|mmol/L||HH|||W|||20260925102900",
+            "NTE|1|L|Sample of another patient",
+            "OBX|2||NA^Sodium|||||||| d",
+            "OBX|3|NM|CL^Chloride|||mmol/L||||| X ",
+            "OBX|4|NM|GLU^Glucose||98|mg/dL||N|||F",
+            "OBX|5|NM|CREA^Creatinine||||||||F");
+
+        var results = Map(text).Messages.ShouldHaveSingleItem().Results;
+
+        // A value with no value is still nothing to store: CREA goes.
+        results.Select(r => (r.ChannelCode, r.Value, r.Kind, r.Status)).ShouldBe(
+        [
+            ("K", "5.2", InstrumentResultKind.Withdrawn, "W"),
+            ("NA", "", InstrumentResultKind.Withdrawn, "D"),
+            ("CL", "", InstrumentResultKind.NotObtained, "X"),
+            ("GLU", "98", InstrumentResultKind.Value, "F"),
+        ]);
+        results[0].ShouldBe(new InstrumentResult("K", "5.2", "mmol/L", "HH", new DateTimeOffset(2026, 9, 25, 10, 29, 0, Ist))
+        {
+            Status = "W",
+            Kind = InstrumentResultKind.Withdrawn,
+            Comment = "Sample of another patient",
+        });
+    }
+
+    [Theory]
+    [InlineData("F", InstrumentResultKind.Value)]
+    [InlineData("P", InstrumentResultKind.Value)]
+    [InlineData("C", InstrumentResultKind.Value)]
+    [InlineData("", InstrumentResultKind.Value)]
+    [InlineData("W", InstrumentResultKind.Withdrawn)]
+    [InlineData("D", InstrumentResultKind.Withdrawn)]
+    [InlineData("X", InstrumentResultKind.NotObtained)]
+    public void Reads_the_result_status_as_the_lis_acts_on_it(string status, InstrumentResultKind kind) =>
+        Hl7ResultMapper.Kind(status).ShouldBe(kind);
 
     [Theory]
     [InlineData("ORU^R01", true)]

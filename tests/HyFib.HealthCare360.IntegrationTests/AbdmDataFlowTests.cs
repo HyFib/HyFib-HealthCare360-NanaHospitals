@@ -149,6 +149,47 @@ public sealed class AbdmDataFlowTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_grant_arriving_after_a_revocation_does_not_revive_the_consent_and_no_records_flow()
+    {
+        var (patientId, address, reference) = await LinkedConsultationAsync();
+        var consentId = Guid.NewGuid().ToString();
+        var hiu = Fidelius.Generate();
+
+        try
+        {
+            await SwitchAsync(enabled: true);
+            await AbdmLinkingTests.SetUpGatewayAsync(server, enabled: true);
+
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(consentId, "GRANTED", address, patientId, reference));
+            await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(consentId, "REVOKED", address, patientId, reference));
+
+            // The late grant is acknowledged, so the gateway stops retrying, and audited as ignored.
+            var late = await CallAsync(AbdmGatewayCallbackEndpoints.ConsentNotifyPath, Notify(consentId, "GRANTED", address, patientId, reference));
+            Answer(HttpAbdmGatewayClient.OnConsentNotifyPath, late).GetProperty("acknowledgement").GetProperty("status").GetString().ShouldBe("OK");
+            (await AuditAsync(patientId, AbdmDataFlowService.ConsentGrantIgnored)).ShouldNotBeNull();
+
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+                var consent = await db.Set<AbdmConsent>().AsNoTracking().SingleAsync(c => c.ConsentId == consentId, Ct);
+                consent.Status.ShouldBe("REVOKED");
+                consent.EndedAt.ShouldNotBeNull();
+            }
+
+            // A request for the records under it is refused, and nothing is pushed.
+            var transaction = Guid.NewGuid().ToString();
+            var requested = await CallAsync(AbdmGatewayCallbackEndpoints.HealthInformationRequestPath, Request(transaction, consentId, hiu, PushUrl));
+            Answer(HttpAbdmGatewayClient.OnHealthInformationRequestPath, requested).GetProperty("error").GetProperty("message").GetString().ShouldBe("The consent is revoked.");
+            Gateway.CallsTo(PushUrl).ShouldNotContain(c => c.Json().GetProperty("transactionId").GetString() == transaction);
+        }
+        finally
+        {
+            await AbdmLinkingTests.RemoveGatewayAsync(server);
+            await SwitchAsync(enabled: false);
+        }
+    }
+
+    [Fact]
     public async Task A_vaccine_record_is_sent_only_under_a_consent_for_immunisation_records()
     {
         var (patientId, address, reference) = await LinkedDoseAsync();

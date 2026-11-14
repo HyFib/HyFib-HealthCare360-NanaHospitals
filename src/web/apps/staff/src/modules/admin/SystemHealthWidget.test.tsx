@@ -49,6 +49,7 @@ function report(servers: ServerNodeHealth[] | null): SystemHealthReport {
       cables: null,
       cableLost: false,
       lastCableDropAt: null,
+      lostCables: null,
     },
     database: {
       reachable: true,

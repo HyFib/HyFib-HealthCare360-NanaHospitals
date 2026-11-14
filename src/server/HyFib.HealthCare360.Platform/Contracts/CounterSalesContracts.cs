@@ -47,13 +47,18 @@ public sealed record CounterSalesDay(string Counter, DateOnly Date, CounterDocum
 /// <summary>
 /// A card or UPI payment taken at a counter that bills its own sales, or (<paramref name="IsRefund"/>) money it paid back by
 /// card or UPI, as the card and UPI settlement match reads it: a settled transaction names the reference the cashier typed
-/// (the terminal's RRN, or its approval code).
+/// (the terminal's RRN, or its approval code), or the one the terminal reported (<see cref="ICounterTerminal"/>).
 /// </summary>
 /// <param name="PaymentId">The counter's own id of the payment: a settled transaction matches it once.</param>
 /// <param name="Document">The invoice or bill the payment was for, as the counter numbers it.</param>
 /// <param name="Cancelled">The document was cancelled since: its money went back at the counter, but the terminal's still settles.</param>
+/// <param name="ApprovalCode">
+/// The approval code the hospital's terminal reported for a payment taken on it, whose <paramref name="Reference"/> is then
+/// the terminal's RRN: a settled transaction without the RRN is matched by it.
+/// </param>
 public sealed record CounterCardPayment(
-    Guid PaymentId, string Document, CounterPaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset At, bool IsRefund, bool Cancelled);
+    Guid PaymentId, string Document, CounterPaymentMode Mode, decimal Amount, string? Reference, DateTimeOffset At, bool IsRefund, bool Cancelled,
+    string? ApprovalCode = null);
 
 /// <summary>
 /// A counter that bills its own customers outside the hospital bill — the pharmacy and the canteen — reports its day for

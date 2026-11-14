@@ -68,6 +68,29 @@ describe('AbdmConsentRequestsPanel', () => {
     notify.success.mockReset();
   });
 
+  it('asks the patient again on a failed request’s terms, and only on a failed one', async () => {
+    const requests = [
+      request({
+        id: 'r-failed',
+        status: 'Failed',
+        error: 'The consent manager did not say within 15 minutes that it has the request.',
+      }),
+      request({ id: 'r-waiting', status: 'Requested', requestedAt: '2026-10-25T10:00:00Z' }),
+    ];
+    get.mockImplementation((path: string) => Promise.resolve(path.endsWith('/consent-requests') ? requests : []));
+    post.mockResolvedValue(request({ id: 'r-new', status: 'Sent' }));
+    renderPanel();
+    const user = userEvent.setup();
+
+    const again = await screen.findAllByRole('button', { name: 'Ask the patient again' });
+    expect(again).toHaveLength(1);
+    expect(screen.getByText(/did not say within 15 minutes/)).toBeInTheDocument();
+    await user.click(again[0]!);
+
+    await waitFor(() => expect(post).toHaveBeenCalledWith('/api/v1/abdm/patients/p1/consent-requests/r-failed/retry'));
+    expect(notify.success).toHaveBeenCalledWith('Request sent again', 'The patient decides in their ABHA app.');
+  });
+
   it('sends the request with the kinds of records, dates and purpose chosen', async () => {
     post.mockResolvedValue(request({ status: 'Sent' }));
     renderPanel();

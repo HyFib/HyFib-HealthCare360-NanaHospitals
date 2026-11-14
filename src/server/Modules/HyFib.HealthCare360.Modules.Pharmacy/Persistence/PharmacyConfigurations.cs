@@ -129,7 +129,10 @@ internal sealed class PharmacyPaymentConfiguration : IEntityTypeConfiguration<Ph
         b.ToTable("sale_payments", PharmacySchema.Name);
         b.HasKey(x => x.Id);
         b.Property(x => x.Reference).HasMaxLength(64);
+        b.Property(x => x.ApprovalCode).HasMaxLength(32);
+        b.Property(x => x.CardLast4).HasMaxLength(4);
         b.HasIndex(x => new { x.ReceivedAt, x.Mode });
+        b.HasIndex(x => x.TerminalSaleId).IsUnique().HasFilter("terminal_sale_id IS NOT NULL");
     }
 }
 

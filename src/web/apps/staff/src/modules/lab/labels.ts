@@ -148,6 +148,7 @@ export const unmatchedReasonLabel: Record<UnmatchedResultReason, string> = {
   DiffersFromVerified: 'Differs from the verified result',
   InvalidValue: 'Value not valid for the test',
   RepeatedInMessage: 'Sent twice, differently',
+  Withdrawn: 'Withdrawn by the analyser',
   PatientMismatch: "Not this sample's patient",
 };
 

@@ -6,6 +6,10 @@ using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.WindowsInterop;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
 using static HyFib.HealthCare360.Platform.Networking.WifiEventKind;
 
 namespace HyFib.HealthCare360.Platform.Tests;
@@ -328,7 +332,7 @@ public sealed class WifiMonitorTests
         Step(Down(), Down(), 3).ShouldBeEmpty("told once");
 
         Step(Down(), Down(), 4, Cable(speedMbps: 1000)).Select(e => (e.Kind, e.Message)).ShouldBe([(CableReconnected,
-            "Server Node is back on the network, on a network cable ('Ethernet', 1 Gbps): workstations can reach HC360 again.")]);
+            "Server Node is back on the network, on a network cable ('Ethernet', 1 Gbps): workstations can reach HC360 again. Back at 09:32.")]);
         Step(Down(), Down(), 5, Cable(speedMbps: 1000)).ShouldBeEmpty("its end is told once");
         detector.LinkLost.ShouldBeFalse();
     }
@@ -357,7 +361,7 @@ public sealed class WifiMonitorTests
 
         events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(2)), (CableReconnected, At(5))]);
         events[0].Message.ShouldBe("Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
-        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): workstations can reach HC360 again. Lost at 09:31, back at 09:32.");
         detector.CableLost.ShouldBeFalse();
     }
 
@@ -367,6 +371,29 @@ public sealed class WifiMonitorTests
         var events = CableSamples(new CableEventDetector(), Link(80), [Cable()], []);
 
         events.ShouldHaveSingleItem().Message.ShouldBe("Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. It is on WiFi 'Staff' only.");
+    }
+
+    /// <summary>The server stayed on WiFi while its cable was out: its return does not say the workstations were cut off.</summary>
+    [Fact]
+    public void The_cable_back_while_the_server_was_on_WiFi_says_only_that_it_is_back()
+    {
+        var events = CableSamples(new CableEventDetector(), Link(80), [Cable()], [], [Cable()]);
+
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet'). Lost at 09:30, back at 09:31.");
+    }
+
+    /// <summary>A cable out past midnight: the return names both days, so a late SMS is not read as today's.</summary>
+    [Fact]
+    public void A_cable_back_on_another_day_names_both_days()
+    {
+        var detector = new CableEventDetector();
+        var evening = new DateTimeOffset(2026, 11, 13, 18, 25, 0, TimeSpan.Zero); // 23:55 in India
+
+        detector.Evaluate([Cable()], null, evening);
+        detector.Evaluate([], null, evening.AddMinutes(1));
+
+        detector.Evaluate([Cable()], null, evening.AddMinutes(10)).ShouldHaveSingleItem().Message.ShouldBe(
+            "Server Node's network cable is connected again ('Ethernet'): workstations can reach HC360 again. Lost at 13 Nov 23:56, back at 14 Nov 00:05.");
     }
 
     /// <summary>
@@ -382,8 +409,9 @@ public sealed class WifiMonitorTests
         detector.CableLost.ShouldBeFalse();
     }
 
+    /// <summary>The cable lost and back: both are logged, told in the app, and sent to IT's on-call phone.</summary>
     [Fact]
-    public async Task The_cable_lost_is_logged_and_alerts_the_administrators_in_app_and_the_on_call_number_by_sms()
+    public async Task The_cable_lost_and_back_are_logged_and_alert_the_administrators_in_app_and_the_on_call_number_by_sms()
     {
         var events = CableSamples(new CableEventDetector(), null, [Cable()], [], [Cable()]);
         var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
@@ -395,8 +423,247 @@ public sealed class WifiMonitorTests
             (AuditCategories.Admin, "network.cable_reconnected", AuditSeverity.Info)]);
         notifications.InApp.Select(n => (n.Title, n.Severity)).ShouldBe([
             ("Server network cable: Disconnected", "critical"), ("Server network cable: Connected", "info")]);
-        Rendered(notifications.Queued.ShouldHaveSingleItem()).ShouldBe(
-            "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.");
+        notifications.Queued.Select(m => Rendered(m)).ShouldBe([
+            "HC360 server alert (HC360-SRV): Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. Workstations cannot reach HC360 until it is back.",
+            "HC360 server alert (HC360-SRV): Server Node's network cable is connected again ('Ethernet'): workstations can reach HC360 again. Lost at 09:30, back at 09:31."]);
+    }
+
+    /// <summary>
+    /// Theni's server reaches the SMS gateway over its one cable, so the alert of the cable's loss waits in the outbox while
+    /// the cable is out, tried again at 10, 20, 40 seconds and on. The return, queued once the cable is back, would go
+    /// first and leave "lost" as the last word on IT's phone. So the loss not sent yet is withdrawn, and the return says
+    /// when the cable was lost and when it was back.
+    /// </summary>
+    [Fact]
+    public async Task A_loss_not_sent_when_the_cable_is_back_is_withdrawn_and_the_return_says_both()
+    {
+        var detector = new CableEventDetector();
+        var told = new CableLossMessages();
+        var notifications = new RecordingNotifications();
+        var onCall = BySms with { WhatsApp = true };
+        var withdrawn = new List<Guid>();
+        Task Withdraw(IReadOnlyList<Guid> ids, CancellationToken _)
+        {
+            withdrawn.AddRange(ids);
+            return Task.CompletedTask;
+        }
+
+        Task Step(int sample, params NetworkLink[] up) =>
+            WifiMonitor.AlertAsync(detector.Evaluate(up, null, At(sample)), new RecordingAudit(), notifications, onCall, Server, severalServers: false, told, Withdraw, Ct);
+
+        await Step(0, Cable());
+        await Step(1);
+        await Step(2);
+        var loss = notifications.Queued.ShouldHaveSingleItem();
+        withdrawn.ShouldBeEmpty("the cable is still out");
+
+        await Step(3, Cable());
+
+        withdrawn.ShouldBe(loss.Ids, "its SMS and its WhatsApp message, those not gone yet");
+        notifications.Queued.Count.ShouldBe(2);
+        Rendered(notifications.Queued[1]).ShouldBe(
+            "HC360 server alert (HC360-SRV): Server Node's network cable is connected again ('Ethernet'): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+
+        await Step(4);
+        await Step(5, Cable());
+        withdrawn.ShouldBe([.. loss.Ids, .. notifications.Queued[2].Ids], "a later loss is followed afresh, and its return withdraws its own");
+    }
+
+    /// <summary>
+    /// Every server watches its own links (DED-06), whatever its role and whether or not it holds the job lease. Before, the
+    /// monitor was registered and ran only where the background jobs run, and with the lease only on its holder, so an API
+    /// node could lose the cable its requests come in on unseen.
+    /// </summary>
+    [Theory]
+    [InlineData("api")]
+    [InlineData("worker")]
+    [InlineData("all")]
+    public void Every_server_watches_its_own_links_whatever_its_role(string role)
+    {
+        var data = Directory.CreateTempSubdirectory("hc360-links-");
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["HealthCare360:Role"] = role,
+                ["HealthCare360:DataDirectory"] = data.FullName,
+                ["ConnectionStrings:Hospital"] = "Host=localhost;Database=hc360;Username=hc360", // registered, never opened
+            }).Build();
+            var services = new ServiceCollection();
+            services.AddHospitalPlatform(configuration, new DevelopmentHost(), [], "migrations");
+
+            services.Count(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(WifiMonitor)).ShouldBe(1);
+            WifiMonitor.Watches(configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>()!).ShouldBeTrue();
+        }
+        finally
+        {
+            data.Delete(recursive: true);
+        }
+
+        JobLeadership.IsJob(typeof(WifiMonitor)).ShouldBeFalse("it runs on every server at once, not only on the one holding the job lease");
+        WifiMonitor.Watches(new PlatformOptions { Role = role, Network = new NetworkOptions { EnableWifiMonitor = false } })
+            .ShouldBeFalse("the hospital may still turn the monitor off");
+    }
+
+    /// <summary>
+    /// One server of several (SCAL-01) takes its requests through the reverse proxy, which sends them to the other servers
+    /// while it is out: its alerts say so, rather than that the workstations cannot reach HC360, which would be untrue.
+    /// </summary>
+    [Fact]
+    public void One_server_of_several_says_the_reverse_proxy_sends_its_requests_to_the_others()
+    {
+        var events = TwoCards(new CableEventDetector(severalServers: true), ["192.168.1.10"], [Lan, Imaging], [Imaging], [Lan, Imaging]);
+
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10), which requests reach it over: the reverse proxy sends "
+            + "them to the other servers until it is back. It is still on 'Ethernet 2' (10.20.0.5).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): it takes requests again. Lost at 09:30, back at 09:31.");
+        CableSamples(new CableEventDetector(severalServers: true), null, [Cable()], []).ShouldHaveSingleItem().Message.ShouldBe(
+            "Server Node lost its network cable ('Ethernet'): the cable is out or its switch is off. The reverse proxy sends requests to the other servers until it is back.");
+        TwoCards(new CableEventDetector(severalServers: true), ["192.168.1.10"], [Lan, Imaging], [Lan]).ShouldHaveSingleItem().Message.ShouldBe(
+            "Server Node lost its network cable 'Ethernet 2' (10.20.0.5). Requests reach it over 'Ethernet', which is up; what used 'Ethernet 2' cannot reach it until it is back.");
+    }
+
+    /// <summary>
+    /// With several servers the administrators get every one's alerts: the in-app title names the server, as the SMS does, and
+    /// the audit trail records it.
+    /// </summary>
+    [Fact]
+    public async Task One_server_of_several_names_itself_in_the_app_the_audit_trail_and_the_sms()
+    {
+        var events = CableSamples(new CableEventDetector(severalServers: true), null, [Cable()], []);
+        var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
+
+        await WifiMonitor.AlertAsync(events, audit, notifications, BySms, "HC360-API2", severalServers: true, new CableLossMessages(),
+            (_, _) => Task.CompletedTask, Ct);
+
+        notifications.InApp.ShouldHaveSingleItem().Title.ShouldBe("Server network cable: Disconnected (HC360-API2)");
+        var logged = audit.Entries.ShouldHaveSingleItem();
+        (logged.EntityType, logged.EntityId).ShouldBe(("Server", "HC360-API2"));
+        Rendered(notifications.Queued.ShouldHaveSingleItem()).ShouldStartWith("HC360 server alert (HC360-API2): ");
+    }
+
+    /// <summary>
+    /// Each server's WiFi samples are its own, for its WiFi history and its check at start-up; those from before servers were
+    /// told apart count as a single server's, which they are.
+    /// </summary>
+    [Fact]
+    public void A_servers_wifi_samples_are_its_own_and_those_from_before_servers_were_told_apart()
+    {
+        WifiSample[] samples = [new() { Node = "api-1" }, new() { Node = "api-2" }, new() { Node = null }];
+
+        samples.AsQueryable().Where(WifiSample.Of("api-1")).ShouldBe([samples[0], samples[2]]);
+    }
+
+    /// <summary>
+    /// The switch both cards are on goes off: one alert tells both cables lost. It is withdrawn only once both are back; while
+    /// one is still out it still goes, as the only word of that one.
+    /// </summary>
+    [Fact]
+    public void A_loss_told_for_two_cables_is_withdrawn_only_once_both_are_back()
+    {
+        var told = new CableLossMessages();
+        var message = Guid.CreateVersion7();
+        told.Lost(["Ethernet", "Ethernet 2"], [message]);
+
+        told.Back(["ethernet"]).ShouldBeEmpty("it also told 'Ethernet 2', still out");
+        told.Back(["Ethernet 2"]).ShouldBe([message]);
+        told.Back(["Ethernet", "Ethernet 2"]).ShouldBeEmpty("it is followed no longer");
+    }
+
+    /// <summary>
+    /// A Server Node with two network cards, the hospital LAN on one and an imaging network on the other, has each cable told
+    /// on its own. The one the workstations' requests came over, lost while the other is up, is critical and named with its
+    /// address: they cannot reach HC360. Before, nothing was told while any cable was up.
+    /// </summary>
+    [Fact]
+    public void The_cable_the_workstations_use_lost_while_another_is_up_is_critical_and_named()
+    {
+        var detector = new CableEventDetector();
+        var events = TwoCards(detector, ["192.168.1.10"], [Lan, Imaging], [Imaging], [Imaging], [Lan, Imaging]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(3))]);
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10), which workstations reach it over: "
+            + "they cannot reach HC360 until it is back. It is still on 'Ethernet 2' (10.20.0.5).");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+        events[1].Cables.ShouldBe(["Ethernet"]);
+        detector.CableLost.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Another_cable_lost_while_the_workstations_one_is_up_is_a_warning_and_named()
+    {
+        var events = TwoCards(new CableEventDetector(), ["192.168.1.10"], [Lan, Imaging], [Lan], [Lan], [Lan, Imaging]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(OtherCableDisconnected, At(1)), (CableReconnected, At(3))]);
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet 2' (10.20.0.5). Workstations reach it over 'Ethernet', "
+            + "which is up; what used 'Ethernet 2' cannot reach it until it is back.");
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps). Lost at 09:30, back at 09:31.");
+    }
+
+    [Fact]
+    public void With_no_requests_to_go_by_a_cable_lost_while_another_is_up_is_a_warning()
+    {
+        var events = TwoCards(new CableEventDetector(), null, [Lan, Imaging], [Imaging]);
+
+        events.ShouldHaveSingleItem().Kind.ShouldBe(OtherCableDisconnected);
+        events[0].Message.ShouldBe("Server Node lost its network cable 'Ethernet' (192.168.1.10). It is still on 'Ethernet 2' (10.20.0.5).");
+    }
+
+    /// <summary>The switch both cards are on goes off: one event for both, and each is told back on its own.</summary>
+    [Fact]
+    public void Both_cables_lost_at_once_are_one_critical_event_and_each_is_told_back()
+    {
+        var events = TwoCards(new CableEventDetector(), ["192.168.1.10"], [Lan, Imaging], [], [], [Lan], [Lan, Imaging]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(3)), (CableReconnected, At(4))]);
+        events[0].Message.ShouldBe("Server Node lost its network cables ('Ethernet', 'Ethernet 2'): the cables are out or their switch is off. "
+            + "No cable is up now: workstations cannot reach HC360 until one is back.");
+        events[0].Cables.ShouldBe(["Ethernet", "Ethernet 2"]);
+        events[1].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet', 1 Gbps): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+        events[2].Message.ShouldBe("Server Node's network cable is connected again ('Ethernet 2', 1 Gbps). Lost at 09:30, back at 09:32.");
+    }
+
+    [Fact]
+    public void Each_lost_cable_is_kept_with_its_last_address_when_it_was_lost_and_whether_workstations_used_it()
+    {
+        var detector = new CableEventDetector();
+
+        TwoCards(detector, ["192.168.1.10"], [Lan, Imaging], [Imaging], []);
+
+        detector.Lost.Select(l => (l.Name, string.Join(",", l.Addresses), l.LostAt, l.ServedWorkstations)).ShouldBe([
+            ("Ethernet", "192.168.1.10", At(1), true), ("Ethernet 2", "10.20.0.5", At(2), false)],
+            "a cable that is down has no address any more: the one it had is kept");
+    }
+
+    /// <summary>
+    /// The cable moved to the card's other port, one not up before: the server is back on the network, and the port it left
+    /// is not waited for.
+    /// </summary>
+    [Fact]
+    public void A_cable_moved_to_another_port_is_told_back_and_the_port_it_left_is_not_waited_for()
+    {
+        var detector = new CableEventDetector();
+        var other = Lan with { Name = "Ethernet 3" };
+
+        var events = TwoCards(detector, ["192.168.1.10"], [Lan], [], [other], [other]);
+
+        events.Select(e => (e.Kind, e.At)).ShouldBe([(CableDisconnected, At(1)), (CableReconnected, At(2))]);
+        events[1].Message.ShouldBe("Server Node is back on the network, on a network cable ('Ethernet 3', 1 Gbps): workstations can reach HC360 again. Lost at 09:30, back at 09:31.");
+        events[1].Cables.ShouldBe(["Ethernet"], "the port it left: the alert of its loss is settled");
+        detector.Lost.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Another_cable_lost_is_a_warning_in_app_and_still_goes_to_the_on_call_number()
+    {
+        var events = TwoCards(new CableEventDetector(), ["192.168.1.10"], [Lan, Imaging], [Lan]);
+        var (audit, notifications) = (new RecordingAudit(), new RecordingNotifications());
+
+        await WifiMonitor.AlertAsync(events, audit, notifications, BySms, Server, Ct);
+
+        audit.Entries.Select(e => (e.Action, e.Severity)).ShouldBe([("network.cable_disconnected", AuditSeverity.Warning)]);
+        notifications.InApp.Select(n => (n.Title, n.Severity)).ShouldBe([("Server network cable: Disconnected", "warning")]);
+        notifications.Queued.ShouldHaveSingleItem();
     }
 
     [Theory]
@@ -464,6 +731,28 @@ public sealed class WifiMonitorTests
         return events;
     }
 
+    /// <summary>A Server Node's first card, on the hospital LAN.</summary>
+    private static readonly NetworkLink Lan = new("Ethernet", "Intel(R) Ethernet Connection (17) I219-V", LinkMedium.Cable, true, 1000, ["192.168.1.10"]);
+
+    /// <summary>Its second card, on an imaging network.</summary>
+    private static readonly NetworkLink Imaging = new("Ethernet 2", "Realtek PCIe GbE Family Controller", LinkMedium.Cable, true, 1000, ["10.20.0.5"]);
+
+    /// <summary>
+    /// Feeds the samples to one detector, 30 seconds apart, with the workstations' requests lately arriving on
+    /// <paramref name="served"/> (null: none to go by), and returns the events raised.
+    /// </summary>
+    private static List<WifiEvent> TwoCards(CableEventDetector detector, string[]? served, params NetworkLink[][] samples)
+    {
+        Func<IReadOnlyList<string>, bool>? recently = served is null ? null : addresses => addresses.Any(served.Contains);
+        var events = new List<WifiEvent>();
+        for (var i = 0; i < samples.Length; i++)
+        {
+            events.AddRange(detector.Evaluate(samples[i], null, At(i), servedRecently: recently));
+        }
+
+        return events;
+    }
+
     /// <summary>The server's network card with its cable in, as the hospital's i5-12400 has it.</summary>
     private static NetworkLink Cable(string name = "Ethernet", long? speedMbps = null) =>
         new(name, "Intel(R) Ethernet Connection (17) I219-V", LinkMedium.Cable, true, speedMbps, ["192.168.1.10"]);
@@ -504,6 +793,18 @@ public sealed class WifiMonitorTests
         public Task<bool> RemoveAsync(string key, Guid? facilityId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
+    /// <summary>A development host: the platform's settings are checked when the host starts, not when it registers.</summary>
+    private sealed class DevelopmentHost : IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = Environments.Development;
+
+        public string ApplicationName { get; set; } = "HC360";
+
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
+    }
+
     private sealed class RecordingAudit : IAuditLogger
     {
         public List<AuditEntry> Entries { get; } = [];
@@ -530,8 +831,9 @@ public sealed class WifiMonitorTests
             Guid? facilityId = null,
             NotificationDocument? document = null)
         {
-            Queued.Add(new QueuedMessage(templateKey, recipient, values, channels, expiresIn));
-            return [Guid.CreateVersion7()];
+            var ids = channels.Select(_ => Guid.CreateVersion7()).ToList();
+            Queued.Add(new QueuedMessage(templateKey, recipient, values, channels, expiresIn, ids));
+            return ids;
         }
 
         public Task NotifyUsersAsync(IEnumerable<Guid> userIds, string title, string? body, string? link, string category, string severity = "info", CancellationToken cancellationToken = default) =>
@@ -544,6 +846,7 @@ public sealed class WifiMonitorTests
         }
 
         public sealed record QueuedMessage(
-            string TemplateKey, NotificationRecipient Recipient, IReadOnlyDictionary<string, string> Values, IReadOnlyList<NotificationChannel> Channels, TimeSpan? ExpiresIn);
+            string TemplateKey, NotificationRecipient Recipient, IReadOnlyDictionary<string, string> Values, IReadOnlyList<NotificationChannel> Channels, TimeSpan? ExpiresIn,
+            IReadOnlyList<Guid> Ids);
     }
 }

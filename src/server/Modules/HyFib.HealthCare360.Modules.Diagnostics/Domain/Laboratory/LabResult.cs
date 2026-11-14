@@ -85,7 +85,8 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// Why the auto-validation rules left an analyser result for a person, as they found it when the result came, so
-    /// the pathologist verifying it sees why. Empty for a value typed in and for an auto-validated result.
+    /// the pathologist verifying it sees why. Empty for a value typed in and for an auto-validated result. On a test
+    /// with no value it says what the analyser said of it instead: that it withdrew its result, or could not obtain one.
     /// </summary>
     public List<string> HeldReasons { get; set; } = [];
 
@@ -138,6 +139,59 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
 
     /// <summary>An analyser result left for a person: why the auto-validation rules did not verify it.</summary>
     public void HoldForReview(IEnumerable<string> reasons) => HeldReasons = [.. reasons];
+
+    /// <summary>
+    /// The analyser that gave the value withdrew it (posted in error, deleted), before it was verified: the value stops
+    /// being a result. The test is pending again, to be run again or entered by hand, with <paramref name="why"/> for the
+    /// bench; the audit trail keeps the value. False, changing nothing, when the test holds no value of that analyser's:
+    /// none yet, one typed in or from another analyser, or a verified one (a person checks that instead).
+    /// </summary>
+    public bool Withdraw(string instrumentCode, string why)
+    {
+        if (Status != LabResultStatus.Entered || !string.Equals(InstrumentCode, instrumentCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Everything the entry set goes with it, as on a test that never had a value; the method stays the test's.
+        ValueText = null;
+        NumericValue = null;
+        Flag = null;
+        ReferenceText = null;
+        PreviousValue = null;
+        PreviousResultAt = null;
+        DeltaPercent = null;
+        DeltaExceeded = false;
+        Remarks = null;
+        Organism = null;
+        ColonyCount = null;
+        InstrumentCode = null;
+        InstrumentUnit = null;
+        InstrumentFlags = null;
+        InstrumentStatus = null;
+        InstrumentComment = null;
+        InstrumentValue = null;
+        Status = LabResultStatus.Pending;
+        EnteredAt = null;
+        EnteredBy = null;
+        HeldReasons = [why];
+        return true;
+    }
+
+    /// <summary>
+    /// Adds what an analyser said of the test (it could not obtain a result, say) to what whoever enters or verifies it
+    /// sees. False when the result is verified, or says it already.
+    /// </summary>
+    public bool Note(string note)
+    {
+        if (Status == LabResultStatus.Verified || HeldReasons.Contains(note))
+        {
+            return false;
+        }
+
+        HeldReasons = [.. HeldReasons, note];
+        return true;
+    }
 
     /// <summary>
     /// The value the analyser sent now, from the same analyser and with the same unit, flags, status and comment: the

@@ -107,21 +107,137 @@ public sealed class EInvoice : AuditableEntity, IFacilityScoped
     {
         if (Status == EInvoiceStatus.Cancelled)
         {
-            return Error.Rule("einvoice.cancelled", "This IRN is already cancelled.");
+            return AlreadyCancelled();
         }
 
         if (!CanCancel(now))
         {
-            return Error.Rule("einvoice.cancel_window",
-                "The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.");
+            return CancelWindowCrossed();
         }
 
+        return Cancelled(reason, remark, now);
+    }
+
+    /// <summary>
+    /// Records a cancellation the portal confirmed when asked how it holds the IRN, its answer to the cancellation itself
+    /// having been lost. The portal kept its own 24 hours, so it is recorded whenever HC360 learns of it, at the time the
+    /// portal gives (<paramref name="cancelledAt"/>), or the time HC360 learned of it when the portal gives none.
+    /// </summary>
+    public Result RecordPortalCancellation(EInvoiceCancelReason reason, string remark, DateTimeOffset? cancelledAt, DateTimeOffset learnedAt) =>
+        Status == EInvoiceStatus.Cancelled ? AlreadyCancelled() : Cancelled(reason, remark, cancelledAt ?? learnedAt);
+
+    internal static Error CancelWindowCrossed() => Error.Rule("einvoice.cancel_window",
+        "The portal cancels an IRN only within 24 hours of its generation. Issue a credit note against the invoice instead.");
+
+    private static Error AlreadyCancelled() => Error.Rule("einvoice.cancelled", "This IRN is already cancelled.");
+
+    private Result Cancelled(EInvoiceCancelReason reason, string remark, DateTimeOffset at)
+    {
         Status = EInvoiceStatus.Cancelled;
-        CancelledAt = now;
+        CancelledAt = at;
         CancelReason = reason;
         CancelRemark = remark.Trim();
         return Result.Success();
     }
+}
+
+/// <summary>What a cancellation the portal did not carry out left, once the portal is asked how it holds the IRN.</summary>
+public enum IrnCancelOutcome
+{
+    /// <summary>The portal holds the IRN as cancelled: the cancellation was made (its answer lost, or made before) and is recorded.</summary>
+    Cancelled,
+
+    /// <summary>The portal did not answer the cancellation and holds the IRN as active: nothing was cancelled, and it is asked again.</summary>
+    NotCancelled,
+
+    /// <summary>The portal did not answer the cancellation, nor say how it holds the IRN: whether it was cancelled is not known.</summary>
+    Unknown,
+
+    /// <summary>The portal refused it as past the 24 hours, and holds the IRN as active: a credit note undoes the invoice.</summary>
+    WindowCrossed,
+
+    /// <summary>
+    /// The portal refused it as past the 24 hours, and did not say how it holds the IRN (it refused that too, or its answer
+    /// gave no status): whether it cancelled the IRN in time is not known, and asking again may not tell.
+    /// </summary>
+    WindowCrossedUnconfirmed,
+
+    /// <summary>The portal refused it for another reason, and does not hold the IRN as cancelled: its refusal stands.</summary>
+    Refused,
+}
+
+/// <summary>
+/// A cancellation on the portal that failed is never taken at its word. Its answer may have been lost after the IRN was
+/// cancelled, and asked again the portal refuses an IRN it no longer holds as active: either way, the IRN's details
+/// (<see cref="IInvoiceRegistrationPortal.GetByIrnAsync"/>) say what happened.
+/// </summary>
+public static class IrnCancellations
+{
+    /// <summary>
+    /// What <paramref name="failure"/> left, given the IRN's <paramref name="details"/> asked for afterwards. Past the 24 hours
+    /// here the portal is not asked to cancel at all: <paramref name="failure"/> is then its 2270, known beforehand.
+    /// </summary>
+    public static IrnCancelOutcome After(IrpError failure, IrpResult<IrpIrn> details) => (failure.Code, details) switch
+    {
+        (_, { Value.IsCancelled: true }) => IrnCancelOutcome.Cancelled,
+        (IrpError.CancelWindowCrossed, { Value.IsActive: true }) => IrnCancelOutcome.WindowCrossed,
+        (IrpError.CancelWindowCrossed, { Error.Code: IrpError.Unreachable }) => IrnCancelOutcome.Unknown,
+        (IrpError.CancelWindowCrossed, _) => IrnCancelOutcome.WindowCrossedUnconfirmed,
+        (IrpError.Unreachable, { Value.IsActive: true }) => IrnCancelOutcome.NotCancelled,
+        (IrpError.Unreachable, _) => IrnCancelOutcome.Unknown,
+        _ => IrnCancelOutcome.Refused,
+    };
+}
+
+/// <summary>What an e-way bill request the portal did not carry out left, once the portal is asked for the IRN's e-way bill.</summary>
+public enum EwayBillOutcome
+{
+    /// <summary>
+    /// The portal holds a live e-way bill for the IRN (its answer says <c>ACT</c>): it was generated (its answer lost, or
+    /// asked for before) and is recorded.
+    /// </summary>
+    Generated,
+
+    /// <summary>The portal holds the IRN's e-way bill as cancelled: there is no live one to record.</summary>
+    Cancelled,
+
+    /// <summary>The portal did not answer the request and holds no e-way bill for the IRN: none was generated, and it is asked again.</summary>
+    NotGenerated,
+
+    /// <summary>The portal says the IRN already has an e-way bill (4002), yet holds none for it when asked (4005): asking again does not settle it.</summary>
+    NotFound,
+
+    /// <summary>
+    /// The portal did not answer the request, or said the IRN already has an e-way bill, and then could not be asked for it
+    /// or gave it without saying it is live or cancelled: whether there is a live one, or which, is not known.
+    /// </summary>
+    Unknown,
+
+    /// <summary>The portal refused the request for another reason, and holds no live e-way bill for the IRN: its refusal stands.</summary>
+    Refused,
+}
+
+/// <summary>
+/// An e-way bill request that failed is never taken at its word. Its answer may have been lost after the e-way bill was
+/// generated, and asked again the portal refuses a second e-way bill for the IRN (4002): either way, the e-way bill the
+/// portal holds for the IRN (<see cref="IInvoiceRegistrationPortal.GetEwayBillAsync"/>) says what happened. A live one
+/// (<c>ACT</c>) is the IRN's e-way bill whatever the request's failure said, since the portal makes one per IRN; an
+/// answer that does not say <c>ACT</c> or <c>CNL</c> confirms nothing.
+/// </summary>
+public static class EwayBillRequests
+{
+    /// <summary>What <paramref name="failure"/> left, given the IRN's e-way bill <paramref name="held"/> asked for afterwards.</summary>
+    public static EwayBillOutcome After(IrpError failure, IrpResult<IrpEwayBill> held) => (failure.Code, held) switch
+    {
+        (_, { IsSuccess: true, Value.IsActive: true }) => EwayBillOutcome.Generated,
+
+        // Unanswered, or refused as already generated: the portal may hold an e-way bill for the IRN.
+        (IrpError.Unreachable or IrpError.EwayBillExists, { IsSuccess: true, Value.IsCancelled: true }) => EwayBillOutcome.Cancelled,
+        (IrpError.Unreachable, { Error.Code: IrpError.EwayBillNotFound }) => EwayBillOutcome.NotGenerated,
+        (IrpError.EwayBillExists, { Error.Code: IrpError.EwayBillNotFound }) => EwayBillOutcome.NotFound,
+        (IrpError.Unreachable or IrpError.EwayBillExists, _) => EwayBillOutcome.Unknown,
+        _ => EwayBillOutcome.Refused,
+    };
 }
 
 /// <summary>The supplier on an e-invoice: the facility, from its master.</summary>

@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 using HyFib.HealthCare360.Modules.Pharmacy.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
@@ -17,6 +18,8 @@ internal static class SaleEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/pharmacy").WithTags("Pharmacy");
+
+        group.MapCounterTerminalSales(PharmacyDayBookSource.Key, PharmacyPermissions.Dispense, PharmacyPermissions.Sales);
 
         group.MapGet("/stock", Stock).RequireAnyPermission(PharmacyPermissions.CounterStaff);
         group.MapGet("/stock/batches", async (Guid storeId, Guid itemId, StockService stock, CancellationToken ct) =>
@@ -179,6 +182,8 @@ internal static class SaleEndpoints
 
         var storeName = await db.Set<Store>().Where(s => s.Id == sale.StoreId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? string.Empty;
         var soldBy = await db.Set<User>().Where(u => u.Id == sale.SoldByUserId).Select(u => u.DisplayName).FirstOrDefaultAsync(ct);
+        // Only a sale to a buyer registered for GST is ever an e-invoice; the register says what its print carries.
+        var einvoice = sale.BuyerGstin is null ? EInvoicePrint.None : await einvoices.PrintAsync(PharmacyEInvoiceSource.Key, sale.Id, ct);
         return TypedResults.Ok(new PharmacySaleDetail(
             sale.Id, sale.InvoiceNumber, sale.Type, sale.StoreId, storeName, sale.PatientId, uhid, sale.CustomerName,
             PatientContacts.Phone(sale.CustomerPhone, await contacts.FullAsync(ct)),
@@ -190,14 +195,15 @@ internal static class SaleEndpoints
                 i.Id, i.ItemId, i.ItemName, i.GenericName, i.HsnCode, i.Schedule, i.BatchNumber, i.ExpiryDate, i.Quantity, i.UnitMrp, i.GstRate,
                 i.GrossAmount, i.DiscountAmount, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount, i.NetAmount, i.ReturnedQuantity, i.IsSubstitution,
                 i.PrescribedDrugName, i.SubstitutionReason)).ToList(),
-            sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund, p.RefundOfPaymentId)).ToList(),
+            sale.Payments.OrderBy(p => p.ReceivedAt).Select(p => new PharmacyPaymentDto(p.Id, p.Mode, p.Amount, p.Reference, p.ReceivedAt, p.IsRefund, p.RefundOfPaymentId, p.ApprovalCode, p.CardLast4, p.TerminalSaleId)).ToList(),
             sale.Version,
             sale.BuyerAddress,
-            sale.BuyerGstin is null ? null : await einvoices.FindAsync(PharmacyEInvoiceSource.Key, sale.Id, ct),
+            einvoice.Stamp,
             sale.FreeTreatmentReason,
             sale.PrescriptionDate,
             await adjustments.PendingAsync(sale.Id, ct),
-            sale.HandledBy(currentUser.UserId)));
+            sale.HandledBy(currentUser.UserId),
+            einvoice.Missing));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)

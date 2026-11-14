@@ -102,6 +102,11 @@ public sealed record DiscountApprovalDto(
     string? Remarks);
 
 /// <summary>Everything the bill screen and the GST invoice/receipt print need.</summary>
+/// <param name="EInvoice">The live IRN the portal gave this B2B tax invoice, printed with its signed QR code.</param>
+/// <param name="MissingIrn">
+/// Set when the bill is due an IRN and has no live one (the e-invoice register's own test): its prints say it is not a
+/// valid tax invoice for the buyer (GST rule 48(5)) in place of the IRN.
+/// </param>
 public sealed record BillDetail(
     Guid Id,
     string? BillNumber,
@@ -173,7 +178,8 @@ public sealed record BillDetail(
     IReadOnlyList<DebitNoteDto>? DebitNotes = null,
     decimal DebitAmount = 0m,
     decimal PayerDebitAmount = 0m,
-    string? GstFilingWarning = null);
+    string? GstFilingWarning = null,
+    MissingIrn? MissingIrn = null);
 
 /// <summary>
 /// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the
