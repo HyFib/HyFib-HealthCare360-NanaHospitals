@@ -181,6 +181,14 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-RestoreMarker.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      - name: Test what the restore drill decides from what it reads
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-RestoreDrill.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-RestoreDrill.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       - name: Test the installers' restart of HC360 and PostgreSQL when they fail
         shell: pwsh
         run: |

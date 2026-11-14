@@ -320,9 +320,16 @@ Failure rows for these destinations:
 
    After the rotation the earlier versions stay exactly as long as a backup made before it is kept (to night 49). The
    folder then grows by the new documents and one backup a night. The full table is in the test's output.
-7. Docs: DEPLOYMENT.md §7 (downgrade note), §8, §9 step 3, the readiness doc's sizing. A restore-drill script for a
-   clean Windows VM from one USB disk (row counts plus per-document hashes, timed).
-
+7. Docs and the restore drill (done). DEPLOYMENT.md sections 7, 8 and 9 and the readiness doc are updated.
+   `Invoke-HC360RestoreDrill.ps1` restores one backup from one USB disk, NAS folder or download on a spare machine, and
+   times each step. It then checks every stored document the restored database records: the file is in place, decrypts
+   with the restored keys, and its content's SHA-256 is the one the file store recorded when it was saved
+   (`backup check-documents`, `DocumentIntegrityCheck`). That is a check independent of the backup's own index. It also
+   compares every table's row count with counts exported from the live server right after the backup. Its decisions are
+   tested in CI in both PowerShell versions (`tests/deploy/Test-RestoreDrill.ps1`). Writing the docs found two gaps in
+   steps 3 and 4, now fixed. Going back from an upgrade (F17) restores the backup taken before it with the earlier
+   version, so that backup is written in format 2. And the off-site restore steps downloaded the archive alone, so each
+   backup uploaded now names its generation (`x-amz-meta-hc360-generation`).
 ---
 
 ## Appendix A. Measurements to run on the Nana server (read-only)

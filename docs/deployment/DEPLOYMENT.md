@@ -1238,6 +1238,10 @@ each.
    series past the numbers issued since the upgrade, so a bill or UHID printed meanwhile is not issued again, and holds
    outgoing messages until an administrator releases them (section 8, "After a restore"; a previous version does so
    only if it is this version or later).
+
+   The nightly backups made after an upgrade to a version that keeps documents apart (archive format 3, section 8)
+   restore only with that version or a later one. The backup taken just before the upgrade is in the earlier format,
+   so going back works as above.
 4. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`, so that HC360 starts with
    Windows again. *Check:* Administration › System health shows the previous version and nothing red.
 5. **Workstations.** HC360 Desktop never goes back a version by itself. One that took the newer version keeps it; where
@@ -1289,9 +1293,28 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   - Don't edit, rename or delete anything under `blobs\`, `gen-*\` or `offsite\`, or the `.refs` files, by hand. If a
     `.refs` file is lost, HC360 stops removing documents from that folder, and the backup's note says which file is
     missing, until the backup it belongs to is deleted.
-- **Restore test every quarter** on a spare machine. The restored copy holds its outgoing messages ("After a restore"
-  below): leave them held there, or patients get the test copy's messages. To check a copy on the NAS or a USB drive
-  without restoring it:
+- **Restore drill every quarter** on a spare machine, with HC360 and PostgreSQL installed as for new hardware (step 1
+  below) and one USB disk or the NAS attached. Right after a night's backup, on the live server, count the rows to
+  compare with. That only reads, so it changes nothing:
+
+  ```powershell
+  .\Invoke-HC360RestoreDrill.ps1 -ExportReference -ReportPath E:\drill-reference.json
+  ```
+
+  Then on the spare machine, with that night's backup from the disk:
+
+  ```powershell
+  .\Invoke-HC360RestoreDrill.ps1 -BackupFile E:\HC360-Backups\hc360-<date>-scheduled.hc360bak -ReferenceFile E:\drill-reference.json
+  ```
+
+  It checks the backup in its folder and restores it with `Restore-HC360.ps1`. Then it checks every stored document
+  the restored database records: its file must be in place, decrypt with the restored keys, and hold what was saved
+  (the SHA-256 recorded when it was saved). It counts the rows of every table against the live server's: a table
+  missing, or with more rows, fails the drill, while fewer rows are the ones added after the backup. It times each
+  step and leaves a report (`drills\restore-drill-<time>.json` and `.txt` in the data folder) to keep with the go-live
+  records. The time it takes is the time a real restore takes. The restored copy holds its outgoing messages ("After
+  a restore" below): leave them held there, or patients get the test copy's messages. To check a copy on the NAS or a
+  USB drive without restoring it:
 
   ```powershell
   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '\\NAS\HC360-Backups\hc360-<date>.hc360bak'

@@ -310,13 +310,16 @@ monitor is set up. The dates are against the release on 23 November.
      keeps one copy; a second administrator (the medical director or the hospital administrator) keeps another outside
      the hospital, at home or in a bank locker, and types it in under Backups › Recovery key, *I hold this key*. Put the
      quarterly check, when each holder types the key in again, in both their calendars.
-   - Let the first night's backup run and go off site. On a spare PC, download it from the bucket with the hospital's
-     own login, check it with `backup verify`, and restore it with `Restore-HC360.ps1` (DEPLOYMENT.md section 8,
-     *Restoring from the off-site copy*).
+   - Let the first night's backup run and go off site. Right after it, export the row counts on the server
+     (`Invoke-HC360RestoreDrill.ps1 -ExportReference`). On a spare PC, download the backup and its generation from the
+     bucket with the hospital's own login (DEPLOYMENT.md section 8, *Restoring from the off-site copy*), and run the
+     restore drill on it (`Invoke-HC360RestoreDrill.ps1 -BackupFile ... -ReferenceFile ...`, section 8, *Restore drill
+     every quarter*). Do the same from one of the USB disks.
 
    *Check:* the night's backup shows Yes in the Backups screen's *Off site* column, and the bucket shows it locked for 35
    days. Backups › Recovery key lists both holders, and System health shows neither `backup.offsite_stale` nor
-   `backup.recovery_key_custodians`. The restored copy opens and holds what the original holds.
+   `backup.recovery_key_custodians`. Both drills say PASSED: every document in place and as saved, and no table missing or with
+   more rows than the server had. Keep their reports, with the time each restore took.
 9. **Build the item master in HC360.** No data comes from the current software. Set each scheduled drug's schedule
    from its molecule against the H1 list, and fill in its manufacturer.
    *Check:* the pharmacist-in-charge reviews the H1 and X list before it is used.
