@@ -65,19 +65,19 @@ all-access); the table shows the defaults.
 
 ### The 32 built-in roles
 
-289 permissions are declared. 1755 of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.
+289 permissions are declared. 1756 of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.
 
 | Role | Responsibility | Default permissions | Endpoints | Two-step verification | Can be turned off |
 |---|---|---:|---:|---|---|
-| `SuperAdmin` | Full access to everything, including security settings | all (`*`) | 1755 | Required (role) | No, always in use |
-| `HospitalAdmin` | Hospital administration, masters, users and reports | 204 | 1261 | Required (role) | Yes |
+| `SuperAdmin` | Full access to everything, including security settings | all (`*`) | 1756 | Required (role) | No, always in use |
+| `HospitalAdmin` | Hospital administration, masters, users and reports | 204 | 1262 | Required (role) | Yes |
 | `Doctor` | Consultants and residents: EMR, orders, e-prescriptions | 87 | 522 | If the user sets it up | Yes |
 | `Nurse` | Nursing care, vitals, ward operations | 84 | 550 | If the user sets it up | Yes |
 | `FrontOffice` | Registration, visits, queue and enquiries | 40 | 313 | If the user sets it up | Yes |
-| `Billing` | OP/IP billing and charge management | 25 | 224 | If the user sets it up | Yes |
+| `Billing` | OP/IP billing and charge management | 25 | 225 | If the user sets it up | Yes |
 | `Cashier` | Payments, receipts and day-end closing | 18 | 172 | If the user sets it up | Yes |
 | `InsuranceDesk` | Insurance verification, pre-authorisation and claims | 18 | 200 | If the user sets it up | Yes |
-| `Pharmacist` | OP/IP pharmacy dispensing and pharmacy stock | 32 | 211 | If the user sets it up | Yes |
+| `Pharmacist` | OP/IP pharmacy dispensing and pharmacy stock | 32 | 212 | If the user sets it up | Yes |
 | `LabTechnician` | Sample collection, processing and result entry | 17 | 140 | If the user sets it up | Yes |
 | `Pathologist` | Laboratory result verification and sign-off | 18 | 151 | If the user sets it up | Yes |
 | `Radiographer` | Imaging acquisition and modality worklist | 13 | 111 | If the user sets it up | Yes |
@@ -98,7 +98,7 @@ all-access); the table shows the defaults.
 | `HrManager` | Employees, attendance, leave and payroll | 15 | 170 | Required (role) | Yes |
 | `CrmExecutive` | Leads, follow-ups, campaigns and feedback | 23 | 155 | Required (administers) | Yes |
 | `QualityManager` | Incidents, risk register and quality indicators | 37 | 286 | Required (administers) | Yes |
-| `Accountant` | Accounts hand-off, doctor fees and Tally | 28 | 238 | Required (role) | Yes |
+| `Accountant` | Accounts hand-off, doctor fees and Tally | 28 | 239 | Required (role) | Yes |
 | `MisAnalyst` | MIS reports and BI dashboards | 10 | 90 | If the user sets it up | Yes |
 | `Patient` | Patient portal user | 1 | 61 | If the user sets it up | No, always in use |
 

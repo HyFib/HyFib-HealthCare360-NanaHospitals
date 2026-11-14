@@ -50,6 +50,10 @@ internal static class EInvoiceEndpoints
                 async (string source, Guid id, GenerateEwayBillRequest request, EInvoiceService einvoices, CancellationToken ct) =>
                     (await einvoices.EwayBillAsync(source, id, request, ct)).ToOk())
             .WithValidation<GenerateEwayBillRequest>();
+        group.MapPost("/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/ewaybill/record",
+                async (string source, Guid id, RecordEwayBillRequest request, EInvoiceService einvoices, CancellationToken ct) =>
+                    (await einvoices.RecordEwayBillAsync(source, id, request, ct)).ToOk())
+            .WithValidation<RecordEwayBillRequest>();
         group.MapPost("/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/irn/cancel",
                 async (string source, Guid id, CancelIrnRequest request, EInvoiceService einvoices, CancellationToken ct) =>
                     (await einvoices.CancelAsync(source, id, request, ct)).ToOk())

@@ -115,6 +115,22 @@ public sealed record GenerateEwayBillRequest(
     DateOnly? TransportDocumentDate,
     bool OverDimensionalCargo = false);
 
+/// <summary>
+/// An e-way bill generated outside HC360, as its print (EWB-01) shows it: its number (12 digits, or 14 for one generated
+/// from 1 January 2027), when it was generated, and the end of its validity, blank while only its Part-A is filled.
+/// </summary>
+public sealed record RecordEwayBillRequest(string EwbNo, DateTimeOffset GeneratedAt, DateTimeOffset? ValidUntil);
+
+public sealed class RecordEwayBillRequestValidator : AbstractValidator<RecordEwayBillRequest>
+{
+    public RecordEwayBillRequestValidator()
+    {
+        RuleFor(x => x.EwbNo).Must(n => EwayBillEntries.Number(n) is not null)
+            .WithMessage("The e-way bill number is the portal's 12 digits (14 for one generated from 1 January 2027).");
+        RuleFor(x => x.GeneratedAt).NotEmpty().WithMessage("Enter when the e-way bill was generated, as its print shows.");
+    }
+}
+
 public sealed class RecordIrnRequestValidator : AbstractValidator<RecordIrnRequest>
 {
     public RecordIrnRequestValidator()
