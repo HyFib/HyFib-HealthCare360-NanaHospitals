@@ -257,6 +257,14 @@ Raise the sign-in limit when many workstations reach the server through one addr
 when a campaign sends more than 1,200 messages a minute through one provider, and the per-user limits for a load test. Lowering them below the defaults is rarely needed: the per-account lockout and the portal's proof
 of work already stop guessing.
 
+### The server never runs as Development
+
+`appsettings.Development.json` is a developer's file (backups and MFA off, demonstration data on). It is not in the server
+package, and the server refuses to start as the Windows service if `ASPNETCORE_ENVIRONMENT` or `DOTNET_ENVIRONMENT` is set to
+`Development`: the service stops with "HC360 cannot start: the HC360 service is set to the Development environment" in the
+Windows Application log. Remove that variable (from the service's environment and from System Properties › Environment
+Variables) and start the service again.
+
 ### Reading the server log
 
 The server writes its log to `%ProgramData%\HyFib\HealthCare360\logs\hc360-server-<date>.json`, one event per line as a
