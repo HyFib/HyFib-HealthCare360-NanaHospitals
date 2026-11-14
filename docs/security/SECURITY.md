@@ -348,7 +348,8 @@ and grants nothing.
     that hold it) still applies. The Super Administrator and Patient roles are never off, and nobody turns off a role they
     hold ([ROLES.md](ROLES.md)).
   - Only someone who holds an administrative permission approves a grant of it, as only they may give it.
-  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`). A grant to
+  - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`): roles or
+    facilities given to their own account, or permissions added to or the turning back on of a role they hold. A grant to
     yourself, your own account or a role you hold, waits for someone else, and is refused when nobody else may approve it.
   - The approver gives what was asked, if it may still be given: the user still active (unless the grant reactivates
     them), the roles and facilities still there, and the approver allowed to manage the user and to give those roles.

@@ -342,7 +342,8 @@ internal sealed class GrantApprovals(
 
     /// <summary>
     /// Adds an approved grant's permissions to its role, in the approval's transaction, if they still may be added by the
-    /// person approving it: the role still exists and may be changed, and the approver holds any administrative one.
+    /// person approving it: the role still exists and may be changed, the approver does not hold it (nobody approves access
+    /// given to themselves), and the approver holds any administrative one.
     /// </summary>
     internal async Task<Result<string>> ApplyRoleGrantAsync(ApprovalRequest request, CancellationToken ct)
     {
@@ -356,6 +357,12 @@ internal sealed class GrantApprovals(
         if (role.Name is SystemRoles.SuperAdmin or SystemRoles.Patient)
         {
             return Error.Rule("role.protected", $"The {role.Name} role cannot be changed.");
+        }
+
+        if (await ApproverHoldsAsync(role.Id, ct))
+        {
+            return Error.Forbidden(SelfGrantCode,
+                "You hold this role, so the permissions added to it are given to you too: another person who may approve grants must decide it.");
         }
 
         if (asked.Permissions.Any(p => p == PermissionRegistry.Wildcard || !registry.IsDefined(p)))
@@ -398,7 +405,7 @@ internal sealed class GrantApprovals(
             return Error.Rule("access.role_gone", "The role no longer exists, so nothing was turned on.");
         }
 
-        if (current.UserId is { } approver && await db.Set<UserRole>().AnyAsync(ur => ur.UserId == approver && ur.RoleId == role.Id, ct))
+        if (await ApproverHoldsAsync(role.Id, ct))
         {
             return Error.Forbidden(SelfGrantCode,
                 "You hold this role, so turning it back on gives you access: another person who may approve grants must decide it.");
@@ -545,6 +552,14 @@ internal sealed class GrantApprovals(
         latch.IsSet = true;
         return true;
     }
+
+    /// <summary>
+    /// Whether the person approving holds the role: what is given to the role (permissions added, the role turned back on) is
+    /// given to them too, and nobody approves access given to themselves. Whether the role is in use does not matter: it
+    /// gives them what it holds once it is.
+    /// </summary>
+    private async Task<bool> ApproverHoldsAsync(Guid roleId, CancellationToken ct) =>
+        current.UserId is { } approver && await db.Set<UserRole>().AnyAsync(ur => ur.UserId == approver && ur.RoleId == roleId, ct);
 
     private async Task<ApprovalRequest?> PendingAsync(string kind, string subjectType, Guid subjectId, CancellationToken ct)
     {
