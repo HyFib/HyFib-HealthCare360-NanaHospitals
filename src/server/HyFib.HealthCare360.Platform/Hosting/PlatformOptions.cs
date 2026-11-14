@@ -468,6 +468,15 @@ public sealed class BackupOptions
     public int RetentionDays => Retention.LongestDays;
 
     /// <summary>
+    /// How far back a restore to a point in time can go, in days, where the WAL is archived (Enable-HC360Replication.ps1
+    /// -WalArchive): the encrypted base backups older than this go, all but the newest, and with them the archived WAL older
+    /// than the oldest base backup kept, on the server and on the second disk or NAS. The nightly backups keep the long-term
+    /// copies (<see cref="Retention"/>); the WAL is for undoing the recent past to the minute, and a year of it would fill
+    /// the second disk. 30 by default.
+    /// </summary>
+    public int PointInTimeDays { get; set; } = 30;
+
+    /// <summary>
     /// When the backups' nightly upkeep runs (Quartz cron, default 03:30 every day, after the nightly backup): it copies to
     /// the second disk or NAS the backups it missed while it was away (<see cref="Jobs.BackupUpkeep"/>), test-restores the
     /// newest backup when one is due (<see cref="TestRestore"/>), and reads back the copies on the second disk or NAS.

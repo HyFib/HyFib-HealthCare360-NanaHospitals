@@ -161,7 +161,7 @@ public sealed class BaseBackupTests : IDisposable
     [Fact]
     public void Base_backups_past_the_retention_days_go_but_the_newest_always_stays()
     {
-        _options.Backup.RetentionDays = 30;
+        _options.Backup.PointInTimeDays = 30;
         var folder = Path.Combine(_directories.Backups, "base", SystemId);
         Directory.CreateDirectory(folder);
         foreach (var at in new[] { Now.AddDays(-60), Now.AddDays(-45), Now.AddDays(-20) })

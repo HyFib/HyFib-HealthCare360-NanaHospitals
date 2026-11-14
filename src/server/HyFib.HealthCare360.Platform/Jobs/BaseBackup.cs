@@ -557,12 +557,12 @@ internal sealed class BaseBackupService(
     }
 
     /// <summary>
-    /// The base backups past the days nightly backups are kept, all but the newest, which a restore to a point in time
-    /// always needs. Left behind half-written files go after a day.
+    /// The base backups older than a restore to a point in time reaches (<see cref="BackupOptions.PointInTimeDays"/>), all
+    /// but the newest, which such a restore always needs. Left behind half-written files go after a day.
     /// </summary>
     internal void RemoveOld(string folder)
     {
-        var cutoff = time.GetUtcNow().AddDays(-Math.Max(options.Value.Backup.RetentionDays, 1));
+        var cutoff = time.GetUtcNow().AddDays(-Math.Max(options.Value.Backup.PointInTimeDays, 1));
         foreach (var old in BaseBackupArchive.Expired(BaseBackupArchive.List(folder), cutoff))
         {
             File.Delete(old.Path);

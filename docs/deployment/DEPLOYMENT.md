@@ -1845,7 +1845,9 @@ every change) to a folder on the server's own disk, at least every 15 minutes; H
 and copies it, encrypted, to the second disk or NAS (`-SecondaryBackupDir`); and HC360 takes a **base backup**, a copy of
 PostgreSQL's whole data folder, at once and then every Sunday at 03:30. From the newest base backup and the WAL archived
 since, the database can be restored to any moment: a mistake undone to the minute before it, not to last night's backup,
-and after a disk failure, to within minutes of it (SRS REL-02). On the Server Node, or on the primary:
+and after a disk failure, to within minutes of it (SRS REL-02). It reaches back `Backup:PointInTimeDays` (30 by default):
+older base backups go, all but the newest, and the WAL older than the oldest kept with them. The nightly backups keep the
+long-term copies (section 8). On the Server Node, or on the primary:
 
 ```powershell
 .\Enable-HC360Replication.ps1 -WalArchive

@@ -182,7 +182,7 @@ public sealed class WalArchiveTests : IDisposable
     [Fact]
     public void The_encrypted_WAL_older_than_the_oldest_base_backup_kept_goes_here_and_in_the_secondary_directory()
     {
-        _options.Backup.RetentionDays = 30;
+        _options.Backup.PointInTimeDays = 30;
         var bases = PointInTimeRecovery.BaseBackupFolder(_directories.Backups, SystemId);
         Directory.CreateDirectory(bases);
         File.WriteAllBytes(Path.Combine(bases, BaseBackupArchive.FileName(Now.AddDays(-20), "000000010000000000000040")), []);

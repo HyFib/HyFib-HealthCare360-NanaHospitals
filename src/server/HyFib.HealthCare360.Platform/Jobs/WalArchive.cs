@@ -336,7 +336,7 @@ internal sealed class WalArchiveService(
             return;
         }
 
-        var cutoff = time.GetUtcNow().AddDays(-Math.Max(options.Value.Backup.RetentionDays, 1));
+        var cutoff = time.GetUtcNow().AddDays(-Math.Max(options.Value.Backup.PointInTimeDays, 1));
         foreach (var root in new[] { directories.Backups, secondary }.OfType<string>().Where(r => r.Length > 0))
         {
             try
