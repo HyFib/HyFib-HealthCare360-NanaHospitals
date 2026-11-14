@@ -60,8 +60,11 @@ public sealed class UserFacilityTests(HospitalServer server)
         var everywhere = await (await server.SignInNewSessionAsync(name)).Client.GetAsync<AuthUser>("/api/v1/auth/me");
         everywhere.Facilities.Select(f => f.Id).ShouldContain(main);
 
-        // Taken back to one facility: a narrowing, at once.
-        using (var back = await admin.SendRawAsync(HttpMethod.Put, path, Update(given, [main], all: false)))
+        // Taken back to one facility: a narrowing, at once. Read again first, as the screen would show her: signing in wrote
+        // her last sign-in to the account, so the version read before it is out of date.
+        var signedIn = await admin.GetAsync<UserDetail>(path);
+        signedIn.AllFacilities.ShouldBeTrue();
+        using (var back = await admin.SendRawAsync(HttpMethod.Put, path, Update(signedIn, [main], all: false)))
         {
             back.StatusCode.ShouldBe(HttpStatusCode.NoContent, await back.Content.ReadAsStringAsync(Ct));
         }
