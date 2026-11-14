@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -43,7 +41,7 @@ public sealed class BackupRestoreTests(HospitalServer server)
     [Fact]
     public async Task A_backup_restored_on_new_hardware_opens_there_with_its_patients_documents_credentials_and_audit_trail()
     {
-        Assert.SkipUnless(PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
+        Assert.SkipUnless(ScriptedRestore.PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
 
         // On the Server Node: a scanned document and an integration's credential, both encrypted with the field key.
         var scan = ScannedDocument();
@@ -120,7 +118,7 @@ public sealed class BackupRestoreTests(HospitalServer server)
     [Fact]
     public async Task A_backup_restored_on_new_hardware_holds_none_of_the_old_servers()
     {
-        Assert.SkipUnless(PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
+        Assert.SkipUnless(ScriptedRestore.PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
         var old = new ServerNodeBoard(server.Services.GetRequiredService<IServiceScopeFactory>(), SystemHealthServersTests.NodeFolder());
         var name = "IT-OLD-" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
         var machine = NewMachine();
@@ -135,7 +133,7 @@ public sealed class BackupRestoreTests(HospitalServer server)
             (await ServerRowsAsync(connection)).ShouldBe(0, "a backup holds no server's row: the old servers' showed as servers that stopped reporting");
 
             // A backup made before holds them: the script clears them, between pg_restore and putting the keys back.
-            var script = await File.ReadAllTextAsync(DeployScriptPath("Restore-HC360.ps1"), Ct);
+            var script = await File.ReadAllTextAsync(ScriptedRestore.DeployScriptPath("Restore-HC360.ps1"), Ct);
             var restoredAt = script.IndexOf("pg_restore.exe') @pgArgs", StringComparison.Ordinal);
             var clearedAt = script.IndexOf("Clear-ServerRows $DatabaseName", StringComparison.Ordinal);
             var keysAt = script.IndexOf("@('backup', 'restore'", StringComparison.Ordinal);
@@ -184,21 +182,6 @@ public sealed class BackupRestoreTests(HospitalServer server)
         return (long)(await count.ExecuteScalarAsync(Ct))!;
     }
 
-    /// <summary>A script of deploy/windows, found above the test's folder.</summary>
-    private static string DeployScriptPath(string file)
-    {
-        for (var folder = new DirectoryInfo(AppContext.BaseDirectory); folder is not null; folder = folder.Parent)
-        {
-            var path = Path.Combine(folder.FullName, "deploy", "windows", file);
-            if (File.Exists(path))
-            {
-                return path;
-            }
-        }
-
-        throw new FileNotFoundException($"deploy/windows/{file} was not found above the test's folder.");
-    }
-
     /// <summary>
     /// Waits until every audit record written so far is sealed, as the server seals them every few seconds (a test that runs
     /// first may back up before it has), and returns the position the chain ends at.
@@ -238,28 +221,21 @@ public sealed class BackupRestoreTests(HospitalServer server)
     /// <list type="number">
     /// <item>the server CLI's <c>backup decrypt</c> checks the whole backup and writes its database dump, and changes
     /// nothing else;</item>
-    /// <item>a new database, with pg_trgm, filled by pg_restore;</item>
+    /// <item>a new database owned by an account that is not a superuser, with pg_trgm made as that account, filled by
+    /// pg_restore as that account, and the working account's rights given again (<see cref="ScriptedRestore"/>);</item>
     /// <item>only then the CLI's <c>backup restore</c> puts back the documents and the backup's keys.</item>
     /// </list>
     /// </summary>
-    private static async Task<TestDatabase> RestoreAsync(string backup, byte[] recoveryKey, DataDirectories machine)
+    private static async Task<ScriptedRestore> RestoreAsync(string backup, byte[] recoveryKey, DataDirectories machine)
     {
         var dump = Path.Combine(machine.Temp, "restore.dump");
         (await CliAsync(recoveryKey, "backup", "decrypt", "--in", backup, "--out", dump, "--data-dir", machine.Root)).ShouldBe(0, "backup decrypt");
         File.Exists(dump).ShouldBeTrue();
         File.Exists(FieldMasterKey.PathIn(machine)).ShouldBeFalse("backup decrypt puts no key in place");
 
-        var database = await TestDatabase.CreateAsync(Ct);
+        var database = await ScriptedRestore.RunAsync(dump, Ct);
         try
         {
-            await using (var connection = new NpgsqlConnection(database.ConnectionString))
-            {
-                await connection.OpenAsync(Ct);
-                await using var extension = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS pg_trgm", connection);
-                await extension.ExecuteNonQueryAsync(Ct);
-            }
-
-            await PgRestoreAsync(dump, database.ConnectionString);
             (await CliAsync(recoveryKey, "backup", "restore", "--in", backup, "--data-dir", machine.Root)).ShouldBe(0, "backup restore");
             return database;
         }
@@ -284,44 +260,6 @@ public sealed class BackupRestoreTests(HospitalServer server)
         finally
         {
             Environment.SetEnvironmentVariable("HC360_RECOVERY_KEY", null);
-        }
-    }
-
-    /// <summary>pg_restore as Restore-HC360.ps1 runs it, as the new database's owner here (the script restores as hc360_app).</summary>
-    private static async Task PgRestoreAsync(string dump, string connectionString)
-    {
-        var target = new NpgsqlConnectionStringBuilder(connectionString);
-        var startInfo = new ProcessStartInfo(PgRestore()) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (var argument in (string[])["--no-owner", "--exit-on-error", "--no-password", $"--host={target.Host}", $"--port={target.Port}",
-                     $"--username={target.Username}", $"--dbname={target.Database}", dump])
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        startInfo.Environment["PGPASSWORD"] = target.Password ?? string.Empty;
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("pg_restore could not be started.");
-        var output = process.StandardOutput.ReadToEndAsync(Ct);
-        var errors = process.StandardError.ReadToEndAsync(Ct);
-        await process.WaitForExitAsync(Ct);
-        await output;
-        process.ExitCode.ShouldBe(0, await errors);
-    }
-
-    /// <summary>pg_restore from PGBIN (the CI runner's PostgreSQL) or the PATH.</summary>
-    private static string PgRestore() =>
-        Environment.GetEnvironmentVariable("PGBIN") is { Length: > 0 } bin ? Path.Combine(bin, OperatingSystem.IsWindows() ? "pg_restore.exe" : "pg_restore") : "pg_restore";
-
-    private static bool PgRestoreInstalled()
-    {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo(PgRestore(), "--version") { RedirectStandardOutput = true, UseShellExecute = false });
-            process?.WaitForExit();
-            return process?.ExitCode == 0;
-        }
-        catch (Win32Exception)
-        {
-            return false;
         }
     }
 

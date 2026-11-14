@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Privacy.Domain;
@@ -16,7 +14,6 @@ using HyFib.HealthCare360.Server;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -34,7 +31,7 @@ public sealed class ErasureRestoreTests(HospitalServer server)
     [Fact]
     public async Task An_erasure_made_after_a_backup_is_carried_out_again_when_that_backup_is_restored()
     {
-        Assert.SkipUnless(PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
+        Assert.SkipUnless(ScriptedRestore.PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
 
         // A patient with a nominee and a portal account, who asks for both to be erased.
         var (patient, phone) = await RegisterPatientAsync();
@@ -122,8 +119,11 @@ public sealed class ErasureRestoreTests(HospitalServer server)
         return (Path.Combine(server.Services.GetRequiredService<DataDirectories>().Backups, run.FileName!), key.Key);
     }
 
-    /// <summary>The database steps of Restore-HC360.ps1: <c>backup decrypt</c> writes the dump, and pg_restore fills a new database.</summary>
-    private static async Task<TestDatabase> RestoreDatabaseAsync(string backup, byte[] recoveryKey, DataDirectories machine)
+    /// <summary>
+    /// The database steps of Restore-HC360.ps1: <c>backup decrypt</c> writes the dump, and pg_restore fills a new database as
+    /// the script runs it, as its owner (<see cref="ScriptedRestore"/>).
+    /// </summary>
+    private static async Task<ScriptedRestore> RestoreDatabaseAsync(string backup, byte[] recoveryKey, DataDirectories machine)
     {
         var dump = Path.Combine(machine.Temp, "restore.dump");
         Environment.SetEnvironmentVariable("HC360_RECOVERY_KEY", BackupRecoveryKey.Format(recoveryKey));
@@ -136,55 +136,7 @@ public sealed class ErasureRestoreTests(HospitalServer server)
             Environment.SetEnvironmentVariable("HC360_RECOVERY_KEY", null);
         }
 
-        var database = await TestDatabase.CreateAsync(Ct);
-        try
-        {
-            await using (var connection = new NpgsqlConnection(database.ConnectionString))
-            {
-                await connection.OpenAsync(Ct);
-                await using var extension = new NpgsqlCommand("CREATE EXTENSION IF NOT EXISTS pg_trgm", connection);
-                await extension.ExecuteNonQueryAsync(Ct);
-            }
-
-            var target = new NpgsqlConnectionStringBuilder(database.ConnectionString);
-            var startInfo = new ProcessStartInfo(PgRestore()) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-            foreach (var argument in (string[])["--no-owner", "--exit-on-error", "--no-password", $"--host={target.Host}", $"--port={target.Port}",
-                         $"--username={target.Username}", $"--dbname={target.Database}", dump])
-            {
-                startInfo.ArgumentList.Add(argument);
-            }
-
-            startInfo.Environment["PGPASSWORD"] = target.Password ?? string.Empty;
-            using var process = Process.Start(startInfo) ?? throw new InvalidOperationException("pg_restore could not be started.");
-            var output = process.StandardOutput.ReadToEndAsync(Ct);
-            var errors = process.StandardError.ReadToEndAsync(Ct);
-            await process.WaitForExitAsync(Ct);
-            await output;
-            process.ExitCode.ShouldBe(0, await errors);
-            return database;
-        }
-        catch
-        {
-            await database.DisposeAsync();
-            throw;
-        }
-    }
-
-    private static string PgRestore() =>
-        Environment.GetEnvironmentVariable("PGBIN") is { Length: > 0 } bin ? Path.Combine(bin, OperatingSystem.IsWindows() ? "pg_restore.exe" : "pg_restore") : "pg_restore";
-
-    private static bool PgRestoreInstalled()
-    {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo(PgRestore(), "--version") { RedirectStandardOutput = true, UseShellExecute = false });
-            process?.WaitForExit();
-            return process?.ExitCode == 0;
-        }
-        catch (Win32Exception)
-        {
-            return false;
-        }
+        return await ScriptedRestore.RunAsync(dump, Ct);
     }
 
     private async Task<(PatientCreated Patient, string Phone)> RegisterPatientAsync()

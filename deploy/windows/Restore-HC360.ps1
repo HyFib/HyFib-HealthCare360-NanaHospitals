@@ -130,7 +130,10 @@ try {
     $owner = if ($split) { 'hc360_owner' } else { 'hc360_app' }
     if (-not (Invoke-Sql 'postgres' @("CREATE DATABASE $DatabaseName OWNER $owner ENCODING 'UTF8'"))) { throw 'Could not create the database.' }
     $created = $true
-    if (-not (Invoke-Sql $DatabaseName @('CREATE EXTENSION IF NOT EXISTS pg_trgm'))) { throw 'Could not enable the pg_trgm extension.' }
+    # pg_trgm is a trusted extension, which the database's owner may make: made as the owner, it is the owner's. pg_restore
+    # runs as the owner (--role), and the dump's COMMENT ON EXTENSION pg_trgm needs the extension's owner; made as the
+    # superuser, every restore stopped there ("must be owner of extension pg_trgm") and put the previous database back.
+    if (-not (Invoke-Sql $DatabaseName @("SET ROLE $owner; CREATE EXTENSION IF NOT EXISTS pg_trgm"))) { throw 'Could not enable the pg_trgm extension.' }
     & (Join-Path $pgBin 'pg_restore.exe') @pgArgs -d $DatabaseName --no-owner --role=$owner --exit-on-error $dump
     if ($LASTEXITCODE -ne 0) { throw 'pg_restore failed.' }
     if ($split) {
