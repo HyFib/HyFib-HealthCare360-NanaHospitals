@@ -667,8 +667,12 @@ sure it reaches someone. On a live server, System health warns while one is miss
    never the HC360 server.
    - Create a heartbeat check with a period of 5 minutes and a grace time of 5 to 10, alerting IT and HyFib support.
    - Set `alerts.heartbeatUrl.secret` to its address, and `alerts.heartbeatMinutes` if the period is not 5. The server
-     that runs the jobs fetches it while the database answers, so a server that cannot reach its database counts as
-     down. The address is https, or http to a private address on the hospital's network.
+     that runs the jobs fetches it only while the database answers **and** the server's own web host answers: before
+     each fetch it asks `/health/ready` on its own staff address over HTTPS on this machine (a 5-second limit, trusting
+     only the server's own LAN certificate). A server whose web host is wedged, with staff unable to work, so stops the
+     heartbeat, and counts as down like one that cannot reach its database. System health does not warn of the pause
+     itself (the web host may be what is stuck): the monitor's alarm is how it is noticed. The address is https, or http
+     to a private address on the hospital's network.
    - Let the server through the firewall to the monitor's host: one https request every few minutes, carrying nothing
      but the address.
    - Keep the address to those who need it: whoever has it could fetch it and hide an outage. HC360 keeps it
