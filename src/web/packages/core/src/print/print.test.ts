@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as Bridge from '../bridge/bridge';
-import type { PrinterSetupInfo } from '../bridge/bridge';
+import type { PrinterSetupInfo, PrintOutcome } from '../bridge/bridge';
 
 const desktop = vi.hoisted(() => ({
   isDesktop: true,
   getPrinterSetup: vi.fn<() => Promise<PrinterSetupInfo>>(),
-  printHtml: vi.fn(async () => undefined),
+  printHtml: vi.fn<() => Promise<PrintOutcome | null | undefined>>(async () => undefined),
   printRaw: vi.fn(async () => undefined),
 }));
 
@@ -15,7 +15,7 @@ vi.mock('../bridge/bridge', async (importOriginal) => ({
   bridge: desktop,
 }));
 
-const { desktopTarget, printDocument, printHtml } = await import('./print');
+const { desktopTarget, isQueuedBehindPrinter, printDocument, printHtml } = await import('./print');
 const { roleForPageSize } = await import('./printers');
 
 const counter: PrinterSetupInfo = {
@@ -44,6 +44,27 @@ describe('printing on HC360 Desktop', () => {
       printerName: 'EPSON TM-T82 Receipt',
       silent: true,
     });
+  });
+
+  it('hands the screen the outcome, so a job queued behind a paused or offline printer is not reported as printed', async () => {
+    desktop.getPrinterSetup.mockResolvedValue(counter);
+
+    desktop.printHtml.mockResolvedValueOnce({ status: 'printed', printer: 'EPSON TM-T82 Receipt', message: null });
+    const printed = await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true });
+    expect(isQueuedBehindPrinter(printed)).toBe(false);
+
+    desktop.printHtml.mockResolvedValueOnce({
+      status: 'queued_printer_paused',
+      printer: 'EPSON TM-T82 Receipt',
+      message: "The document is queued on 'EPSON TM-T82 Receipt', but the printer is paused in Windows.",
+    });
+    const queued = await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true });
+    expect(isQueuedBehindPrinter(queued)).toBe(true);
+    expect(queued?.message).toContain('paused');
+
+    // An HC360 Desktop older than this answers nothing: as before, it is taken as printed.
+    desktop.printHtml.mockResolvedValueOnce(null);
+    expect(isQueuedBehindPrinter(await printHtml('<p>slip</p>', { pageSize: 'Receipt80', silent: true }))).toBe(false);
   });
 
   it('asks with the print dialog when this computer has no printer for the kind of page', async () => {

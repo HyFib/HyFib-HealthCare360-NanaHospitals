@@ -1290,6 +1290,16 @@ HC360 Desktop keeps each workstation's printers for every Windows account on it,
   why.
 * **Only installed printers.** `printer.printRaw` and `printer.printHtml` print only to printers installed on the
   workstation. A shared queue on another computer (`\\host\queue`) must be added in Windows first.
+* **A paused or offline printer is not "printed".** Windows takes a job for a paused, offline or faulty printer and holds
+  it, so once the job is accepted `printer.printHtml` reads the printer's queue (`PrinterStatus`) and answers
+  `{status, printer, message}`: `printed`, or `queued_printer_paused`, `queued_printer_offline` (including "Use Printer
+  Offline") or `queued_printer_needs_attention` (paper out or jammed, door open, no toner, error), with the message in
+  words for the person. Those are not failures: the job waits in the Windows queue and prints once the printer is
+  resumed or back, but the screen must not say "printed" (`printHtml` in the web core returns the outcome;
+  `isQueuedBehindPrinter` tells a queued one). From the Windows print dialog the printer is the person's choice, so the
+  printers that took a job while the dialog was open are asked; when none shows one nothing is claimed either way. A
+  queue that cannot be read is treated as ready, never as a fault. An older HC360 Desktop answers nothing, which is
+  taken as printed.
 * **Test print.** For a ZPL or TSPL printer the screen prints the server's test label; for any other printer a test page
   in the role's paper size.
 

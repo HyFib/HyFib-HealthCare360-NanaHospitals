@@ -1,9 +1,16 @@
-import { bridge, type PageSize, type PrintHtmlRequest } from '../bridge/bridge';
+import { bridge, type PageSize, type PrintHtmlRequest, type PrintOutcome } from '../bridge/bridge';
 import { escapeHtml } from './escape';
 import { closingNoteHtml, LETTERHEAD_STYLES, stationeryMarginMm, type PrintTemplate } from './letterhead';
 import { loadPrinterSetup, printerFor, roleForPageSize } from './printers';
 
 export type PrintOptions = Omit<PrintHtmlRequest, 'html'>;
+
+export type { PrintOutcome };
+
+/** Whether a print was accepted but is waiting behind a paused or offline printer, which the screen must say. */
+export function isQueuedBehindPrinter(outcome: PrintOutcome | undefined): outcome is PrintOutcome {
+  return outcome !== undefined && outcome.status !== 'printed';
+}
 
 /**
  * Prints a self-contained HTML document. Inside HC360 Desktop it goes straight to the printer this computer uses for
@@ -12,13 +19,14 @@ export type PrintOptions = Omit<PrintHtmlRequest, 'html'>;
  * In a browser it opens the print dialog through a hidden iframe, then gives focus back to the element that had it
  * (the Print button, or a button in an open dialog), so keyboard users carry on from where they were.
  */
-export async function printHtml(html: string, options: PrintOptions = {}): Promise<void> {
+export async function printHtml(html: string, options: PrintOptions = {}): Promise<PrintOutcome | undefined> {
   if (bridge.isDesktop) {
-    await bridge.printHtml({ html, ...(await desktopTarget(options)) });
-    return;
+    // Windows takes a job for a paused or offline printer and holds it: HC360 Desktop says so, and a screen that shows
+    // the outcome (`isQueuedBehindPrinter`) tells the person to resume or reconnect the printer instead of "printed".
+    return (await bridge.printHtml({ html, ...(await desktopTarget(options)) })) ?? undefined;
   }
 
-  await new Promise<void>((resolve) => {
+  return new Promise<undefined>((resolve) => {
     const frame = document.createElement('iframe');
     frame.setAttribute('aria-hidden', 'true');
     Object.assign(frame.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
@@ -35,7 +43,7 @@ export async function printHtml(html: string, options: PrintOptions = {}): Promi
           if (frameHadFocus) {
             returnFocus(focused);
           }
-          resolve();
+          resolve(undefined);
         }, 500);
       }, 150);
     };
