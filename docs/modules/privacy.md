@@ -406,10 +406,14 @@ are deleted, and HC360 says so, and keeps a restore from bringing it back.
 
 **How long.** Backups older than `HealthCare360:Backup:RetentionDays` (30 by default) are deleted, on the Server Node
 and on the second copy, by the next nightly backup. The last backup made before an erasure is therefore gone at most
-`RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 31 by default). While the off-site copy is on
-(DEPLOYMENT.md section 8), each backup is also kept in the bucket, locked for `retainDays` (35 by default) and removed
-by the bucket's lifecycle the day after, so the backup period counted is the longer of the two (`BackupRetention`, in
-Platform): 36 days, a window of 37. The erasure answer (`ErasureService.BackupSentence`), the public notice
+`RetentionDays + 1` days after it (`ErasureService.BackupWindowDays`, 31 by default). The stored documents are kept
+once in the backup folder and removed from it once no remaining backup lists them, so the same holds for them. While
+the off-site copy is on (DEPLOYMENT.md section 8), each backup is also kept in the bucket, locked for `retainDays` (35
+by default) and removed by the bucket's lifecycle the day after. The documents there are kept in weekly generations
+(docs/design/incremental-backup.md, section 5.6), each locked until its last backup has expired, so an erased
+document's copy can stay a generation (7 days) longer. The backup period counted is the longer of the two
+(`BackupRetention`, in Platform): 43 days, a window of 44. An append-only second copy (`Backup:SecondaryAppendOnly`)
+keeps a generation longer too: 37 days, a window of 38. The erasure answer (`ErasureService.BackupSentence`), the public notice
 (`PublicPrivacyInfo.backupWindowDays`) and the portal's privacy notice say so. It counts on the bucket's lifecycle
 expiring each copy as its lock passes, as DEPLOYMENT.md sets it; a backup uploaded late, after the line was down, is
 kept its full lock from its upload. Copies a hospital moves elsewhere by hand, and a bucket that locks its copies by its
@@ -456,4 +460,4 @@ Restore-HC360.ps1 does, and proves the erasure comes back and is applied again, 
   permanently or for the years set; other security records deleted after a while). A request's `retainedUntil` and
   `retainedPermanently` describe what the law keeps only. The printed privacy notice must say the same: when the hospital updates its text, it raises
   `privacy.noticeVersion` so patients are shown the new version. Erased data also stays in backups until they expire
-  (at most 31 days by default, 37 with the off-site copy on; see Erasure and backups).
+  (at most 31 days by default, 44 with the off-site copy on; see Erasure and backups).
