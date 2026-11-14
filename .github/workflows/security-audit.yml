@@ -4,7 +4,8 @@ name: Security audit
 # nobody is changing the code still fails a run. GitHub emails whoever last changed the schedule when a run fails, and
 # the log names each vulnerable package and its advisory. It also checks the patch windows (SRS SEC-11), as CI does:
 # docs/security/SECURITY.md, "Patching security advisories". Every day, not every week: a critical advisory must be
-# patched within 7 days, and a weekly run could see it for the first time on the last of them.
+# patched within 7 days, and a weekly run could see it for the first time on the last of them. It also scans every
+# branch for secrets, including branches that never have a pull request (the secrets job below).
 on:
   schedule:
     - cron: "30 0 * * *" # every day, 06:00 IST
@@ -109,3 +110,36 @@ jobs:
 
       - name: Check the patch windows
         run: python3 .github/scripts/patch_windows.py --nuget "$RUNNER_TEMP/audits/nuget-audit.json" --npm "$RUNNER_TEMP/audits/npm-audit.json"
+
+  # CI's secret scan reads only the history of the change under test, so a commit on a branch that never has a pull
+  # request is scanned nowhere else. This job reads every commit on every branch, against main's .gitleaks.toml (the
+  # reviewed one), so a branch cannot accept its own values: a fake credential accepted only on its own branch is
+  # reported here until that branch merges. --log-opts=--all replaces gitleaks' own git log options, as in CI, so a
+  # file that replaces a symlink is read too. A finding fails the run and holds up nothing else; a real secret must be
+  # revoked at its provider first (docs/security/SECURITY.md, "Dependencies, secrets and code scanning"). Keep the
+  # gitleaks version and SHA-256 the same as in ci.yml.
+  secrets:
+    name: Secret scan of every branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every branch, with all of its history
+          persist-credentials: false
+
+      - name: Scan every commit on every branch for secrets
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          # In a shallow clone the scan would read only the newest commits, and still pass.
+          if [ "$(git rev-parse --is-shallow-repository)" != false ]; then
+            echo "::error title=Secret scan not run::The checkout is shallow: older commits would go unscanned. Keep fetch-depth: 0."
+            exit 1
+          fi
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl --fail --silent --show-error --location --retry 5 --retry-all-errors --retry-delay 15 --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $archive" | sha256sum --check --strict
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --config .gitleaks.toml --redact --verbose --no-banner --log-opts=--all .
