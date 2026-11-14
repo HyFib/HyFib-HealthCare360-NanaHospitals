@@ -298,6 +298,10 @@ export const SERIAL_STOP_BITS = ['One', 'OnePointFive', 'Two'] as const;
 export const SERIAL_HANDSHAKES = ['None', 'XOnXOff', 'RequestToSend', 'RequestToSendXOnXOff'] as const;
 export const HL7_ORDER_MESSAGES = ['OML^O21', 'ORM^O01'] as const;
 
+/** ASTM analyser models whose departures from E1394 the gateway follows; none means standard ASTM. */
+export const ASTM_DIALECTS = ['YumizenC150', 'YumizenH500'] as const;
+export type AstmDialect = (typeof ASTM_DIALECTS)[number];
+
 export interface LabSerialPortDto {
   portName: string;
   baudRate: number;
@@ -363,6 +367,8 @@ export interface LabConnectionDto {
   openToAnyDevice?: boolean;
   /** How the connection's devices prove who they are before a message is read. */
   deviceAuthentication?: LabDeviceAuthentication;
+  /** ASTM: the analyser model whose departures from E1394 the gateway follows; null for standard ASTM. */
+  astmDialect?: AstmDialect | null;
 }
 
 /** An enrolled HC360 lab agent. Online: it called in during the last three minutes, or relays an analyser now. */
@@ -397,6 +403,7 @@ export interface SaveLabConnectionRequest {
   serial: LabSerialPortDto | null;
   listVersion: number;
   deviceAuthentication?: LabDeviceAuthentication;
+  astmDialect?: AstmDialect | null;
 }
 
 export interface ReferralLabDto {

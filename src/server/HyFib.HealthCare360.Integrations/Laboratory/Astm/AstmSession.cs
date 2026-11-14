@@ -39,6 +39,9 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
     /// <summary>Orders sent unasked go out in messages of at most this many samples.</summary>
     private const int MaxOrdersPerMessage = 10;
 
+    /// <summary>How this analyser's model departs from E1394 (<see cref="LabInstrumentSettings.AstmDialect"/>).</summary>
+    private readonly AstmDialect _dialect = AstmDialect.For(instrument.AstmDialect);
+
     private readonly byte[] _buffer = new byte[4096];
     private readonly byte[] _single = new byte[1];
     private readonly Queue<IReadOnlyList<string>> _outgoing = new();
@@ -129,7 +132,8 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
             return;
         }
 
-        var records = AstmMessageMapper.BuildOrderDownload(downloads, AstmDelimiters.Default, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone);
+        var records = AstmMessageMapper.BuildOrderDownload(
+            downloads, _dialect.Outgoing, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone, _dialect);
         var outcome = await LabDownloadClaim.HoldWhileAsync(
             processor, instrument, downloads, options.ClaimRenewInterval, time,
             () => SendAsync(records, cancellationToken), cancellationToken);
@@ -256,7 +260,7 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
     private async Task<bool> ProcessAsync(IReadOnlyList<string> recordTexts, CancellationToken cancellationToken)
     {
         var raw = string.Join("\r", recordTexts);
-        var records = AstmRecords.Parse(raw);
+        var records = AstmRecords.Parse(raw, _dialect);
         if (records.Any(r => r.Type == 'Q'))
         {
             var sampleIds = AstmMessageMapper.QueriedSampleIds(records);
@@ -270,12 +274,16 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
                     return true;
             }
 
-            var delimiters = AstmDelimiters.FromHeader(records.FirstOrDefault(r => r.Type == 'H')?.Text);
-            _outgoing.Enqueue(AstmMessageMapper.BuildOrderResponse(answer.Orders, delimiters, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone));
+            // Answered in the analyser's own delimiters (its dialect may repeat with another character than its header says).
+            var header = records.FirstOrDefault(r => r.Type == 'H');
+            var delimiters = _dialect.Incoming(AstmDelimiters.FromHeader(header?.Text));
+            _outgoing.Enqueue(AstmMessageMapper.BuildOrderResponse(
+                answer.Orders, delimiters, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone, _dialect,
+                sampleIds, header?.Field(10)));
             return true;
         }
 
-        var results = AstmMessageMapper.MapResults(records, instrument.Code, raw, time.GetUtcNow(), options.Zone);
+        var results = AstmMessageMapper.MapResults(records, instrument.Code, raw, time.GetUtcNow(), options.Zone, _dialect);
         if (results.Count == 0)
         {
             // Keep-alives, order echoes and results still pending on the analyser (status I) carry nothing to store.
