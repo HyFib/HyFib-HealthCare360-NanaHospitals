@@ -39,6 +39,15 @@ public sealed class StartTerminalSaleRequestValidator : AbstractValidator<StartT
 }
 
 /// <summary>
+/// A note, when the cancel has one, is no longer than the screen lets the cashier type. Whether the sale needs one is
+/// the sale's own rule, kept by the service that owns the terminal.
+/// </summary>
+public sealed class CounterTerminalCancelValidator : AbstractValidator<CounterTerminalCancel>
+{
+    public CounterTerminalCancelValidator() => RuleFor(x => x.Note).SafeText(200);
+}
+
+/// <summary>
 /// The terminal sales of a counter that bills its own sales (<see cref="ICounterTerminal"/>), mapped by the counter's
 /// module under its own path and permissions: <c>POST terminal-sales</c> pushes the amount, <c>GET terminal-sales/{id}</c>
 /// follows it, <c>POST terminal-sales/{id}/cancel</c> cancels it on the terminal, and <c>GET terminal-sales/unused</c>
@@ -59,6 +68,7 @@ public static class CounterTerminalEndpoints
             .RequireAnyPermission(permissions);
         sales.MapPost("/{id:guid}/cancel", async (Guid id, CounterTerminalCancel? request, ICounterTerminal terminal, CancellationToken ct) =>
                 (await terminal.CancelAsync(counter, id, request?.Note, ct)).ToOk())
-            .RequireAnyPermission(permissions);
+            .RequireAnyPermission(permissions)
+            .WithOptionalValidation<CounterTerminalCancel>();
     }
 }

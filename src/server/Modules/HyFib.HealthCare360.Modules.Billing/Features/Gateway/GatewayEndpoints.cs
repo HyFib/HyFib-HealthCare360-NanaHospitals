@@ -22,7 +22,8 @@ internal static class GatewayEndpoints
         var pos = app.MapGroup("/api/v1/billing/pos/sales").WithTags("Billing - POS");
         pos.MapPost("/", StartSale).RequireAnyPermission(BillingPermissions.PaymentsCollect, BillingPermissions.Deposits).WithValidation<StartPosSaleRequest>();
         pos.MapGet("/{id:guid}", PollSale).RequireAnyPermission(BillingPermissions.PaymentsCollect, BillingPermissions.Deposits);
-        pos.MapPost("/{id:guid}/cancel", CancelSale).RequireAnyPermission(BillingPermissions.PaymentsCollect, BillingPermissions.Deposits);
+        pos.MapPost("/{id:guid}/cancel", CancelSale).RequireAnyPermission(BillingPermissions.PaymentsCollect, BillingPermissions.Deposits)
+            .WithOptionalValidation<CancelPosSaleRequest>();
 
         var links = app.MapGroup("/api/v1/billing/payment-links").WithTags("Billing - Payment gateway");
         links.MapPost("/", CreateLink).RequireAnyPermission(BillingPermissions.PaymentsCollect, BillingPermissions.Deposits).WithValidation<CreatePaymentLinkRequest>();

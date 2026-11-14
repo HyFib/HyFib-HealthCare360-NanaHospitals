@@ -29,6 +29,15 @@ public sealed record PosSaleDto(
 /// </summary>
 public sealed record CancelPosSaleRequest(string? Note);
 
+/// <summary>
+/// A note, when the cancel has one, is no longer than the screen lets the cashier type. Whether the sale needs one is
+/// the sale's own rule (<see cref="Services.PosService"/>).
+/// </summary>
+public sealed class CancelPosSaleRequestValidator : AbstractValidator<CancelPosSaleRequest>
+{
+    public CancelPosSaleRequestValidator() => RuleFor(x => x.Note).SafeText(200);
+}
+
 /// <summary>Payment link for a bill (defaults to its balance) or an advance for an admission (amount required).</summary>
 public sealed record CreatePaymentLinkRequest(Guid? BillId, Guid? IpAccountId, decimal? Amount, bool SendSms = true, bool SendWhatsApp = false);
 

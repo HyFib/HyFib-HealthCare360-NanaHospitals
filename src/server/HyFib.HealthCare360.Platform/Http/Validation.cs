@@ -18,6 +18,17 @@ public static class ValidationExtensions
         builder.AddEndpointFilter<ValidationFilter<TRequest>>()
             .WithMetadata(new ValidatedRequest(typeof(TRequest)))
             .ProducesValidationProblem();
+
+    /// <summary>
+    /// As <see cref="WithValidation{TRequest}"/>, for a body the request may leave out (the handler takes a
+    /// <typeparamref name="TRequest"/> that is null without one): a request with a body has it validated before the
+    /// handler runs, and a request without one goes straight to the handler.
+    /// </summary>
+    public static RouteHandlerBuilder WithOptionalValidation<TRequest>(this RouteHandlerBuilder builder)
+        where TRequest : class =>
+        builder.AddEndpointFilter<OptionalBodyValidationFilter<TRequest>>()
+            .WithMetadata(new ValidatedRequest(typeof(TRequest)))
+            .ProducesValidationProblem();
 }
 
 /// <summary>Marks an endpoint whose request is validated, so the architecture tests can check its validator exists.</summary>
@@ -26,16 +37,26 @@ public sealed record ValidatedRequest(Type RequestType);
 internal sealed class ValidationFilter<TRequest> : IEndpointFilter
     where TRequest : class
 {
-    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
+        ValidateAsync(context, next, bodyRequired: true);
+
+    /// <summary>
+    /// Validates the request's <typeparamref name="TRequest"/>. A request without one is refused when the body is required,
+    /// and goes on to the handler when it is optional.
+    /// </summary>
+    internal static async ValueTask<object?> ValidateAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next, bool bodyRequired)
     {
-        // Fail closed: an endpoint that asks for validation never runs its handler unchecked.
+        // Fail closed: an endpoint that asks for validation never runs its handler unchecked, and has a validator even
+        // when a request leaves its optional body out.
         var validator = context.HttpContext.RequestServices.GetService<IValidator<TRequest>>()
             ?? throw new InvalidOperationException($"No validator is registered for {typeof(TRequest).Name}.");
 
         var request = context.Arguments.OfType<TRequest>().FirstOrDefault();
         if (request is null)
         {
-            return TypedResults.Problem(title: "A request body is required.", statusCode: StatusCodes.Status400BadRequest);
+            return bodyRequired
+                ? TypedResults.Problem(title: "A request body is required.", statusCode: StatusCodes.Status400BadRequest)
+                : await next(context);
         }
 
         var result = await validator.ValidateAsync(request, context.HttpContext.RequestAborted);
@@ -59,6 +80,14 @@ internal sealed class ValidationFilter<TRequest> : IEndpointFilter
                 ? JsonNamingPolicy.CamelCase.ConvertName(segment)
                 : JsonNamingPolicy.CamelCase.ConvertName(segment[..bracket]) + segment[bracket..];
         }));
+}
+
+/// <summary>The filter of <see cref="ValidationExtensions.WithOptionalValidation{TRequest}"/>.</summary>
+internal sealed class OptionalBodyValidationFilter<TRequest> : IEndpointFilter
+    where TRequest : class
+{
+    public ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next) =>
+        ValidationFilter<TRequest>.ValidateAsync(context, next, bodyRequired: false);
 }
 
 /// <summary>Reusable validation rules for Indian hospital data.</summary>
