@@ -33,6 +33,9 @@
         certificate: copy hc360-server.crt to it.
       - Adds this machine's address towards the standby to listen_addresses, keeping localhost.
       - Opens TCP 5432 in Windows Firewall for PostgreSQL, from the standby's address only, on Private and Domain networks.
+      - Makes the function public.hc360_replication_status() in the hospital database (-DatabaseName): it shows HC360's
+        own account how far behind the standby is (pg_stat_replication), which that account may not read itself, and
+        nothing else. System health measures the standby's lag with it.
     Either way it makes sure wal_level is replica (PostgreSQL's default), with enough WAL senders and replication slots,
     and writes one block in pg_hba.conf, between "# BEGIN HC360 replication" and "# END HC360 replication": the standby's
     hostssl replication rule, the base backup account's sspi rules, and rules that refuse both accounts every database.
@@ -77,6 +80,8 @@ param(
     [switch] $NoWalArchive,
     # The Windows account the HC360 service runs as, which takes base backups. By default the HC360Server service's.
     [string] $HC360ServiceAccount,
+    # The hospital database, in which HC360 reads how far behind the standby is.
+    [ValidatePattern('^[A-Za-z_][A-Za-z0-9_]*$')] [string] $DatabaseName = 'hc360',
     [switch] $Remove
 )
 
@@ -368,6 +373,26 @@ function Get-ArchiveCommand([string] $Directory) {
     return "if exist `"$dir\%f`" (fc /b `"%p`" `"$dir\%f`" >nul) else (copy /b /y `"%p`" `"$dir\%f.tmp`" >nul && move /y `"$dir\%f.tmp`" `"$dir\%f`" >nul)"
 }
 
+# The function HC360 reads the standbys' lag through (StandbyReplication.StatusFunction in HC360). Made by the superuser
+# and running as its maker (SECURITY DEFINER, with a fixed search_path), it reads pg_stat_replication, which HC360's own
+# account may not read in full (pg_read_all_stats), and returns the lag of the standbys HC360 set up and nothing else.
+# Every account of the hospital database may call it, and only HC360's two may connect to that database. A copy restored
+# from a dump belongs to the database's owner and shows no lag: running this script again makes it the superuser's again.
+function Get-ReplicationStatusSql {
+    return @'
+CREATE OR REPLACE FUNCTION public.hc360_replication_status()
+RETURNS TABLE (application_name text, state text, replay_lag_seconds double precision, flush_lag_seconds double precision, replay_behind_bytes bigint, reply_time timestamptz)
+LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, pg_temp
+AS $hc360$
+    SELECT r.application_name::text, r.state::text, extract(epoch FROM r.replay_lag)::float8, extract(epoch FROM r.flush_lag)::float8,
+           pg_wal_lsn_diff(pg_current_wal_lsn(), r.replay_lsn)::bigint, r.reply_time
+    FROM pg_stat_replication r
+    WHERE r.application_name LIKE 'hc360\_%'
+$hc360$;
+COMMENT ON FUNCTION public.hc360_replication_status() IS 'HyFib HealthCare360: how far behind each warm standby is, for System health. Enable-HC360Replication.ps1 makes it; it reads pg_stat_replication as its owner, and shows nothing else.';
+'@
+}
+
 # Whether archive_command is one Get-ArchiveCommand made.
 function Test-OwnArchiveCommand([string] $Command) {
     return [bool] ($Command -match '^if exist "[^"]+\\%f" \(fc /b "%p" "[^"]+\\%f" >nul\) else \(copy /b /y "%p" "[^"]+\\%f\.tmp" >nul && move /y "[^"]+\\%f\.tmp" "[^"]+\\%f" >nul\)$')
@@ -471,12 +496,12 @@ function Set-WalArchiveAcl([string] $Path, [string[]] $WriterSids) {
 
 # ---------------------------------------------------------------- PostgreSQL
 
-# Runs SQL as the superuser on this machine's PostgreSQL. The SQL goes through standard input, so nothing in it shows in
-# the process list, and $Description, not the SQL, is in the error.
-function Invoke-Sql([string] $Sql, [string] $Description) {
+# Runs SQL as the superuser on this machine's PostgreSQL, in $Database. The SQL goes through standard input, so nothing
+# in it shows in the process list, and $Description, not the SQL, is in the error.
+function Invoke-Sql([string] $Sql, [string] $Description, [string] $Database = 'postgres') {
     $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
     try {
-        $output = $Sql | & $psql -X -h localhost -p $Port -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -A -t -f -
+        $output = $Sql | & $psql -X -h localhost -p $Port -U $PostgresSuperuser -d $Database -v ON_ERROR_STOP=1 -q -A -t -f -
         if ($LASTEXITCODE -ne 0) { throw "PostgreSQL refused to $Description." }
         return $output
     }
@@ -630,6 +655,9 @@ if ($Remove) {
     $null = Invoke-Sql "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = $slot" "drop the replication slot $SlotName"
     $null = Invoke-Sql "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = '$ReplicationRole'" 'disconnect the replication account'
     $null = Invoke-Sql "DROP ROLE IF EXISTS $ReplicationRole" "drop the account $ReplicationRole"
+    if ((Invoke-Sql "SELECT count(*) FROM pg_database WHERE datname = $(ConvertTo-SqlLiteral $DatabaseName)" "look for the database $DatabaseName") -eq '1') {
+        $null = Invoke-Sql 'DROP FUNCTION IF EXISTS public.hc360_replication_status()' 'drop the function HC360 read the standby''s lag through' $DatabaseName
+    }
 
     $statements = @('ALTER SYSTEM RESET max_slot_wal_keep_size')
     $listen = Get-Setting 'listen_addresses'
@@ -734,6 +762,15 @@ if ($statements) { $null = Invoke-Sql (($statements | ForEach-Object { "$_;" }) 
 if ($StandbyAddress) {
     $slot = ConvertTo-SqlLiteral $SlotName
     $null = Invoke-Sql "SELECT pg_create_physical_replication_slot($slot, true) WHERE NOT EXISTS (SELECT FROM pg_replication_slots WHERE slot_name = $slot)" "make the replication slot $SlotName"
+
+    # How far behind the standby is, in time, for System health: HC360's own account reads it through this function.
+    if ((Invoke-Sql "SELECT count(*) FROM pg_database WHERE datname = $(ConvertTo-SqlLiteral $DatabaseName)" "look for the database $DatabaseName") -eq '1') {
+        Write-Step "Letting HC360 measure how far behind the standby is (public.hc360_replication_status() in $DatabaseName)"
+        $null = Invoke-Sql (Get-ReplicationStatusSql) 'make the function HC360 reads the standby''s lag through' $DatabaseName
+    }
+    else {
+        Write-Warning "There is no database $DatabaseName here, so System health cannot measure how far behind the standby is in time. Run this script again with -DatabaseName <the hospital database>."
+    }
 }
 
 # ---------------------------------------------------------------- the base backup account

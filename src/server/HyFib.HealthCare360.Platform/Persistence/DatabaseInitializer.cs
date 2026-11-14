@@ -108,6 +108,9 @@ public sealed class DatabaseInitializer(
             throw new DatabaseUpgradeException(StandbyMessage);
         }
 
+        // Nor on an old primary a failover replaced: it would take patient data beside the promoted standby (SRS DED-20).
+        await PrimaryFence.CheckAsync(db, options.Value, scope.ServiceProvider.GetRequiredService<DataDirectories>(), cancellationToken);
+
         // The schema is changed as its owner where that is an account of its own (DatabaseOwner): the account the server
         // works as cannot. The seeders write rows, as the server does.
         await using var owner = scope.ServiceProvider.GetService<DatabaseOwner>()?.CreateContext();

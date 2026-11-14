@@ -1,27 +1,35 @@
 using System.Data.Common;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Quartz;
 
 namespace HyFib.HealthCare360.Platform.Jobs;
 
-/// <summary>The services and jobs of point-in-time recovery (SRS REL-02), each registered with one line in the platform's set-up.</summary>
-internal static class PointInTimeRecoveryRegistration
+/// <summary>
+/// The services and jobs of point-in-time recovery (SRS REL-02) and of the warm standby's safety (SRS DED-20), each
+/// registered with one line in the platform's set-up.
+/// </summary>
+internal static class ReplicationRegistration
 {
-    public static IServiceCollection AddPointInTimeRecovery(this IServiceCollection services)
+    public static IServiceCollection AddReplication(this IServiceCollection services)
     {
         services.AddScoped<BaseBackupService>();
         services.AddSingleton<IBaseBackupTool, PgBaseBackupTool>();
         services.AddScoped<WalArchiveService>();
+
+        // On every server whatever its role: a failover may have replaced the database any of them runs on.
+        services.AddHostedService<PrimaryFenceWatch>();
         return services;
     }
 
     /// <summary>
-    /// Whether nightly backups are on or not, as the off-site copy's: each job does nothing until PostgreSQL archives the WAL
-    /// (Enable-HC360Replication.ps1 -WalArchive).
+    /// Whether nightly backups are on or not, as the off-site copy's, the point-in-time recovery jobs, which do nothing until
+    /// PostgreSQL archives the WAL (Enable-HC360Replication.ps1 -WalArchive); and, with nightly backups on, the backup after
+    /// a failover or a key rotation.
     /// </summary>
-    public static void SchedulePointInTimeRecovery(this IQuartzBuilder quartz)
+    public static void ScheduleReplicationJobs(this IQuartzBuilder quartz, PlatformOptions options)
     {
         quartz.ScheduleJob<BaseBackupJob>(trigger => trigger
             .WithIdentity("base-backup")
@@ -29,6 +37,12 @@ internal static class PointInTimeRecoveryRegistration
         quartz.ScheduleJob<WalArchiveJob>(trigger => trigger
             .WithIdentity("wal-archive")
             .WithCronSchedule(WalArchiveJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+        if (options.Backup.Enabled)
+        {
+            quartz.ScheduleJob<BackupAfterChangeJob>(trigger => trigger
+                .WithIdentity("backup-after-change")
+                .WithCronSchedule(BackupAfterChangeJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+        }
     }
 }
 

@@ -366,7 +366,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
         services.AddScoped<IRecoveryKeyCustodyWarnings, RecoveryKeyCustodyWarnings>();
-        services.AddPointInTimeRecovery();
+        services.AddReplication();
 
         // Copies outside the building (DED-16): each verified backup uploaded to an S3-compatible bucket, over https only.
         services.AddScoped<BackupOffsiteUploader>();
@@ -462,7 +462,7 @@ public static class PlatformServiceCollectionExtensions
                 quartz.ScheduleJob<BackupOffsiteJob>(trigger => trigger
                     .WithIdentity("backup-offsite")
                     .WithCronSchedule(BackupOffsiteJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
-                quartz.SchedulePointInTimeRecovery();
+                quartz.ScheduleReplicationJobs(options);
             });
             services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
         }

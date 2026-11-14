@@ -25,7 +25,8 @@ function Get-ScriptFunctions([string] $Script) {
 $installer = Get-ScriptFunctions 'Install-HC360Server.ps1'
 $primary = Get-ScriptFunctions 'Enable-HC360Replication.ps1'
 $standby = Get-ScriptFunctions 'New-HC360Standby.ps1'
-foreach ($set in $installer, $primary, $standby) {
+$failover = Get-ScriptFunctions 'Invoke-HC360Failover.ps1'
+foreach ($set in $installer, $primary, $standby, $failover) {
     foreach ($text in $set.Values) { . ([scriptblock]::Create($text)) }
 }
 
@@ -49,6 +50,12 @@ foreach ($name in 'Get-PgCtlBinDirectory', 'Resolve-AccountSid', 'Get-Certificat
     Assert ($primary.ContainsKey($name) -and $primary[$name] -ceq $standby[$name]) "both scripts have the same $name"
 }
 Assert ($primary.ContainsKey('ConvertTo-SspiName') -and $primary['ConvertTo-SspiName'] -ceq $installer['ConvertTo-SspiName']) 'Enable-HC360Replication.ps1 names a Windows account for SSPI as the installer does'
+foreach ($name in 'Get-PgCtlDataDirectory', 'Get-PostgresSetting', 'Read-TextLines', 'Find-PostgresService', 'Select-PostgresService', 'Read-SettingsFile', 'Find-Setting') {
+    Assert ($failover.ContainsKey($name) -and $failover[$name] -ceq $installer[$name]) "Invoke-HC360Failover.ps1 has the installer's $name"
+}
+foreach ($name in 'Get-PgCtlBinDirectory', 'Invoke-LocalSql') {
+    Assert ($failover.ContainsKey($name) -and $failover[$name] -ceq $standby[$name]) "Invoke-HC360Failover.ps1 has New-HC360Standby.ps1's $name"
+}
 Assert ((Get-PgCtlBinDirectory '"C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" runservice -N "postgresql-x64-17" -D "C:\Program Files\PostgreSQL\17\data" -w') -ceq 'C:\Program Files\PostgreSQL\17\bin') 'the bin folder of the PostgreSQL Windows installer''s service'
 Assert ((Get-PgCtlBinDirectory 'C:\pgsql\bin\pg_ctl.exe runservice -N pgsql -D D:\pgdata -w') -ceq 'C:\pgsql\bin') 'an unquoted one'
 Assert ((Resolve-AccountSid 'LocalSystem') -ceq 'S-1-5-18' -and (Resolve-AccountSid 'NT AUTHORITY\NetworkService') -ceq 'S-1-5-20' -and (Resolve-AccountSid 'NT AUTHORITY\LocalService') -ceq 'S-1-5-19') 'the service accounts PostgreSQL runs as, by SID'
@@ -252,6 +259,30 @@ try {
     Assert ((Get-StandbyProblem $false $false $true 'Disabled' $false) -like '*is a warm standby*-Standby*') 'without -Standby it stops on a standby'
     Assert ((Get-StandbyProblem $false $false $false 'Disabled' $false) -like '*backup restore*') 'on a promoted standby it stops until the keys are back from the backup'
     Assert ($null -eq (Get-StandbyProblem $false $false $false 'Disabled' $true)) 'and then installs and starts HC360'
+
+    Write-Host 'How far behind the standby is, for System health (SRS DED-20)'
+    $statusSql = Get-ReplicationStatusSql
+    Assert ($statusSql -clike '*CREATE OR REPLACE FUNCTION public.hc360_replication_status()*') 'the function is the one HC360 reads (StandbyReplication.StatusFunction)'
+    Assert ($statusSql -clike '*SECURITY DEFINER SET search_path = pg_catalog, pg_temp*') 'it reads as its maker, the superuser, with nothing on its search path to stand in for PostgreSQL''s own'
+    Assert ($statusSql -clike '*FROM pg_stat_replication r*' -and $statusSql -clike "*WHERE r.application_name LIKE 'hc360\_%'*") 'and shows the standbys HC360 set up, from pg_stat_replication'
+    Assert ($statusSql -cnotlike '*GRANT*' -and $statusSql -cnotlike '*sent_lsn*' -and $statusSql -cnotlike '*client_addr*') 'their lag and nothing else, with no grant a restore could stumble on'
+
+    Write-Host 'Invoke-HC360Failover.ps1: the promotion and its record (SRS DED-20)'
+    $conn = ConvertFrom-ConnInfo $connInfo
+    Assert ($conn['host'] -ceq '10.0.5.11' -and $conn['port'] -ceq '5432' -and $conn['application_name'] -ceq 'hc360_standby') 'the old primary''s address is read from the standby''s own connection string'
+    Assert ((ConvertFrom-ConnInfo "host='odd \'name\'' passfile='C:\\pg pass'")['host'] -ceq "odd 'name'" -and (ConvertFrom-ConnInfo "host=10.0.5.11 port=5433")['port'] -ceq '5433') 'quoted and plain values are read back as libpq reads them'
+    Assert ((Get-WalTimeline '000000020000000000000051') -eq 2 -and (Get-WalTimeline '0000000A0000000000000051') -eq 10) 'the new timeline is read from the WAL file PostgreSQL writes'
+    Assert (Test-Throws { Get-WalTimeline 'not a WAL file' } 'not the name of a WAL file') 'and nothing else is taken for one'
+    $promotedAt = New-Object DateTimeOffset 2026, 11, 14, 10, 2, 0, ([TimeSpan]::FromHours(5.5))
+    $recordJson = New-PrimaryRecord '7412345678901234567' 2 'HC360-SRV2' $promotedAt '10.0.5.11'
+    Assert ($recordJson -match '"format":\s*1\b' -and $recordJson -match '"timeline":\s*2\b') 'the record is in the format HC360 reads (PrimaryRecord), on the new timeline'
+    Assert ($recordJson -match '"systemIdentifier":\s*"7412345678901234567"') 'the system identifier is text, which keeps a 64-bit number whole'
+    Assert ($recordJson -match '"primary":\s*"HC360-SRV2"' -and $recordJson -match '"previousPrimary":\s*"10\.0\.5\.11"') 'it names the promoted machine and the primary it replaced'
+    Assert ($recordJson -match '"promotedAt":\s*"2026-11-14T10:02:00\.0000000\+05:30"') 'and when, with its offset'
+    $recordPath = Join-Path $root 'nas\hc360-primary.json'
+    Write-PrimaryRecord $recordPath $recordJson
+    Write-PrimaryRecord $recordPath $recordJson
+    Assert ([System.IO.File]::ReadAllText($recordPath) -ceq $recordJson -and @(Get-ChildItem -LiteralPath (Join-Path $root 'nas') -Filter '*.tmp').Count -eq 0) 'it is written whole, over an earlier one, leaving no temporary file'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

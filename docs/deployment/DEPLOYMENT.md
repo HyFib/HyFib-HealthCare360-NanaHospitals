@@ -1567,8 +1567,9 @@ What the standby has, and what comes from elsewhere on a failover:
 | The DSC trust folder (`certs\dsc-trust`: the CCA India roots, section 4 step 8) | Not copied: it is not in the database or the backups | Copy the roots there at set-up (step 6), so they are already there |
 
 Documents uploaded after the latest backup are only on the old primary: copy them from its disk if it can still be read
-(below). After rotating the data encryption key, make a backup at once (Administration › Backups › **Back up now**): the
-standby can read data encrypted with a key only once a backup has carried it there.
+(below). The standby can read data encrypted with a key only once a backup has carried the key there, so HC360 takes a
+full backup by itself within five minutes of a rotation of the data encryption key (`Back up now` is not needed), and
+the same on a promoted standby, which has no backup of its own.
 
 **You need** a second machine like the first (section 1: Windows with BitLocker, a UPS, the same PostgreSQL version) on
 the same network, with a DHCP reservation; a password for the replication account, 16 characters or more, kept in the
@@ -1599,8 +1600,11 @@ machine only. The standby holds every patient record: protect it as the primary 
    (`hc360-server.crt` in PostgreSQL's data folder; its key is readable only by PostgreSQL's service account and
    Administrators); the rules in `pg_hba.conf`, between `# BEGIN HC360 replication` and `# END HC360 replication`, which
    take the account from the standby's address over TLS for replication and refuse it every database; and the firewall
-   rule. PostgreSQL restarts once, and HC360 is unavailable for those seconds. It prints the
-   certificate's fingerprint. Run it again whenever you like: it writes the same settings.
+   rule; and, in the hospital database (`-DatabaseName`, `hc360` by default), the function
+   `public.hc360_replication_status()`, through which HC360's own account reads how far behind the standby is, which
+   that account may not read in `pg_stat_replication` itself, and nothing else. PostgreSQL restarts once, and HC360 is
+   unavailable for those seconds. It prints the certificate's fingerprint. Run it again whenever you like: it writes
+   the same settings.
 
 3. On the primary, export the hospital CA, which HC360 Desktop and the lab agents trust:
 
@@ -1654,16 +1658,23 @@ machine only. The standby holds every patient record: protect it as the primary 
 PostgreSQL itself to a new version, set the standby up again (steps 1, 2, 5).
 
 **System health on the primary** says, in its warnings:
-- *The warm standby … is not connected*: it is off, its PostgreSQL is stopped, or the network between them is down. The
-  primary keeps the changes it needs, up to `-StandbyWalLimitGB`, and it catches up once it is back.
+- *The warm standby … is not connected* (`replication.standby_disconnected`): it is off, its PostgreSQL is stopped, or
+  the network between them is down. The primary keeps the changes it needs, up to `-StandbyWalLimitGB`, and it catches
+  up once it is back. Once it has been away for 15 minutes (PostgreSQL 17 records since when), the warning turns
+  critical, which the alerts tell IT on-call: a failover then would lose every change since.
+- *… is … minutes behind* (`replication.standby_lagging`): connected, but it has not applied the last minute's changes,
+  which a failover now would lose; critical from 15 minutes, the recovery point WAL archiving allows. It is measured as
+  `pg_stat_replication`'s `replay_lag`. Check the network between the two, and the standby's disk and log.
 - *… is … MB behind*: connected, but more than 1 GB behind. Check the network between the two.
 - *… is about to remove WAL it still needs* or *… cannot catch up* (critical): it has been away too long. Set it up
   again with `New-HC360Standby.ps1` (step 5); it replaces the copy.
+- *How far behind the warm standby … is in time cannot be measured* (`replication.lag_unknown`): HC360's account may
+  not read it, because the function above is missing, or was restored from a dump (it then belongs to the database's
+  owner). Run `Enable-HC360Replication.ps1 -StandbyAddress <the standby's address>` again.
 - *WAL archiving is failing* (critical), with WAL archiving on (below).
 
-HC360 reads the slot with its own database account, which every account may read. How far behind the standby is in
-time (`replay_lag` above) is visible only to `postgres` and the `pg_read_all_stats` role, which HC360's account is not
-given.
+HC360 reads the slot with its own database account, which every account may read, and the standby's lag through the
+function above.
 
 To stop streaming to the standby: `.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -Remove` on the primary. It
 removes the slot, the account, the `pg_hba.conf` rule, the firewall rule, the address it listened on, and TLS. WAL
@@ -1783,15 +1794,25 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    Workstations trust any server with the hospital CA, so an old primary that came back with HC360 running would take
    patient data the new one never sees. Before it is switched on again, unplug its network, and disable both its
    services first (`Set-Service HC360Server -StartupType Disabled`, and the same for its PostgreSQL service, for
-   example `postgresql-x64-17`).
-2. **Promote the standby's PostgreSQL**:
+   example `postgresql-x64-17`). Step 2 records the failover where the old primary looks, and HC360 there then refuses
+   to run; this step covers the time until it can read that record.
+2. **Promote the standby**:
 
    ```powershell
-   & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h localhost -U postgres -d postgres -c 'SELECT pg_promote()'
+   .\Invoke-HC360Failover.ps1
    ```
 
-   With the primary's `postgres` password. It answers `t`: PostgreSQL takes writes now, and `SELECT
-   pg_is_in_recovery()` answers `f`. (`pg_ctl promote -D <data folder>` does the same.)
+   With the primary's `postgres` password. It says how far behind the standby is: when it last applied a change made on
+   the primary (what was made after that is lost), and how much it has received but not applied yet (the promotion
+   applies it). It refuses while the old primary's PostgreSQL still answers at the address the standby streams from: stop
+   it first, or switch the machine off. Then it promotes PostgreSQL, which takes writes on a new timeline, and records
+   the failover: this machine is the primary from that timeline on, in `config\hc360-primary.json` of HC360's data
+   folder here and beside the backups' second copy (`-SecondaryBackupDir`, the NAS or disk both servers are given; or
+   give the script `-SecondaryBackupDir`). HC360 on the old primary reads the record there: it refuses to start, and one
+   still running (cut off from the standby, but not from the NAS) stops within a minute, with System health's
+   `replication.superseded` critical just before, until the old primary is set up again as this server's standby. Without
+   a second copy both reach, it warns that the old primary cannot learn it was replaced: keep it off the network until
+   then. PostgreSQL promoted by hand (`SELECT pg_promote()`): run the script with `-RecordOnly` to record it.
 3. **Put the keys and documents back** from the latest backup, on the NAS or wherever it is kept:
 
    ```powershell
@@ -1805,7 +1826,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    documents uploaded since the backup.
 4. **Start HC360**: `.\Install-HC360Server.ps1`, without `-Standby`, from the same package. It enables and starts the
    service, checks that HC360 is ready, and prints the hospital CA fingerprint, the same as before. It refuses until
-   step 3 is done.
+   step 3 is done. HC360 takes a full backup within five minutes of starting: the promoted server has none of its own.
+   Where the primary archived the WAL, set it up here too: `.\Enable-HC360Replication.ps1 -WalArchive`; HC360 then takes
+   a base backup of the new timeline within a quarter of an hour.
 5. **Workstations** follow by themselves: when HC360 Desktop cannot reach the old primary, it looks on the network for
    a server announcing the same CA, connects to the standby and says so from the tray. Staff sign in again. Where
    multicast does not pass between access points, or IT fixed a workstation's server (`-ServerUrl`, the machine policy),
@@ -1822,7 +1845,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
 
 ### Making the old primary the new standby
 
-Once the old primary is repaired, and still fenced:
+Once the old primary is repaired, and still fenced. HC360 refuses to start on it while its database is on the old
+timeline, saying it was replaced (if it can read the failover's record); setting it up as the standby gives it the new
+timeline, and keeps its own database aside:
 
 1. On the new primary (the promoted standby), let the old one in: `.\Enable-HC360Replication.ps1 -StandbyAddress
    10.0.5.11`, with the replication password (or a new one). Copy its `hc360-server.crt`.
@@ -1839,11 +1864,15 @@ To make it the primary again, fail over once more, at a quiet hour.
 A planned failover, at a quiet hour, proves the steps and that the people on call can do them:
 
 1. Tell users: HC360 is unavailable for about half an hour.
-2. Check that System health on the primary has no warning about the standby. Make a backup (Back up now).
+2. Check that System health on the primary has no warning about the standby, `replication.standby_lagging` included.
+   Make a backup (Back up now).
 3. Stop `HC360Server` on the primary. On the primary, `SELECT pg_current_wal_lsn()`; on the standby,
-   `SELECT pg_last_wal_replay_lsn()`: when they match, the standby has everything.
+   `SELECT pg_last_wal_replay_lsn()`: when they match, the standby has everything. Then stop the primary's PostgreSQL
+   service: `Invoke-HC360Failover.ps1` refuses while it answers.
 4. Fail over (steps 1 to 6 above), and check that a workstation reconnects and that a record made just before is
-   there.
+   there. Then check the fence: with the old primary still kept from the workstations, start its PostgreSQL and HC360
+   services. HC360 must stop at once, saying its database was replaced by the promoted standby (its log, and Windows
+   Event Viewer). Disable HC360 there again.
 5. Make the old primary the new standby (above).
 6. Write down how long each step took and what was unclear, and fix this section.
 

@@ -216,7 +216,8 @@ public sealed class SystemHealthService(
         else if (await ReadReplicationAsync(ct) is { } replication)
         {
             // A warm standby and WAL archiving are optional (SRS DED-20, REL-02): nothing shows until they are set up.
-            databaseWarnings.AddRange(StandbyReplication.Warnings(replication));
+            databaseWarnings.AddRange(StandbyReplication.Warnings(replication, now));
+            databaseWarnings.AddRange(await SystemHealthStandby.WarningsAsync(db, replication, directories, options.Value, ct));
         }
 
         databaseWarnings.AddRange(await SystemHealthArchive.WarningsAsync(db, directories, options.Value, now, ct));
