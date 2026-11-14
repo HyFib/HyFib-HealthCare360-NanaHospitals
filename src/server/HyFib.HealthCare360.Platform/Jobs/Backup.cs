@@ -246,7 +246,7 @@ internal sealed class BackupService(
 
             // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores.
             var ring = keys.ExportRing();
-            var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
+            var manifest = new BackupManifest(BackupArchive.InlineDocumentsFormat, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
                 includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint,
                 ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint);
 

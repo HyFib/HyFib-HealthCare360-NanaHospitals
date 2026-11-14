@@ -16,6 +16,7 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <param name="RingKeys">The ids of the keys rotations added to the ring (<see cref="FieldKeyRing"/>), escrowed too; none before the first rotation.</param>
 /// <param name="CurrentKey">Which key of the ring was current, or null for the original key.</param>
 /// <param name="AuditSealKey">The fingerprint of the escrowed audit seal key (<see cref="Auditing.AuditSealKey"/>); null in older backups.</param>
+/// <param name="DocumentIndexSha256">Format 3: the SHA-256 of the <c>documents.idx</c> entry (<see cref="BackupDocumentIndex"/>); null otherwise.</param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -29,7 +30,8 @@ public sealed record BackupManifest(
     string KeyFingerprint,
     IReadOnlyList<string>? RingKeys = null,
     string? CurrentKey = null,
-    string? AuditSealKey = null);
+    string? AuditSealKey = null,
+    string? DocumentIndexSha256 = null);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);
@@ -45,17 +47,36 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
 
     /// <summary>The audit seal key, when the backup escrows one.</summary>
     public byte[]? AuditSealKey { get; init; }
+
+    /// <summary>
+    /// Format 3: the documents the backup needs, which are kept in the backup folder beside it (<see cref="BackupStore"/>)
+    /// rather than in the archive. Empty for format 2, whose documents are inside.
+    /// </summary>
+    public IReadOnlyList<BackupIndexedDocument> Index { get; init; } = [];
 }
 
 /// <summary>
 /// The payload of an archive backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
-/// the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each already encrypted).
-/// The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key administrators keep offline
-/// (<see cref="BackupRecoveryKey"/>), so one backup file and that key restore everything on replacement hardware.
+/// and the PostgreSQL dump. The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key
+/// administrators keep offline (<see cref="BackupRecoveryKey"/>). For full backups, the stored documents (each already
+/// encrypted with the field keys):
+/// <list type="bullet">
+/// <item>Format 3 (<see cref="Format"/>): an index of them (<see cref="BackupDocumentIndex"/>). Each document is kept
+/// once in the backup folder beside the archive (<see cref="BackupStore"/>), so the folder and the recovery key restore
+/// everything on replacement hardware.</item>
+/// <item>Format 2 (<see cref="InlineDocumentsFormat"/>): the documents themselves, exactly as they are on disk. Still
+/// read; one such file and its recovery key restore everything.</item>
+/// </list>
 /// </summary>
 public static class BackupArchive
 {
-    public const int Format = 2;
+    /// <summary>The format written: documents listed in <see cref="DocumentIndexEntry"/>, kept in the backup folder.</summary>
+    public const int Format = 3;
+
+    /// <summary>The format before: documents inside the archive, under <see cref="DocumentsPrefix"/>. Still read.</summary>
+    public const int InlineDocumentsFormat = 2;
+
+    public const string DocumentIndexEntry = "documents.idx";
     public const string ManifestEntry = "manifest.json";
     public const string KeyEntry = "keys/field-master.key";
     public const string RingKeyPrefix = "keys/" + FieldKeyRing.FolderName + "/";
@@ -81,6 +102,10 @@ public static class BackupArchive
             .ToList();
     }
 
+    /// <summary>
+    /// Writes a format 2 archive, with the documents inside. Kept for the backups made before documents were kept in the
+    /// backup folder; new backups are written with <see cref="WriteIndexedAsync"/>.
+    /// </summary>
     public static async Task WriteAsync(
         Stream output,
         BackupManifest manifest,
@@ -92,8 +117,10 @@ public static class BackupArchive
         IReadOnlyList<BackupDocument> documents,
         CancellationToken ct)
     {
+        ArgumentNullException.ThrowIfNull(manifest);
         await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
-        await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest, Json)), ct);
+        var inline = manifest with { Format = InlineDocumentsFormat, DocumentIndexSha256 = null };
+        await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(inline, Json)), ct);
         await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
         foreach (var key in ringKeys)
         {
@@ -119,6 +146,57 @@ public static class BackupArchive
     }
 
     /// <summary>
+    /// Writes a format 3 archive: the manifest, the keys, the index of the documents (for a full backup) and the database
+    /// dump. The documents themselves must be in the backup folder already. The manifest is completed here, so its format,
+    /// document count, bytes and index hash always agree with the index written.
+    /// </summary>
+    /// <param name="documents">The documents the backup needs, or null for a backup without documents (before an update).</param>
+    public static async Task<BackupManifest> WriteIndexedAsync(
+        Stream output,
+        BackupManifest manifest,
+        byte[] masterKey,
+        IReadOnlyList<byte[]> ringKeys,
+        byte[]? auditSealKey,
+        string databaseDumpPath,
+        IReadOnlyList<BackupIndexedDocument>? documents,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        var index = new MemoryStream();
+        var indexSha256 = documents is null ? null : BackupDocumentIndex.Write(index, documents);
+        var written = manifest with
+        {
+            Format = Format,
+            IncludesDocuments = documents is not null,
+            DocumentCount = documents?.Count ?? 0,
+            DocumentBytes = documents?.Sum(d => d.Length) ?? 0,
+            DocumentIndexSha256 = indexSha256,
+        };
+
+        await using var tar = new TarWriter(output, TarEntryFormat.Pax, leaveOpen: true);
+        await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(written, Json)), ct);
+        await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
+        foreach (var key in ringKeys)
+        {
+            await WriteEntryAsync(tar, RingKeyPrefix + FieldMasterKey.Fingerprint(key) + ".key", new MemoryStream(key, writable: false), ct);
+        }
+
+        if (auditSealKey is not null)
+        {
+            await WriteEntryAsync(tar, AuditSealKeyEntry, new MemoryStream(auditSealKey, writable: false), ct);
+        }
+
+        if (documents is not null)
+        {
+            index.Position = 0;
+            await WriteEntryAsync(tar, DocumentIndexEntry, index, ct);
+        }
+
+        await WriteEntryAsync(tar, DatabaseEntry, OpenForReading(databaseDumpPath), ct);
+        return written;
+    }
+
+    /// <summary>
     /// Reads a whole archive: the manifest first, then the key (which must match the manifest's fingerprint), the database
     /// dump and the documents, whose count and size must match the manifest. Documents already present in
     /// <see cref="BackupReadTargets.DocumentsFolder"/> are left as they are (stored documents never change).
@@ -133,6 +211,7 @@ public static class BackupArchive
         var hasDatabase = false;
         var documentCount = 0;
         var documentBytes = 0L;
+        IReadOnlyList<BackupIndexedDocument>? index = null;
 
         await using (var tar = new TarReader(payload, leaveOpen: true))
         {
@@ -186,7 +265,19 @@ public static class BackupArchive
                         await CopyEntryAsync(entry, targets.DatabaseDumpPath, overwrite: true, ct);
                         break;
 
-                    case var name when name.StartsWith(DocumentsPrefix, StringComparison.Ordinal) && IsSafeRelativePath(name[DocumentsPrefix.Length..]):
+                    case DocumentIndexEntry when manifest.Format == Format && index is null && entry.DataStream is not null:
+                        (index, var indexSha256) = await BackupDocumentIndex.ReadAsync(entry.DataStream, ct);
+                        if (!string.Equals(indexSha256, manifest.DocumentIndexSha256, StringComparison.Ordinal))
+                        {
+                            throw new InvalidDataException("The backup's document index does not match its manifest.");
+                        }
+
+                        documentCount = index.Count;
+                        documentBytes = index.Sum(d => d.Length);
+                        break;
+
+                    case var name when manifest.Format == InlineDocumentsFormat
+                        && name.StartsWith(DocumentsPrefix, StringComparison.Ordinal) && IsSafeRelativePath(name[DocumentsPrefix.Length..]):
                         documentCount++;
                         documentBytes += entry.Length;
                         var target = targets.DocumentsFolder is { } folder ? Path.Combine(folder, name[DocumentsPrefix.Length..]) : null;
@@ -218,6 +309,13 @@ public static class BackupArchive
             throw new InvalidDataException("The backup is incomplete: the audit seal key its manifest lists is missing.");
         }
 
+        // Format 3: a full backup has an index, and its manifest its hash; a backup without documents has neither.
+        if (manifest.Format == Format
+            && (manifest.IncludesDocuments != (manifest.DocumentIndexSha256 is not null) || manifest.IncludesDocuments != (index is not null)))
+        {
+            throw new InvalidDataException("The backup is incomplete: the document index its manifest lists is missing.");
+        }
+
         if (documentCount != manifest.DocumentCount || documentBytes != manifest.DocumentBytes)
         {
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
@@ -227,6 +325,7 @@ public static class BackupArchive
         {
             RingKeys = listed.Select(id => ringKeys[id]).ToList(),
             AuditSealKey = auditSealKey,
+            Index = index ?? [],
         };
     }
 
@@ -277,7 +376,9 @@ public static class BackupArchive
     {
         var json = await ReadSmallAsync(entry, 1024 * 1024, ct);
         var manifest = JsonSerializer.Deserialize<BackupManifest>(json, Json) ?? throw new InvalidDataException("The backup manifest is empty.");
-        return manifest.Format == Format ? manifest : throw new InvalidDataException($"Backup format {manifest.Format} is not supported by this version of HC360.");
+        return manifest.Format is Format or InlineDocumentsFormat
+            ? manifest
+            : throw new InvalidDataException($"Backup format {manifest.Format} is not supported by this version of HC360.");
     }
 
     private static async Task<byte[]> ReadSmallAsync(TarEntry entry, int maxLength, CancellationToken ct)
@@ -379,6 +480,14 @@ public static class BackupRestore
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(databaseDumpPath, staging), ct);
             try
             {
+                // The documents of a format 3 backup are in the backup folder beside it, which this restore does not read
+                // yet: refuse rather than install the keys without the documents.
+                if (contents.Index.Count > 0)
+                {
+                    throw new InvalidDataException(
+                        $"This backup keeps its {contents.Index.Count} documents in the backup folder beside it, which this restore does not read yet.");
+                }
+
                 // A version 3 backup names its recovery key in a header every chunk authenticates. A version 2 backup was
                 // encrypted with the original recovery key, which comes from the key inside it.
                 if (payload.Version == BackupEncryption.ArchiveVersion)
