@@ -60,7 +60,7 @@ not measurements.
 |---|---|---|---|
 | Documents (*Docs*) | 91 GB | 274 GB | 274 GB (+274 GB of old blobs) |
 | Server backup folder today, R = 30 | 2.9 TB | 8.7 TB | 8.7 TB |
-| Server backup folder proposed, R = 30 | 0.24 TB | 0.73 TB | 1.0 TB |
+| Server backup folder proposed (31 kept: tonight's and 30 days) | 0.25 TB | 0.74 TB | 1.0 TB |
 | Each USB disk today (about 16 of the last 30 nights on each of two weekly-swapped disks) | 1.5 TB | 4.6 TB | 4.6 TB |
 | Each USB disk proposed | 0.17 TB | 0.51 TB | 0.79 TB |
 | Index *I* (assuming ~200 KB per document, which **must be measured**) | 28 MB/archive | 82 MB/archive | |
@@ -334,31 +334,21 @@ Failure rows for these destinations:
 
 ## Appendix A. Measurements to run on the Nana server (read-only)
 
-In `psql` against the HC360 database:
+Run `deploy\windows\Measure-HC360BackupSizing.ps1` on the Server Node, from an elevated PowerShell. Add
+`-SecondaryDirectory E:\HC360-Backups` with a USB disk connected, and `-MeasureDump` to measure the real compressed
+dump: it runs `pg_dump -Fc` to a temporary file, measures it and deletes it, which takes a few minutes. The script:
 
-```sql
--- Documents: count, bytes, and size distribution, by type (content is kept for soft-deleted rows, so all rows count)
-SELECT content_type, category, count(*) AS documents, round(sum(size_bytes) / 1e9, 2) AS gb,
-       round(avg(size_bytes) / 1e3) AS avg_kb,
-       percentile_cont(ARRAY[0.5, 0.9, 0.99]) WITHIN GROUP (ORDER BY size_bytes) AS p50_p90_p99_bytes
-FROM platform.stored_files GROUP BY ROLLUP (content_type, category) ORDER BY gb DESC NULLS FIRST;
+- reads the database in a read-only session (`default_transaction_read_only`), and file and disk sizes only;
+- measures documents by type and category, their size percentiles, daily and monthly growth (with the rate over the
+  last 90 days by least squares), the database and dump sizes, the documents folder against `stored_files` (each file
+  is its content plus a 29- or 37-byte encryption header), recorded backups against the files, each volume's file
+  system and cluster size, and the documents disk's reading speed;
+- projects the server folder, each USB disk and the bucket for now, year 1 and year 3, with the model of section 2.2
+  as `BackupGrowthBenchmarkTests` checks it (`tests/deploy/Test-BackupSizing.ps1` checks its arithmetic);
+- warns of an exFAT or FAT backup disk, a backup folder that will outgrow the disk it shares with Windows or the data,
+  a documents folder that does not match the database, and backup files whose size changed;
+- writes `hc360-backup-sizing-<machine>-<date>.json` and `.md`, with totals only and no patient, document or file
+  name, so both can be sent to HyFib as they are. The `.md` table replaces the assumed figures in section 2.2 and in
+  NANA-THENI-READINESS.md.
 
--- Growth: documents and GB a day, last 60 days (IST)
-SELECT (created_at AT TIME ZONE 'Asia/Kolkata')::date AS day, count(*) AS documents, round(sum(size_bytes) / 1e9, 3) AS gb
-FROM platform.stored_files WHERE created_at > now() - interval '60 days' GROUP BY 1 ORDER BY 1;
-
--- Backups: size and document count per run (status 1 = Succeeded; kind 0 scheduled, 1 manual, 2 pre-migration)
-SELECT started_at, kind, round(size_bytes / 1e9, 2) AS gb, document_count, secondary_copied
-FROM platform.backup_runs WHERE status = 1 ORDER BY started_at DESC LIMIT 60;
-
--- The database itself
-SELECT pg_size_pretty(pg_database_size(current_database()));
-```
-
-In PowerShell on the server, with each USB disk connected in turn:
-
-```powershell
-$files = Get-ChildItem "$env:ProgramData\HyFib\HealthCare360\files" -Recurse -File
-"{0:N0} files, {1:N1} GB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1GB)
-Get-Volume | Select-Object DriveLetter, FileSystem, AllocationUnitSize, Size, SizeRemaining
-```
+Run it before go-live, and again after a month of use, when the growth rate means something.

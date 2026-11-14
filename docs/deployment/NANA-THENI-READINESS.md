@@ -207,19 +207,21 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
 
 Each nightly backup holds the database dump and a list of the stored documents. Each backup folder keeps one copy of
 every document, so a folder grows by about one dump and the day's new documents each night (DEPLOYMENT.md section 8;
-docs/design/incremental-backup.md, section 2). Space needed, with *R* backups kept, a dump of *D* and documents of *Docs*:
+docs/design/incremental-backup.md, section 2). Space needed, with *R* backups kept (31: tonight's and the 30 days
+before), a dump of *D* and documents of *Docs*:
 
 - **The server's backup folder, and each USB disk:** about *R* × *D* + *Docs*, and *Docs* more for 30 days after the
   data encryption key is rotated (every document is copied once more).
 - **The off-site bucket:** about 35 × *D* + 6 × *Docs*.
 
-The hospital's own figures are not measured yet. Run the queries in docs/design/incremental-backup.md, Appendix A, on
-this PC after the first month and put the results here. Until then, the figures below assume **0.25 GB of documents a
+The hospital's own figures are not measured yet. Run `deploy\windows\Measure-HC360BackupSizing.ps1 -MeasureDump` on
+this PC before go-live and again after the first month (docs/design/incremental-backup.md, Appendix A). It reads only,
+projects these figures from the hospital's own data, and writes a table to put here in place of the one below. Until then, the figures below assume **0.25 GB of documents a
 day**, with dumps of about 5 GB in year 1 and 15 GB in year 3.
 
 | | Year 1 | Year 3 | Before (every document in every backup), year 3 |
 |---|---|---|---|
-| Server's backup folder (30 backups) | 0.24 TB | 0.73 TB (1.0 TB after a key rotation) | 8.7 TB |
+| Server's backup folder (31 backups) | 0.25 TB | 0.74 TB (1.0 TB after a key rotation) | 9.0 TB |
 | Each USB disk (about 16 backups on each of two disks swapped weekly) | 0.17 TB | 0.51 TB (0.79 TB after a key rotation) | 4.6 TB |
 | Off-site bucket | 0.72 TB | 2.2 TB | 10 TB |
 
