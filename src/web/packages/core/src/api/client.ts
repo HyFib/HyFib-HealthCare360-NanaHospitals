@@ -1,3 +1,4 @@
+import { useSession } from '../auth/session';
 import {
   ApiError,
   CORRELATION_HEADER,
@@ -7,6 +8,7 @@ import {
   LANGUAGE_HEADER,
   toApiError,
 } from './errors';
+import { forgetKey, rememberedKey, rememberKey, requestFingerprint } from './rememberedKeys';
 
 export type ClientType = 'web' | 'desktop' | 'portal';
 
@@ -15,7 +17,11 @@ export type QueryValue = string | number | boolean | null | undefined | readonly
 export interface RequestOptions {
   query?: Record<string, QueryValue>;
   signal?: AbortSignal;
-  /** Reuse a key when the *user* repeats the same operation (e.g. "Try again" after a timeout). */
+  /**
+   * The Idempotency-Key to send, for a screen that keeps its own while the user repeats one operation (a payment
+   * dialog's "Try again"). Without it the client chooses: a new key for each write, and the same key again for the same
+   * write sent again while the first one's outcome is not known (see `rememberedKeys`).
+   */
   idempotencyKey?: string;
   timeoutMs?: number;
   headers?: Record<string, string>;
@@ -51,6 +57,11 @@ export interface ApiClientConfig {
    * sent again, or false when the session is over (`whenUnlocked`). Without it, the read fails at once.
    */
   waitForUnlock?: (signal?: AbortSignal) => Promise<boolean>;
+  /**
+   * Who is signed in, so that the key kept for a write whose outcome is not known is sent again only with the same
+   * user's same write. Defaults to the signed-in user of `useSession`.
+   */
+  getUserId?: () => string | null | undefined;
 }
 
 /** A downloaded file, the name the server gave it (Content-Disposition) and the response headers (notices). */
@@ -75,10 +86,43 @@ const RETRYABLE_STATUS = new Set([502, 503, 504]);
 const MAX_ATTEMPTS = 3;
 
 /**
+ * How often a write is sent again while the server says its first attempt with the key is still running (409
+ * `idempotency.in_progress`), each time after the wait the server asks for (Retry-After, 2 s): about 10 s in all.
+ */
+const MAX_IN_PROGRESS_WAITS = 5;
+
+/** The problem code the server answers a retry with while the first attempt with its key still runs (IdempotencyMiddleware). */
+const IN_PROGRESS = 'idempotency.in_progress';
+
+const UNREACHABLE = 'Cannot reach the HealthCare360 server';
+
+/** What a request that could not reach the server says, by what sending it again does. */
+const UNREACHABLE_DETAIL = {
+  read: 'Check the WiFi connection and try again.',
+  // The same write sent again carries the same key, so the server answers with the first attempt's outcome.
+  sameKey:
+    'Check the WiFi connection, then try again. Saving again with the same details will not save it twice; if you change anything, first check whether it was saved.',
+  // A file upload, a sign-in step, or a page without WebCrypto: sent again, it is a new request to the server.
+  newKey: 'Check the WiFi connection. It may have been saved: check before you try again.',
+} as const;
+
+/** What a write still running after the waits says when sending it again would not carry the same key. */
+const STILL_RUNNING_NEW_KEY =
+  'An earlier attempt of this request has not finished yet, so it may still be saved: check before you try again.';
+
+/**
  * Fetch wrapper tuned for the hospital WiFi (SRS DED-08/09):
  * - every unsafe request carries an Idempotency-Key, so automatic retries after a dropped response never
  *   duplicate a bill, payment or order;
- * - transient failures (network, 502/503/504) are retried with exponential backoff + jitter;
+ * - a JSON write whose outcome is not known (a network failure or a timeout after the retries, or the server still
+ *   working on it) keeps its key: the same write sent again by the same user, with the same details, carries it again,
+ *   so the server answers with the first attempt's outcome instead of saving twice. A definitive answer, and signing
+ *   out, forget it; a refusal given before the server's store was asked (a locked screen, too many requests) does not.
+ *   The caller's own key wins, and a form (a file upload) gets a new key each time;
+ * - while the server says the first attempt is still running (409 `idempotency.in_progress`), the write waits as asked
+ *   (Retry-After) and is sent again, a few times;
+ * - transient failures (network, 502/503/504) are retried with exponential backoff + jitter, and so is an answer lost
+ *   while it arrived: the server kept it under the key;
  * - a 401 triggers one token refresh and replay; a 423 (the screen is locked) does not: a read waits until the screen
  *   is unlocked and is then sent again, so the screens behind the lock keep what they show (SRS UX-11), and a write
  *   fails, to be made again once unlocked;
@@ -87,16 +131,71 @@ const MAX_ATTEMPTS = 3;
  * - Problem Details become typed {@link ApiError}s with field errors for forms.
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
-  async function send(method: string, path: string, body: unknown, options: RequestOptions = {}): Promise<Response> {
+  const userId = config.getUserId ?? (() => useSession.getState().user?.id);
+
+  async function send<T>(
+    method: string,
+    path: string,
+    body: unknown,
+    options: RequestOptions,
+    read: (response: Response) => Promise<T>,
+  ): Promise<T> {
     const unsafe = method !== 'GET' && method !== 'HEAD';
     const isAuthCall = path.startsWith('/api/v1/auth/');
-    const idempotencyKey = unsafe && !isAuthCall ? (options.idempotencyKey ?? crypto.randomUUID()) : undefined;
     const url = buildUrl(config.baseUrl ?? '', path, options.query);
+    const form = body instanceof FormData ? body : undefined;
+    const json = form || body === undefined ? undefined : JSON.stringify(body);
     const correlationId = crypto.randomUUID();
+
+    // The write's key, and the fingerprint it is remembered under while its outcome is not known.
+    let idempotencyKey: string | undefined;
+    let fingerprint: string | null = null;
+    if (unsafe && !isAuthCall) {
+      if (options.idempotencyKey) {
+        idempotencyKey = options.idempotencyKey;
+      } else if (form) {
+        idempotencyKey = crypto.randomUUID();
+      } else {
+        fingerprint = await requestFingerprint(userId() ?? '', method, url, json ?? '');
+        idempotencyKey = (fingerprint ? rememberedKey(fingerprint) : undefined) ?? crypto.randomUUID();
+      }
+    }
+    // Sent again, does the write carry the same key? Then sending it again is safe.
+    const sameKeyAgain = fingerprint !== null || options.idempotencyKey !== undefined;
+
+    /** The write's outcome is not known: its key is kept for when the same write is sent again. */
+    const outcomeUnknown = () => {
+      if (fingerprint && idempotencyKey) {
+        rememberKey(fingerprint, idempotencyKey);
+      }
+    };
+    /** The write got a definitive answer: the next such write is a new one. */
+    const settled = () => {
+      if (fingerprint) {
+        forgetKey(fingerprint);
+      }
+    };
+    const unreachable = () => {
+      outcomeUnknown();
+      return new ApiError({
+        status: 0,
+        title: UNREACHABLE,
+        detail: !unsafe
+          ? UNREACHABLE_DETAIL.read
+          : sameKeyAgain
+            ? UNREACHABLE_DETAIL.sameKey
+            : UNREACHABLE_DETAIL.newKey,
+        code: 'network',
+      });
+    };
+
     let refreshed = false;
     let waitedForUnlock = false;
+    let inProgressWaits = 0;
+    // The transport attempt: only a network failure, a gateway failure or a lost answer uses one up.
+    let attempt = 1;
 
-    for (let attempt = 1; ; attempt++) {
+    for (;;) {
       const headers = new Headers(options.headers);
       headers.set('Accept', 'application/json');
       headers.set('X-HC360-Client', config.clientType);
@@ -116,15 +215,16 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       }
 
       let payload: BodyInit | undefined;
-      if (body instanceof FormData) {
-        payload = body;
-      } else if (body !== undefined) {
+      if (form) {
+        payload = form;
+      } else if (json !== undefined) {
         headers.set('Content-Type', 'application/json');
-        payload = JSON.stringify(body);
+        payload = json;
       }
 
       const timeout = AbortSignal.timeout(options.timeoutMs ?? 30_000);
       const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+      const retryable = attempt < MAX_ATTEMPTS && (!unsafe || idempotencyKey !== undefined);
 
       let response: Response;
       try {
@@ -134,16 +234,11 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
           throw error;
         }
         config.onReachability?.(false);
-        if (attempt < MAX_ATTEMPTS && (!unsafe || idempotencyKey)) {
-          await delay(backoff(attempt));
+        if (retryable) {
+          await delay(backoff(attempt++));
           continue;
         }
-        throw new ApiError({
-          status: 0,
-          title: 'Cannot reach the HealthCare360 server',
-          detail: 'Check the WiFi connection and try again. It is safe to retry — nothing will be duplicated.',
-          code: 'network',
-        });
+        throw unreachable();
       }
 
       config.onReachability?.(true);
@@ -154,21 +249,48 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
           continue;
         }
         config.onSessionExpired();
+        settled();
         throw await toApiError(response);
       }
 
+      // A gateway that gave no answer of the server's own may have passed the request on.
+      const gatewayFailure = RETRYABLE_STATUS.has(response.status) && !(await isServerDecision(response));
+      if (gatewayFailure && retryable) {
+        await delay(backoff(attempt++, response.headers.get('Retry-After')));
+        continue;
+      }
+
       if (
-        RETRYABLE_STATUS.has(response.status) &&
-        attempt < MAX_ATTEMPTS &&
-        (!unsafe || idempotencyKey) &&
-        !(await isServerDecision(response))
+        response.status === 409 &&
+        idempotencyKey !== undefined &&
+        inProgressWaits < MAX_IN_PROGRESS_WAITS &&
+        (await problemCode(response)) === IN_PROGRESS
       ) {
-        await delay(backoff(attempt, response.headers.get('Retry-After')));
+        // The first attempt with this key is still running: wait as the server asks, then ask again for its outcome.
+        inProgressWaits++;
+        await delay(backoff(inProgressWaits, response.headers.get('Retry-After')));
         continue;
       }
 
       if (!response.ok) {
-        const error = await toApiError(response);
+        let error = await toApiError(response);
+        if (gatewayFailure || error.code === IN_PROGRESS) {
+          // Still running after the waits, or lost beyond the server: the write may yet be saved.
+          outcomeUnknown();
+          if (error.code === IN_PROGRESS && !sameKeyAgain) {
+            error = new ApiError({
+              status: error.status,
+              title: error.title,
+              detail: STILL_RUNNING_NEW_KEY,
+              code: error.code,
+              referenceId: error.referenceId,
+            });
+          }
+        } else if (!refusedBeforeTheStore(error)) {
+          // Any other answer is definitive. One about an earlier attempt that did not finish (409
+          // `idempotency.outcome_unknown`) too: the user checks, and what they send next is a new write.
+          settled();
+        }
         if (isFeatureDisabled(error)) {
           config.onFeatureDisabled?.(featureOf(error));
         }
@@ -182,17 +304,36 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         throw error;
       }
 
-      return response;
+      let result: T;
+      try {
+        result = await read(response);
+      } catch (error) {
+        if (options.signal?.aborted || error instanceof SyntaxError) {
+          // The server answered: the write is done, whatever became of reading its answer.
+          settled();
+          throw error;
+        }
+        // The answer was lost while it arrived (the connection dropped): the server kept it under the key, so it is
+        // asked for again.
+        if (retryable) {
+          await delay(backoff(attempt++));
+          continue;
+        }
+        throw unreachable();
+      }
+      settled();
+      return result;
     }
   }
 
-  async function request<T>(method: string, path: string, body?: unknown, options?: RequestOptions): Promise<T> {
-    const response = await send(method, path, body, options);
-    if (response.status === 204) {
-      return undefined as T;
-    }
-    const type = response.headers.get('content-type') ?? '';
-    return (type.includes('json') ? await response.json() : await response.text()) as T;
+  function request<T>(method: string, path: string, body?: unknown, options: RequestOptions = {}): Promise<T> {
+    return send(method, path, body, options, async (response) => {
+      if (response.status === 204) {
+        return undefined as T;
+      }
+      const type = response.headers.get('content-type') ?? '';
+      return (type.includes('json') ? await response.json() : await response.text()) as T;
+    });
   }
 
   return {
@@ -201,15 +342,13 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     put: (path, body, options) => request('PUT', path, body, options),
     patch: (path, body, options) => request('PATCH', path, body, options),
     delete: (path, options) => request('DELETE', path, undefined, options),
-    blob: async (path, options) => (await send('GET', path, undefined, options)).blob(),
-    download: async (path, options) => {
-      const response = await send('GET', path, undefined, options);
-      return {
+    blob: (path, options = {}) => send('GET', path, undefined, options, (response) => response.blob()),
+    download: (path, options = {}) =>
+      send('GET', path, undefined, options, async (response) => ({
         blob: await response.blob(),
         fileName: fileNameFromDisposition(response.headers.get('content-disposition')),
         headers: response.headers,
-      };
-    },
+      })),
   };
 }
 
@@ -246,6 +385,28 @@ export function buildUrl(base: string, path: string, query?: Record<string, Quer
   return `${base}${path}${qs ? `?${qs}` : ''}`;
 }
 
+/** The problem code of an answer in Problem Details, read from a copy so that the answer itself can still be read. */
+async function problemCode(response: Response): Promise<string | undefined> {
+  if (!(response.headers.get('content-type') ?? '').includes('json')) {
+    return undefined;
+  }
+  try {
+    const problem = (await response.clone().json()) as { code?: unknown };
+    return typeof problem.code === 'string' && problem.code.length > 0 ? problem.code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * An answer given before the server's idempotency store was asked: the screen is locked (423), too many requests (429),
+ * or the feature is switched off. It says nothing about an earlier attempt with the key, whose outcome stays as unknown
+ * as it was, so the key kept for it is kept: sent again once unlocked, the write still carries it.
+ */
+function refusedBeforeTheStore(error: ApiError): boolean {
+  return error.status === 429 || isSessionLocked(error) || isFeatureDisabled(error);
+}
+
 /**
  * A 5xx from HC360 itself that names a problem code (for example `ai.provider_failed`, `ai.disabled`, or
  * `feature.disabled` for a feature an administrator switched off) is the server's answer, not a dropped connection:
@@ -256,12 +417,7 @@ async function isServerDecision(response: Response): Promise<boolean> {
   if (!(response.headers.get('content-type') ?? '').includes('application/problem+json')) {
     return false;
   }
-  try {
-    const problem = (await response.clone().json()) as { code?: unknown };
-    return typeof problem.code === 'string' && problem.code.length > 0;
-  } catch {
-    return false;
-  }
+  return (await problemCode(response)) !== undefined;
 }
 
 function backoff(attempt: number, retryAfter?: string | null): number {

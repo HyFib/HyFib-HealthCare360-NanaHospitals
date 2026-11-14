@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Settings;
@@ -52,6 +53,34 @@ internal sealed class DiagnosticsLookups(HospitalDbContext db, ISettingsService 
 
     public async Task<PatientSnapshot?> PatientAsync(Guid id, CancellationToken ct) =>
         (await PatientsAsync([id], ct)).GetValueOrDefault(id);
+
+    /// <summary>
+    /// Whose patient id an analyser sent for a tube of <paramref name="patient"/>'s: theirs (in any case, padded or not,
+    /// or the UHID of a record merged with theirs), another registered patient's, or no registered patient's (none sent,
+    /// the analyser's own number, a sample or visit number, a typo). Looked up only when it is not their own UHID.
+    /// </summary>
+    public async Task<AnalyserPatientId> WhoseIdAsync(string? id, PatientSnapshot patient, CancellationToken ct)
+    {
+        var uhid = PatientIdentity.NormaliseId(id);
+        if (uhid.Length == 0)
+        {
+            return AnalyserPatientId.NoPatient;
+        }
+
+        if (uhid == PatientIdentity.NormaliseId(patient.Uhid))
+        {
+            return AnalyserPatientId.TubePatient;
+        }
+
+        // UHIDs are issued in capitals, so the id as compared finds its patient by the unique index.
+        var owner = await db.Set<Patient>().AsNoTracking()
+            .Where(p => p.Uhid == uhid)
+            .Select(p => new { p.Id, p.MergedIntoPatientId })
+            .FirstOrDefaultAsync(ct);
+        return owner is null ? AnalyserPatientId.NoPatient
+            : PatientIdentity.SamePerson(owner.Id, owner.MergedIntoPatientId, patient.Id, patient.MergedIntoPatientId) ? AnalyserPatientId.TubePatient
+            : AnalyserPatientId.AnotherPatient;
+    }
 
     /// <summary>
     /// Absolute QR link of a printed report: the portal's public verification page under the facility's public address

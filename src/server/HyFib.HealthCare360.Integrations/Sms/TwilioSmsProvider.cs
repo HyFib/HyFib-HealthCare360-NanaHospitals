@@ -61,7 +61,7 @@ internal sealed partial class TwilioSmsProvider(HttpClient http, IntegrationTrac
         {
             var error = IntegrationErrors.Describe(ex, "Twilio");
             await trace.LogAsync(IntegrationNames.Sms, Key, "send", false, started, message.Reference, summary, error: error);
-            return SendResult.Fail(error);
+            return IntegrationErrors.Failed(ex, error);
         }
     }
 

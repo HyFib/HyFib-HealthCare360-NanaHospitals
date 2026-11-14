@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,7 +51,11 @@ public sealed class BackupRecoveryKeyTests(HospitalServer server)
         var after = await admin.PostAsync<RecoveryKeyStatus>($"{KeyPath}/{created.KeyId}/confirm", new ConfirmRecoveryKeyRequest(created.Key));
 
         (after.KeyId, after.Original, after.By, after.OriginalKeyId).ShouldBe((created.KeyId, false, HospitalServer.Users.Admin, before.KeyId));
-        (await WarningsAsync(admin)).ShouldNotContain(code => code.StartsWith("backup.recovery_key", StringComparison.Ordinal));
+
+        // Typing it back is the first proof that someone holds it; until a second administrator does, System health says so.
+        after.Custodians.ShouldNotBeNull().Select(c => c.Name).ShouldBe([HospitalServer.Users.Admin]);
+        (await WarningsAsync(admin)).Where(code => code.StartsWith("backup.recovery_key", StringComparison.Ordinal))
+            .ShouldBe([RecoveryKeyCustody.CustodiansCode]);
         using (var again = await admin.SendRawAsync(HttpMethod.Post, $"{KeyPath}/{created.KeyId}/confirm", new ConfirmRecoveryKeyRequest(created.Key)))
         {
             again.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
@@ -59,7 +64,7 @@ public sealed class BackupRecoveryKeyTests(HospitalServer server)
         // Showing it and putting it to use are both in the audit log, and neither entry holds the key.
         await using var scope = server.Services.CreateAsyncScope();
         var events = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
-            .Where(e => e.Action == "backup.recovery_key_shown" || e.Action == "backup.recovery_key_replaced")
+            .Where(e => (e.Action == "backup.recovery_key_shown" || e.Action == "backup.recovery_key_replaced") && e.Summary!.Contains(created.KeyId))
             .OrderBy(e => e.Id)
             .ToListAsync(Ct);
         events.Select(e => (e.Action, e.Severity, e.UserName)).ShouldBe([
@@ -117,6 +122,98 @@ public sealed class BackupRecoveryKeyTests(HospitalServer server)
                 File.Move(aside, keyFile);
             }
         }
+    }
+
+    /// <summary>
+    /// DED-16: a key one person holds is lost with them. Whoever typed the new key back is its first custodian, and System
+    /// health warns until a second administrator types it in from a copy of their own; the same person again is still one,
+    /// a key that is not the current one proves nothing, and the key is never shown again. Each proof is audited, without
+    /// the key.
+    /// </summary>
+    [Fact]
+    public async Task A_second_administrator_typing_the_key_in_clears_the_custody_warning()
+    {
+        var keyFile = RecoveryKeyStore.PathIn(server.Services.GetRequiredService<DataDirectories>());
+        var aside = keyFile + ".custody";
+        if (File.Exists(keyFile))
+        {
+            // A key another test made stays as it was once this test is done.
+            File.Move(keyFile, aside);
+        }
+
+        try
+        {
+            var (admin, _) = await server.SignInNewSessionAsync(HospitalServer.Users.Admin);
+            var created = await admin.PostAsync<NewRecoveryKey>(KeyPath, new ReauthenticateRequest(server.Password));
+            await admin.PostAsync<RecoveryKeyStatus>($"{KeyPath}/{created.KeyId}/confirm", new ConfirmRecoveryKeyRequest(created.Key));
+
+            var again = await admin.PostAsync<RecoveryKeyStatus>($"{KeyPath}/prove", new ConfirmRecoveryKeyRequest(created.Key.ToLowerInvariant()));
+            again.Custodians.ShouldNotBeNull().ShouldHaveSingleItem().Name.ShouldBe(HospitalServer.Users.Admin);
+            (await WarningsAsync(admin)).ShouldContain(RecoveryKeyCustody.CustodiansCode);
+
+            using (var wrong = await admin.SendRawAsync(HttpMethod.Post, $"{KeyPath}/prove",
+                       new ConfirmRecoveryKeyRequest(BackupRecoveryKey.Format(BackupRecoveryKey.Create()))))
+            {
+                wrong.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+                (await wrong.Content.ReadAsStringAsync(Ct)).ShouldContain(created.KeyId);
+            }
+
+            // A second administrator, with a copy of their own, types it in.
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var second = ActivatorUtilities.CreateInstance<RecoveryKeyService>(scope.ServiceProvider, (ICurrentUser)new Custodian("director"));
+                (await second.ProveAsync(new ConfirmRecoveryKeyRequest(created.Key), Ct)).IsSuccess.ShouldBeTrue();
+            }
+
+            var status = await admin.GetAsync<RecoveryKeyStatus>(KeyPath);
+            status.Custodians.ShouldNotBeNull().Select(c => c.Name).ShouldBe(["director", HospitalServer.Users.Admin], ignoreOrder: true);
+            (await WarningsAsync(admin)).ShouldNotContain(code => code.StartsWith("backup.recovery_key", StringComparison.Ordinal));
+
+            await using var audit = server.Services.CreateAsyncScope();
+            var proofs = await audit.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
+                .Where(e => e.Action == RecoveryKeyService.Proven && e.Summary!.Contains(created.KeyId))
+                .ToListAsync(Ct);
+            proofs.Count.ShouldBe(2);
+            proofs.ShouldAllBe(e => !(e.Summary ?? string.Empty).Contains(created.Key) && !(e.Details ?? string.Empty).Contains(created.Key));
+        }
+        finally
+        {
+            File.Delete(keyFile);
+            if (File.Exists(aside))
+            {
+                File.Move(aside, keyFile);
+            }
+        }
+    }
+
+    /// <summary>Another administrator, signed in elsewhere, as the service sees them.</summary>
+    private sealed class Custodian(string userName) : ICurrentUser
+    {
+        public bool IsAuthenticated => true;
+
+        public Guid? UserId { get; } = Guid.NewGuid();
+
+        public string? UserName => userName;
+
+        public string? DisplayName => userName;
+
+        public Guid? FacilityId => null;
+
+        public Guid? SessionId => null;
+
+        public Guid? DeviceId => null;
+
+        public Guid? PractitionerId => null;
+
+        public Guid? PatientId => null;
+
+        public bool IsPatient => false;
+
+        public IReadOnlyCollection<string> Roles => [];
+
+        public string? IpAddress => null;
+
+        public string? CorrelationId => null;
     }
 
     private static async Task<IReadOnlyList<string>> WarningsAsync(ApiClient admin) =>

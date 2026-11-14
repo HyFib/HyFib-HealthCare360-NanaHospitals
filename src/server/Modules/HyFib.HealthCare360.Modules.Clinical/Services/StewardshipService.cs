@@ -253,6 +253,8 @@ internal sealed class StewardshipAlertOutboxHandler(INotificationService notific
 {
     public string Type => StewardshipService.AlertType;
 
+    public OutboxLane Lane => OutboxLane.Local;
+
     public Task HandleAsync(OutboxMessage message, CancellationToken cancellationToken)
     {
         var alert = message.Read<StewardshipAlert>();

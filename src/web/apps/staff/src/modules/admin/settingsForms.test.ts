@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AI_SETTINGS,
+  BACKUP_OFFSITE_SETTINGS,
   buildSecretChanges,
   buildSettingChanges,
   checkTerminals,
@@ -13,6 +14,7 @@ import {
   isIpAddress,
   isLoopbackHost,
   isValidSettingKey,
+  offsiteEndpointProblem,
   parseFieldValue,
   replaceFlagId,
   scopedSettings,
@@ -394,6 +396,98 @@ describe('payment gateway settings', () => {
       { key: CASHFREE_SECRET, value: { clientSecret: 'cf-secret' } },
     ]);
     expect(isValidSettingKey(CASHFREE_SECRET)).toBe(true);
+  });
+});
+
+describe('off-site backup settings', () => {
+  const spec = BACKUP_OFFSITE_SETTINGS;
+  const enabled = id('backup.offsite', 'enabled');
+  const endpoint = id('backup.offsite', 'endpoint');
+  const field = (path: string) => spec.fields.find((item) => item.path === path)!;
+  const on = { ...toFormValues(spec, {}), [enabled]: true };
+
+  it('is one form for the whole hospital, off until turned on, with its access key kept secret', () => {
+    expect(spec.globalOnly).toBe(true);
+    expect(spec.prefix).toBe('backup.offsite');
+    expect(toFormValues(spec, {})[enabled]).toBe(false);
+    expect(spec.secrets.map((secret) => [secret.key, secret.prop])).toEqual([
+      ['backup.offsite.secret', 'accessKeyId'],
+      ['backup.offsite.secret', 'secretAccessKey'],
+    ]);
+    expect(spec.fields.filter((item) => isFieldVisible(item, toFormValues(spec, {}))).map(fieldId)).toEqual([enabled]);
+  });
+
+  it('needs the store, its region and the bucket once it is on, as the server does', () => {
+    const errors = validateSettings(spec, on);
+    expect(errors[endpoint]).toBe('Fill this in.');
+    expect(errors[id('backup.offsite', 'region')]).toBe('Fill this in.');
+    expect(errors[id('backup.offsite', 'bucket')]).toBe('Fill this in.');
+    expect(
+      validateSettings(spec, {
+        ...on,
+        [endpoint]: 'https://s3.ap-south-1.amazonaws.com',
+        [id('backup.offsite', 'region')]: 'ap-south-1',
+        [id('backup.offsite', 'bucket')]: 'nana-hc360-backups',
+        [id('backup.offsite', 'prefix')]: 'hc360/',
+      }),
+    ).toEqual({});
+  });
+
+  it.each([
+    ['http://s3.ap-south-1.amazonaws.com', 'https://'],
+    ['https://s3.ap-south-1.amazonaws.com/nana-hc360-backups', 'address alone'],
+    ['https://s3.ap-south-1.amazonaws.com/?X-Amz-Credential=AKIA', 'address alone'],
+    ['https://AKIA:secret@s3.ap-south-1.amazonaws.com', 'user name or password'],
+  ])('refuses the store address %s, as the server does', (address, problem) => {
+    expect(parseFieldValue(field('endpoint'), address)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(problem),
+    });
+  });
+
+  it.each([
+    ['bucket', 'Nana_Backups'],
+    ['bucket', 'ab'],
+    ['region', 'AP-SOUTH-1'],
+    ['prefix', '/hc360'],
+    ['retainDays', -1],
+    ['backfillDays', 400],
+  ])('refuses %s %j', (path, value) => {
+    expect(parseFieldValue(field(path), value)).toMatchObject({ ok: false });
+  });
+
+  it('saves the bucket as one backup.offsite setting, and the access key as a secret of its own', () => {
+    const values = {
+      ...on,
+      [endpoint]: 'https://s3.ap-south-1.amazonaws.com',
+      [id('backup.offsite', 'region')]: 'ap-south-1',
+      [id('backup.offsite', 'bucket')]: 'nana-hc360-backups',
+      [id('backup.offsite', 'retainDays')]: 35,
+      [replaceFlagId('backup.offsite.secret')]: true,
+      [secretFieldId({ key: 'backup.offsite.secret', prop: 'accessKeyId' })]: ' AKIAEXAMPLE ',
+      [secretFieldId({ key: 'backup.offsite.secret', prop: 'secretAccessKey' })]: 'wJalrXUtnFEMI/K7MDENG',
+    };
+    expect(buildSettingChanges(spec, values, {})).toEqual([
+      {
+        key: 'backup.offsite',
+        value: {
+          enabled: true,
+          endpoint: 'https://s3.ap-south-1.amazonaws.com',
+          region: 'ap-south-1',
+          bucket: 'nana-hc360-backups',
+          retainDays: 35,
+        },
+      },
+    ]);
+    expect(buildSecretChanges(spec, values)).toEqual([
+      { key: 'backup.offsite.secret', value: { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'wJalrXUtnFEMI/K7MDENG' } },
+    ]);
+  });
+
+  it('accepts an OCI or MinIO store addressed by path', () => {
+    expect(offsiteEndpointProblem('https://nana.compat.objectstorage.ap-mumbai-1.oraclecloud.com')).toBeNull();
+    expect(offsiteEndpointProblem('https://objects.hospital.in:9000/')).toBeNull();
+    expect(parseFieldValue(field('pathStyle'), true)).toEqual({ ok: true, value: true });
   });
 });
 

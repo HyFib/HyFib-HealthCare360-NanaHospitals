@@ -24,6 +24,8 @@ import {
   adminQueries,
   confirmRecoveryKey,
   createRecoveryKey,
+  custodyAdvice,
+  proveRecoveryKey,
   type NewRecoveryKey,
   type RecoveryKeyStatus,
 } from './api';
@@ -43,9 +45,10 @@ const useStyles = makeStyles({
   },
   mono: { fontFamily: tokens.fontFamilyMonospace },
   muted: { color: tokens.colorNeutralForeground3 },
+  list: { margin: '4px 0 0', paddingLeft: '20px' },
 });
 
-type Step = 'status' | 'password' | 'show' | 'confirm';
+type Step = 'status' | 'password' | 'show' | 'confirm' | 'prove';
 
 /** The server's message for one field of a failed request, if it sent one. */
 function fieldError(error: unknown, field: string): string | undefined {
@@ -84,9 +87,42 @@ function CurrentKey({ status }: { status: RecoveryKeyStatus }) {
 }
 
 /**
- * The backup recovery key (ASVS V11.1.1, V13.3.2): which key new backups use and, for holders of `admin.system.manage`,
- * a new one. The new key is shown once, after the password is given again, and backups use it only once it is typed back
- * from the copy written down, so a key nobody recorded never becomes the one the backups need.
+ * Who has shown they hold the current key, by typing it in, and what is missing: two people, one copy outside the
+ * building, and someone typing it in every quarter (System health warns of the same).
+ */
+function Custodians({ status }: { status: RecoveryKeyStatus }) {
+  const styles = useStyles();
+  const custodians = status.custodians ?? [];
+  const advice = custodyAdvice(status);
+  return (
+    <>
+      {custodians.length > 0 && (
+        <div>
+          <Text weight="semibold">Shown to be held by</Text>
+          <ul className={styles.list} aria-label="Key holders">
+            {custodians.map((custodian) => (
+              <li key={custodian.userId}>
+                {custodian.name}
+                <Caption1 className={styles.muted}> (last typed in {formatDateTime(custodian.lastProvenAt)})</Caption1>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {advice && (
+        <MessageBar intent="warning" layout="multiline">
+          <MessageBarBody>{advice}</MessageBarBody>
+        </MessageBar>
+      )}
+    </>
+  );
+}
+
+/**
+ * The backup recovery key (ASVS V11.1.1, V13.3.2): which key new backups use and who has shown they hold it, a way for
+ * any administrator who keeps a copy to show they do by typing it in, and, for holders of `admin.system.manage`, a new
+ * key. The new key is shown once, after the password is given again, and backups use it only once it is typed back from
+ * the copy written down, so a key nobody recorded never becomes the one the backups need. No key is ever shown again.
  */
 export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const styles = useStyles();
@@ -97,16 +133,18 @@ export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: (
   const [step, setStep] = useState<Step>('status');
   const [password, setPassword] = useState('');
   const [typed, setTyped] = useState('');
+  const [held, setHeld] = useState('');
   const [missing, setMissing] = useState(false);
   const [created, setCreated] = useState<NewRecoveryKey | null>(null);
 
-  // Start from the beginning each time it opens; the new key is forgotten once it closes.
+  // Start from the beginning each time it opens; the new key, and any key typed, are forgotten once it closes.
   const [wasOpen, setWasOpen] = useState(open);
   if (wasOpen !== open) {
     setWasOpen(open);
     setStep('status');
     setPassword('');
     setTyped('');
+    setHeld('');
     setMissing(false);
     setCreated(null);
   }
@@ -147,17 +185,46 @@ export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: (
     },
   });
 
+  const prove = useMutation({
+    mutationFn: (key: string) => proveRecoveryKey(key),
+    onSuccess: (result) => {
+      queryClient.setQueryData(adminQueries.recoveryKey().queryKey, result);
+      notify.success(
+        'Recorded: you hold the recovery key',
+        `You typed in key ${result.keyId} from your copy. Keep it where you can find it, and type it in again at the next quarterly check.`,
+      );
+      setHeld('');
+      goTo('status');
+    },
+    onError: (error) => {
+      if (!fieldError(error, 'key')) {
+        notify.error(error, 'Could not record that you hold the key');
+      }
+    },
+  });
+
   function close() {
     create.reset();
     confirm.reset();
+    prove.reset();
     onClose();
   }
 
   function goTo(next: Step) {
     create.reset();
     confirm.reset();
+    prove.reset();
     setMissing(false);
     setStep(next);
+  }
+
+  function submitHeld(event: FormEvent) {
+    event.preventDefault();
+    if (!held.trim()) {
+      setMissing(true);
+    } else if (!prove.isPending) {
+      prove.mutate(held);
+    }
   }
 
   function submitPassword(event: FormEvent) {
@@ -180,6 +247,8 @@ export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: (
 
   const passwordMessage = missing ? 'Enter your password.' : fieldError(create.error, 'password');
   const keyMessage = missing ? 'Type the key from your copy.' : fieldError(confirm.error, 'key');
+  const heldMessage = missing ? 'Type the key from your copy.' : fieldError(prove.error, 'key');
+  const current = status.data && !status.data.original ? status.data : null;
 
   return (
     <Dialog
@@ -194,9 +263,11 @@ export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: (
             <DialogTitle>Backup recovery key</DialogTitle>
             <DialogContent className={styles.body}>
               {status.data && <CurrentKey status={status.data} />}
+              {current && <Custodians status={current} />}
               <Text>
                 The recovery key opens the backups, on this server or on replacement hardware. Each backup opens with
-                the key that was in use when it was made; the list of backups names it.
+                the key that was in use when it was made; the list of backups names it. Two administrators keep a copy
+                each, one of them outside the building, and type it in every quarter to show they still can.
               </Text>
               {!canManage && (
                 <Caption1 className={styles.muted}>
@@ -205,6 +276,11 @@ export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: (
               )}
             </DialogContent>
             <DialogActions>
+              {current && (
+                <Button appearance={canManage ? 'secondary' : 'primary'} onClick={() => goTo('prove')}>
+                  I hold this key
+                </Button>
+              )}
               {canManage && (
                 <Button appearance="primary" onClick={() => goTo('password')}>
                   Make a new key
@@ -280,6 +356,43 @@ export function RecoveryKeyDialog({ open, onClose }: { open: boolean; onClose: (
               <Button onClick={close}>Cancel</Button>
             </DialogActions>
           </DialogBody>
+        )}
+
+        {step === 'prove' && current && (
+          <form onSubmit={submitHeld} noValidate>
+            <DialogBody>
+              <DialogTitle>Show that you hold the key</DialogTitle>
+              <DialogContent className={styles.body}>
+                <Text>
+                  Type recovery key <span className={styles.mono}>{current.keyId}</span> from your copy. HC360 records
+                  that you hold it, and when; nothing else changes, and the key is not shown.
+                </Text>
+                <Field
+                  label="Recovery key"
+                  required
+                  validationMessage={heldMessage}
+                  validationState={heldMessage ? 'error' : 'none'}
+                >
+                  <Input
+                    className={styles.mono}
+                    value={held}
+                    onChange={(_, data) => {
+                      setHeld(data.value);
+                      setMissing(false);
+                    }}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </Field>
+              </DialogContent>
+              <DialogActions>
+                <Button appearance="primary" type="submit" disabled={prove.isPending}>
+                  Record that I hold it
+                </Button>
+                <Button onClick={() => goTo('status')}>Back</Button>
+              </DialogActions>
+            </DialogBody>
+          </form>
         )}
 
         {step === 'confirm' && created && (

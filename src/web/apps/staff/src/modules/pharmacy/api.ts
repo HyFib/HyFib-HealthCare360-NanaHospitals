@@ -824,7 +824,8 @@ export const pharmacyTerminalApi: TerminalSaleApi = {
   start: (request: StartTerminalSaleRequest, options) =>
     api.post<CounterTerminalSale>(`${BASE}/terminal-sales`, request, options),
   get: (id, signal) => api.get<CounterTerminalSale>(`${BASE}/terminal-sales/${id}`, { signal }),
-  cancel: (id) => api.post<CounterTerminalSale>(`${BASE}/terminal-sales/${id}/cancel`),
+  cancel: (id, note) =>
+    api.post<CounterTerminalSale>(`${BASE}/terminal-sales/${id}/cancel`, note ? { note } : undefined),
   unused: (signal) => api.get<CounterTerminalSale[]>(`${BASE}/terminal-sales/unused`, { signal }),
 };
 

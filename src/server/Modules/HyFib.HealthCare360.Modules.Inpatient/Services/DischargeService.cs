@@ -473,7 +473,8 @@ public sealed class DischargeService(
                 notifications.Queue(DischargedTemplate, recipient, values, DischargedSmsChannels, TimeSpan.FromHours(12));
 
                 // The signed discharge summary goes in the document header of the WhatsApp template made for it, where the
-                // hospital has switched that template on. Every other discharge gets the text-only message, because a
+                // hospital has switched that template on and the patient's number is verified (VerifiedNumbers: a number
+                // nobody has verified gets no document). Every other discharge gets the text-only message, because a
                 // template with a document header can't go without its document. A summary amended later is sent as it
                 // stands then.
                 var summaryId = await db.Set<DischargeSummary>().AsNoTracking()
@@ -482,6 +483,7 @@ public sealed class DischargeService(
                     .Select(s => (Guid?)s.Id)
                     .FirstOrDefaultAsync(ct);
                 if (summaryId is { } id
+                    && await VerifiedNumbers.CarriesDocumentsAsync(db, patient.Id, ct)
                     && await templates.InUseAsync(DischargeSummaryTemplate, NotificationChannel.WhatsApp, admission.FacilityId, recipient.Language, ct))
                 {
                     notifications.Queue(DischargeSummaryTemplate, recipient, values, DischargedWhatsAppChannels, TimeSpan.FromHours(12),

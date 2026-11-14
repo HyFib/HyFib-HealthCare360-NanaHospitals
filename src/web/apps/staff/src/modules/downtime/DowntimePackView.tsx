@@ -69,13 +69,17 @@ export function PackTable({ table }: { table: DowntimePackTable }) {
   );
 }
 
+function kindName(kind: DowntimePack['kind']): string {
+  return kind === 'Nightly' ? 'Nightly pack' : kind === 'Refreshed' ? 'Refreshed pack' : 'Printed';
+}
+
 /** The pre-downtime pack on screen, read only: the same sections and tables as the print. */
 export function DowntimePackView({ pack }: { pack: DowntimePack }) {
   const styles = useStyles();
   return (
     <div className={styles.root}>
       <Caption1 className={styles.muted}>
-        {pack.kind === 'Nightly' ? 'Nightly pack' : 'Printed'} {formatDateTime(pack.generatedAt)}
+        {kindName(pack.kind)} <strong>made {formatDateTime(pack.generatedAt)}</strong>
         {pack.generatedByName ? ` by ${pack.generatedByName}` : ''} · covers until {formatDateTime(pack.windowEndsAt)} ·{' '}
         {pack.patients} in-patients
       </Caption1>

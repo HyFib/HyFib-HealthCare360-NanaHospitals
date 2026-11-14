@@ -330,7 +330,8 @@ export const canteenTerminalApi: TerminalSaleApi = {
   start: (request: StartTerminalSaleRequest, options) =>
     api.post<CounterTerminalSale>('/api/v1/canteen/terminal-sales', request, options),
   get: (id, signal) => api.get<CounterTerminalSale>(`/api/v1/canteen/terminal-sales/${id}`, { signal }),
-  cancel: (id) => api.post<CounterTerminalSale>(`/api/v1/canteen/terminal-sales/${id}/cancel`),
+  cancel: (id, note) =>
+    api.post<CounterTerminalSale>(`/api/v1/canteen/terminal-sales/${id}/cancel`, note ? { note } : undefined),
   unused: (signal) => api.get<CounterTerminalSale[]>('/api/v1/canteen/terminal-sales/unused', { signal }),
 };
 

@@ -145,10 +145,25 @@ that check those times save nothing, so they do not count). The approvals of the
 
 What the hospital prints to keep caring for patients without HC360, generated **on demand** (*Patients → Downtime
 continuity → Print pack now*, `POST /api/v1/downtime/pack`, permission `patients.downtime_pack`: nurses, doctors,
-medical records, hospital administrators) and **every night** after 02:00 for each facility by the server
-(`DowntimePackJob`), so a pack less than a day old exists when HC360 goes down unannounced. Each is kept a week; the
-latest is `GET /api/v1/downtime/pack/latest`. Printing, reading the latest and the nightly run are audited
-(`patients.downtime_pack_printed`, `patients.downtime_pack_read`, `patients.downtime_pack_made`).
+medical records, hospital administrators), **every night** after 02:00 for each facility by the server
+(`DowntimePackJob`), and **through the day** (see below), so the pack HC360 holds is never a day old when it goes down
+unannounced. The nightly and printed packs are kept a week; the latest is `GET /api/v1/downtime/pack/latest`. Printing,
+reading the latest and the runs are audited (`patients.downtime_pack_printed`, `patients.downtime_pack_read`,
+`patients.downtime_pack_made` for the nightly one, `patients.downtime_pack_refreshed` for the refreshed ones).
+
+### Keeping the pack current
+
+The ward sheets and medication lists in a pack are as of the moment it was made: a drug stopped at 10:00 still shows
+doses due at 14:20 in a pack made at 02:05. So the server makes a **refreshed** pack (`kind` Refreshed) for each facility
+every `downtime.pack.refreshMinutes` minutes, at any hour: the wards give medicines all night, so only the nightly pack
+waits for 02:00 (hospital time). The setting is **30** if not set; **0** means the nightly pack only; it is held between
+0 and 1,440. Each refreshed pack replaces the one before it as the latest, and
+refreshed packs older than 6 hours are deleted, so they do not pile up; the nightly and printed packs are kept a week as
+before. The job looks every 5 minutes.
+
+If a facility's nightly pack fails (the audit and server log say so), the day is **not** marked done: HC360 tries that
+facility again 10 minutes later, and so on, so yesterday's pack does not stay in place until the next night. One
+facility failing does not hold back another.
 
 | Section | What | From |
 |---|---|---|
@@ -166,15 +181,21 @@ printed as "Restricted patient" with the UHID unless the one printing may open r
 never shows the name. The pack is a snapshot: anything ordered after it was made is on paper only, and the cover says
 when it was made.
 
-`DowntimePack {id, kind (Nightly, OnDemand), generatedAt, windowEndsAt, facilityName, generatedByName, patients,
+`DowntimePack {id, kind (Nightly, OnDemand, Refreshed), generatedAt, windowEndsAt, facilityName, generatedByName, patients,
 sections[{key, title, note, pagePerTable, tables[{heading, note, alert, columns[], rows[][]}]}]}`.
 
 ## Read-only offline mode (staff app)
 
 While the staff app can reach HC360 it keeps an **offline copy**: the latest pack and the user's worklists (OPD, lab,
 radiology reporting, those the user may open), taken at sign-in and every 15 minutes. When the server cannot be reached
-the app says so and shows **"Read-only copy from <time>. It is <age> old"** with *Open the offline copy*, which shows the
-pack and the worklists. Nothing can be saved from it: the ward records on paper.
+the app says so, with *Open the offline copy*, which shows the pack and the worklists. Nothing can be saved from it: the
+ward records on paper.
+
+The banner labels each part by its own age, not by when the app last fetched. The ward sheets and medicines are as old as
+the **pack** (its `generatedAt`): **"Read-only copy: ward sheets and medicines as of <pack time>"**, then how old that
+is. The **worklists** are as old as the fetch, and the banner says when that was. A pack older than **an hour** turns the
+banner to a warning: *check medicines against the paper MAR*. A copy with worklists but no pack says so, and sends the
+ward to the printed pack. In the opened copy the pack's time is in bold at the top of the pack.
 
 - The copy is kept on the computer **encrypted** (AES-GCM) under a key derived (HKDF-SHA-256) from the key the server
   gives the signed-in user with the session (`AuthResult.draftKey`), with the user and the slot as associated data. The
@@ -188,8 +209,10 @@ pack and the worklists. Nothing can be saved from it: the ward records on paper.
 
 ### Not covered
 
-- The nightly pack is made with no one signed in and never prints a restricted patient's name; print one on demand
-  for the names.
+- The nightly and refreshed packs are made with no one signed in and never print a restricted patient's name; print one
+  on demand for the names.
+- Even refreshed every 30 minutes, the pack misses what was ordered or stopped since it was made, and the app may hold an
+  older pack than the server (it fetches every 15 minutes): the banner says how old, and the paper MAR decides.
 - A late back-entry approval for admissions, transfers, ward visits and nursing charting is not counted entry by entry.
 - A number issued in one period and written on paper of the next (a yearly series across 1 January, or a financial
   year) is refused: issue blocks for the new period before a planned downtime that crosses it.

@@ -6,7 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as AdminApi from './api';
-import { confirmRecoveryKey, createRecoveryKey, type RecoveryKeyStatus } from './api';
+import { confirmRecoveryKey, createRecoveryKey, proveRecoveryKey, type RecoveryKeyStatus } from './api';
 import { RecoveryKeyDialog } from './RecoveryKeyDialog';
 
 // The server, the toasts and the signed-in user are outside the test; the dialog's own steps are what is tested.
@@ -17,6 +17,7 @@ vi.mock('./api', async (importOriginal) => {
     ...actual,
     createRecoveryKey: vi.fn(),
     confirmRecoveryKey: vi.fn(),
+    proveRecoveryKey: vi.fn(),
     adminQueries: {
       ...actual.adminQueries,
       recoveryKey: () => ({ queryKey: ['admin', 'backups', 'recovery-key'], queryFn: () => readStatus() }),
@@ -40,6 +41,7 @@ function status(patch: Partial<RecoveryKeyStatus> = {}): RecoveryKeyStatus {
     by: null,
     originalShown: true,
     originalKeyId: ORIGINAL_ID,
+    custodians: null,
     ...patch,
   };
 }
@@ -66,6 +68,7 @@ describe('RecoveryKeyDialog', () => {
     readStatus.mockReset();
     vi.mocked(createRecoveryKey).mockReset();
     vi.mocked(confirmRecoveryKey).mockReset();
+    vi.mocked(proveRecoveryKey).mockReset();
     Object.values(notify).forEach((spy) => spy.mockClear());
     permissions.manage = true;
   });
@@ -150,6 +153,59 @@ describe('RecoveryKeyDialog', () => {
       expect(notify.error).toHaveBeenCalledWith(expect.any(ApiError), 'The new recovery key was not put to use'),
     );
     expect(await screen.findByRole('button', { name: 'Make a new key' })).toBeInTheDocument();
+  });
+
+  it('lets a second administrator show they hold the key by typing it in, without ever showing it', async () => {
+    const user = userEvent.setup();
+    permissions.manage = false;
+    const itAdmin = { userId: 'u-1', name: 'itadmin', lastProvenAt: new Date().toISOString() };
+    readStatus.mockResolvedValue(
+      status({ keyId: NEW_ID, original: false, since: '2026-10-09T06:35:00Z', by: 'itadmin', custodians: [itAdmin] }),
+    );
+    vi.mocked(proveRecoveryKey)
+      .mockRejectedValueOnce(fieldError('key', `This is not the recovery key backups use now, whose ID is ${NEW_ID}.`))
+      .mockResolvedValueOnce(
+        status({
+          keyId: NEW_ID,
+          original: false,
+          custodians: [{ userId: 'u-2', name: 'director', lastProvenAt: new Date().toISOString() }, itAdmin],
+        }),
+      );
+    renderDialog();
+
+    // One person is not enough: the dialog says so, and who it is.
+    expect(await screen.findByText(/Only itadmin has shown they hold this key/)).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Key holders' })).toHaveTextContent('itadmin');
+    expect(screen.queryByRole('button', { name: 'Make a new key' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'I hold this key' }));
+    expect(screen.queryByRole('group', { name: 'New recovery key' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Record that I hold it' }));
+    expect(await screen.findByText('Type the key from your copy.')).toBeInTheDocument();
+    expect(proveRecoveryKey).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText(/Recovery key/), 'AB12 CD34 wrong{Enter}');
+    expect(await screen.findByText(/whose ID is 7B1E0A44C2D9F3A8/)).toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/Recovery key/));
+    await user.type(screen.getByLabelText(/Recovery key/), `${NEW_KEY}{Enter}`);
+
+    await waitFor(() =>
+      expect(notify.success).toHaveBeenCalledWith(
+        'Recorded: you hold the recovery key',
+        expect.stringContaining(NEW_ID),
+      ),
+    );
+    expect(proveRecoveryKey).toHaveBeenLastCalledWith(NEW_KEY);
+    expect(await screen.findByRole('list', { name: 'Key holders' })).toHaveTextContent(/director.*itadmin/);
+    expect(screen.queryByText(/has shown they hold this key/)).not.toBeInTheDocument();
+  });
+
+  it('asks for two holders when nobody has typed the key in', async () => {
+    readStatus.mockResolvedValue(status({ keyId: NEW_ID, original: false, custodians: [] }));
+    renderDialog();
+
+    expect(await screen.findByText(/Nobody has typed this key in/)).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Key holders' })).not.toBeInTheDocument();
   });
 
   it('shows the key in use, but no way to make one, to those who may not', async () => {

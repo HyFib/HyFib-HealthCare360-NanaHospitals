@@ -531,8 +531,10 @@ event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff
 
 **The report's PDF with "report ready".** The message names the released report as a notification document; the PDF is
 made when the message is sent, so the patient gets the report as it is then, and it is never stored. The e-mail carries
-it as an attachment, and the WhatsApp message carries it when its template has a document header. SMS never carries it.
-Only released content is ever made into these PDFs.
+it as an attachment, and the WhatsApp message carries it when its template has a document header and the patient's
+mobile number is verified (`VerifiedNumbers`, ASVS V6.6.1: a number typed one digit wrong, or one the telco gave to
+someone new, gets the notice without the report; see portal.md, *A number nobody has verified*). The e-mail keeps the PDF
+either way. SMS never carries it. Only released content is ever made into these PDFs.
 
 | Document kind | Id | Made by |
 |---|---|---|
@@ -610,8 +612,9 @@ sample's results on screen and sends them as that analyser would, so they are ch
 `IInstrumentResultSink` is implemented by `InstrumentResultSink` (registered in `AddServices`):
 
 * `ReceiveAsync` maps the instrument code + channel (`XN550:HGB` beats a generic `HGB`) to the analyte, finds the tube
-  by barcode in the analyser's facility (a collected tube is received automatically, and the other bidirectional
-  analysers that run its tests are then sent its order, once a result goes on it), records unverified results with the
+  by barcode in the analyser's facility, checks that the patient the analyser named for it, if any, can be the tube's
+  (see *Patient identity check* below), receives a collected tube automatically (the other bidirectional analysers
+  that run its tests are then sent its order, once a result goes on it), records unverified results with the
   analyser's unit, flags, status and comment, auto-validates when allowed (else stores why not) and raises critical
   alerts. A result that cannot go on an open test is kept (see *Unmatched analyser results*) and the message is
   acknowledged; only an analyser that Lab setup does not have, or has switched off, is refused, and a failure to store
@@ -638,6 +641,7 @@ acknowledged:
 | `InvalidValue` | The value is not one the test can hold (not a number for a numeric test, not one of its answers, nor one of them as analysers write it) |
 | `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
 | `Withdrawn` | The analyser withdrew its result (HL7 OBX-11 `W` posted in error, `D` deleted) for a test verified, or released, with its value: the result stands until a person checks it, and reopens or amends it. Never assigned to a test, only discarded |
+| `PatientMismatch` | The analyser named another patient for the sample than the tube's: another registered patient's UHID, or no UHID to go by and a name that cannot be the tube patient's (see *Patient identity check*). Every value of the message is kept, and nothing of the tube changes, not even what the message withdraws |
 
 **Withdrawn results and results not obtained.** The gateway passes on what an analyser says of a test instead of a
 value (`InstrumentResult.Kind`, read from the protocol's status: HL7 OBX-11 `W` and `D` withdraw a result, HL7 and ASTM
@@ -658,6 +662,53 @@ and delta-checked, with the analyser's reading and the time it measured the samp
 and is never auto-validated, since a person chose where it goes. Or
 discards it with a reason (a control run, a duplicate, a rerun on its own tube). Both are audited
 (`lab.unmatched.assigned`, `lab.unmatched.discarded`), and the rows keep who did it and when.
+
+**Patient identity check** (`PatientIdentity`, LIS-04). The tube is found by its barcode, so a misread or swapped
+barcode would put one patient's values on another's tube. When the analyser also names the sample's patient, that
+patient must be able to be the tube's before any result goes on it:
+
+* **What is read.** The gateway's mappers pass on the patient with each sample's results (`InstrumentResultMessage.Patient`,
+  see [integrations.md](integrations.md#laboratory-analysers-int-lab)): HL7 PID-3 (the id HC360 assigned, else a
+  medical record number no other authority assigned, else the only bare id) and PID-5; ASTM the first of P.3, P.4 and
+  P.5 the analyser filled, and P.6. A sample sent under two patients makes two messages, each checked on its own.
+* **The UHID decides.** An id is looked up among the registered patients (without spaces, in capitals). The tube
+  patient's UHID, or that of a record merged with theirs, is the same patient whatever the name, since names get
+  corrected after an order is sent. Another registered patient's UHID is another patient even when the names agree:
+  two patients of one name are exactly the mix-up the check is for. An id no registered patient has (the analyser's own
+  patient number, a sample, visit or accession number, a placeholder, a typo) says nothing, and the name decides.
+* **Names are compared part by part**, only without a UHID to go by: letters only, in capitals, accents and punctuation
+  dropped, titles (Mr, Mrs, Dr, Smt, Shri, "Baby of" a newborn) and the placeholders of an empty name field (Unknown,
+  None, Patient) left out, in any order. Each part of the name with fewer parts must match a part of its own in the
+  other: the same part, an initial of it, or a shortening of it of three letters or more (analysers cut a long name at
+  the length of their field); initials written together (`KV`) may be read as separate ones. So `SHARMA^RAVI`,
+  `R. Sharma`, `Ravi K Sharma` and `Ravi Kumar Sharm` can all be Ravi Kumar Sharma, while `Ravi Verma` and
+  `Meera Sharma` cannot. A name that only lacks parts is not another patient's, nor is one with no part to compare
+  (another script than the Latin one, digits only).
+* **On a mismatch** every value of the message is kept as `PatientMismatch`, with the tube and its patient on the
+  row and a detail naming whom the analyser sent ("EM360 sent sample 000000123 for patient NAN26000999 (VERMA MEERA),
+  not the sample's patient Ravi Kumar Sharma (NAN26000123)."); a critical one alerts whoever matches results, as any
+  value kept aside does. Nothing of the tube changes: a collected tube is not received, no orders go to other analysers,
+  and a result the message withdraws or could not obtain is not applied to the tube's tests either, since it may concern
+  another patient's sample (the analyser's values kept aside for that sample id on that channel are still discarded, as
+  the analyser withdrew them). The check comes as soon as the tube is found, before whether it is in the lab, so a
+  misread barcode that lands on a rejected tube shows as the patient mismatch it is. The analyser is acknowledged, a
+  resend is kept once, and the server log gets a warning with the analyser and the barcode only (and the channels of
+  anything withdrawn or not obtained), never the names or ids. A message that names no patient (no PID or P record, or
+  empty ones), or names one who can be the tube's, is taken as before.
+* **Assigning one anyway** (the analyser held stale details, and the tube is right) goes through result entry like
+  any unmatched result, and the result waits for a pathologist with a second held reason, "The analyser named another
+  patient for the sample:" and the detail, so whoever verifies it sees what was overridden. The audit entry
+  `lab.unmatched.assigned` records the reason.
+
+What it can and cannot catch: HC360's own orders give a bidirectional analyser the UHID and name of the tube it scans
+(P.3 and P.6, PID-3 and PID-5), and it usually sends those back. A barcode misread on such an analyser therefore comes
+back with the patient of the tube the misread barcode belongs to, and passes the check. It catches a mismatch where the
+analyser's patient came from somewhere else: typed in at the analyser (an emergency or downtime sample, a
+unidirectional analyser), a worklist loaded by rack position, results reassigned on the analyser, a sample number reused
+while the analyser still holds the earlier patient. Before an analyser goes live, send it a sample under another
+registered patient's UHID and confirm the result waits as *Not this sample's patient*. Then watch how many of each
+analyser's results wait so: a steady share from one analyser means it puts something other than the patient's name in
+its name field (the ward, the doctor), which is a setting on the analyser to correct, not a run of wrong patients.
 
 **Channels no test maps** (`AnalyserChannel`, table `diagnostics.lab_analyser_channels`, facility-scoped, not in the
 data audit: the analyser's own messages, counted on each). Analysers send whole profiles, so a channel that maps a test

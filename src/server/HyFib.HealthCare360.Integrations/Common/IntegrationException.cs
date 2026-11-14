@@ -43,4 +43,17 @@ internal static class IntegrationErrors
     /// <summary>True for failures of the remote call itself — not cancellation requested by our own caller.</summary>
     public static bool IsCallFailure(Exception exception, CancellationToken callerToken) =>
         exception is not OperationCanceledException || !callerToken.IsCancellationRequested;
+
+    /// <summary>
+    /// True for a call that got no answer at all: what <see cref="Describe"/> calls no answer in time, a provider
+    /// temporarily unavailable, or one it could not reach. The outbox counts these towards the provider's cool-down
+    /// (<see cref="SendResult.ProviderUnreachable"/>); an answer, even a refusal, does not count.
+    /// </summary>
+    public static bool IsUnreachable(Exception exception) =>
+        exception is TimeoutRejectedException or OperationCanceledException or TimeoutException or BrokenCircuitException
+            or HttpRequestException { StatusCode: null };
+
+    /// <summary>The failed result of a call that threw <paramref name="exception"/>, marked when it got no answer (<see cref="IsUnreachable"/>).</summary>
+    public static SendResult Failed(Exception exception, string error) =>
+        IsUnreachable(exception) ? SendResult.Unreachable(error) : SendResult.Fail(error);
 }

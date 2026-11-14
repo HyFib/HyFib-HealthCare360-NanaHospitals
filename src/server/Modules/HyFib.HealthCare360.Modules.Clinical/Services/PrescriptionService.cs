@@ -609,7 +609,8 @@ public sealed class PrescriptionService(
 
     /// <summary>
     /// Tells OP patients the prescription is on the portal (outbox message, committed with the signature). The message
-    /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one.
+    /// names the prescription's PDF: WhatsApp sends it in the template's document header when the template has one, and
+    /// only to a verified number (<see cref="VerifiedNumbers"/>); to a number nobody has verified the message goes alone.
     /// Once per prescription (<see cref="Prescription.PatientNotifiedAt"/>): a prescription the patient was told about
     /// at signing is not announced again when the doctor signs it with their DSC. A held message
     /// (<see cref="Prescription.PatientNoticeHeldAt"/>) is let go here, sent or not. The message is the prescription's
@@ -634,6 +635,7 @@ public sealed class PrescriptionService(
         }
 
         var doctor = (await PrintQueries.PractitionerNamesAsync(db, [prescription.PractitionerId], ct)).GetValueOrDefault(prescription.PractitionerId) ?? "your doctor";
+        var numberVerified = await VerifiedNumbers.CarriesDocumentsAsync(db, prescription.PatientId, ct);
         notifications.Queue("prescription.shared",
             NotificationRecipient.Patient(patient.Phone, patient.Email, prescription.PatientId, patient.FullName, patient.PreferredLanguage),
             new Dictionary<string, string>
@@ -645,7 +647,7 @@ public sealed class PrescriptionService(
             [NotificationChannel.WhatsApp],
             TimeSpan.FromDays(2),
             prescription.FacilityId,
-            document: new NotificationDocument(PrescriptionDocumentSource.DocumentKind, prescription.Id));
+            document: VerifiedNumbers.ForNumber(new NotificationDocument(PrescriptionDocumentSource.DocumentKind, prescription.Id), numberVerified));
         prescription.MarkPatientNotified(time.GetUtcNow());
     }
 

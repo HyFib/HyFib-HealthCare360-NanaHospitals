@@ -17,8 +17,19 @@ namespace HyFib.HealthCare360.Platform.Http;
 
 public enum IdempotencyState
 {
+    /// <summary>The first attempt with the key is running.</summary>
     InProgress = 0,
+
+    /// <summary>The attempt ended: its answer (status, location and, when kept, the body) is replayed to every retry.</summary>
     Completed,
+
+    /// <summary>
+    /// The attempt was still marked as running long after it began, so it is taken not to have finished (the server
+    /// stopped while it ran) and nobody knows whether it changed anything: every retry is told to check instead of
+    /// running it again (<see cref="IdempotencyMiddleware.OutcomeUnknownCode"/>). An attempt that was only slow records
+    /// its outcome over this when it ends.
+    /// </summary>
+    Abandoned,
 }
 
 /// <summary>Stored outcome of an unsafe request, replayed when a WiFi retry repeats the same key.</summary>
@@ -90,13 +101,79 @@ public static class IdempotencyEndpointConventions
 /// the same key with a different payload is rejected with 422. Stored responses are encrypted (AES-256-GCM,
 /// key bound to the caller's scope) because they can contain one-time secrets such as temporary passwords,
 /// device secrets or join links.
+/// <para>
+/// A retry never runs a request a second time, whatever became of the first attempt (DED-08): a save whose answer was
+/// lost on the WiFi, then made again, must not record the money or the stock twice.
+/// </para>
+/// <list type="bullet">
+/// <item>The attempt runs to its end even when the client goes (a WiFi roam, a closed tab): once it has started, only its
+/// end says whether it changed anything.</item>
+/// <item>Its outcome is recorded before the answer is sent, so a client that has gone cannot undo it: the retry gets the
+/// first answer.</item>
+/// <item>An attempt that failed (an exception, or a 5xx answer) leaves nothing behind, so its retry runs again.</item>
+/// <item>A retry made while the first attempt still runs gets 409 <see cref="InProgressCode"/> and Retry-After.</item>
+/// <item>An attempt still marked as running long after it began did not finish: the server stopped while it ran, and it
+/// may or may not have changed anything. It is marked abandoned, and every retry gets 409 <see cref="OutcomeUnknownCode"/>,
+/// telling the user to check, until the record expires, or until the attempt, only slow, ends after all and records its
+/// answer. It is never run again.</item>
+/// </list>
 /// </summary>
 public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<IdempotencyMiddleware> logger)
 {
     public const string HeaderName = "Idempotency-Key";
+
+    /// <summary>The problem code of a retry made while the first attempt with its key still runs (409, with Retry-After).</summary>
+    public const string InProgressCode = "idempotency.in_progress";
+
+    /// <summary>The problem code of a retry whose first attempt did not finish, so it may or may not have been saved (409).</summary>
+    public const string OutcomeUnknownCode = "idempotency.outcome_unknown";
+
+    /// <summary>The problem code of a retry of a request whose answer is not kept (<see cref="NoStoredResponseMetadata"/>, 409).</summary>
+    public const string AnswerNotKeptCode = "idempotency.answer_not_kept";
+
+    // The titles and details this middleware answers with. A patient's answer is written in their language by its English
+    // text (PatientTexts, PP-06), so each is in patient-texts-{en,hi,ta}.json, and the architecture tests check every
+    // constant named *Title or *Detail here.
+
+    public const string InvalidKeyTitle = "Invalid Idempotency-Key header";
+
+    public const string KeyReusedTitle = "Idempotency key reused with a different request";
+
+    public const string KeyReusedDetail = "Generate a new Idempotency-Key for a new operation.";
+
+    public const string AnswerNotKeptTitle = "This request was already answered";
+
+    public const string AnswerNotKeptDetail = "Its answer is not kept, so it can't be sent again. Please ask again.";
+
+    public const string InProgressTitle = "This request is still being processed";
+
+    public const string InProgressDetail =
+        "An earlier attempt of this request has not finished yet. Wait a moment, then try again with the same details: it will not be saved twice.";
+
+    public const string OutcomeUnknownTitle = "This may already have been saved";
+
+    public const string OutcomeUnknownDetail =
+        "An earlier attempt of this request did not finish, so it may or may not have been saved: check before trying again.";
+
+    public const string UnreadableAnswerTitle = "This request was already processed";
+
+    public const string UnreadableAnswerDetail = "Reload the screen to see the result.";
+
     private const int MaxStoredBodyBytes = 256 * 1024;
     private const int MaxKeyLength = 128;
+
+    /// <summary>How long a retry made while the first attempt still runs is asked to wait, in seconds.</summary>
+    private const string RetryAfterSeconds = "2";
+
+    /// <summary>How often a request looks again when the record changed under it (an attempt that ended meanwhile).</summary>
+    private const int MaxLookups = 3;
+
     private static readonly TimeSpan Retention = TimeSpan.FromHours(24);
+
+    /// <summary>
+    /// How long an attempt may run before a retry takes it that the server stopped while it ran. One that was only slow
+    /// still records its outcome when it ends, which the retries after that get.
+    /// </summary>
     private static readonly TimeSpan StaleInProgress = TimeSpan.FromMinutes(2);
 
     public async Task InvokeAsync(
@@ -117,124 +194,242 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
         var key = keyValues.ToString().Trim();
         if (key.Length is 0 or > MaxKeyLength)
         {
-            await Results.Problem(title: "Invalid Idempotency-Key header", statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(context);
+            await Results.Problem(title: InvalidKeyTitle, statusCode: StatusCodes.Status400BadRequest).ExecuteAsync(context);
             return;
         }
 
-        var keepsAnswer = context.GetEndpoint()?.Metadata.GetMetadata<NoStoredResponseMetadata>() is null;
+        await using var db = await contextFactory.CreateDbContextAsync(context.RequestAborted);
+        await HandleAsync(context, key, new DatabaseIdempotencyStore(db), currentUser, protector, time);
+    }
+
+    /// <summary>The contract for a request carrying <paramref name="key"/>, with its records in <paramref name="store"/>.</summary>
+    internal async Task HandleAsync(HttpContext context, string key, IIdempotencyStore store, ICurrentUser currentUser, IFieldProtector protector, TimeProvider time)
+    {
         var scope = currentUser.UserId?.ToString("N") ?? "anon:" + (context.Connection.RemoteIpAddress?.ToString() ?? "unknown");
         var requestHash = await HashRequestAsync(context.Request);
-        var now = time.GetUtcNow();
+        var keepsAnswer = context.GetEndpoint()?.Metadata.GetMetadata<NoStoredResponseMetadata>() is null;
 
-        await using var db = await contextFactory.CreateDbContextAsync(context.RequestAborted);
-        var existing = await db.Set<IdempotencyRecord>().FirstOrDefaultAsync(r => r.Scope == scope && r.Key == key, context.RequestAborted);
-
-        if (existing is not null)
+        if (await ClaimAsync(context, store, scope, key, requestHash, keepsAnswer, protector, time) is { } attempt)
         {
+            await RunAsync(context, store, attempt, keepsAnswer, protector);
+        }
+    }
+
+    /// <summary>
+    /// The marker of this request as the first attempt with its key, or null when the request was answered instead: as a
+    /// retry (with the first answer, or why it cannot be given), or as a key reused for another request.
+    /// </summary>
+    private async Task<IdempotencyRecord?> ClaimAsync(
+        HttpContext context,
+        IIdempotencyStore store,
+        string scope,
+        string key,
+        string requestHash,
+        bool keepsAnswer,
+        IFieldProtector protector,
+        TimeProvider time)
+    {
+        for (var lookup = 0; lookup < MaxLookups; lookup++)
+        {
+            var now = time.GetUtcNow();
+            var existing = await store.FindAsync(scope, key, context.RequestAborted);
+            if (existing is null)
+            {
+                var attempt = new IdempotencyRecord
+                {
+                    Scope = scope,
+                    Key = key,
+                    RequestHash = requestHash,
+                    Method = context.Request.Method,
+                    Path = LoggedPath.Of(context),
+                    State = IdempotencyState.InProgress,
+                    CreatedAt = now,
+                    ExpiresAt = now + Retention,
+                };
+                // Not cancelled by the client going: a marker added just as it went would stand for an attempt never run.
+                if (await store.TryAddAsync(attempt, CancellationToken.None))
+                {
+                    return attempt;
+                }
+
+                // Another request with the key added its marker first: this one is its retry.
+                continue;
+            }
+
             if (!string.Equals(existing.RequestHash, requestHash, StringComparison.Ordinal))
             {
                 await Results.Problem(
-                    title: "Idempotency key reused with a different request",
-                    detail: "Generate a new Idempotency-Key for a new operation.",
+                    title: KeyReusedTitle,
+                    detail: KeyReusedDetail,
                     statusCode: StatusCodes.Status422UnprocessableEntity).ExecuteAsync(context);
-                return;
+                return null;
             }
 
-            if (existing.State == IdempotencyState.Completed)
+            switch (existing.State)
             {
-                if (keepsAnswer)
-                {
+                case IdempotencyState.Completed when keepsAnswer:
                     await ReplayAsync(context, existing, protector);
-                }
-                else
-                {
-                    await Results.Problem(
-                        title: "This request was already answered",
-                        detail: "Its answer is not kept, so it can't be sent again. Please ask again.",
-                        statusCode: StatusCodes.Status409Conflict,
-                        extensions: new Dictionary<string, object?> { ["code"] = "idempotency.answer_not_kept" }).ExecuteAsync(context);
-                }
+                    return null;
 
-                return;
+                case IdempotencyState.Completed:
+                    await ConflictAsync(
+                        context,
+                        AnswerNotKeptCode,
+                        AnswerNotKeptTitle,
+                        AnswerNotKeptDetail);
+                    return null;
+
+                case IdempotencyState.Abandoned:
+                    await OutcomeUnknownAsync(context);
+                    return null;
+
+                case IdempotencyState.InProgress when now - existing.CreatedAt < StaleInProgress:
+                    await InProgressAsync(context);
+                    return null;
             }
 
-            if (now - existing.CreatedAt < StaleInProgress)
+            // Still marked as running long after it began: the server stopped while it ran. Whether it saved anything is not
+            // known, so it is never run again; the user checks.
+            if (await store.TryAbandonAsync(existing.Id, CancellationToken.None))
             {
-                context.Response.Headers.RetryAfter = "2";
-                await Results.Problem(title: "The original request is still being processed", statusCode: StatusCodes.Status409Conflict).ExecuteAsync(context);
-                return;
+                logger.LogWarning(
+                    "The attempt of {Endpoint} with idempotency key {Key}, begun at {Begun}, did not finish; its retries are told to check whether it was saved",
+                    EndpointName(context),
+                    key,
+                    existing.CreatedAt);
+                await OutcomeUnknownAsync(context);
+                return null;
             }
 
-            // A crashed attempt left a stale marker: take it over.
-            existing.CreatedAt = now;
-            await db.SaveChangesAsync(context.RequestAborted);
-        }
-        else
-        {
-            existing = new IdempotencyRecord
-            {
-                Scope = scope,
-                Key = key,
-                RequestHash = requestHash,
-                Method = context.Request.Method,
-                Path = LoggedPath.Of(context),
-                State = IdempotencyState.InProgress,
-                CreatedAt = now,
-                ExpiresAt = now + Retention,
-            };
-            db.Add(existing);
-            try
-            {
-                await db.SaveChangesAsync(context.RequestAborted);
-            }
-            catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-            {
-                context.Response.Headers.RetryAfter = "2";
-                await Results.Problem(title: "The original request is still being processed", statusCode: StatusCodes.Status409Conflict).ExecuteAsync(context);
-                return;
-            }
+            // It ended, or was removed, meanwhile: look again.
         }
 
+        // The record kept changing under this request: it is asked to come back in a moment.
+        await InProgressAsync(context);
+        return null;
+    }
+
+    /// <summary>Runs the request as the first attempt with its key, records its outcome, and only then sends its answer.</summary>
+    private async Task RunAsync(HttpContext context, IIdempotencyStore store, IdempotencyRecord attempt, bool keepsAnswer, IFieldProtector protector)
+    {
+        var clientAborted = context.RequestAborted;
         var originalBody = context.Response.Body;
         await using var buffer = new MemoryStream();
         context.Response.Body = buffer;
+
+        // The attempt runs to its end even if the client goes: stopped halfway, it might have saved and not said so, and
+        // its answer might be cut short. Ended, its retry gets the whole answer.
+        context.RequestAborted = CancellationToken.None;
         try
         {
             await next(context);
         }
+        catch
+        {
+            // An honest failure (the exception handler answers it): nothing is kept, as for a server error, so the retry
+            // runs again.
+            await ForgetAsync(store, attempt);
+            throw;
+        }
         finally
         {
+            context.RequestAborted = clientAborted;
             context.Response.Body = originalBody;
         }
 
-        buffer.Position = 0;
-        await buffer.CopyToAsync(originalBody, context.RequestAborted);
+        if (context.Response.StatusCode >= 500)
+        {
+            // Server errors are not stored: the client may retry and execute again.
+            await ForgetAsync(store, attempt);
+        }
+        else
+        {
+            attempt.State = IdempotencyState.Completed;
+            attempt.StatusCode = context.Response.StatusCode;
+            attempt.ContentType = context.Response.ContentType;
+            attempt.Location = context.Response.Headers.Location.ToString() is { Length: > 0 } location ? location : null;
+            attempt.ResponseBody = keepsAnswer && buffer.Length <= MaxStoredBodyBytes
+                ? protector.ProtectBytes(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), BodyPurpose(attempt.Scope))
+                : null;
+            await RecordAsync(store, attempt);
+        }
 
+        await SendAsync(context, buffer, clientAborted);
+    }
+
+    /// <summary>Records the attempt's outcome whatever the client does meanwhile: it is not cancelled, and a failure is logged.</summary>
+    private async Task RecordAsync(IIdempotencyStore store, IdempotencyRecord attempt)
+    {
         try
         {
-            if (context.Response.StatusCode >= 500)
-            {
-                // Server errors are not stored: the client may retry and execute again.
-                db.Remove(existing);
-            }
-            else
-            {
-                existing.State = IdempotencyState.Completed;
-                existing.StatusCode = context.Response.StatusCode;
-                existing.ContentType = context.Response.ContentType;
-                existing.Location = context.Response.Headers.Location.ToString() is { Length: > 0 } location ? location : null;
-                existing.ResponseBody = keepsAnswer && buffer.Length <= MaxStoredBodyBytes
-                    ? protector.ProtectBytes(buffer.GetBuffer().AsSpan(0, (int)buffer.Length), BodyPurpose(scope))
-                    : null;
-            }
-
-            await db.SaveChangesAsync(CancellationToken.None);
+            await store.SaveOutcomeAsync(attempt, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Could not persist idempotency record for key {Key}", key);
+            // The marker stays in progress: retries are asked to wait, then told to check whether it was saved.
+            logger.LogWarning(ex, "Could not record the outcome of idempotency key {Key}", attempt.Key);
         }
     }
+
+    /// <summary>Removes the marker of an attempt that failed, so that its retry runs again.</summary>
+    private async Task ForgetAsync(IIdempotencyStore store, IdempotencyRecord attempt)
+    {
+        try
+        {
+            await store.RemoveAsync(attempt.Id, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // The marker stays in progress: retries are asked to wait, then told to check, which is safe.
+            logger.LogWarning(ex, "Could not remove the marker of failed idempotency key {Key}", attempt.Key);
+        }
+    }
+
+    /// <summary>
+    /// Sends the buffered answer. A client that has gone does not get it, but the outcome is recorded already: its retry
+    /// gets it from the store.
+    /// </summary>
+    private async Task SendAsync(HttpContext context, MemoryStream buffer, CancellationToken clientAborted)
+    {
+        buffer.Position = 0;
+        try
+        {
+            await buffer.CopyToAsync(context.Response.Body, clientAborted);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException)
+        {
+            logger.LogDebug(ex, "The client left before the answer to {Endpoint} reached it; a retry gets the recorded outcome", EndpointName(context));
+        }
+    }
+
+    /// <summary>
+    /// The request a log line names: its endpoint as the server defines it (method and route template), never the path the
+    /// client sent, which can hold line breaks once decoded and would write lines of the client's own into the log.
+    /// </summary>
+    private static string EndpointName(HttpContext context) => context.GetEndpoint()?.DisplayName ?? "a request with no endpoint";
+
+    private static Task InProgressAsync(HttpContext context)
+    {
+        context.Response.Headers.RetryAfter = RetryAfterSeconds;
+        return ConflictAsync(
+            context,
+            InProgressCode,
+            InProgressTitle,
+            InProgressDetail);
+    }
+
+    private static Task OutcomeUnknownAsync(HttpContext context) => ConflictAsync(
+        context,
+        OutcomeUnknownCode,
+        OutcomeUnknownTitle,
+        OutcomeUnknownDetail);
+
+    private static Task ConflictAsync(HttpContext context, string code, string title, string detail) =>
+        Results.Problem(
+            title: title,
+            detail: detail,
+            statusCode: StatusCodes.Status409Conflict,
+            extensions: new Dictionary<string, object?> { ["code"] = code }).ExecuteAsync(context);
 
     private static string BodyPurpose(string scope) => $"idempotency:{scope}";
 
@@ -252,8 +447,8 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
                 // Never replay something we cannot authenticate; the client can reload to see the outcome.
                 logger.LogWarning(ex, "Stored idempotent response for key {Key} could not be decrypted", record.Key);
                 await Results.Problem(
-                    title: "This request was already processed",
-                    detail: "Reload the screen to see the result.",
+                    title: UnreadableAnswerTitle,
+                    detail: UnreadableAnswerDetail,
                     statusCode: StatusCodes.Status409Conflict).ExecuteAsync(context);
                 return;
             }
@@ -289,6 +484,71 @@ public sealed class IdempotencyMiddleware(RequestDelegate next, ILogger<Idempote
         request.Body.Position = 0;
         return Convert.ToHexString(sha.GetHashAndReset());
     }
+}
+
+/// <summary>
+/// Where <see cref="IdempotencyMiddleware"/> keeps its records: the database (<see cref="DatabaseIdempotencyStore"/>), or
+/// memory in the tests. Each method is one statement, so concurrent requests with the same key see each other's changes.
+/// </summary>
+internal interface IIdempotencyStore
+{
+    /// <summary>The record of the caller's key, or null for a new key.</summary>
+    Task<IdempotencyRecord?> FindAsync(string scope, string key, CancellationToken cancellationToken);
+
+    /// <summary>Adds the marker of a first attempt; false when a request with the same key added its own first.</summary>
+    Task<bool> TryAddAsync(IdempotencyRecord record, CancellationToken cancellationToken);
+
+    /// <summary>Marks an attempt still in progress as abandoned; false when it is no longer in progress (it ended, or was removed).</summary>
+    Task<bool> TryAbandonAsync(Guid id, CancellationToken cancellationToken);
+
+    /// <summary>Records an attempt's outcome: its state, status, content type, location and protected answer.</summary>
+    Task SaveOutcomeAsync(IdempotencyRecord record, CancellationToken cancellationToken);
+
+    /// <summary>Removes an attempt's record, so that a retry runs again.</summary>
+    Task RemoveAsync(Guid id, CancellationToken cancellationToken);
+}
+
+/// <summary>The records in <c>platform.idempotency_records</c>, written apart from the request's own unit of work.</summary>
+internal sealed class DatabaseIdempotencyStore(HospitalDbContext db) : IIdempotencyStore
+{
+    public Task<IdempotencyRecord?> FindAsync(string scope, string key, CancellationToken cancellationToken) =>
+        db.Set<IdempotencyRecord>().AsNoTracking().FirstOrDefaultAsync(r => r.Scope == scope && r.Key == key, cancellationToken);
+
+    public async Task<bool> TryAddAsync(IdempotencyRecord record, CancellationToken cancellationToken)
+    {
+        db.Add(record);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            return false;
+        }
+        finally
+        {
+            db.ChangeTracker.Clear();
+        }
+    }
+
+    public async Task<bool> TryAbandonAsync(Guid id, CancellationToken cancellationToken) =>
+        await db.Set<IdempotencyRecord>()
+            .Where(r => r.Id == id && r.State == IdempotencyState.InProgress)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.State, IdempotencyState.Abandoned), cancellationToken) == 1;
+
+    public Task SaveOutcomeAsync(IdempotencyRecord record, CancellationToken cancellationToken) =>
+        db.Set<IdempotencyRecord>().Where(r => r.Id == record.Id).ExecuteUpdateAsync(
+            s => s
+                .SetProperty(r => r.State, record.State)
+                .SetProperty(r => r.StatusCode, record.StatusCode)
+                .SetProperty(r => r.ContentType, record.ContentType)
+                .SetProperty(r => r.Location, record.Location)
+                .SetProperty(r => r.ResponseBody, record.ResponseBody),
+            cancellationToken);
+
+    public Task RemoveAsync(Guid id, CancellationToken cancellationToken) =>
+        db.Set<IdempotencyRecord>().Where(r => r.Id == id).ExecuteDeleteAsync(cancellationToken);
 }
 
 /// <summary>Deletes expired idempotency records every hour.</summary>

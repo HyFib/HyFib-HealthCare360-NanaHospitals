@@ -93,6 +93,11 @@ try {
         "ALTER SYSTEM SET work_mem = '16MB'",
         "ALTER SYSTEM SET max_connections = 300",
         "ALTER SYSTEM SET wal_compression = on",
+        # On Windows the default wal_sync_method (open_datasync) is safe only while the disk's write cache is off or kept
+        # through a power cut; the server may have no UPS, and Windows often leaves the cache on. PostgreSQL's documentation
+        # (Reliability) says to turn the cache off or use fsync (or fdatasync): fsync flushes it at every commit. ALTER
+        # SYSTEM replaces the value each run, so running this again changes nothing.
+        "ALTER SYSTEM SET wal_sync_method = 'fsync'",
         "ALTER SYSTEM SET log_min_duration_statement = 2000",
         # Slow statements are logged for tuning, but never their parameter values: those can be patient details.
         "ALTER SYSTEM SET log_parameter_max_length = 0",

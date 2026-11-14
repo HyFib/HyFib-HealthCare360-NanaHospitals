@@ -29,6 +29,22 @@ public sealed class SmtpEmailProviderTests
         SmtpEmailProvider.MaskAddress(address).ShouldBe(expected);
 
     [Fact]
+    public async Task A_mail_server_that_cannot_be_reached_is_a_failure_for_want_of_an_answer()
+    {
+        // A port on this machine that nothing listens on: the connection is refused at once.
+        var closed = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        closed.Start();
+        var port = ((System.Net.IPEndPoint)closed.LocalEndpoint).Port;
+        closed.Stop();
+
+        var result = await new SmtpEmailProvider(new Tracing().Trace).SendAsync(
+            new EmailMessage("ravi.kumar@example.com", "Report", "<p>Report</p>"), Valid with { Host = "127.0.0.1", Port = port, TimeoutSeconds = 5 }, new EmailSecrets(), Ct);
+
+        result.Success.ShouldBeFalse();
+        result.ProviderUnreachable.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Rejects_an_invalid_recipient_before_connecting()
     {
         var tracing = new Tracing();

@@ -214,4 +214,105 @@ public sealed class Hl7ResultMapperTests
     [InlineData("ORU^R02", false)]
     public void Recognises_result_messages(string type, bool expected) =>
         Hl7ResultMapper.IsResultMessage(Parse($@"MSH|^~\&|LAB|X|HC360|Nana|20260925||{type}|M7|P|2.5.1")).ShouldBe(expected);
+
+    [Fact]
+    public void The_patient_the_pid_names_goes_with_the_samples_results()
+    {
+        Map(LabSamples.HematologyOru).Messages.ShouldHaveSingleItem().Patient.ShouldBe(new InstrumentPatient("UHID00012345", "SHARMA RAVI"));
+        Map(LabSamples.ChemistryOul).Messages.ShouldHaveSingleItem().Patient.ShouldBe(new InstrumentPatient("UHID00012345", null));
+    }
+
+    [Theory]
+    // The UHID as HC360's 2.5.1 orders send it, alone or among the analyser's own ids.
+    [InlineData("UHID1^^^HC360^MR", "UHID1")]
+    [InlineData("LAB-77^^^XN550^PI~UHID1^^^HC360^MR", "UHID1")]
+    [InlineData("UHID1^^^hc360", "UHID1")]
+    // A medical record number no other authority assigned, and a bare id: a 2.3.1 order's UHID sent back, or one typed in.
+    [InlineData("UHID1^^^^MR", "UHID1")]
+    [InlineData(" UHID1 ", "UHID1")]
+    // Not taken for the UHID: another system's record number, the analyser's own patient number, one of several bare ids.
+    [InlineData("UHID1^^^OLDHIS^MR", null)]
+    [InlineData("77^^^^PI", null)]
+    [InlineData("UHID1~UHID2", null)]
+    [InlineData("", null)]
+    public void The_patient_id_is_the_one_hc360_assigned_or_a_bare_one(string pid3, string? expected)
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M9|P|2.5.1",
+            $"PID|1||{pid3}||SHARMA^RAVI",
+            "OBR|1||S-1",
+            "OBX|1|NM|GLU||98|mg/dL|||||F");
+
+        Map(text).Messages.ShouldHaveSingleItem().Patient.ShouldBe(new InstrumentPatient(expected, "SHARMA RAVI"));
+    }
+
+    [Theory]
+    // Family ^ given ^ further given names; the prefix (Mr) and the name type are not name parts.
+    [InlineData("SHARMA^RAVI^KUMAR^^MR^^L", "SHARMA RAVI KUMAR")]
+    // The whole name in the given name, or in the family name as HC360's orders send it back.
+    [InlineData("^Ravi Sharma", "Ravi Sharma")]
+    [InlineData("Ravi Kumar Sharma", "Ravi Kumar Sharma")]
+    // The first repetition that has a name; a name holding a delimiter, escaped as HC360's orders write it.
+    [InlineData("~SHARMA^RAVI", "SHARMA RAVI")]
+    [InlineData(@"SHARMA\S\RAVI", "SHARMA^RAVI")]
+    public void The_name_is_read_from_its_parts(string pid5, string expected)
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M10|P|2.5.1",
+            $"PID|1||||{pid5}",
+            "OBR|1||S-1",
+            "OBX|1|NM|GLU||98|mg/dL|||||F");
+
+        Map(text).Messages.ShouldHaveSingleItem().Patient.ShouldBe(new InstrumentPatient(null, expected));
+    }
+
+    [Fact]
+    public void A_pid_field_listed_as_a_sample_id_field_is_not_read_as_the_patient()
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M11|P|2.3.1",
+            "PID|1||SMP-555||SHARMA^RAVI",
+            "OBR|1",
+            "OBX|1|NM|GLU||98|mg/dL|||||F");
+
+        var message = Map(text, ["PID-3"]).Messages.ShouldHaveSingleItem();
+        message.SampleBarcode.ShouldBe("SMP-555");
+        message.Patient.ShouldBe(new InstrumentPatient(null, "SHARMA RAVI"));
+
+        // Listed after another field the analyser filled, PID-3 still holds what this analyser writes there: a sample id.
+        Map(text.Replace("OBR|1", "OBR|1||S-1", StringComparison.Ordinal), ["OBR-3", "PID-3"]).Messages.ShouldHaveSingleItem()
+            .Patient.ShouldBe(new InstrumentPatient(null, "SHARMA RAVI"));
+        Map(text, ["PID-3", "pid-5"]).Messages.ShouldHaveSingleItem().Patient.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Without_a_pid_or_with_an_empty_one_no_patient_goes_with_the_results()
+    {
+        var withoutPid = string.Join('\r', @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M12|P|2.5.1", "OBR|1||S-1", "OBX|1|NM|GLU||98|mg/dL|||||F");
+        var emptyPid = withoutPid.Replace("OBR|1", "PID|1\rOBR|1", StringComparison.Ordinal);
+
+        Map(withoutPid).Messages.ShouldHaveSingleItem().Patient.ShouldBeNull();
+        Map(emptyPid).Messages.ShouldHaveSingleItem().Patient.ShouldBeNull();
+    }
+
+    [Fact]
+    public void One_sample_sent_under_two_patients_makes_two_messages()
+    {
+        var text = string.Join('\r',
+            @"MSH|^~\&|LAB|X|HC360|Nana|20260925||ORU^R01|M13|P|2.5.1",
+            "PID|1||UHID-A^^^HC360^MR||ARORA^ANIL",
+            "OBR|1||S-1",
+            "OBX|1|NM|GLU||98|mg/dL|||||F",
+            "PID|2||UHID-B^^^HC360^MR||BOSE^BINA",
+            "OBR|1||S-1",
+            "OBX|1|NM|CREA||1.1|mg/dL|||||F",
+            "PID|3||UHID-A^^^HC360^MR||ARORA^ANIL",
+            "OBR|1||S-1",
+            "OBX|1|NM|UREA||20|mg/dL|||||F");
+
+        var messages = Map(text).Messages;
+
+        messages.Select(m => (m.SampleBarcode, m.Patient!.Id, string.Join(",", m.Results.Select(r => r.ChannelCode))))
+            .ShouldBe([("S-1", "UHID-A", "GLU,UREA"), ("S-1", "UHID-B", "CREA")]);
+    }
 }

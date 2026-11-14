@@ -4,13 +4,22 @@ using HyFib.HealthCare360.Platform.Identity;
 namespace HyFib.HealthCare360.Modules.Patients.Services;
 
 /// <summary>
-/// Which patients a Patient Portal user may see: every active patient registered with the mobile number the user
-/// verified by OTP (families in India commonly share one number), and the family members on other numbers that a
-/// <see cref="PortalFamilyLink"/> in force gives the account (PP-01). Portal endpoints in any module must call
-/// <see cref="CanAccessAsync"/> (or filter with <see cref="AccessiblePatientIdsAsync"/>) before returning data.
+/// Which patients a Patient Portal user may see: the active patients registered with the mobile number the user verified
+/// by OTP (families in India commonly share one number) whose number is known to reach them, and the family members on
+/// other numbers that a <see cref="PortalFamilyLink"/> in force gives the account (PP-01). Portal endpoints in any module
+/// must call <see cref="CanAccessAsync"/> (or filter with <see cref="AccessiblePatientIdsAsync"/>) before returning data.
+/// <para>
+/// Holding the number is not enough on its own (ASVS V6.6.1): the desk may have typed a digit wrong, or the telco may have
+/// given a disconnected number to someone new. So a record on the number is shown once its number is verified
+/// (<see cref="Patient.IsPhoneVerified"/>: a code at the desk, a number change with a code, or the portal itself). Until then
+/// it waits for the account to give the patient's date of birth or UHID (<see cref="UnconfirmedPatientIdsAsync"/>,
+/// <see cref="PortalRecordConfirmationService"/>), which verifies it. Family links are made with a code sent to the
+/// patient's own number and are shown as before.
+/// </para>
 /// </summary>
 public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser currentUser)
 {
+    private IReadOnlyList<Reached>? _reached;
     private IReadOnlyList<Guid>? _cached;
     private string? _phone;
     private bool _phoneRead;
@@ -30,35 +39,27 @@ public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser curren
     }
 
     /// <summary>
-    /// The account's patients: those on its own number first, then linked family members, each oldest first. A record in a
-    /// protected category is left out when another patient shares the number, or when it is reached only through a family
-    /// link (<see cref="SharedNumbers"/>).
+    /// The account's patients: those on its own number first, then linked family members, each oldest first. A record on the
+    /// account's own number whose number is not verified waits to be confirmed (<see cref="UnconfirmedPatientIdsAsync"/>). A
+    /// record in a protected category is left out when another patient shares the number, or when it is reached only through
+    /// a family link (<see cref="SharedNumbers"/>).
     /// </summary>
-    public async Task<IReadOnlyList<Guid>> AccessiblePatientIdsAsync(CancellationToken ct)
-    {
-        if (_cached is not null)
-        {
-            return _cached;
-        }
+    public async Task<IReadOnlyList<Guid>> AccessiblePatientIdsAsync(CancellationToken ct) =>
+        _cached ??= await AccountPhoneAsync(ct) is { } phone ? Shown(await ReachedAsync(phone, ct)) : [];
 
-        if (await AccountPhoneAsync(ct) is not { } phone)
-        {
-            return _cached = [];
-        }
-
-        var reached = await ReachedBy(db, phone)
-            .OrderBy(p => p.Phone == phone ? 0 : 1)
-            .ThenBy(p => p.RegisteredAt)
-            .Select(p => new Reached(p.Id, p.Phone == phone, p.SensitiveCategories))
-            .ToListAsync(ct);
-        return _cached = Shown(reached);
-    }
+    /// <summary>
+    /// The records on the account's own number that it would see once it confirms them, oldest first: their number is not
+    /// verified, so the account first gives the patient's date of birth or UHID. A record the account could not see anyway
+    /// (a protected category on a shared number) is not offered.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> UnconfirmedPatientIdsAsync(CancellationToken ct) =>
+        await AccountPhoneAsync(ct) is { } phone ? Waiting(await ReachedAsync(phone, ct)) : [];
 
     /// <summary>
     /// The patients the portal account of <paramref name="phone"/> reaches: the active records registered with the number,
-    /// and those a family link in force gives it, before any is hidden (<see cref="SharedNumbers"/>). None means the number
-    /// reaches nobody's records any more (a change of a patient's number, for one, ends the old number's sessions then:
-    /// <see cref="PatientPhoneChangeService"/>).
+    /// and those a family link in force gives it, before any is hidden (<see cref="SharedNumbers"/>) or waits to be confirmed.
+    /// None means the number reaches nobody's records any more (a change of a patient's number, for one, ends the old
+    /// number's sessions then: <see cref="PatientPhoneChangeService"/>).
     /// </summary>
     internal static IQueryable<Patient> ReachedBy(HospitalDbContext db, string phone)
     {
@@ -67,24 +68,60 @@ public sealed class PortalPatientScope(HospitalDbContext db, ICurrentUser curren
     }
 
     /// <summary>
-    /// The patients registered with the account's own number, without those it sees through a family link, and without a
-    /// record in a protected category while the number is shared.
+    /// The patients registered with the account's own number whose number is verified, without those it sees through a
+    /// family link, and without a record in a protected category while the number is shared.
     /// </summary>
     public async Task<IReadOnlyList<Guid>> OwnNumberPatientIdsAsync(CancellationToken ct) =>
         await AccountPhoneAsync(ct) is { } phone
             ? Shown(await db.Set<Patient>()
                 .Where(p => p.Phone == phone && p.IsActive && p.MergedIntoPatientId == null)
-                .Select(p => new Reached(p.Id, true, p.SensitiveCategories))
+                .Select(p => new Reached(p.Id, true, false, p.PhoneVerifiedAt != null && p.PhoneVerifiedNumber == p.Phone, p.SensitiveCategories))
                 .ToListAsync(ct))
             : [];
 
-    private static List<Guid> Shown(List<Reached> reached)
+    private async Task<IReadOnlyList<Reached>> ReachedAsync(string phone, CancellationToken ct)
     {
-        var numberShared = reached.Count(r => r.OwnNumber) > 1;
-        return [.. reached.Where(r => SharedNumbers.ShownToAccount(r.OwnNumber, numberShared, r.Categories)).Select(r => r.Id)];
+        if (_reached is not null)
+        {
+            return _reached;
+        }
+
+        // Verified as Patient.IsPhoneVerified says: the record's number was verified, and is still the number verified.
+        var linked = db.Set<PortalFamilyLink>().Where(l => l.AccountPhone == phone && l.RevokedAt == null).Select(l => l.PatientId);
+        return _reached = await ReachedBy(db, phone)
+            .OrderBy(p => p.Phone == phone ? 0 : 1)
+            .ThenBy(p => p.RegisteredAt)
+            .Select(p => new Reached(
+                p.Id, p.Phone == phone, linked.Contains(p.Id), p.PhoneVerifiedAt != null && p.PhoneVerifiedNumber == p.Phone, p.SensitiveCategories))
+            .ToListAsync(ct);
     }
 
-    private sealed record Reached(Guid Id, bool OwnNumber, SensitiveCategory Categories);
+    /// <summary>
+    /// The records shown to the account: one on its own number once that number is verified, one a family link gives it as
+    /// before; and of those, a record in a protected category only on the patient's own number while no other patient has
+    /// it. The number counts as shared whether or not the other records on it are verified: any of them may be the phone's.
+    /// </summary>
+    internal static List<Guid> Shown(IReadOnlyList<Reached> reached)
+    {
+        var numberShared = reached.Count(r => r.OwnNumber) > 1;
+        return [.. reached
+            .Where(r => (r.Linked || (r.OwnNumber && r.Verified)) && SharedNumbers.ShownToAccount(r.OwnNumber, numberShared, r.Categories))
+            .Select(r => r.Id)];
+    }
+
+    /// <summary>The records on the account's own number it would be shown once their number is verified.</summary>
+    internal static List<Guid> Waiting(IReadOnlyList<Reached> reached)
+    {
+        var numberShared = reached.Count(r => r.OwnNumber) > 1;
+        return [.. reached
+            .Where(r => r.OwnNumber && !r.Verified && !r.Linked && SharedNumbers.ShownToAccount(true, numberShared, r.Categories))
+            .Select(r => r.Id)];
+    }
+
+    /// <param name="OwnNumber">Registered with the account's number.</param>
+    /// <param name="Linked">A family link in force gives the account the record.</param>
+    /// <param name="Verified">The record's number is verified (<see cref="Patient.IsPhoneVerified"/>).</param>
+    internal sealed record Reached(Guid Id, bool OwnNumber, bool Linked, bool Verified, SensitiveCategory Categories);
 
     public async Task<bool> CanAccessAsync(Guid patientId, CancellationToken ct) =>
         (await AccessiblePatientIdsAsync(ct)).Contains(patientId);

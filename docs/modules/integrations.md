@@ -68,10 +68,22 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   and analysers whose facility the LIS cannot give.
 * **Transport.** Each HTTP provider is a typed `HttpClient` behind the standard resilience handler. Cloud APIs use a
   15 s attempt timeout and a 20 s total; Tally uses 20 s for both, because the day book posts from an outbox message
-  that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). Unsafe methods (POST) are **never retried** at the HTTP
+  that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). A connection that does not open within 5 s, TLS
+  included, fails at once (`IntegrationHttp.ConnectTimeout`): on an internet link that drops packets an SMS fails in 5 s
+  rather than after its whole attempt. Unsafe methods (POST) are **never retried** at the HTTP
   layer, because a lost response may mean the SMS was already sent or the order already created. The outbox retries
   whole messages instead. Responses are capped at 4 MB. Endpoints must be absolute http(s) URLs without embedded
   credentials, and https is required for every internet provider.
+* **No answer, or a refusal.** A send that got no answer (a timeout, a connection that could not be made or broke, an
+  open circuit) returns a failed `SendResult` with `ProviderUnreachable` set (`IntegrationErrors.Failed`); SMTP sets it for
+  a connection failure or a timeout. A refusal, such as an unapproved template, is an answer and does not set it. The
+  notification handlers then throw `ProviderUnreachableException`, and the outbox counts the failure towards the
+  provider's cool-down: after 3 in a row its messages wait 30 s, doubling to 5 min, without being tried, while every other
+  provider carries on. The outbox handlers name their provider (`IOutboxHandler.Provider`): `sms`, `whatsapp` (template
+  messages and STOP/START confirmations), `email` (notifications and scheduled reports), `abdm` (linking and transfers).
+* **Outbox lanes.** Every handler here is on the internet lane, except `LabOrderOutboxHandler`, which only adds the
+  order to the analysers' queue in the database: an analyser's order never waits behind SMS and WhatsApp, and is not held
+  after a restore. See [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) (Internet outage).
 
 ## What other modules resolve
 
@@ -119,7 +131,7 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
 | `integrations.whatsapp` | `enabled`, `provider` (`meta` \| `simulator`), `graphBaseUrl`, `apiVersion` (`v21.0`), `phoneNumberId`, `businessAccountId`, `languageCodes { "en": "en_US" }`, `parameters` (`text` \| `positional` \| `named`; `text`: how the templates are registered, see [Template parameters](#template-parameters)), `maxDocumentMegabytes` (20), `testTemplateName` (`hello_world`), `testTemplateLanguage` | `accessToken`, `appSecret`, `verifyToken` |
 | `integrations.email` | `enabled`, `provider` (`smtp` \| `simulator`), `host`, `port` (587), `useStartTls` (true), `fromAddress`, `fromName`, `userName`, `timeoutSeconds` (20), `maxAttachmentMegabytes` (15) | `userName`, `password` |
 | `integrations.payment` | `enabled`, `provider` (`razorpay` \| `cashfree` \| `simulator`: the gateway new payments go through), `baseUrl`, `keyId` (Razorpay), `cashfreeBaseUrl` (`https://api.cashfree.com/pg`; `https://sandbox.cashfree.com/pg` for its test mode), `cashfreeClientId`, `paymentLinkCallbackUrl` (`https://<portal address>/portal/payment-return`), `notifyByRazorpay` (false; Razorpay's and Cashfree's own SMS/e-mail), `paymentLinkExpiryHours` (72), `simulatorSettlementDays` (1; 0 to 7) | `keySecret`, `webhookSecret`, `simulatorSecret`; Cashfree's `clientSecret` in its own row, `integrations.payment.cashfree.secret`, so replacing one gateway's credentials never wipes the other's |
-| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5, at most 30), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8) | `securityToken` |
+| `integrations.pos` | `enabled`, `provider` (`pinelabs` \| `simulator`), `baseUrl`, `uploadPath`, `statusPath`, `cancelPath`, `merchantId`, `userId`, `autoCancelMinutes` (5, at most 30), `terminals[] { id, name, imei, storePosCode }`, `paymentModes { all, card, upi }`, `pendingResponseCodes` ([1001]), `simulatorApproveAfterSeconds` (8), `simulatorLoseUploadAnswer` (false) | `securityToken` |
 | `integrations.tally` | `enabled`, `provider` (`tally` \| `simulator`), `url` (`http://localhost:9000`), `companyName`, `ledgerMap { hc360 → tally }`, `costCategory`, `batchSize` (50) | none (Tally's XML port has no authentication) |
 | `integrations.pacs` | `enabled`, `provider` (`dicomweb` \| `simulator`), `qidoUrl` (the DICOMweb root), `wadoUrl` (WADO-RS root when it differs; empty means `qidoUrl`), `stowUrl` (STOW-RS root when it differs; empty means `qidoUrl`), `authType` (`none` \| `basic` \| `bearer`), `userName`, `viewerUrlTemplate` (`{studyUid}`, `{accession}`), `limit` (50, at most 500 studies per search), `timeZone` (`Asia/Kolkata`, for study times sent without an offset) | `password`, `bearerToken` |
 | `integrations.mwl` (global) | `enabled`, `bindAddress` (`0.0.0.0`), `port` (11112), `aeTitle` (`HC360MWL`), `characterSet` (`ISO_IR 100`; `ISO_IR 192` or empty), `maxAssociations` (10, 1–64), `idleTimeoutSeconds` (60, 10–3600), `daysBack` (3, 0–30), `daysAhead` (1, 0–30), `maxResults` (500, 1–1000), `modalities[] { aeTitle, name, allowedIps[], facility, modalities[], enabled }` | none |
@@ -169,6 +181,14 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
   does not have, and a template that has one without it. So a message that carries no document is not sent with a
   header template: its log is marked Skipped with the reason, and it is not retried. The log records the file's
   size, never its content.
+* **Documents only to a verified number.** A report's PDF, a prescription, a bill and a discharge summary go to a
+  patient's mobile number only once the number is verified on the record (`VerifiedNumbers`, ASVS V6.6.1: a code at the
+  desk, a number change with a code, or the patient's date of birth or UHID in the portal). To any other number the
+  message goes without its document: the report-ready and prescription messages as text, the discharge as
+  `discharge_completed` instead of `discharge_summary`, and a paid bill not at all (`bill_shared` can't go without its
+  PDF), the receipt going on WhatsApp instead. A hospital that ticked "Document header" on `lab_report_ready` or
+  `prescription_shared` sees those messages Skipped for an unverified number, as when report PDFs are switched off. The
+  e-mail is not affected: it is the patient's own address, and a report still goes to it with its PDF.
 * Webhook `GET` answers `hub.challenge` only when `hub.verify_token` matches (constant time) and the challenge is a
   plain token.
 * Webhook `POST` requires `X-Hub-Signature-256`, an HMAC-SHA256 of the **raw** body with the app secret. Statuses
@@ -307,7 +327,8 @@ what goes out (`TemplateSwitch`):
 * WhatsApp templates that Meta must approve first are seeded **not in use** (`DefaultNotificationTemplates.SeededNotInUse`,
   and Engagement's own): the queue token (`visit_token`), the payment receipt (`bill_receipt`), the admission
   (`admission_admitted`), the discharge (`discharge_completed`), the discharge summary (`discharge_summary`), the feedback request (`feedback_request`), the follow-up
-  reminder (`followup_reminder`) and the complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp
+  reminder (`followup_reminder`), the complaint acknowledgement (`complaint_acknowledged`) and the code that verifies a
+  patient's mobile number at the desk (`patients_verify_code`, an authentication template; its SMS goes from the start). Register each in WhatsApp
   Manager, then switch it on; until then those messages go by SMS alone. The WhatsApp templates seeded before them
   (appointments, reports, bills, payment links, prescriptions, video consultations, refills, portal links, alerts) are in
   use, as they were.
@@ -469,6 +490,9 @@ and Windows Server 2022 machine has.
 Pine Labs Plutus Cloud-style push-to-terminal:
 
 * **Upload**: the billed transaction goes to the terminal. The body carries the security token and is never logged.
+  A readable refusal (a non-zero response code, or an HTTP 4xx) is a **decline**. A lost answer is not: a timeout, a
+  dropped connection, an HTTP 5xx or a 2xx that cannot be read may follow the sale reaching the terminal, so the result
+  is `Unconfirmed` (below).
 * **Poll**: status codes are mapped, and `pendingResponseCodes` means the customer is still paying.
 * **Cancel**: cancels the transaction with its original amount.
 * **Approved, not recorded**: when the bill or admission refuses an approved sale's receipt (an advance for a stay whose
@@ -478,6 +502,16 @@ Pine Labs Plutus Cloud-style push-to-terminal:
 
 * **Counters' sales**: the pharmacy and the canteen take card and UPI payments on the same terminal through the Platform
   contract `ICounterTerminal` (below), not through `IPosTerminal`.
+
+**A lost upload answer.** Pine Labs' reference to the sale (`PlutusTransactionReferenceID`) travels in the upload's
+answer, and the status and cancel calls need it, so when the answer is lost the outcome cannot be fetched. If Pine Labs did
+receive the upload, the terminal keeps the sale open for `autoCancelMinutes` (default 5) and the customer can still pay
+on it, so showing a decline there would invite a second push and a double charge. The result is therefore
+`PosTransactionStatus.Unconfirmed`, with an empty provider id that `PosTerminalRouter` replaces by a unique
+`unconfirmed-…` id (a decline gets `declined-…`). Billing keeps the sale, refuses a new sale to that terminal for
+`autoCancelMinutes` plus two minutes, and lets the accountants check it once that time has passed (see
+[billing.md](billing.md#card-and-upi-sales-whose-upload-answer-was-lost)). A lost status or cancel answer is still read as
+"still waiting".
 
 A status code that is neither 0 nor in `pendingResponseCodes` ends the sale (declined, or cancelled or timed out when the
 message says so). Pine Labs' Cloud Integration document (v1.36) confirms the payment-mode codes HC360 sends (`0` all
@@ -490,8 +524,9 @@ card sale to the terminal (`TxnType` 3 with the sale's transaction id); HC360 do
 made on the terminal and recorded with its RRN.
 
 Transaction ids encode what status and cancel need (`OPD-1:987654:125075`, meaning terminal, provider reference and
-paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id. A lost
-status or cancel response reports "still waiting" rather than a decline. Only the last four card digits are kept. The admin "test" checks configuration only, because pushing a sale
+paise), so no extra table is required. A sale that never reached a terminal gets a unique `declined-…` id; one whose
+upload answer was lost gets a unique `unconfirmed-…` id. A lost status or cancel response reports "still waiting" rather
+than a decline. Only the last four card digits are kept. The admin "test" checks configuration only, because pushing a sale
 would prompt a customer at a counter.
 
 **Background re-check.** Every `IPosTerminal` call names the facility whose settings apply (null: the signed-in
@@ -510,7 +545,7 @@ patient for a walk-in. The contract's methods:
 |---|---|
 | `StartAsync(CounterTerminalStart)` | Pushes the amount (counter, amount, terminal id, card or UPI, patient if registered) to the terminal; the signed-in facility's settings apply |
 | `RefreshAsync(counter, id)` | The sale as the terminal has it now |
-| `CancelAsync(counter, id)` | Cancels it on the terminal; a sale the customer paid first stays approved |
+| `CancelAsync(counter, id, note)` | Cancels it on the terminal; a sale the customer paid first stays approved. For an `Unconfirmed` sale, which is on no terminal HC360 can reach, it is the cashier's confirmation that the terminal shows no sale: `note` is required (400 `note`), is audited (`billing.pos.unconfirmed_cleared`), and frees the terminal |
 | `UnusedAsync(counter)` | The counter's approved sales that no payment records yet and the accountants have not closed, within two days, newest first |
 | `UseAsync(CounterTerminalUse)` | Marks the approved sale as recorded by the counter's payment and returns what the terminal reported (`CounterTerminalPayment`: RRN, approval code, card digits) |
 
@@ -523,7 +558,9 @@ it (`pos.sale_used`, 409). Only a counter that reports its card and UPI payments
 (`ICounterSalesSource`) may take terminal payments. The Platform helper `MapCounterTerminalSales` gives each counter the
 endpoints `POST …/terminal-sales`, `GET …/terminal-sales/{id}`, `POST …/terminal-sales/{id}/cancel` and
 `GET …/terminal-sales/unused` (see [pharmacy.md](pharmacy.md) and [supportservices.md](supportservices.md)), returning
-`CounterTerminalSale`. An approved sale that no invoice records within the timeout is shown to the accountants as an
+`CounterTerminalSale` (with `retryAfter`, when a new sale may go to the terminal, for an unconfirmed one). `…/cancel` takes
+an optional body `{ "note" }`. A new sale to a terminal an unconfirmed sale may still be on is refused with
+`pos.terminal_unconfirmed` (422), for the counters as for Billing. An approved sale that no invoice records within the timeout is shown to the accountants as an
 unrecorded payment (see [billing.md](billing.md#outbox-jobs-and-notifications)). Without Billing, `NullCounterTerminal`
 refuses with `pos.unavailable` and the counter's payment is typed from the slip.
 
@@ -980,6 +1017,13 @@ acknowledgements are never acknowledged in turn.
 * **Results**: ORU^R01/R30/R32 and OUL^R21–R24.
   * Samples are identified by `sampleIdFields`, default SPM-2, SAC-3, OBR-3, OBR-2. Results of an order with none of
     them go to the LIS under no sample id, which keeps them for the lab to assign.
+  * The patient of the PID before an order goes with its results, for the LIS to check against the tube's patient
+    (*Patient identity check* in [diagnostics.md](diagnostics.md)): from PID-3, the id whose assigning authority is
+    `HC360` (as HC360's 2.5.1 orders send the UHID), else a medical record number (type `MR`) no other authority
+    assigned, else the only id when it names neither, never another authority's id or one of several bare ones; from
+    PID-5, the family, given and further given names (not the prefix, suffix or degree). A PID field listed in
+    `sampleIdFields` holds the analyser's sample id and is not read as the patient's. A sample sent under two patients
+    goes to the LIS as two messages. A message without a PID, or with an empty one, carries no patient.
   * OBX handling:
     * NM, ST and TX values are read as text.
     * CE, CWE and CNE use the coded value's text.
@@ -1018,7 +1062,10 @@ acknowledgements are never acknowledged in turn.
   from the header. The sample comes from O.3, falling back to O.4; results under an order record with neither, or with
   no order record, go to the LIS under no sample id rather than being dropped. Results with status X or I are skipped;
   the others carry their unit (R.5), abnormal flags (R.7) and status (R.9: F final, P preliminary, C correction…), and
-  the C records after an R record are its comment.
+  the C records after an R record are its comment. The patient of the P record before them goes with them, for the
+  LIS to check against the tube's (*Patient identity check* in [diagnostics.md](diagnostics.md)): the first of P.3
+  (where HC360's orders put the UHID), P.4 and P.5 the analyser filled, and P.6 (last, first and middle name). A sample
+  sent under two P records' patients goes to the LIS as two messages; an empty P record, or none, carries no patient.
 * **Size limit**: once a message passes `maxMessageKilobytes`, the transfer is refused as a whole: that frame and every
   later one are NAKed until the analyser gives up with EOT, and nothing of it is stored, not even frames already
   acknowledged. The rejection is logged without the message.
@@ -1040,8 +1087,9 @@ acknowledgements are never acknowledged in turn.
   [diagnostics.md](diagnostics.md#analyser-interface)): a tube received in the lab (`New`), a reopened result (`Rerun`),
   a cancelled test or a rejected tube (`Cancel`). It writes one `lab.analyser.order` outbox message naming the active
   bidirectional analysers of the tube's facility that run its tests, with their channel codes.
-* **Queue.** `LabOrderOutboxHandler` adds one `integrations.lab_order_downloads` row per analyser, in the dispatcher's
-  transaction; a redelivered message adds nothing. Rows hold the barcode and channel codes, never patient data. They
+* **Queue.** `LabOrderOutboxHandler` adds one `integrations.lab_order_downloads` row per analyser, in the transaction
+  that commits the message as delivered (each message has its own); a redelivered message adds nothing. It is on the
+  outbox's local lane, so an internet outage never holds an order up. Rows hold the barcode and channel codes, never patient data. They
   wait until the analyser is connected and its line is quiet (looked for every 3 s).
 * **Built when sent.** The order is built from the LIS when its turn comes (`GetOrderToSendAsync`), so a test
   cancelled or resulted in the meantime is not sent. A row with nothing left to send is closed as `Skipped` with the
@@ -1365,7 +1413,8 @@ Permissions:
   Platform, with the `IIntegrationLogger` it writes through.
 * **Typed HTTP clients** with the standard resilience handler: `Msg91SmsProvider`, `TwilioSmsProvider`,
   `GenericHttpSmsProvider`, `MetaWhatsAppProvider`, `RazorpayGateway`, `PineLabsPosTerminal`, `DicomWebPacsProvider`
-  and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both.
+  and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both. Every one
+  connects within 5 s or fails (`IntegrationHttp.ConnectTimeout`).
 * **Providers** (scoped, keyed by `Key`):
   * `ISmsProvider`: msg91, twilio, generic, simulator.
   * `IWhatsAppProvider`: meta, simulator.
