@@ -117,7 +117,7 @@ $installerAst = [System.Management.Automation.Language.Parser]::ParseFile($insta
 $walStatements = @($installerAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $node.Value -like '*wal_sync_method*' }, $true) | ForEach-Object { $_.Value })
 Assert ($walStatements.Count -eq 1 -and $walStatements[0] -ceq "ALTER SYSTEM SET wal_sync_method = 'fsync'") 'it runs ALTER SYSTEM SET wal_sync_method = ''fsync'' once, so running it again changes nothing'
 $installerText = [System.IO.File]::ReadAllText($installerPath)
-Assert ($installerText -match '(?s)#[^\r\n]*wal_sync_method[^\r\n]*\r?\n(#[^\r\n]*\r?\n)*[^\r\n]*"ALTER SYSTEM SET wal_sync_method' -and $installerText -match 'Reliability') 'a comment above it says why, citing the PostgreSQL documentation'
+Assert ($installerText -match '(?s)#[^\r\n]*wal_sync_method[^\r\n]*\r?\n([ \t]*#[^\r\n]*\r?\n)*[^\r\n]*"ALTER SYSTEM SET wal_sync_method' -and $installerText -match 'Reliability') 'a comment above it says why, citing the PostgreSQL documentation'
 Assert ($installerText.IndexOf('wal_sync_method') -lt $installerText.IndexOf('Restart-Service')) 'it is set before the service restarts, which is when it takes effect'
 
 Write-Host 'Power: a server stays on'
