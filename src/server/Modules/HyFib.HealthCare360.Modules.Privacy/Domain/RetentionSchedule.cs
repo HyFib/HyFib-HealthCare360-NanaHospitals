@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Privacy.Domain;
@@ -124,8 +125,9 @@ public static class RetentionSchedule
             RetentionAction.Keep, RetentionUnit.Years, null, AuditRetention.MinimumYears, AuditRetention.MaximumYears, Editable: false, SystemManaged: true),
         new(Backups, "Database backups",
             "Encrypted copies of the whole database. Data erased from HC360 leaves the backups as they expire.",
-            "Set in the server's backup settings (HealthCare360:Backup:RetentionDays).", RetentionAction.Delete, RetentionUnit.Days, 30, 1, 3650,
-            Editable: false),
+            "Set in the server's backup settings (HealthCare360:Backup:Retention): every backup of the last 14 days, then one a week for 8 weeks and "
+            + "one a month for 12 months. The period is the longest a backup is kept.",
+            RetentionAction.Delete, RetentionUnit.Days, new BackupRetentionOptions().LongestDays, 1, BackupRetentionOptions.MaxLongestDays, Editable: false),
     ];
 
     public static RetentionRule Get(string key) => Rules.First(r => r.Key == key);

@@ -363,6 +363,10 @@ public static class SettingGuard
             "How far back the time on a nursing notes and intake/output record may be when it is entered; older records need a second person's approval first.",
             24m, v => v is >= 1m and <= 336m ? v : 24m, v => Count(v, "hour"), Whole: true),
 
+        ["downtime.backEntryHours.pharmacySale"] = new SettingLimit("Back-entry window: pharmacy sale from paper",
+            "How far back the time on a pharmacy sale from paper record may be when it is entered; older records need a second person's approval first.",
+            72m, v => v is >= 1m and <= 336m ? v : 72m, v => Count(v, "hour"), Whole: true),
+
         // ResultEvaluator.DeltaPercentSetting and DefaultDeltaPercent: 0 or less turns the check off (DeltaCheck).
         ["lab.deltaCheckPercent"] = new SettingLimit("Delta check threshold",
             "How far, as a percentage, a result may move from the patient's previous one before it is held for review; 0 turns the check off.",

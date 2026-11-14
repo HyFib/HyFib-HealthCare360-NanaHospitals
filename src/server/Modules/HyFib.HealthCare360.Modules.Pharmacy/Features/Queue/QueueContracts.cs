@@ -1,4 +1,6 @@
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 
@@ -83,7 +85,9 @@ public sealed record QueueEntryDetail(
     IReadOnlyList<QueueLineDto> Lines,
     uint Version,
     string? FreeTreatmentReason = null,
-    string? SafetyOverrideReason = null);
+    string? SafetyOverrideReason = null,
+    DateTimeOffset? DispensedOnPaperAt = null,
+    string? PaperSaleNumber = null);
 
 /// <summary>The pharmacist's acknowledgement of a line signed over a blocking safety alert, with what they did (optional).</summary>
 public sealed record AcknowledgeOverrideRequest(string? Note);
@@ -94,13 +98,40 @@ public sealed record AcknowledgeOverrideRequest(string? Note);
 public sealed record DispenseLineRequest(Guid QueueLineId, Guid ItemId, decimal Quantity, Guid? BatchId, string? SubstitutionReason, bool PrescriberConsent);
 
 /// <param name="ConfirmControlledDrugs">Explicit confirmation for Schedule H1/X or narcotic medicines (ERX-06).</param>
+/// <param name="Paper">
+/// The pharmacy sale number and time written on the paper sale, when this dispensing was done on paper during a downtime
+/// and is entered afterwards (docs/modules/downtime.md). The invoice takes that number and time instead of the next
+/// number and now. Null for a dispensing made now.
+/// </param>
 public sealed record DispenseRequest(
     Guid StoreId,
     IReadOnlyList<DispenseLineRequest> Lines,
     string? CounsellingNotes,
     decimal DiscountPercent,
     IReadOnlyList<SalePayment> Payments,
-    bool ConfirmControlledDrugs);
+    bool ConfirmControlledDrugs,
+    PaperNumber? Paper = null);
+
+/// <summary>
+/// A prescription that was dispensed on paper during a downtime, so the queue stops offering it. <paramref name="At"/> is
+/// the time on the paper; <paramref name="InvoiceNumber"/> the invoice (downtime sale number) the paper sale was entered
+/// under, when it has been; without it, say in the <paramref name="Note"/> where the paper is.
+/// </summary>
+public sealed record DispensedOnPaperRequest(DateTimeOffset At, string? InvoiceNumber, string? Note);
+
+public sealed class DispensedOnPaperRequestValidator : AbstractValidator<DispensedOnPaperRequest>
+{
+    public DispensedOnPaperRequestValidator(TimeProvider time)
+    {
+        RuleFor(x => x.At).Must(at => at <= time.GetUtcNow() + BackEntryService.ClockTolerance)
+            .WithMessage("The time on the paper cannot be in the future.");
+        RuleFor(x => x.InvoiceNumber).MaximumLength(24).Matches("^[A-Za-z0-9/-]+$").WithMessage("Enter the number as it is printed.")
+            .When(x => !string.IsNullOrWhiteSpace(x.InvoiceNumber));
+        RuleFor(x => x.Note).SafeText(200);
+        RuleFor(x => x.Note).NotEmpty().WithMessage("Enter the sale number from the paper, or say where the paper sale is kept.")
+            .When(x => string.IsNullOrWhiteSpace(x.InvoiceNumber));
+    }
+}
 
 public sealed record AuthorizeRefillsRequest(int Refills, DateOnly ValidUntil, string Note);
 
@@ -132,9 +163,10 @@ public sealed class SalePaymentValidator : AbstractValidator<SalePayment>
 
 public sealed class DispenseRequestValidator : AbstractValidator<DispenseRequest>
 {
-    public DispenseRequestValidator()
+    public DispenseRequestValidator(TimeProvider time)
     {
         RuleFor(x => x.StoreId).NotEmpty();
+        RuleFor(x => x.Paper!).SetValidator(new PaperNumberValidator(time)).OverridePropertyName("paper").When(x => x.Paper is not null);
         RuleFor(x => x.Lines).NotEmpty().WithMessage("Choose what to dispense.").Must(l => l.Count <= 100);
         RuleForEach(x => x.Lines).ChildRules(line =>
         {

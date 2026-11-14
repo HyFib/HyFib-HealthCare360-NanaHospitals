@@ -143,11 +143,13 @@ public sealed class FhirFacilityScopeTests(HospitalServer server)
         await ShareEverythingAsync(frontOffice, patient, me.Id);
         (await FhirAsync(signedIn, $"Patient/{patient:D}", "TREAT")).Status.ShouldBe(200);
 
-        // The hospital takes the account off its facility: an account assigned to none may sign in at any facility, so it
-        // is no facility's partner. Its session is refused at once, and so is a new one.
+        // The hospital gives the account all facilities in place of its own: an account given all facilities may sign in at
+        // any facility, so it is no facility's partner. Its session is refused at once, and so is a new one.
         await using (var scope = server.Services.CreateAsyncScope())
         {
-            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserFacility>().Where(f => f.UserId == me.Id).ExecuteDeleteAsync(Ct);
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            await db.Set<UserFacility>().Where(f => f.UserId == me.Id).ExecuteDeleteAsync(Ct);
+            await db.Set<User>().Where(u => u.Id == me.Id).ExecuteUpdateAsync(u => u.SetProperty(x => x.AllFacilities, true), Ct);
         }
 
         (await FhirAsync(signedIn, $"Patient/{patient:D}", "TREAT")).Refusal.ShouldBe((403, "facility-required"));

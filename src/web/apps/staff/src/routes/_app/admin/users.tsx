@@ -14,6 +14,7 @@ import {
   DrawerHeader,
   DrawerHeaderTitle,
   Field,
+  Input,
   makeStyles,
   Menu,
   MenuItem,
@@ -62,12 +63,13 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { api } from '@/lib/api';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import { PasswordConfirmDialog } from '@/modules/account/PasswordConfirmDialog';
+import { mastersQueries } from '@/modules/masters/api';
 import {
   adminQueries,
   askedForApproval,
@@ -148,8 +150,15 @@ function UsersPage() {
   );
 
   const act = useMutation({
-    mutationFn: ({ user, action }: { user: UserListItem; action: RowAction }) =>
-      api.post<PasswordResetResponse | undefined>(`/api/v1/admin/users/${user.id}/${action}`),
+    mutationFn: ({
+      user,
+      action,
+      destination,
+    }: {
+      user: UserListItem;
+      action: RowAction;
+      destination?: ResetDestination;
+    }) => api.post<PasswordResetResponse | undefined>(`/api/v1/admin/users/${user.id}/${action}`, destination),
     onSuccess: (result, { user, action }) => {
       setPending(null);
       const asked = askedForApproval(result);
@@ -158,16 +167,10 @@ function UsersPage() {
         notify.success(
           'Asked for approval',
           action === 'reset-password'
-            ? `${asked.summary}. Another administrator who may approve grants decides it, and is shown the password to give them in person.`
+            ? `${asked.summary}. Another administrator who may approve grants checks where it goes; approved, the temporary password is sent there, and nobody is shown it.`
             : `${asked.summary}. Another administrator who may approve grants decides it; nothing changes until then.`,
         );
         void queryClient.invalidateQueries({ queryKey: ['approvals'] });
-      } else if (action === 'reset-password' && result?.temporaryPassword) {
-        setTempPassword({
-          name: user.displayName,
-          password: result.temporaryPassword,
-          expiresAt: result.expiresAt,
-        });
       } else if (action === 'reset-password' && result) {
         setSent({ name: user.displayName, sentTo: result.sentTo, expiresAt: result.expiresAt });
       } else if (action !== 'reset-password') {
@@ -394,7 +397,7 @@ function UsersPage() {
       )}
 
       <ConfirmDialog
-        open={pending !== null}
+        open={pending !== null && !(pending.action === 'reset-password' && !hasContact(pending.user))}
         title={
           pending?.action === 'reset-password' ? 'Reset password?' : pending ? ACTION_TEXT[pending.action].title : ''
         }
@@ -405,11 +408,24 @@ function UsersPage() {
         onCancel={() => setPending(null)}
       >
         {pending?.action === 'reset-password'
-          ? `A new temporary password is made for ${pending.user.displayName} and sent to their own mobile number and e-mail address; you are not shown it. With neither, it waits for another administrator, who gives it to them in person. They choose their own password at next sign-in, and their open sessions end.`
+          ? `A new temporary password is made for ${pending.user.displayName} and sent to their own mobile number and e-mail address; nobody is shown it. They choose their own password at next sign-in, and their open sessions end.`
           : pending
             ? ACTION_TEXT[pending.action].body
             : null}
       </ConfirmDialog>
+
+      {pending?.action === 'reset-password' && !hasContact(pending.user) && (
+        <ResetDestinationDialog
+          user={pending.user}
+          busy={act.isPending}
+          error={act.error}
+          onConfirm={(destination) => act.mutate({ ...pending, destination })}
+          onCancel={() => {
+            act.reset();
+            setPending(null);
+          }}
+        />
+      )}
 
       <Dialog open={sent !== null} onOpenChange={(_, d) => !d.open && setSent(null)}>
         <DialogSurface>
@@ -488,6 +504,86 @@ function UsersPage() {
   );
 }
 
+/** The account holder's own mobile number and e-mail address, given with a reset for an account that has neither. */
+interface ResetDestination {
+  phone: string | null;
+  email: string | null;
+}
+
+const hasContact = (user: Pick<UserListItem, 'phone' | 'email'>) => Boolean(user.phone || user.email);
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * A reset for an account with no mobile number or e-mail address. The administrator enters the holder's own; another
+ * administrator who may approve grants checks them (in a hospital still setting up, they are used at once). They become
+ * the account's, and the temporary password is sent there: nobody is shown it.
+ */
+function ResetDestinationDialog({
+  user,
+  busy,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  user: UserListItem;
+  busy: boolean;
+  error: unknown;
+  onConfirm: (destination: ResetDestination) => void;
+  onCancel: () => void;
+}) {
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const fields = isApiError(error) ? error.fieldErrors : undefined;
+  const phoneProblem =
+    phone.trim() && normalizePhone(phone) === null ? 'Enter a valid phone number.' : fields?.phone?.[0];
+  const emailProblem = email.trim() && !EMAIL.test(email.trim()) ? 'Enter a valid email address.' : fields?.email?.[0];
+  const given = Boolean(phone.trim() || email.trim());
+  const valid =
+    given && !(phone.trim() && normalizePhone(phone) === null) && !(email.trim() && !EMAIL.test(email.trim()));
+
+  return (
+    <Dialog open modalType="alert" onOpenChange={(_, d) => !d.open && !busy && onCancel()}>
+      <DialogSurface>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !busy) {
+              onConfirm({ phone: phone.trim() || null, email: email.trim() || null });
+            }
+          }}
+        >
+          <DialogBody>
+            <DialogTitle>Reset password?</DialogTitle>
+            <DialogContent style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Text>
+                {user.displayName} has no mobile number or e-mail address. Enter their own: they become the
+                account&apos;s, and the temporary password is sent there, shown to nobody. Another administrator who may
+                approve grants checks them first. They choose their own password at next sign-in, and their open
+                sessions end.
+              </Text>
+              <Field label="Their mobile number" validationMessage={phoneProblem}>
+                <Input type="tel" value={phone} onChange={(_, d) => setPhone(d.value)} autoComplete="off" />
+              </Field>
+              <Field label="Their e-mail address" validationMessage={emailProblem}>
+                <Input type="email" value={email} onChange={(_, d) => setEmail(d.value)} autoComplete="off" />
+              </Field>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={onCancel} disabled={busy}>
+                Cancel
+              </Button>
+              <Button type="submit" appearance="primary" disabled={!valid} disabledFocusable={busy}>
+                Continue
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </form>
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
 const userSchema = z.object({
   userName: z
     .string()
@@ -506,6 +602,8 @@ const userSchema = z.object({
     .trim()
     .refine((v) => !v || normalizePhone(v) !== null, 'Enter a valid phone number.'),
   roleIds: z.array(z.string()).min(1, 'Give the user at least one role.'),
+  allFacilities: z.boolean(),
+  facilityIds: z.array(z.string()),
   practitionerId: z.string().nullable(),
   temporaryPassword: z.string().max(128),
   isActive: z.boolean(),
@@ -603,6 +701,8 @@ function UserDrawerForm({
 }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
+  const facilityId = useSession((s) => s.user?.facilityId ?? null);
+  const facilities = useQuery(mastersQueries.facilities());
   const form = useForm<UserForm>({
     resolver: zodResolver(userSchema),
     defaultValues: {
@@ -610,8 +710,15 @@ function UserDrawerForm({
       displayName: user?.displayName ?? '',
       email: user?.email ?? '',
       phone: user?.phone ?? '',
-      // Roles waiting for approval are shown as given: saving the form again asks for nothing twice.
+      // Roles and facilities waiting for approval are shown as given: saving the form again asks for nothing twice.
       roleIds: [...new Set([...(user?.roleIds ?? []), ...(user?.pendingGrant?.roleIds ?? [])])],
+      allFacilities: Boolean(user?.allFacilities || user?.pendingGrant?.allFacilities),
+      // A new user starts with the facility this administrator works in.
+      facilityIds: user
+        ? [...new Set([...user.facilityIds, ...(user.pendingGrant?.facilityIds ?? [])])]
+        : facilityId
+          ? [facilityId]
+          : [],
       practitionerId: user?.practitionerId ?? null,
       temporaryPassword: '',
       isActive: user?.isActive ?? true,
@@ -620,6 +727,7 @@ function UserDrawerForm({
   });
   const pending = user?.pendingGrant;
   const changes = user?.pendingChanges ?? [];
+  const allFacilities = useWatch({ control: form.control, name: 'allFacilities' });
 
   const save = useMutation({
     mutationFn: (values: UserForm) => {
@@ -628,7 +736,8 @@ function UserDrawerForm({
         email: values.email || null,
         phone: values.phone || null,
         roleIds: values.roleIds,
-        facilityIds: user?.facilityIds ?? null,
+        allFacilities: values.allFacilities,
+        facilityIds: values.allFacilities ? [] : values.facilityIds,
         defaultFacilityId: user?.defaultFacilityId ?? null,
         practitionerId: values.practitionerId,
         reason: values.reason || null,
@@ -697,6 +806,7 @@ function UserDrawerForm({
                 what={[
                   pending.roleIds.length > 0 &&
                     `Roles ${pending.roleIds.map((id) => roles.find((r) => r.id === id)?.name ?? 'a removed role').join(', ')}`,
+                  pending.allFacilities && 'All facilities',
                   pending.facilityIds.length > 0 &&
                     `${pending.facilityIds.length} ${pending.facilityIds.length === 1 ? 'facility' : 'facilities'}`,
                   pending.activate && 'Reactivating the account',
@@ -782,6 +892,54 @@ function UserDrawerForm({
                 </CheckboxGroup>
               )}
             />
+            <div>
+              <Controller
+                control={form.control}
+                name="allFacilities"
+                render={({ field }) => (
+                  <Switch
+                    checked={field.value}
+                    onChange={(_, d) => field.onChange(d.checked)}
+                    label="All facilities, those added later included"
+                  />
+                )}
+              />
+              <Caption1 block className={styles.muted}>
+                Facilities given, or all of them, wait for another administrator who may approve grants; those taken
+                away go at once.
+              </Caption1>
+            </div>
+            {!allFacilities && (
+              <Controller
+                control={form.control}
+                name="facilityIds"
+                render={({ field }) => (
+                  <CheckboxGroup
+                    label="Works in"
+                    hint={field.value.length === 0 ? 'No facility: they cannot sign in until given one.' : undefined}
+                  >
+                    <div className={styles.roles}>
+                      {(facilities.data ?? [])
+                        .filter((f) => f.isActive || field.value.includes(f.id))
+                        .map((facility) => (
+                          <Checkbox
+                            key={facility.id}
+                            label={facility.name}
+                            checked={field.value.includes(facility.id)}
+                            onChange={(_, d) =>
+                              field.onChange(
+                                d.checked
+                                  ? [...field.value, facility.id]
+                                  : field.value.filter((id) => id !== facility.id),
+                              )
+                            }
+                          />
+                        ))}
+                    </div>
+                  </CheckboxGroup>
+                )}
+              />
+            )}
             <LookupField
               control={form.control}
               name="practitionerId"

@@ -58,6 +58,9 @@ public sealed class PlatformOptions
 
     public NetworkOptions Network { get; set; } = new();
 
+    /// <summary>The oldest HC360 Desktop and lab agent supported (<see cref="ClientVersionOptions"/>).</summary>
+    public ClientVersionOptions Clients { get; set; } = new();
+
     public BackupOptions Backup { get; set; } = new();
 
     public PdfOptions Pdf { get; set; } = new();
@@ -379,7 +382,7 @@ public sealed class SyslogOptions
     }
 }
 
-/// <summary>How the server reaches PostgreSQL.</summary>
+/// <summary>How the server reaches PostgreSQL, and which newer database it may start on.</summary>
 public sealed class DatabaseOptions
 {
     /// <summary>
@@ -389,6 +392,15 @@ public sealed class DatabaseOptions
     /// health says so while it is on.
     /// </summary>
     public bool AllowUnverifiedRemoteConnection { get; set; }
+
+    /// <summary>
+    /// The next release's database changes this version may start beside, by name, as start-up names them when it stops on a
+    /// database a newer version changed: going back one release without restoring the backup (docs/deployment/DEPLOYMENT.md,
+    /// section 7, "Going back"). A release's changes take away nothing the release before uses (expand/contract), so that
+    /// release runs on them and keeps what was entered since the upgrade. A change not named still stops start-up. Empty by
+    /// default.
+    /// </summary>
+    public string[] AcceptNewerMigrations { get; set; } = [];
 }
 
 /// <summary>
@@ -436,18 +448,131 @@ public sealed class BackupOptions
 
     /// <summary>
     /// The secondary directory is an append-only or WORM share: HC360 may add files there but not delete or rename them,
-    /// and the share's own retention removes old ones (DEPLOYMENT.md section 8). Backups there then keep their documents in
-    /// weekly generations (docs/design/incremental-backup.md, section 5.6). HC360 also finds a share that refuses to rename
-    /// or delete by itself, but not a WORM folder that allows deleting for a while after each write: set this for those.
+    /// and the share's own retention removes each file a fixed number of days after it was written (DEPLOYMENT.md section
+    /// 8): at least the daily backups' days and a generation (<see cref="Jobs.BackupRetention.AppendOnlyMinimumDays"/>).
+    /// Backups there then keep their documents in weekly generations (docs/design/incremental-backup.md, section 5.6), and
+    /// grandfather-father-son retention (<see cref="Retention"/>) does not apply there. HC360 also finds a share that
+    /// refuses to rename or delete by itself, but not a WORM folder that allows deleting for a while after each write: set
+    /// this for those.
     /// </summary>
     public bool SecondaryAppendOnly { get; set; }
 
-    public int RetentionDays { get; set; } = 30;
+    /// <summary>
+    /// How many days a backup disk may stay in place, where two or more take turns at <see cref="SecondaryDirectory"/>,
+    /// before System health asks for it to be swapped (default 7: a weekly swap). Each disk is known by the id it is given
+    /// on its first copy (<see cref="Jobs.BackupDisk"/>). 0 never asks.
+    /// </summary>
+    public int DiskRotationDays { get; set; } = 7;
+
+    /// <summary>
+    /// Which backups are kept wherever HC360 removes them, on the server and on a second disk or NAS it may delete from,
+    /// grandfather-father-son: every backup of the newest days that have one, then the last of each of the newest weeks and
+    /// months (<see cref="Jobs.BackupRetention"/>). The documents a backup needs stay in its backup folder while any backup
+    /// kept there lists them (<see cref="Jobs.BackupStore.Prune"/>). An append-only share (<see cref="SecondaryAppendOnly"/>)
+    /// and the off-site bucket remove copies by age with their own rules.
+    /// </summary>
+    public BackupRetentionOptions Retention { get; set; } = new();
+
+    /// <summary>
+    /// The longest a backup is kept on the server and its second copy, in days, from <see cref="Retention"/>, which the
+    /// privacy notice and the erasure answer count (<see cref="Jobs.BackupRetention.DaysAsync"/>). It replaced the setting of
+    /// this name, which kept every backup 30 days and is no longer read.
+    /// </summary>
+    public int RetentionDays => Retention.LongestDays;
+
+    /// <summary>
+    /// How far back a restore to a point in time can go, in days, where the WAL is archived (Enable-HC360Replication.ps1
+    /// -WalArchive): the encrypted base backups older than this go, all but the newest, and with them the archived WAL older
+    /// than the oldest base backup kept, on the server and on the second disk or NAS. The nightly backups keep the long-term
+    /// copies (<see cref="Retention"/>); the WAL is for undoing the recent past to the minute, and a year of it would fill
+    /// the second disk. 30 by default.
+    /// </summary>
+    public int PointInTimeDays { get; set; } = 30;
+
+    /// <summary>
+    /// When the backups' nightly upkeep runs (Quartz cron, default 03:30 every day, after the nightly backup): it copies to
+    /// the second disk or NAS the backups it missed while it was away (<see cref="Jobs.BackupUpkeep"/>), test-restores the
+    /// newest backup when one is due (<see cref="TestRestore"/>), and reads back the copies on the second disk or NAS.
+    /// </summary>
+    public string UpkeepSchedule { get; set; } = "0 30 3 * * ?";
+
+    /// <summary>
+    /// How often each copy on the second disk or NAS is read back, in days: the backup's file against the SHA-256 it was
+    /// verified with, and every copy of a document there against its own SHA-256, a share of them each night
+    /// (<see cref="Jobs.BackupUpkeep"/>).
+    /// </summary>
+    public int CopyCheckDays { get; set; } = 7;
+
+    /// <summary>The test restores of the newest backup into a scratch database (<see cref="Jobs.BackupRestoreTest"/>).</summary>
+    public BackupTestRestoreOptions TestRestore { get; set; } = new();
 
     public string PgDumpPath { get; set; } = "pg_dump";
 
     /// <summary>pg_restore, used to verify each backup. By default the one next to pg_dump.</summary>
     public string? PgRestorePath { get; set; }
+}
+
+/// <summary>
+/// The test restores (<see cref="Jobs.BackupRestoreTest"/>): during the backups' nightly upkeep, when none has passed for
+/// <see cref="EveryDays"/>, the newest backup is restored into a scratch database on the hospital's PostgreSQL, its key
+/// tables' rows counted against those recorded when it was made, and the scratch database dropped.
+/// </summary>
+public sealed class BackupTestRestoreOptions
+{
+    /// <summary>Test-restore the backups (default on). Off, System health says so.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>How many days after one passes the next test restore is made (default 7: weekly). A failed one is made again the next night.</summary>
+    public int EveryDays { get; set; } = 7;
+
+    /// <summary>How many days without a test restore that passed before System health warns (default 14).</summary>
+    public int WarnAfterDays { get; set; } = 14;
+
+    /// <summary>
+    /// Check that PostgreSQL's disk has room for the restored copy before restoring (default on): a disk that fills up
+    /// stops the hospital's own database. Off only where the database is on another server, whose disk HC360 cannot see.
+    /// </summary>
+    public bool CheckRoom { get; set; } = true;
+}
+
+/// <summary>
+/// How many backups grandfather-father-son retention keeps (<see cref="BackupOptions.Retention"/>). Each count is of days,
+/// weeks or months that have a backup, not of days on the calendar, so backups that stop (a disk that failed, a server
+/// switched off) are not all removed while nothing replaces them.
+/// </summary>
+public sealed class BackupRetentionOptions
+{
+    public const int MaxDaily = 3650;
+    public const int MaxWeekly = 520;
+    public const int MaxMonthly = 120;
+
+    /// <summary>The most <see cref="LongestDays"/> can be: <see cref="MaxMonthly"/> months.</summary>
+    public const int MaxLongestDays = ((MaxMonthly - 1) * 31) + 1;
+
+    /// <summary>Every backup of the newest this many days that have one (at least 1).</summary>
+    public int Daily { get; set; } = 14;
+
+    /// <summary>The last backup of each of the newest this many weeks, Monday to Sunday (0: none past the daily ones).</summary>
+    public int Weekly { get; set; } = 8;
+
+    /// <summary>The last backup of each of the newest this many months (0: none past the weekly ones).</summary>
+    public int Monthly { get; set; } = 12;
+
+    /// <summary>The daily count in use: at least the newest day's backups, so a setting of 0 never removes them.</summary>
+    public int DailyKept => Math.Clamp(Daily, 1, MaxDaily);
+
+    public int WeeklyKept => Math.Clamp(Weekly, 0, MaxWeekly);
+
+    public int MonthlyKept => Math.Clamp(Monthly, 0, MaxMonthly);
+
+    /// <summary>
+    /// The longest a backup is kept with nightly backups, in days: the newest day's goes once as many newer days have one
+    /// (<see cref="DailyKept"/> days); the last of the oldest week kept, a Sunday, once the week after the newest has its
+    /// first, a Monday (7 days a week, and the day between); the last of the oldest month kept once the month after the
+    /// newest has its first (31 days a month, and the day between). A backup past it is removed even while the counts
+    /// would keep it, the newest full backup aside, so this holds when backups stop too.
+    /// </summary>
+    public int LongestDays => Math.Max(DailyKept, Math.Max(WeeklyKept > 0 ? ((WeeklyKept - 1) * 7) + 1 : 0, MonthlyKept > 0 ? ((MonthlyKept - 1) * 31) + 1 : 0));
 }
 
 /// <summary>

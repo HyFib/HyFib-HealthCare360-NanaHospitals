@@ -2,6 +2,7 @@ import {
   auth,
   createApiClient,
   isDesktop,
+  noteServerFailure,
   useConnection,
   useSession,
   whenUnlocked,
@@ -23,4 +24,6 @@ export const api = createApiClient({
   // What the screens behind the lock ask for waits for it, and is asked again once unlocked (SRS UX-11).
   waitForUnlock: whenUnlocked,
   onReachability: (reachable) => useConnection.getState().setReachable(reachable),
+  // Answered, but with a failure that names no reason: is the server's database down? (The offline copy is offered then.)
+  onServerFailure: noteServerFailure,
 });

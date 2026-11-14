@@ -100,7 +100,8 @@ public sealed class PortalOriginTests(HospitalServer server)
             home.Headers.Location.ShouldBe(new Uri("/portal/", UriKind.Relative));
         }
 
-        foreach (var staffOnly in new[] { "/api/v1/settings/public", "/api/v1/admin/users", "/hubs/events/negotiate", "/assets/index.js", "/fhir/r4/metadata" })
+        // Nor SMART on FHIR's authorization, which hands the browser to the staff app's sign-in.
+        foreach (var staffOnly in new[] { "/api/v1/settings/public", "/api/v1/admin/users", "/hubs/events/negotiate", "/assets/index.js", "/fhir/r4/metadata", "/oauth2/authorize" })
         {
             using var refused = await visitor.SendRawAsync(HttpMethod.Get, staffOnly);
             refused.StatusCode.ShouldBe(HttpStatusCode.NotFound, staffOnly);

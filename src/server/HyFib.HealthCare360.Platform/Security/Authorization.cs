@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Security.Claims;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
 using Microsoft.AspNetCore.Authorization;
@@ -43,38 +44,73 @@ public sealed class PermissionPolicyProvider(IOptions<AuthorizationOptions> opti
     }
 }
 
-/// <remarks>
-/// A request that only an administrative permission allows must come from an enrolled HC360 Desktop
-/// (<see cref="AdministrationOnDesktop"/>, SRS SEC-08); any other permission the requirement names is enough anywhere.
-/// </remarks>
-public sealed class PermissionAuthorizationHandler(IPermissionService permissions, IAdministrationDesktops desktops) : AuthorizationHandler<PermissionRequirement>
+/// <summary>What a session may do with the permissions it would use (<see cref="PermissionGate"/>).</summary>
+public enum PermissionVerdict
+{
+    /// <summary>It holds one of them, and may use it here.</summary>
+    Allowed,
+
+    /// <summary>It holds none of them, or its token grants none (one restricted to a mandatory step).</summary>
+    NotHeld,
+
+    /// <summary>Only an administrative one allows it, and the session is not on an enrolled desktop (<see cref="AdministrationOnDesktop"/>).</summary>
+    DesktopRequired,
+}
+
+/// <summary>
+/// Whether a session may use any one of some permissions. The endpoints' permission policies ask it
+/// (<see cref="PermissionAuthorizationHandler"/>), and so does code that learns the permission it needs only as it runs, such
+/// as the approvals inbox, which reads it from the kind of change: both obey the same rules, so neither is a way round them.
+/// A restricted token (pending MFA enrolment or a password change) uses none. A request that only an administrative
+/// permission allows must come from an enrolled HC360 Desktop (<see cref="AdministrationOnDesktop"/>, SRS SEC-08); any other
+/// permission among them is enough anywhere.
+/// </summary>
+public sealed class PermissionGate(IPermissionService permissions, IAdministrationDesktops desktops)
+{
+    /// <param name="user">The session's user, as its access token says.</param>
+    /// <param name="anyOf">The permissions, any one of which allows it.</param>
+    /// <param name="firstDesktopEnrolment">The endpoint lets a browser in while the hospital enrols its first desktop (<see cref="FirstDesktopEnrolment"/>).</param>
+    /// <param name="cancellationToken">Cancels reading the user's permissions and the rule's setting.</param>
+    public async ValueTask<PermissionVerdict> CheckAsync(
+        ClaimsPrincipal user, IReadOnlyCollection<string> anyOf, bool firstDesktopEnrolment = false, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(user);
+        ArgumentNullException.ThrowIfNull(anyOf);
+        if (!Guid.TryParse(user.FindFirst(HcClaims.UserId)?.Value, out var userId) || user.HasClaim(c => c.Type == HcClaims.Restriction))
+        {
+            return PermissionVerdict.NotHeld;
+        }
+
+        var granted = await permissions.GetPermissionsAsync(userId, cancellationToken);
+        IReadOnlyCollection<string> held = granted.Contains(PermissionRegistry.Wildcard) ? anyOf : anyOf.Where(granted.Contains).ToList();
+        if (held.Count == 0)
+        {
+            return PermissionVerdict.NotHeld;
+        }
+
+        return held.Any(p => !PlatformPermissions.IsAdministrative(p))
+               || !await desktops.RequiredAsync(cancellationToken)
+               || await desktops.AdministersFromAsync(AdministrationOnDesktop.DeviceOf(user), cancellationToken)
+               || (firstDesktopEnrolment && !await desktops.EnrolledAsync(cancellationToken))
+            ? PermissionVerdict.Allowed
+            : PermissionVerdict.DesktopRequired;
+    }
+}
+
+/// <remarks>Decides as <see cref="PermissionGate"/> does, and says why when only an enrolled desktop is missing.</remarks>
+public sealed class PermissionAuthorizationHandler(PermissionGate gate) : AuthorizationHandler<PermissionRequirement>
 {
     protected override async Task HandleRequirementAsync(AuthorizationHandlerContext context, PermissionRequirement requirement)
     {
-        if (!Guid.TryParse(context.User.FindFirst(HcClaims.UserId)?.Value, out var userId)
-            || context.User.HasClaim(c => c.Type == HcClaims.Restriction))
-        {
-            // Restricted tokens (pending MFA enrolment / password change) grant no permissions.
-            return;
-        }
-
-        var granted = await permissions.GetPermissionsAsync(userId);
-        var held = granted.Contains(PermissionRegistry.Wildcard) ? requirement.AnyOf : requirement.AnyOf.Where(granted.Contains).ToList();
-        if (held.Count == 0)
-        {
-            return;
-        }
-
-        if (held.Any(p => !PlatformPermissions.IsAdministrative(p))
-            || !await desktops.RequiredAsync()
-            || await desktops.AdministersFromAsync(AdministrationOnDesktop.DeviceOf(context.User))
-            || (FirstDesktopEnrolment.Marks(context.Resource) && !await desktops.EnrolledAsync()))
+        var verdict = await gate.CheckAsync(context.User, requirement.AnyOf, FirstDesktopEnrolment.Marks(context.Resource));
+        if (verdict == PermissionVerdict.Allowed)
         {
             context.Succeed(requirement);
-            return;
         }
-
-        context.Fail(new DesktopRequired(this));
+        else if (verdict == PermissionVerdict.DesktopRequired)
+        {
+            context.Fail(new DesktopRequired(this));
+        }
     }
 }
 

@@ -19,6 +19,7 @@ public sealed class BackEntryWindowTests
             w => w.DefaultHours.ShouldBe(90 * 24), w => w.MaxHours.ShouldBe(90 * 24));
         BackEntryWindows.All.Select(w => w.SettingKey).ShouldBeUnique();
         BackEntryWindows.SettingKey(BackEntryRecord.ConsultantVisit).ShouldBe("downtime.backEntryHours.consultantVisit");
+        BackEntryWindows.SettingKey(BackEntryRecord.PharmacySale).ShouldBe("downtime.backEntryHours.pharmacySale");
     }
 
     [Theory]

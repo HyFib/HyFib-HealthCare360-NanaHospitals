@@ -345,7 +345,7 @@ internal sealed class NotificationService(
         var users = PermissionHolders.Of(db, permission);
         if (facilityId is { } fid)
         {
-            users = users.Where(u => u.Facilities.Count == 0 || u.Facilities.Any(f => f.FacilityId == fid));
+            users = users.Where(u => u.AllFacilities || u.Facilities.Any(f => f.FacilityId == fid));
         }
 
         var ids = await users.Select(u => u.Id).ToListAsync(cancellationToken);

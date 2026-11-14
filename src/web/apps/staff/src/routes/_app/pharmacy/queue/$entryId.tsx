@@ -91,6 +91,9 @@ import {
 } from '@/modules/pharmacy/api';
 import { BatchPick } from '@/modules/pharmacy/BatchPick';
 import { BillSummary } from '@/modules/pharmacy/BillSummary';
+import { DispensedOnPaperDialog } from '@/modules/pharmacy/DispensedOnPaperDialog';
+import { NOT_A_PAPER_SALE, paperSaleOf, paperSaleProblemsOf, type PaperSaleEntry } from '@/modules/pharmacy/paperSale';
+import { PaperSaleFields } from '@/modules/pharmacy/PaperSaleFields';
 import {
   DEFAULT_MAX_DISCOUNT_PERCENT,
   useCounterPrefs,
@@ -301,7 +304,9 @@ function EntryScreen({
   const [confirmControlled, setConfirmControlled] = useState(false);
   const [payments, setPayments] = useState<PaymentDraft[]>(defaultPayments);
   const [substituting, setSubstituting] = useState<QueueLineDto | null>(null);
-  const [dialog, setDialog] = useState<'close' | 'authorize' | 'request-refill' | null>(null);
+  const [dialog, setDialog] = useState<'close' | 'on-paper' | 'authorize' | 'request-refill' | null>(null);
+  // A sale written on paper while HC360 was down: the number and the time on it.
+  const [paperSale, setPaperSale] = useState<PaperSaleEntry>(NOT_A_PAPER_SALE);
   const [done, setDone] = useState<Done | null>(null);
   const [changedElsewhere, setChangedElsewhere] = useState(false);
 
@@ -424,7 +429,8 @@ function EntryScreen({
     !overridesWaiting &&
     problems.length === 0 &&
     (controlled.length === 0 || confirmControlled) &&
-    (entry.isInpatient || free || (paymentCheck.ok && !discountInvalid));
+    (entry.isInpatient || free || (paymentCheck.ok && !discountInvalid)) &&
+    (entry.isInpatient || paperSaleOf(paperSale).problem === null);
 
   const setChoice = (lineId: string, patch: Partial<LineChoice>) =>
     setChoices((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
@@ -529,6 +535,7 @@ function EntryScreen({
         discountPercent: free ? 0 : discountPercent,
         payments: free ? [] : paymentsRequest(resolved),
         confirmControlledDrugs: controlled.length > 0 && confirmControlled,
+        paper: paperSaleOf(paperSale).paper,
       });
       return { kind: 'sale', sale, labels };
     },
@@ -626,6 +633,9 @@ function EntryScreen({
     refillsLeft > 0 &&
     (!entry.refillValidUntil || entry.refillValidUntil >= todayIso());
   const errorItems = isApiError(submit.error) ? itemsFromErrorData(submit.error.data) : [];
+  const paperSaleProblems =
+    paperSaleProblemsOf(submit.error) ??
+    (paperSale.onPaper ? (paperSaleOf(paperSale).problem ?? undefined) : undefined);
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
   useLeaveGuard({
@@ -674,6 +684,11 @@ function EntryScreen({
                 {open && canClose && (
                   <MenuItem icon={<DismissCircleRegular />} onClick={() => setDialog('close')}>
                     Close prescription
+                  </MenuItem>
+                )}
+                {open && canDispense && !entry.isInpatient && (
+                  <MenuItem icon={<CheckmarkCircleRegular />} onClick={() => setDialog('on-paper')}>
+                    Dispensed on paper (downtime)
                   </MenuItem>
                 )}
               </MenuList>
@@ -906,6 +921,12 @@ function EntryScreen({
             )}
           </Section>
 
+          {open && !entry.isInpatient && canDispense && (
+            <Section title="Paper sale">
+              <PaperSaleFields value={paperSale} onChange={setPaperSale} problems={paperSaleProblems} />
+            </Section>
+          )}
+
           {open && !entry.isInpatient && (
             <Section title="Counselling">
               <Field
@@ -1065,6 +1086,7 @@ function EntryScreen({
       )}
 
       {dialog === 'close' && <CloseEntryDialog entry={entry} onClose={() => setDialog(null)} />}
+      {dialog === 'on-paper' && <DispensedOnPaperDialog entry={entry} onClose={() => setDialog(null)} />}
       {dialog === 'authorize' && <AuthorizeRefillsDialog entry={entry} onClose={() => setDialog(null)} />}
       {dialog === 'request-refill' && <RequestRefillDialog entry={entry} onClose={() => setDialog(null)} />}
 

@@ -32,6 +32,17 @@ public sealed record NewHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt,
 public sealed record ImportedHospitalCa(
     string Fingerprint, DateTimeOffset ExpiresAt, bool Changed, string? PreviousKeptAs, DateTimeOffset? PreviousCaExpiresAt = null);
 
+/// <summary>What <see cref="LanCertificateManager.RestoreCa"/> did with the hospital CA a backup carries.</summary>
+/// <param name="Fingerprint">The backup's CA, as HC360 Desktop pins it.</param>
+/// <param name="ExpiresAt">When the backup's CA expires.</param>
+/// <param name="Installed">Whether the backup's CA is now this server's, in place of another CA or of none.</param>
+/// <param name="KeptFingerprint">
+/// When this server keeps its own CA instead, because that CA took the backup's CA's place after the backup was made (a
+/// rollover's switch, or a new CA): that CA, which the devices trust now. Null otherwise.
+/// </param>
+/// <param name="PreviousKeptAs">The file name a different CA that was here is kept under, when the backup's took its place.</param>
+public sealed record RestoredHospitalCa(string Fingerprint, DateTimeOffset ExpiresAt, bool Installed, string? KeptFingerprint, string? PreviousKeptAs);
+
 /// <summary>
 /// What <see cref="LanCertificateManager.PrepareCa"/> made: the next CA (this one's name, a new key, valid for ten years), and
 /// the certificate this CA signed for its key, valid until this CA expires. The server keeps serving with this CA
@@ -638,22 +649,43 @@ public sealed class LanCertificateManager : IDisposable
             throw new ArgumentException($"Use a password of at least {MinimumExportPasswordLength} characters.", nameof(password));
         }
 
+        return Export(directories, dataProtection.CreateProtector(ProtectorPurpose), DateTimeOffset.UtcNow,
+                bundle => bundle.ExportPkcs12(new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, ExportIterations), password))
+            ?? throw new FileNotFoundException("This server has no hospital CA yet: HC360 makes one when it first starts.", Path.Combine(directories.Certificates, CaFile));
+    }
+
+    /// <summary>
+    /// This server's hospital CA as every backup carries it (<see cref="Jobs.BackupArchive.HospitalCaEntry"/>), so a server
+    /// restored on new hardware serves a certificate the devices already trust: what <see cref="ExportCa"/> exports, in a
+    /// PKCS#12 file with no password of its own. The backup is encrypted with the recovery key, as are the database and the
+    /// field keys beside it, and that protects the CA's private key exactly as it protects them (docs/security/SECURITY.md,
+    /// "Backups and keys"). Null when this server has no CA of its own yet. A next CA prepared here is not carried.
+    /// </summary>
+    /// <exception cref="CryptographicException">The CA cannot be opened on this machine.</exception>
+    public ExportedHospitalCa? ExportForBackup() =>
+        Export(_directories, _protector, _time.GetUtcNow(),
+            bundle => bundle.Export(X509ContentType.Pkcs12) ?? throw new CryptographicException("The hospital CA could not be written out."));
+
+    /// <summary>
+    /// The CA at its path, with the CA a switch replaced and the certificate that CA signed for it, written by
+    /// <paramref name="write"/>; null when this server has no CA yet. After a switch the CA it replaced goes with it, so the
+    /// server that installs it hands that one out as this one does. A next CA prepared here stays here: that server serves
+    /// with this CA, which the devices hold, and is given the next one once it is switched to.
+    /// </summary>
+    private static ExportedHospitalCa? Export(DataDirectories directories, IDataProtector protector, DateTimeOffset now, Func<X509Certificate2Collection, byte[]> write)
+    {
         var path = Path.Combine(directories.Certificates, CaFile);
         if (!File.Exists(path))
         {
-            throw new FileNotFoundException("This server has no hospital CA yet: HC360 makes one when it first starts.", path);
+            return null;
         }
 
-        var unprotected = dataProtection.CreateProtector(ProtectorPurpose).Unprotect(File.ReadAllBytes(path));
+        var unprotected = protector.Unprotect(File.ReadAllBytes(path));
         try
         {
             using var ca = X509CertificateLoader.LoadPkcs12(unprotected, null, X509KeyStorageFlags.Exportable);
-            var now = DateTimeOffset.UtcNow;
-
-            // After a switch the standby hands out the CA this one replaced, as the primary does. A next CA prepared here stays
-            // here: the standby serves with this CA, which the devices hold, and is given the next one once it is switched to.
             var previous = ReadPrevious(directories, ca, now);
-            var next = ReadNext(directories, dataProtection.CreateProtector(ProtectorPurpose), ca, now);
+            var next = ReadNext(directories, protector, ca, now);
             try
             {
                 var bundle = new X509Certificate2Collection(ca);
@@ -663,9 +695,8 @@ public sealed class LanCertificateManager : IDisposable
                     bundle.Add(carried.Previous);
                 }
 
-                var file = bundle.ExportPkcs12(new PbeParameters(PbeEncryptionAlgorithm.Aes256Cbc, HashAlgorithmName.SHA256, ExportIterations), password);
                 return new ExportedHospitalCa(
-                    file, Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero),
+                    write(bundle), Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero),
                     PreviousExpiresAt(previous), NextCaLeftHere: next is not null);
             }
             finally
@@ -681,6 +712,123 @@ public sealed class LanCertificateManager : IDisposable
             CryptographicOperations.ZeroMemory(unprotected);
         }
     }
+
+    /// <summary>
+    /// The fingerprint, as HC360 Desktop pins it, of the hospital CA in a file <see cref="ExportForBackup"/> wrote, once it is
+    /// found to hold that CA with its private key: a backup's own check reads it, so a backup whose CA could not be
+    /// restored fails that check. The key is never stored by reading it.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The file holds no hospital CA with its private key.</exception>
+    public static string BackupFingerprint(byte[] pkcs12)
+    {
+        X509Certificate2Collection bundle;
+        try
+        {
+            bundle = X509CertificateLoader.LoadPkcs12Collection(pkcs12, null,
+                OperatingSystem.IsMacOS() ? X509KeyStorageFlags.DefaultKeySet : X509KeyStorageFlags.EphemeralKeySet);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new InvalidDataException("The hospital CA in the backup cannot be read.", ex);
+        }
+
+        try
+        {
+            return CaIn(bundle) is { HasPrivateKey: true } ca
+                ? Convert.ToHexString(SHA256.HashData(ca.RawData))
+                : throw new InvalidDataException("The hospital CA in the backup has no private key.");
+        }
+        finally
+        {
+            foreach (var certificate in bundle)
+            {
+                certificate.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Installs the hospital CA a backup carries (<see cref="ExportForBackup"/>), protected for this machine, as a restore
+    /// puts the database back: on new hardware the server then serves a certificate every device already trusts. A server
+    /// whose CA took the backup's CA's place after the backup was made keeps its own, which the devices trust now: a
+    /// rollover switched to it (the backup's CA is the one it replaced), or a new CA replaced the backup's, whose key may
+    /// have been seen (kept here under a <c>.replaced-</c> name). Any other CA here, such as the one new hardware made as it
+    /// first started, is kept under a new name, never deleted, as <see cref="ImportCa(DataDirectories, IDataProtectionProvider, byte[], string, DateTimeOffset)"/> keeps it.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The backup's CA cannot be installed: it has expired, or the file holds no CA with its key.</exception>
+    public static RestoredHospitalCa RestoreCa(DataDirectories directories, IDataProtectionProvider dataProtection, byte[] pkcs12, DateTimeOffset now)
+    {
+        X509Certificate2Collection bundle;
+        try
+        {
+            bundle = X509CertificateLoader.LoadPkcs12Collection(pkcs12, null, X509KeyStorageFlags.Exportable);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new InvalidDataException("The hospital CA in the backup cannot be read.", ex);
+        }
+
+        try
+        {
+            var ca = CaIn(bundle) ?? throw new InvalidDataException("The backup carries no hospital CA certificate.");
+            var protector = dataProtection.CreateProtector(ProtectorPurpose);
+            var path = Path.Combine(directories.Certificates, CaFile);
+            using var here = File.Exists(path) ? Open(path, protector) : null;
+            if (here is not null && !here.RawData.AsSpan().SequenceEqual(ca.RawData) && TookThePlaceOf(directories, protector, here, ca, now))
+            {
+                return new RestoredHospitalCa(Convert.ToHexString(SHA256.HashData(ca.RawData)), new DateTimeOffset(ca.NotAfter.ToUniversalTime(), TimeSpan.Zero),
+                    Installed: false, Convert.ToHexString(SHA256.HashData(here.RawData)), PreviousKeptAs: null);
+            }
+
+            var imported = ImportCa(directories, dataProtection, bundle, now);
+            return new RestoredHospitalCa(imported.Fingerprint, imported.ExpiresAt, imported.Changed, KeptFingerprint: null, imported.PreviousKeptAs);
+        }
+        finally
+        {
+            foreach (var certificate in bundle)
+            {
+                certificate.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="here"/>, this server's CA, took the place of <paramref name="backup"/> on this machine after
+    /// the backup was made: a switch to it (the CA it replaced is handed out beside it, with that CA's word for it), or a
+    /// switch or a new CA that kept the backup's under a <c>.replaced-</c> name.
+    /// </summary>
+    private static bool TookThePlaceOf(DataDirectories directories, IDataProtector protector, X509Certificate2 here, X509Certificate2 backup, DateTimeOffset now)
+    {
+        if (ReadPrevious(directories, here, now) is { } previous)
+        {
+            using (previous.Previous)
+            using (previous.Cross)
+            {
+                if (previous.Previous.RawData.AsSpan().SequenceEqual(backup.RawData))
+                {
+                    return true;
+                }
+            }
+        }
+
+        foreach (var replaced in Directory.EnumerateFiles(directories.Certificates, CaFile + ".replaced-*"))
+        {
+            using var kept = Open(replaced, protector);
+            if (kept is not null && kept.RawData.AsSpan().SequenceEqual(backup.RawData))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The CA in a bundle: the certificate with the key that names that key as its issuer's. After a switch the bundle also
+    /// holds the certificate the previous CA signed for the same key, which a PKCS#12 reader may pair with the key as well.
+    /// </summary>
+    private static X509Certificate2? CaIn(X509Certificate2Collection bundle) =>
+        bundle.FirstOrDefault(c => c.HasPrivateKey && NamesItselfAsIssuer(c)) ?? bundle.FirstOrDefault(c => c.HasPrivateKey) ?? bundle.FirstOrDefault();
 
     /// <summary>
     /// Installs a hospital CA that <see cref="ExportCa"/> exported, protected for this machine, in place of this server's
@@ -708,10 +856,7 @@ public sealed class LanCertificateManager : IDisposable
 
     private static ImportedHospitalCa ImportCa(DataDirectories directories, IDataProtectionProvider dataProtection, X509Certificate2Collection bundle, DateTimeOffset now)
     {
-        // The CA: the certificate with the key that names that key as its issuer's. After a switch the file also holds the
-        // certificate the previous CA signed for the same key, which a PKCS#12 reader may pair with the key as well.
-        var ca = bundle.FirstOrDefault(c => c.HasPrivateKey && NamesItselfAsIssuer(c)) ?? bundle.FirstOrDefault(c => c.HasPrivateKey) ?? bundle.FirstOrDefault()
-            ?? throw new InvalidDataException("The file holds no certificate: export the CA with 'certificates export-ca'.");
+        var ca = CaIn(bundle) ?? throw new InvalidDataException("The file holds no certificate: export the CA with 'certificates export-ca'.");
         if (!ca.HasPrivateKey)
         {
             throw new InvalidDataException("The file holds a certificate without its private key: export the CA with 'certificates export-ca'.");

@@ -13,22 +13,20 @@ public sealed record FacilityScope(Guid? FacilityId, string Name, string? LegalN
 }
 
 /// <summary>
-/// Which facilities a user may report on. Mirrors sign-in: every active facility unless the user is limited to some
-/// (super administrators never are). "All facilities" (a consolidated report) is allowed only to users who can see every
-/// active facility, because a consolidated query cannot be narrowed to a subset by the facility filter.
+/// Which facilities a user may report on. Mirrors sign-in: every active facility for a user given all facilities (and
+/// super administrators), otherwise those the user is given, and none for none. "All facilities" (a consolidated report) is
+/// allowed only to users who can see every active facility, because a consolidated query cannot be narrowed to a subset by
+/// the facility filter.
 /// </summary>
 internal sealed class FacilityAccess(HospitalDbContext db)
 {
     public async Task<IReadOnlyList<LookupItem>> AllowedAsync(ReportActor actor, CancellationToken ct)
     {
         var facilities = db.Set<Facility>().AsNoTracking().Where(f => f.IsActive);
-        if (!actor.IsSuperUser)
+        if (!actor.IsSuperUser && !await db.Set<User>().AsNoTracking().AnyAsync(u => u.Id == actor.UserId && u.AllFacilities, ct))
         {
             var assigned = await db.Set<UserFacility>().AsNoTracking().Where(f => f.UserId == actor.UserId).Select(f => f.FacilityId).ToListAsync(ct);
-            if (assigned.Count > 0)
-            {
-                facilities = facilities.Where(f => assigned.Contains(f.Id));
-            }
+            facilities = facilities.Where(f => assigned.Contains(f.Id));
         }
 
         return await facilities.OrderBy(f => f.Name).Select(f => new LookupItem(f.Id, f.Code, f.Name)).ToListAsync(ct);

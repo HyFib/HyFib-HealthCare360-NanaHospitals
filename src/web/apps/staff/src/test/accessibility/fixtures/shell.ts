@@ -39,4 +39,7 @@ export const SHELL_SCREEN_ANSWERS: FakeAnswers = {
     serverName: 'HC360-SRV01',
     facilityName: 'Nana Hospitals, Pune',
   },
+  // The server's readiness, as a healthy server answers it: the app asks when an answer fails with no reason of the
+  // server's (a screen's canned 503, say), to tell a database that is down from a passing failure. Not a screen's data.
+  'GET /health/ready': 'Healthy',
 };

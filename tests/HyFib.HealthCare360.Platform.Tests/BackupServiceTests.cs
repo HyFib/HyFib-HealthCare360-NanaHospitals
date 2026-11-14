@@ -1,9 +1,12 @@
+using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
+using HyFib.HealthCare360.SharedKernel;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,6 +68,7 @@ public sealed class BackupServiceTests : IDisposable
         contents.Manifest.IncludesDocuments.ShouldBeFalse();
         contents.Manifest.Migrations.ShouldBe(["20260928102924_InitialCreate"]);
         contents.Manifest.Database.ShouldBe("hc360_test");
+        contents.Manifest.RowCounts.ShouldBe(_postgres.Rows, "the rows counted in the dump's snapshot, for a test restore to check");
         contents.MasterKey.ShouldBe(_protector.ExportMasterKey());
 
         // No plaintext dump or unfinished file is left behind.
@@ -86,6 +90,7 @@ public sealed class BackupServiceTests : IDisposable
         var result = await Service().CreatePreMigrationAsync(["20260928102924_InitialCreate"], CancellationToken.None);
 
         result.SecondaryCopied.ShouldBeFalse();
+        result.SecondaryDisk.ShouldBeNull("no disk took it");
         result.Warning.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
         BackupCopies.Reason(result.Warning).ShouldNotBeNullOrWhiteSpace();
         File.Exists(Path.Combine(_directories.Backups, result.FileName)).ShouldBeTrue("the backup is kept on the server's disk");
@@ -113,6 +118,23 @@ public sealed class BackupServiceTests : IDisposable
         BackupCopies.Reason(note).ShouldBeNull();
     }
 
+    /// <summary>
+    /// Each copy names the disk it went to: the disk is given an id on its first copy, in a file it keeps, so the next
+    /// backup to the same disk names the same id, and a swapped disk at the same folder another (<see cref="BackupDisk"/>).
+    /// </summary>
+    [Fact]
+    public async Task A_copy_names_the_disk_it_went_to()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var first = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow.AddMinutes(-1), includeDocuments: true, [], ct);
+        var second = await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow, includeDocuments: true, [], ct);
+
+        first.SecondaryDisk.ShouldNotBeNull().ShouldMatch("^[0-9A-F]{8}$");
+        second.SecondaryDisk.ShouldBe(first.SecondaryDisk);
+        File.ReadAllText(Path.Combine(_options.Backup.SecondaryDirectory!, BackupDisk.MarkerFileName)).ShouldContain(first.SecondaryDisk);
+    }
+
     [Fact]
     public async Task A_copy_that_cannot_be_made_says_why_and_removes_nothing()
     {
@@ -126,6 +148,37 @@ public sealed class BackupServiceTests : IDisposable
         (copied, removed).ShouldBe((false, false));
         note.ShouldNotBeNull().ShouldStartWith(BackupService.CopyFailedNote);
         BackupCopies.Reason(note).ShouldNotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// After each backup, both copies keep what grandfather-father-son retention keeps (<see cref="BackupRetention"/>): of
+    /// two months of nightly backups, the newest days', a week's last and a month's last, on the server and the NAS alike,
+    /// rather than every backup of the last 30 days and nothing older.
+    /// </summary>
+    [Fact]
+    public async Task After_a_backup_both_copies_keep_what_retention_keeps()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var secondary = _options.Backup.SecondaryDirectory!;
+        Directory.CreateDirectory(secondary);
+        var today = DateTimeOffset.UtcNow;
+        var earlier = Enumerable.Range(1, 60)
+            .Select(daysAgo => string.Create(CultureInfo.InvariantCulture, $"hc360-{today.AddDays(-daysAgo):yyyyMMdd}-200000-scheduled.hc360bak"))
+            .ToList();
+        foreach (var name in earlier)
+        {
+            File.WriteAllText(Path.Combine(_directories.Backups, name), name);
+            File.WriteAllText(Path.Combine(secondary, name), name);
+        }
+
+        var result = await Service().CreateAsync(BackupKind.Manual, today, includeDocuments: true, [], ct);
+
+        var all = earlier.Append(result.FileName).Select(n => BackupFile.From(n)!).ToList();
+        var kept = all.Except(BackupRetention.ToRemove(all, _options.Backup.Retention, HospitalTimeZone.Zone, DateTimeOffset.UtcNow))
+            .Select(b => b.Path).ToList();
+        kept.Count.ShouldBeInRange(18, 26, "14 days, the weeks' and months' last backups");
+        Directory.EnumerateFiles(_directories.Backups, "*.hc360bak").Select(Path.GetFileName).ShouldBe(kept, ignoreOrder: true);
+        Directory.EnumerateFiles(secondary, "*.hc360bak").Select(Path.GetFileName).ShouldBe(kept, ignoreOrder: true);
     }
 
     [Fact]
@@ -166,6 +219,39 @@ public sealed class BackupServiceTests : IDisposable
         var restored = Path.Combine(_root, "restored");
         await BackupBlobs.CopyAsync(_directories.Backups, contents, restored, ct);
         File.ReadAllBytes(Path.Combine(restored, "2026", "09", "saved-during-dump.bin")).ShouldBe(File.ReadAllBytes(document));
+    }
+
+    /// <summary>
+    /// Every full backup carries the erasure ledger (DPDP Act 2023 s8(7)), inside its encryption, with the lines of the
+    /// ledger's copy beside the second copy that the ledger lacks (one it lost with a disk), so a restore from any copy of the
+    /// backup, the off-site one included, can carry out the erasures again. The backup before an update carries none: it is
+    /// for going back on this machine, whose ledger the update leaves alone, with the version updated from, which reads an
+    /// archive with nothing it does not know (F17).
+    /// </summary>
+    [Fact]
+    public async Task A_backup_carries_the_erasure_ledger_with_what_its_copy_has_that_it_lost()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ledger = ErasureLedgerFiles.PathIn(_directories);
+        Directory.CreateDirectory(Path.GetDirectoryName(ledger)!);
+        await File.WriteAllTextAsync(ledger, "{\"id\":\"A\"}\n", ct);
+        Directory.CreateDirectory(_options.Backup.SecondaryDirectory!);
+        await File.WriteAllTextAsync(ErasureLedgerFiles.MirrorPath(_options.Backup)!, "{\"id\":\"A\"}\n{\"id\":\"B\"}\n", ct);
+
+        var full = await ContentsAsync(await Service().CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow.AddMinutes(-1), includeDocuments: true, [], ct));
+        Encoding.UTF8.GetString(full.ErasureLedger.ShouldNotBeNull()).ShouldBe("{\"id\":\"A\"}\n{\"id\":\"B\"}\n");
+        full.Manifest.Format.ShouldBe(BackupArchive.Format);
+
+        var beforeUpdate = await ContentsAsync(await Service().CreatePreMigrationAsync([], ct));
+        beforeUpdate.Manifest.Format.ShouldBe(BackupArchive.InlineDocumentsFormat);
+        (beforeUpdate.ErasureLedger, beforeUpdate.Manifest.ErasureLedger, beforeUpdate.Manifest.HospitalCa).ShouldBe(((byte[]?)null, (string?)null, (string?)null));
+
+        async Task<BackupContents> ContentsAsync(BackupResult result)
+        {
+            await using var input = File.OpenRead(Path.Combine(_directories.Backups, result.FileName));
+            await using var payload = await BackupEncryption.OpenAsync(input, _protector.DeriveKey("backup"), ct);
+            return await BackupArchive.ReadAsync(payload, new BackupReadTargets(), ct);
+        }
     }
 
     [Fact]
@@ -209,6 +295,22 @@ public sealed class BackupServiceTests : IDisposable
         await OpensWithAsync(before, original);
         await using var input = File.OpenRead(Path.Combine(_directories.Backups, after.FileName));
         await Should.ThrowAsync<BackupKeyMismatchException>(() => BackupEncryption.OpenAsync(input, original, ct));
+    }
+
+    /// <summary>
+    /// A missed backup caught up while the hospital works runs pg_dump below normal priority, so the server's requests come
+    /// first (<see cref="BackupCatchUpJob"/>); every other backup at normal priority, to be done within the night.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_taken_gently_runs_pg_dump_below_normal_priority()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await Service().CreateAsync(BackupKind.Scheduled, DateTimeOffset.UtcNow, includeDocuments: true, [], lowPriority: true, ct);
+        _postgres.LowPriority.ShouldBe(true);
+
+        await Service().CreatePreMigrationAsync([], ct);
+        _postgres.LowPriority.ShouldBe(false);
     }
 
     [Fact]
@@ -285,6 +387,9 @@ public sealed class BackupServiceTests : IDisposable
 
         public byte[]? Validated { get; private set; }
 
+        /// <summary>Whether pg_dump was asked to run below normal priority.</summary>
+        public bool? LowPriority { get; private set; }
+
         /// <summary>Something that happens on the server while pg_dump runs.</summary>
         public Action? DuringDump { get; set; }
 
@@ -292,11 +397,16 @@ public sealed class BackupServiceTests : IDisposable
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(DatabaseSize);
 
-        public async Task DumpAsync(string outputFile, CancellationToken ct)
+        /// <summary>The key tables' rows in the dump's snapshot, as pg_dump's session counts them.</summary>
+        public Dictionary<string, long> Rows { get; } = new(StringComparer.Ordinal) { ["patients.patients"] = 12_480, ["audit.audit_events"] = 3_904_117 };
+
+        public async Task<IReadOnlyDictionary<string, long>> DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
         {
+            LowPriority = lowPriority;
             DuringDump?.Invoke();
             Dumped = [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(4096)];
             await File.WriteAllBytesAsync(outputFile, Dumped, ct);
+            return Rows;
         }
 
         public async Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct)

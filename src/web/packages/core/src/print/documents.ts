@@ -1,4 +1,4 @@
-import { printHtml } from './print';
+import { printHtml, type PrintOutcome } from './print';
 
 /**
  * A document the server makes from its one template (lab, radiology and cardiology reports, prescriptions, discharge
@@ -16,7 +16,7 @@ export interface PrintableDocumentDto {
 }
 
 /** Prints a document made by the server as it is, on its own paper size and orientation. */
-export function printPrintableDocument(printable: PrintableDocumentDto): Promise<void> {
+export function printPrintableDocument(printable: PrintableDocumentDto): Promise<PrintOutcome | undefined> {
   return printHtml(printable.html, { pageSize: printable.pageSize, landscape: printable.landscape });
 }
 

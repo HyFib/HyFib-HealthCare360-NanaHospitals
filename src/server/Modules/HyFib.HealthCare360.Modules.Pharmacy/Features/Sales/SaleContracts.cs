@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
 using HyFib.HealthCare360.Modules.Pharmacy.Services;
@@ -19,6 +20,11 @@ public sealed record B2bBuyer(string Gstin, string LegalName, string? DeliverySt
 
 /// <param name="PatientId">Registered patient (enables credit and the medication history); walk-in customers leave it empty.</param>
 /// <param name="Prescription">Required for Schedule H/H1/X medicines.</param>
+/// <param name="Paper">
+/// The pharmacy sale number and time written on the paper sale, when the sale was made on paper during a downtime and is
+/// entered afterwards (docs/modules/downtime.md): the invoice takes that number and time instead of the next number and
+/// now. Null for a sale made now.
+/// </param>
 public sealed record CounterSaleRequest(
     Guid StoreId,
     Guid? PatientId,
@@ -29,7 +35,8 @@ public sealed record CounterSaleRequest(
     decimal DiscountPercent,
     IReadOnlyList<SalePayment> Payments,
     bool ConfirmControlledDrugs,
-    B2bBuyer? Buyer = null);
+    B2bBuyer? Buyer = null,
+    PaperNumber? Paper = null);
 
 public sealed record PharmacySaleCreated(Guid Id, string InvoiceNumber, decimal NetAmount, decimal PaidAmount, decimal DueAmount, SaleStatus Status);
 
@@ -139,7 +146,8 @@ public sealed record PharmacySaleDetail(
     DateOnly? PrescriptionDate = null,
     IReadOnlyList<PendingApproval>? Pending = null,
     bool OwnSale = false,
-    MissingIrn? MissingIrn = null);
+    MissingIrn? MissingIrn = null,
+    DateTimeOffset? EnteredFromPaperAt = null);
 
 public sealed record CollectPaymentRequest(PaymentMode Mode, decimal Amount, string? Reference, Guid? TerminalSaleId = null);
 
@@ -195,9 +203,10 @@ public sealed record ScannedBatch(string BatchNumber, Guid? BatchId, DateOnly? E
 
 public sealed class CounterSaleRequestValidator : AbstractValidator<CounterSaleRequest>
 {
-    public CounterSaleRequestValidator()
+    public CounterSaleRequestValidator(TimeProvider time)
     {
         RuleFor(x => x.StoreId).NotEmpty();
+        RuleFor(x => x.Paper!).SetValidator(new PaperNumberValidator(time)).OverridePropertyName("paper").When(x => x.Paper is not null);
         RuleFor(x => x.CustomerName).SafeText(200);
         RuleFor(x => x.CustomerPhone).PhoneNumber();
         RuleFor(x => x.Prescription!.PrescriberName).NotEmpty().SafeText(200).When(x => x.Prescription is not null);

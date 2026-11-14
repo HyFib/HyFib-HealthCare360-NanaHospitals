@@ -148,6 +148,9 @@ export function SaleDrawer({ saleId, onClose }: { saleId: string; onClose: () =>
             <Caption1>
               {formatDateTime(s.soldAt)} · {s.storeName} · {s.type === 'Prescription' ? 'Prescription' : 'Counter sale'}
             </Caption1>
+            {s.enteredFromPaperAt && (
+              <Caption1>Written on paper during a downtime, entered {formatDateTime(s.enteredFromPaperAt)}</Caption1>
+            )}
           </div>
         )}
       </DrawerHeader>

@@ -57,6 +57,16 @@
     </PackageReference>
   </ItemGroup>
 
+  <!--
+    appsettings.Development.json is for a developer's machine: it switches off backups and MFA and turns on demonstration
+    data. It is still copied beside the build output (dotnet run), but never into a publish folder, so no package and no
+    installed server carries it (deploy/windows/Publish-HC360.ps1 checks, and the server refuses to run as Development
+    as a Windows service: DevelopmentGuard).
+  -->
+  <ItemGroup>
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="HyFib.HealthCare360.IntegrationTests" />
   </ItemGroup>

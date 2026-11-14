@@ -6,6 +6,7 @@ import type { EInvoiceStamp, MissingIrn } from '@/modules/billing/einvoiceApi';
 import type { BatchStock, ExpiringBatch } from '@/modules/inventory/api';
 import type { DrugSchedule, StockMovementType } from '@/modules/inventory/labels';
 import type { PatientSummary } from '@/modules/patients/api';
+import type { PaperSale } from './paperSale';
 import type { CounterTerminalSale, StartTerminalSaleRequest, TerminalSaleApi } from '@/lib/terminal/types';
 
 // ---------------------------------------------------------------------------------------------- enums
@@ -120,6 +121,10 @@ export interface QueueEntryDetail {
   freeTreatmentReason?: string | null;
   /** The prescriber's reason for signing over a blocking safety alert. */
   safetyOverrideReason?: string | null;
+  /** The time on the paper, when the prescription was dispensed on paper during a downtime and closed for it. */
+  dispensedOnPaperAt?: string | null;
+  /** The invoice the paper sale was entered under, when it has been entered. */
+  paperSaleNumber?: string | null;
 }
 
 export interface SalePayment {
@@ -146,6 +151,8 @@ export interface DispenseRequest {
   discountPercent: number;
   payments: SalePayment[];
   confirmControlledDrugs: boolean;
+  /** The number and time written on the paper sale, entered after a downtime; omitted for a dispensing made now. */
+  paper?: PaperSale | null;
 }
 
 export interface PharmacySaleCreated {
@@ -212,6 +219,8 @@ export interface CounterSaleRequest {
   confirmControlledDrugs: boolean;
   /** A buyer registered for GST (B2B invoice); omitted for an ordinary sale. */
   buyer?: B2bBuyer | null;
+  /** The number and time written on the paper sale, entered after a downtime; omitted for a sale made now. */
+  paper?: PaperSale | null;
 }
 
 /**
@@ -335,6 +344,8 @@ export interface PharmacySaleDetail {
   pending?: PendingApproval[] | null;
   /** The signed-in user sold the invoice or took its payment: someone else asks to cancel it or takes its returns. */
   ownSale?: boolean;
+  /** When a sale written on paper during a downtime was entered; `soldAt` is then the time on the paper. */
+  enteredFromPaperAt?: string | null;
 }
 
 /**
@@ -833,6 +844,9 @@ export const pharmacyApi = {
   dispense: (entryId: string, body: DispenseRequest) =>
     api.post<PharmacySaleCreated>(`${BASE}/queue/${entryId}/dispense`, body),
   closeEntry: (entryId: string, reason: string) => api.post<void>(`${BASE}/queue/${entryId}/close`, { reason }),
+  /** The prescription was dispensed on paper during a downtime: it leaves the queue as dispensed. */
+  dispensedOnPaper: (entryId: string, body: { at: string; invoiceNumber: string | null; note: string | null }) =>
+    api.post<void>(`${BASE}/queue/${entryId}/dispensed-on-paper`, body),
   acknowledgeOverride: (entryId: string, lineId: string, note: string | null) =>
     api.post<void>(`${BASE}/queue/${entryId}/lines/${lineId}/acknowledge-override`, { note }),
   authorizeRefills: (entryId: string, body: { refills: number; validUntil: string; note: string }) =>

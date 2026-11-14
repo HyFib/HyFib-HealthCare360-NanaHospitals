@@ -1,7 +1,8 @@
 ﻿<#
 .SYNOPSIS
     Checks the warm standby scripts' own functions (SRS DED-20, REL-02): what Enable-HC360Replication.ps1 writes in
-    pg_hba.conf and postgresql.conf on the primary, the SCRAM verifier and the TLS certificate it makes, what
+    pg_hba.conf, pg_ident.conf and postgresql.conf on the primary, with a standby or for the WAL archive alone, the SCRAM
+    verifier, the TLS certificate and the service SID it makes, what
     New-HC360Standby.ps1 writes on the standby, and when Install-HC360Server.ps1 refuses to run on a standby. CI runs it in
     Windows PowerShell 5.1 and in PowerShell 7, the two the scripts run in.
 
@@ -24,7 +25,8 @@ function Get-ScriptFunctions([string] $Script) {
 $installer = Get-ScriptFunctions 'Install-HC360Server.ps1'
 $primary = Get-ScriptFunctions 'Enable-HC360Replication.ps1'
 $standby = Get-ScriptFunctions 'New-HC360Standby.ps1'
-foreach ($set in $installer, $primary, $standby) {
+$failover = Get-ScriptFunctions 'Invoke-HC360Failover.ps1'
+foreach ($set in $installer, $primary, $standby, $failover) {
     foreach ($text in $set.Values) { . ([scriptblock]::Create($text)) }
 }
 
@@ -46,6 +48,13 @@ foreach ($name in 'Get-PgCtlDataDirectory', 'Get-PostgresSetting', 'Read-TextLin
 }
 foreach ($name in 'Get-PgCtlBinDirectory', 'Resolve-AccountSid', 'Get-CertificateFingerprint') {
     Assert ($primary.ContainsKey($name) -and $primary[$name] -ceq $standby[$name]) "both scripts have the same $name"
+}
+Assert ($primary.ContainsKey('ConvertTo-SspiName') -and $primary['ConvertTo-SspiName'] -ceq $installer['ConvertTo-SspiName']) 'Enable-HC360Replication.ps1 names a Windows account for SSPI as the installer does'
+foreach ($name in 'Get-PgCtlDataDirectory', 'Get-PostgresSetting', 'Read-TextLines', 'Find-PostgresService', 'Select-PostgresService', 'Read-SettingsFile', 'Find-Setting') {
+    Assert ($failover.ContainsKey($name) -and $failover[$name] -ceq $installer[$name]) "Invoke-HC360Failover.ps1 has the installer's $name"
+}
+foreach ($name in 'Get-PgCtlBinDirectory', 'Invoke-LocalSql') {
+    Assert ($failover.ContainsKey($name) -and $failover[$name] -ceq $standby[$name]) "Invoke-HC360Failover.ps1 has New-HC360Standby.ps1's $name"
 }
 Assert ((Get-PgCtlBinDirectory '"C:\Program Files\PostgreSQL\17\bin\pg_ctl.exe" runservice -N "postgresql-x64-17" -D "C:\Program Files\PostgreSQL\17\data" -w') -ceq 'C:\Program Files\PostgreSQL\17\bin') 'the bin folder of the PostgreSQL Windows installer''s service'
 Assert ((Get-PgCtlBinDirectory 'C:\pgsql\bin\pg_ctl.exe runservice -N pgsql -D D:\pgdata -w') -ceq 'C:\pgsql\bin') 'an unquoted one'
@@ -117,6 +126,44 @@ $installerFirst = Set-ReplicationHbaBlock (Set-HbaBlock $fresh 'hc360_app' 'hc36
 Assert (($mineFirst -join "`n") -ceq ($installerFirst -join "`n")) 'run in either order, the two scripts leave the same file'
 Assert (((Set-ReplicationHbaBlock (Set-HbaBlock $mineFirst 'hc360_app' 'hc360') 'hc360_replicator' '10.0.5.12') -join "`n") -ceq ($mineFirst -join "`n")) 'and run again, they change nothing'
 
+Write-Host 'The WAL archive without a standby, and the account HC360''s base backups sign in as (SRS REL-02)'
+$baseBlock = @('# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.',
+    '# HC360 takes base backups as hc360_basebackup, signed in as its service''s Windows account from this machine only (SSPI, mapped in pg_ident.conf); the account opens no database.',
+    'host      replication   hc360_basebackup   127.0.0.1/32   sspi   map=hc360_basebackup',
+    'host      replication   hc360_basebackup   ::1/128        sspi   map=hc360_basebackup',
+    'host      replication   hc360_basebackup   all            reject',
+    'host      all           hc360_basebackup   all            reject',
+    'local     all           hc360_basebackup                  reject',
+    '# END HC360 replication')
+$archiveOnly = Set-ReplicationHbaBlock $hba 'hc360_replicator' '' 'hc360_basebackup' 'hc360_basebackup'
+$start = [array]::IndexOf($archiveOnly, $baseBlock[0])
+Assert ($start -eq 9 -and (($archiveOnly[$start..($start + 7)]) -join "`n") -ceq ($baseBlock -join "`n")) 'without a standby the block takes only the base backup account, from this machine, as the HC360 service''s Windows account'
+Assert (@($archiveOnly | Where-Object { $_ -like 'hostssl*' }).Count -eq 0) 'and nothing from the network'
+Assert (((Remove-ReplicationHbaBlock $archiveOnly) -join "`n") -ceq ($hba -join "`n")) 'the rest of the file stays as it was'
+$both = Set-ReplicationHbaBlock $hba 'hc360_replicator' '10.0.5.12' 'hc360_basebackup' 'hc360_basebackup'
+$bothStart = [array]::IndexOf($both, $block[0])
+Assert ((($both[$bothStart..($bothStart + 11)]) -join "`n") -ceq (($block[0..4] + $baseBlock[1..7]) -join "`n")) 'with a standby too, the standby''s rules come first, then the base backup account''s, in one block'
+Assert (((Set-ReplicationHbaBlock $once 'hc360_replicator' '' '' '') -join "`n") -ceq ($hba -join "`n")) 'with neither, there is no block'
+Assert ((Get-ReplicationStandbyAddress $once 'hc360_replicator') -ceq '10.0.5.12' -and $null -eq (Get-ReplicationStandbyAddress $archiveOnly 'hc360_replicator')) 'the standby''s address is read back from the block an earlier run wrote'
+Assert ((Get-ReplicationStandbyAddress (Set-ReplicationHbaBlock $hba 'hc360_replicator' 'fd00::12') 'hc360_replicator') -ceq 'fd00::12') 'an IPv6 one too'
+$archiveAdded = Set-ReplicationHbaBlock $once 'hc360_replicator' (Get-ReplicationStandbyAddress $once 'hc360_replicator') 'hc360_basebackup' 'hc360_basebackup'
+Assert (($archiveAdded -join "`n") -ceq ($both -join "`n")) 'so a run that turns archiving on alone keeps the standby''s rule'
+Assert (Test-Throws { Set-ReplicationHbaBlock $hba 'hc360_replicator' '' 'hc360 basebackup' 'hc360_basebackup' } 'cannot be named') 'a base backup account pg_hba.conf would read differently is refused'
+$ident = @('# PostgreSQL User Name Maps', '# MAPNAME       SYSTEM-USERNAME         PG-USERNAME')
+$mapped = Set-ReplicationIdentBlock $ident 'hc360_basebackup' 'HC360Server@NT SERVICE' 'hc360_basebackup'
+Assert (($mapped[2..4] -join "`n") -ceq (@('# BEGIN HC360 replication. Enable-HC360Replication.ps1 writes this block on every run: changes to it are lost.', 'hc360_basebackup   "HC360Server@NT SERVICE"   hc360_basebackup', '# END HC360 replication') -join "`n")) 'pg_ident.conf maps the HC360 service''s Windows account to the base backup account'
+Assert (((Set-ReplicationIdentBlock $mapped 'hc360_basebackup' 'HC360Server@NT SERVICE' 'hc360_basebackup') -join "`n") -ceq ($mapped -join "`n")) 'a second run writes the same file'
+$withInstaller = Set-IdentBlock $mapped 'hc360' 'HC360Server@NT SERVICE' 'hc360_app'
+Assert (((Remove-InstallerBlock $withInstaller 'pg_ident.conf') -join "`n") -ceq ($mapped -join "`n") -and ((Remove-ReplicationIdentBlock $withInstaller) -join "`n") -ceq ((Set-IdentBlock $ident 'hc360' 'HC360Server@NT SERVICE' 'hc360_app') -join "`n")) 'the installer''s block and this one leave each other as they are'
+Assert (((Remove-ReplicationIdentBlock $mapped) -join "`n") -ceq ($ident -join "`n")) 'removing the block gives back the file as it was'
+Assert (Test-Throws { Remove-ReplicationIdentBlock @($mapped | Where-Object { $_ -ne '# END HC360 replication' }) } "without its '# END HC360 replication' line") 'a block without its END line stops the script'
+Assert (Test-Throws { Set-ReplicationIdentBlock $ident 'hc360_basebackup' 'odd"name@X' 'hc360_basebackup' } 'cannot be named') 'an account pg_ident.conf would read differently is refused'
+Assert ((ConvertTo-SspiName 'NT SERVICE\HC360Server') -ceq 'HC360Server@NT SERVICE') 'the HC360 service''s account is named as SSPI names it'
+Assert ((Get-ServiceSid 'TrustedInstaller') -ceq 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464') 'a service''s own SID is worked out as Windows does (TrustedInstaller''s is well known)'
+Assert ((Get-ServiceSid 'TrustedInstaller') -ceq (New-Object System.Security.Principal.NTAccount 'NT SERVICE\TrustedInstaller').Translate([System.Security.Principal.SecurityIdentifier]).Value) 'and is the one this Windows gives'
+Assert ((Resolve-ServiceAccountSid 'NT SERVICE\HC360Server') -ceq 'S-1-5-80-2239682907-211999219-2105212348-2982575704-2533218302') 'so the WAL archive opens to the HC360 service even before it is installed'
+Assert ((Resolve-ServiceAccountSid 'LocalSystem') -ceq 'S-1-5-18') 'any other account is looked up'
+
 Write-Host 'postgresql.conf on the primary'
 Assert ((Add-ListenAddress 'localhost' '10.0.5.11') -ceq 'localhost,10.0.5.11') 'the address towards the standby is added, localhost kept'
 Assert ((Add-ListenAddress 'localhost, 10.0.5.11' '10.0.5.11') -ceq 'localhost,10.0.5.11') 'once'
@@ -125,7 +172,8 @@ Assert ((Remove-ListenAddress 'localhost,10.0.5.11' '10.0.5.11') -ceq 'localhost
 Assert ((Remove-ListenAddress '10.0.5.11' '10.0.5.11') -ceq 'localhost') 'leaving localhost when nothing else is left'
 $archive = Get-ArchiveCommand 'D:\HC360-WAL\'
 Assert ($archive -ceq 'if exist "D:\HC360-WAL\%f" (fc /b "%p" "D:\HC360-WAL\%f" >nul) else (copy /b /y "%p" "D:\HC360-WAL\%f.tmp" >nul && move /y "D:\HC360-WAL\%f.tmp" "D:\HC360-WAL\%f" >nul)') 'a WAL file is copied under a temporary name, then renamed, and never over one already archived'
-Assert ((Get-ArchiveCommand '\\nas\HC360 WAL') -like '*"\\nas\HC360 WAL\%f.tmp"*') 'a share, with a space in its name'
+Assert ((Get-ArchiveCommand 'E:\HC360 WAL') -like '*"E:\HC360 WAL\%f.tmp"*') 'a folder with a space in its name'
+Assert (Test-Throws { Get-ArchiveCommand '\\nas\HC360-WAL' } 'not a share') 'a share is refused: HC360 encrypts the WAL on this server before any copy of it leaves'
 Assert ((Test-OwnArchiveCommand $archive) -and -not (Test-OwnArchiveCommand 'copy "%p" "E:\wal\%f"')) 'the script knows its own archive_command from one set by hand'
 Assert (Test-Throws { Get-ArchiveCommand 'HC360-WAL' } 'full path') 'a relative folder is refused'
 Assert (Test-Throws { Get-ArchiveCommand 'D:\WAL & more' } 'without quotes') 'a folder cmd.exe would read differently is refused'
@@ -177,7 +225,7 @@ try {
     )
     $ownConf = @('port = 5433', "#shared_buffers = 128MB")
     $ownAuto = @("shared_buffers = '4096MB'", "effective_cache_size = '8192MB'", "listen_addresses = 'localhost'")
-    $settings = Get-StandbySettings $ownConf $ownAuto 5433 $connInfo 'hc360_standby' $null
+    $settings = Get-StandbySettings $ownConf $ownAuto 5433 $connInfo 'hc360_standby'
     $written = Set-ConfSettings $copied $settings
     Assert ($written[0] -ceq '# Do not edit this file manually!') 'the file''s header stays'
     Assert ((Get-PostgresSetting @() $written 'primary_conninfo') -ceq $connInfo) 'the standby follows the primary with its own connection, not the temporary password file pg_basebackup used'
@@ -187,11 +235,10 @@ try {
     Assert ((Get-PostgresSetting @() $written 'shared_buffers') -ceq '4096MB' -and (Get-PostgresSetting @() $written 'effective_cache_size') -ceq '8192MB') 'with the memory Install-PostgreSQL.ps1 sized for this machine'
     Assert ((Get-PostgresSetting @() $written 'archive_mode') -ceq 'off' -and $null -eq (Get-PostgresSetting @() $written 'archive_command')) 'it archives nothing: the primary does'
     Assert ((Get-PostgresSetting @() $written 'ssl') -ceq 'on') 'the rest of the primary''s settings stay'
-    Assert ($null -eq (Get-PostgresSetting @() $written 'restore_command')) 'without the primary''s archive, no restore_command'
+    Assert ($null -eq (Get-PostgresSetting @() $written 'restore_command')) 'it reads no archive: the primary''s is encrypted with a key only HC360 there holds'
     Assert (@($written | Where-Object { $_ -match '^\s*primary_conninfo\s*=' }).Count -eq 1) 'each setting once'
-    $restore = Get-RestoreCommand '\\nas\HC360-WAL\'
-    Assert ($restore -ceq 'copy /b "\\nas\HC360-WAL\%f" "%p" >nul') 'with it, the standby reads WAL from the primary''s archive'
-    Assert ((Get-PostgresSetting @() (Set-ConfSettings $copied (Get-StandbySettings @() @() 5432 $connInfo 'hc360_standby' $restore)) 'restore_command') -ceq 'copy /b "\\\\nas\\HC360-WAL\\%f" "%p" >nul') 'written for postgresql.conf, its backslashes escaped'
+    $restoredBefore = @($copied) + 'restore_command = ''copy "C:\\HC360-Restore\\wal\\%f" "%p"'''
+    Assert ($null -eq (Get-PostgresSetting @() (Set-ConfSettings $restoredBefore $settings) 'restore_command')) 'not even one left from a restore to a point in time on the primary'
 
     Write-Host 'Which PostgreSQL may be replaced by a copy of the primary'
     $fresh = Join-Path $root 'fresh'
@@ -212,6 +259,30 @@ try {
     Assert ((Get-StandbyProblem $false $false $true 'Disabled' $false) -like '*is a warm standby*-Standby*') 'without -Standby it stops on a standby'
     Assert ((Get-StandbyProblem $false $false $false 'Disabled' $false) -like '*backup restore*') 'on a promoted standby it stops until the keys are back from the backup'
     Assert ($null -eq (Get-StandbyProblem $false $false $false 'Disabled' $true)) 'and then installs and starts HC360'
+
+    Write-Host 'How far behind the standby is, for System health (SRS DED-20)'
+    $statusSql = Get-ReplicationStatusSql
+    Assert ($statusSql -clike '*CREATE OR REPLACE FUNCTION public.hc360_replication_status()*') 'the function is the one HC360 reads (StandbyReplication.StatusFunction)'
+    Assert ($statusSql -clike '*SECURITY DEFINER SET search_path = pg_catalog, pg_temp*') 'it reads as its maker, the superuser, with nothing on its search path to stand in for PostgreSQL''s own'
+    Assert ($statusSql -clike '*FROM pg_stat_replication r*' -and $statusSql -clike "*WHERE r.application_name LIKE 'hc360\_%'*") 'and shows the standbys HC360 set up, from pg_stat_replication'
+    Assert ($statusSql -cnotlike '*GRANT*' -and $statusSql -cnotlike '*sent_lsn*' -and $statusSql -cnotlike '*client_addr*') 'their lag and nothing else, with no grant a restore could stumble on'
+
+    Write-Host 'Invoke-HC360Failover.ps1: the promotion and its record (SRS DED-20)'
+    $conn = ConvertFrom-ConnInfo $connInfo
+    Assert ($conn['host'] -ceq '10.0.5.11' -and $conn['port'] -ceq '5432' -and $conn['application_name'] -ceq 'hc360_standby') 'the old primary''s address is read from the standby''s own connection string'
+    Assert ((ConvertFrom-ConnInfo "host='odd \'name\'' passfile='C:\\pg pass'")['host'] -ceq "odd 'name'" -and (ConvertFrom-ConnInfo "host=10.0.5.11 port=5433")['port'] -ceq '5433') 'quoted and plain values are read back as libpq reads them'
+    Assert ((Get-WalTimeline '000000020000000000000051') -eq 2 -and (Get-WalTimeline '0000000A0000000000000051') -eq 10) 'the new timeline is read from the WAL file PostgreSQL writes'
+    Assert (Test-Throws { Get-WalTimeline 'not a WAL file' } 'not the name of a WAL file') 'and nothing else is taken for one'
+    $promotedAt = New-Object DateTimeOffset 2026, 11, 14, 10, 2, 0, ([TimeSpan]::FromHours(5.5))
+    $recordJson = New-PrimaryRecord '7412345678901234567' 2 'HC360-SRV2' $promotedAt '10.0.5.11'
+    Assert ($recordJson -match '"format":\s*1\b' -and $recordJson -match '"timeline":\s*2\b') 'the record is in the format HC360 reads (PrimaryRecord), on the new timeline'
+    Assert ($recordJson -match '"systemIdentifier":\s*"7412345678901234567"') 'the system identifier is text, which keeps a 64-bit number whole'
+    Assert ($recordJson -match '"primary":\s*"HC360-SRV2"' -and $recordJson -match '"previousPrimary":\s*"10\.0\.5\.11"') 'it names the promoted machine and the primary it replaced'
+    Assert ($recordJson -match '"promotedAt":\s*"2026-11-14T10:02:00\.0000000\+05:30"') 'and when, with its offset'
+    $recordPath = Join-Path $root 'nas\hc360-primary.json'
+    Write-PrimaryRecord $recordPath $recordJson
+    Write-PrimaryRecord $recordPath $recordJson
+    Assert ([System.IO.File]::ReadAllText($recordPath) -ceq $recordJson -and @(Get-ChildItem -LiteralPath (Join-Path $root 'nas') -Filter '*.tmp').Count -eq 0) 'it is written whole, over an earlier one, leaving no temporary file'
 }
 finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

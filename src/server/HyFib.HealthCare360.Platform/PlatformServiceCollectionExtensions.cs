@@ -247,6 +247,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddAuthorization(authorization =>
             authorization.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddSingleton<PermissionGate>();
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddSingleton<IAdministrationDesktops, AdministrationDesktops>();
         DesktopRequiredResultHandler.Register(services);
@@ -261,6 +262,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<AuditChainService>();
         services.AddSingleton<AuditSealKey>();
         services.AddSingleton<AuditAnchors>();
+        services.AddSingleton<AuditRestores>();
 
         // Off the server (CERT-In, SRS SEC-09): log events to the syslog collector, and each anchor to a second anchor file
         // on another machine or to the collector, on every node; System health says when either fails.
@@ -284,7 +286,6 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<IApprovals>(sp => sp.GetRequiredService<ApprovalService>());
-        services.AddScoped<ApprovalHandover>();
         services.AddScoped<RecordHistoryService>();
         services.AddScoped<AuditEntityIndex>();
         services.AddScoped<NotificationTemplateRenderer>();
@@ -363,9 +364,12 @@ public static class PlatformServiceCollectionExtensions
         services.AddMonthlyPartitions(PartitionedTables.IntegrationLogs);
         services.AddScoped<BackupService>();
         services.AddScoped<IPreMigrationBackup>(sp => sp.GetRequiredService<BackupService>());
+        services.AddScoped<BackupUpkeep>();
+        services.AddScoped<BackupRestoreTest>();
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
         services.AddScoped<IRecoveryKeyCustodyWarnings, RecoveryKeyCustodyWarnings>();
+        services.AddReplication();
 
         // Copies outside the building (DED-16): each verified backup uploaded to an S3-compatible bucket, over https only.
         services.AddScoped<BackupOffsiteUploader>();
@@ -376,6 +380,7 @@ public static class PlatformServiceCollectionExtensions
             })
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
+        services.TryAddSingleton<IScratchDatabase, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
         services.AddSingleton<ServedAddresses>();
 
@@ -451,9 +456,16 @@ public static class PlatformServiceCollectionExtensions
                     quartz.ScheduleJob<BackupJob>(trigger => trigger
                         .WithIdentity("nightly-backup")
                         .WithCronSchedule(options.Backup.Schedule, cron => cron.InTimeZone(ResolveTimeZone(options.TimeZone))));
+                    // A missed nightly backup: taken in the next backup window, or at once, gently, once the newest is stale.
                     quartz.ScheduleJob<BackupCatchUpJob>(trigger => trigger
                         .WithIdentity("backup-catch-up")
-                        .StartAt(DateTimeOffset.UtcNow.Add(BackupCatchUpJob.Delay)));
+                        .WithCronSchedule(BackupCatchUpJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+
+                    // After the nightly backup: the copies the second disk missed, retention on a night without a backup, the
+                    // test restore when one is due, and the copies on the second disk read back.
+                    quartz.ScheduleJob<BackupUpkeepJob>(trigger => trigger
+                        .WithIdentity("backup-upkeep")
+                        .WithCronSchedule(options.Backup.UpkeepSchedule, cron => cron.InTimeZone(ResolveTimeZone(options.TimeZone))));
                 }
 
                 // Every quarter of an hour, whether nightly backups are on or not: a backup taken by hand goes off site too.
@@ -461,6 +473,7 @@ public static class PlatformServiceCollectionExtensions
                 quartz.ScheduleJob<BackupOffsiteJob>(trigger => trigger
                     .WithIdentity("backup-offsite")
                     .WithCronSchedule(BackupOffsiteJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+                quartz.ScheduleReplicationJobs(options);
             });
             services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
         }

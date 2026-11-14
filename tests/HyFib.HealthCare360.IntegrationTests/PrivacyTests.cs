@@ -358,10 +358,59 @@ public sealed class PrivacyTests(HospitalServer server)
         hidden.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
-    private async Task<(PatientCreated Patient, string Phone)> RegisterPatientAsync()
+    [Fact]
+    public async Task A_request_for_oneself_is_taken_as_identity_checked_only_once_the_records_number_is_verified()
+    {
+        var (patient, phone) = await RegisterPatientAsync();
+        var portal = await server.SignInToPortalAsync(phone, numberVerified: false);
+        var asked = new PortalDataRequestCreate(
+            patient.Id, DataRequestType.Grievance, RequesterRelation.Self, null, "The address on the card is old.", null);
+
+        // Whoever holds the number may not be the patient (a shared or reissued number): nothing is filed in the patient's
+        // own name until the number is verified.
+        using (var refused = await portal.SendRawAsync(HttpMethod.Post, "/api/v1/portal/privacy/requests", asked))
+        {
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        }
+
+        // Giving the UHID printed on the patient's card verifies the number, and the request is then the patient's own word.
+        await portal.PostAsync<JsonElement>("/api/v1/portal/records-to-confirm", new ConfirmRecordsRequest(null, patient.Uhid));
+        var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", asked);
+
+        var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var queue = await officer.GetAsync<PagedResult<DataRequestListItem>>($"/api/v1/privacy/requests?openOnly=true&search={created.RequestNumber}");
+        queue.Items.ShouldHaveSingleItem().IdentityVerified.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_request_for_oneself_from_a_number_a_family_shares_waits_for_staff_but_a_sole_patients_is_checked()
+    {
+        var (father, phone) = await RegisterPatientAsync();
+        var (sole, solePhone) = await RegisterPatientAsync();
+        var (son, _) = await RegisterPatientAsync(phone);
+        var portal = await server.SignInToPortalAsync(phone);
+        var officer = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+
+        // Both records are verified, but holding the phone does not say which of them is asking.
+        foreach (var shared in new[] { father, son })
+        {
+            var created = await portal.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
+                shared.Id, DataRequestType.Erasure, RequesterRelation.Self, null, "Please erase my data.", null));
+            var queue = await officer.GetAsync<PagedResult<DataRequestListItem>>($"/api/v1/privacy/requests?openOnly=true&search={created.RequestNumber}");
+            queue.Items.ShouldHaveSingleItem().IdentityVerified.ShouldBeFalse();
+        }
+
+        var alone = await server.SignInToPortalAsync(solePhone);
+        var own = await alone.PostAsync<PortalRequestCreated>("/api/v1/portal/privacy/requests", new PortalDataRequestCreate(
+            sole.Id, DataRequestType.Grievance, RequesterRelation.Self, null, "The address on the card is old.", null));
+        var listed = await officer.GetAsync<PagedResult<DataRequestListItem>>($"/api/v1/privacy/requests?openOnly=true&search={own.RequestNumber}");
+        listed.Items.ShouldHaveSingleItem().IdentityVerified.ShouldBeTrue();
+    }
+
+    private async Task<(PatientCreated Patient, string Phone)> RegisterPatientAsync(string? sharedPhone = null)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
-        var phone = "9" + Digits(9);
+        var phone = sharedPhone ?? "9" + Digits(9);
         // These tests are not about duplicate detection: every patient here is an "Asha Privacy…" born in the same ten
         // years, so two of them now and then share a birthday and the second would be refused as a possible duplicate.
         var patient = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(

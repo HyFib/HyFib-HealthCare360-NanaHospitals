@@ -172,7 +172,7 @@ So one green run is good evidence, but it is not proof that the suite is stable.
 |---|---|---|---|
 | The release workflow works | It has never run | A run on `1.0.0-rc.1` | HyFib |
 | The installers work on the hospital's PC | CI uses its own Windows image, with no files downloaded | The preflight report, then System health after the install | Hospital IT, with HyFib |
-| The server is fast enough there | GitHub's runners are not the hospital's machine | The load test at 75 users (PERF-01), and `pg_test_fsync` | Hospital IT, with HyFib |
+| The server is fast enough there | GitHub's runners are not the hospital's machine | The load test at 75 users (PERF-01), with the peak mix of billing, pharmacy, lab, ward and portal steps (LOAD-TESTS.md), run on the real 6-core desk PC as a site task, and `pg_test_fsync` | Hospital IT, with HyFib |
 | The data survives a lost disk | — | A backup restored on another PC | Hospital IT |
 | Workstations update themselves | No key is trusted (R2) | The second release, offered by the server and taken by a workstation | HyFib |
 | It is secure enough to hold patients | A test suite is not an audit | The ASVS L2 checklist, signed | The hospital's security officer |

@@ -16,7 +16,9 @@ How HC360's backups use space (`src/server/HyFib.HealthCare360.Platform/Jobs/Bac
    the keys, and the list of documents it needs.
 2. **Each stored document is kept once**, under `blobs\` beside the backups, and each night copies only the day's new
    documents. A document no retained backup needs is removed with the last backup that needed it.
-3. **30 backups are kept** (`HealthCare360:Backup:RetentionDays`), in the server's backup folder and on the USB disk.
+3. **About 30 backups are kept** once backups are a year old (`HealthCare360:Backup:Retention`: every backup of the last
+   14 days, and the last of each of 8 weeks and of 12 months), in the server's backup folder and on each USB disk, which
+   keeps as many as the server: retention counts each folder's own backups.
 4. **The off-site bucket** holds the documents in weekly generations, because HC360's key may not delete there: about
    six copies of the documents, plus one dump a night for 35 days (`retainDays`).
 5. **The server's backup folder is on the Windows disk by default**
@@ -36,15 +38,16 @@ credentials. Bills, prescriptions and reports are made into PDFs when asked for,
 200 KB each, and a database dump of about 5 GB after the first year, 10 GB after the second and 15 GB after the third.
 If echo DICOM cine loops are uploaded into HC360, the documents grow about three times as fast.
 
-| Where | After 1 year | 2 years | 3 years | 3 years, in the month after a data-key rotation |
+| Where | After 1 year | 2 years | 3 years | 3 years, while backups from before a data-key rotation are kept |
 |---|---|---|---|---|
 | Documents (the `files` folder) | 91 GB | 183 GB | 274 GB | 274 GB |
 | Server's backup folder (D:) | 0.24 TB | 0.49 TB | 0.73 TB | 1.0 TB |
-| Each USB disk (swapped weekly) | 0.17 TB | 0.34 TB | 0.51 TB | 0.79 TB |
+| Each USB disk (swapped weekly) | 0.24 TB | 0.49 TB | 0.73 TB | 1.0 TB |
 | Off-site bucket | 0.72 TB | 1.45 TB | 2.2 TB | — |
 | Live data on the system SSD (C:): Windows, PostgreSQL, documents, WAL kept for a standby, the temporary dump while a backup runs | ~250 GB | ~400 GB | ~550 GB | — |
 
-A data-key rotation re-encrypts every document, so for 30 days the old copies stay beside the new ones.
+A data-key rotation re-encrypts every document, so the old copies stay beside the new ones until the last backup made
+before it goes: up to 342 days, as the monthly backups are kept a year.
 
 ## 2. What to buy
 
@@ -77,7 +80,7 @@ needed for the hospital's users or devices, and buy them if so.
 
 | Item | Specification | Why |
 |---|---|---|
-| Rotated USB disks | **2 × 2 TB external USB 3.x HDD, formatted NTFS**, given the same drive letter (`E:`), one connected and one off site, swapped weekly in the day | NANA-THENI-READINESS.md section 3. 0.51 TB at year 3, 0.79 TB after a key rotation. NTFS, not exFAT, which wastes up to 128 KB on every document. Each disk restores on its own: a disk back from off site catches up on the documents it missed |
+| Rotated USB disks | **2 × 2 TB external USB 3.x HDD, formatted NTFS**, given the same drive letter (`E:`), one connected and one off site, swapped weekly in the day | NANA-THENI-READINESS.md section 3. 0.73 TB at year 3, 1.0 TB after a key rotation. NTFS, not exFAT, which wastes up to 128 KB on every document. Each disk restores on its own: a disk back from off site catches up on the documents it missed |
 | Off-site bucket | An S3-compatible bucket in India (AWS or OCI, Mumbai or Hyderabad), with Object Lock; see section 3 | The copy that survives fire, theft and ransomware without anyone swapping disks |
 | Upload capacity | A night-time upload of **10 Mbps sustained now, 20 Mbps by year 2, 30 Mbps by year 3** (section 3) | Each week's first backup uploads every document; it must be off site within a day |
 | A fire-resistant safe or off-site location | For the disk off site, the backup recovery key and the exported hospital CA, kept apart | A building fire must not take the server, the backups and the key together |
@@ -129,7 +132,7 @@ in the cloud is [CLOUD-HYBRID-PLAN.md](CLOUD-HYBRID-PLAN.md); it is included for
 | Running cost | Disks every 4–5 years; staff time for the weekly swap | + about ₹2,500–7,500 a month, growing with the data (below) | ₹70,000–1,15,000 a month |
 | Relies on people | The weekly swap (a missed one is alerted after 3½ days) | Nothing to swap for the bucket; System health alerts when uploads stall | On-call cloud operations |
 | Data stays in India (DPDP) | Yes | Yes: AWS or OCI, Mumbai or Hyderabad. Encrypted with the recovery key before upload; the store never has it | Yes, Mumbai and Hyderabad |
-| Erased data leaves the backups within | 31 days | 44 days (the privacy notice says so while the off-site copy is on) | Per the plan |
+| Erased data leaves the backups within | 343 days (a backup of each month is kept a year) | 343 days (the off-site copy's 44 days are within it) | Per the plan |
 | Ready in HC360 | Yes | Yes, on `main`: Administration › Backups › Off-site copy, approved by a second administrator; uploads resume after a cut; System health warns "No copy of the backups leaves the building" on a live server without it | No: 6–9 months of work in phases |
 
 **Recommendation: B from go-live**, if the hospital's uplink carries it (below), keeping the two USB disks as the copy
@@ -203,9 +206,10 @@ backup without its `blobs\` folder cannot put the documents back.
 
 ## 5. Decisions for the hospital
 
-1. **Keep 30 days of backups, or fewer?** With documents kept once, retention now mostly sizes the dumps (450 GB of
-   the server's 0.73 TB at year 3). 14 days would save about a third of the backup disks and shorten how long erased
-   data stays in backups (SRS PRV-07), so the privacy notice would change too.
+1. **Keep 14 days, 8 weeks and 12 months of backups, or fewer?** With documents kept once, retention now mostly sizes
+   the dumps (about 30 of them, 450 GB of the server's 0.73 TB at year 3) and how long erased data stays in backups (342
+   days, SRS PRV-07). Keeping no monthly backups (`Backup:Retention:Monthly` 0) keeps about 20 dumps and 50 days, so
+   the privacy notice would change too.
 2. **Echo DICOM into HC360 or into a PACS?** In HC360 it triples the documents' growth, and the bucket holds six copies
    of every document. In a PACS, HC360 keeps a link.
 3. **Which store, and what uplink?** AWS or OCI, in Mumbai or Hyderabad, and an upload of at least 10 Mbps now and

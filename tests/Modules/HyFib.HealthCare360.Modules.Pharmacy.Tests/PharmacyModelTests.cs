@@ -50,6 +50,18 @@ public sealed class PharmacyModelTests
     }
 
     [Fact]
+    public void Paper_sales_and_prescriptions_dispensed_on_paper_are_stored()
+    {
+        var sale = Model.Value.FindEntityType(typeof(PharmacySale))!;
+        var entry = Model.Value.FindEntityType(typeof(PharmacyQueueEntry))!;
+
+        sale.FindProperty(nameof(PharmacySale.EnteredFromPaperAt))!.GetColumnName().ShouldBe("entered_from_paper_at");
+        sale.FindProperty(nameof(PharmacySale.IsBackEntered)).ShouldBeNull("it is worked out from the time entered");
+        entry.FindProperty(nameof(PharmacyQueueEntry.DispensedOnPaperAt))!.GetColumnName().ShouldBe("dispensed_on_paper_at");
+        entry.FindProperty(nameof(PharmacyQueueEntry.PaperSaleNumber))!.GetMaxLength().ShouldBe(24);
+    }
+
+    [Fact]
     public void Sales_and_queue_entries_use_optimistic_concurrency()
     {
         Model.Value.FindEntityType(typeof(PharmacySale))!.FindProperty(nameof(PharmacySale.Version))!.IsConcurrencyToken.ShouldBeTrue();

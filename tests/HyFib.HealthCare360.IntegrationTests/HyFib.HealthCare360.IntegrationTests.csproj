@@ -24,4 +24,9 @@
     <Compile Include="..\Modules\HyFib.HealthCare360.Modules.Interop.Tests\Abdm\AbdmProfileValidator.cs" Link="Abdm\AbdmProfileValidator.cs" />
     <None Include="..\Modules\HyFib.HealthCare360.Modules.Interop.Tests\TestData\**\*.json" Link="TestData\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- The published releases, which the upgrade test starts from (UpgradeTests), kept with the migration rule's contract steps. -->
+    <Compile Include="..\HyFib.HealthCare360.ArchitectureTests\MigrationPolicy.cs" Link="MigrationPolicy.cs" />
+  </ItemGroup>
 </Project>

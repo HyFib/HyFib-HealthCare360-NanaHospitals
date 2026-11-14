@@ -2,6 +2,9 @@ using System.Globalization;
 using HyFib.HealthCare360.Modules.Analytics.Domain;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Patients;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using Theatre = HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre.OperationTheatre;
 
@@ -290,6 +293,34 @@ internal static class Names
 
     private static async Task<Dictionary<Guid, string>> ToMapAsync(ReportContext ctx, IQueryable<IdName> query, CancellationToken ct) =>
         (await ctx.LookupAsync(query, ct)).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First().Name);
+}
+
+/// <summary>
+/// What the member of staff running a patient-level report may see of protected patients, by the rules the chart and the
+/// work lists follow (R-3, R-4): a restricted (VIP) patient is named only to whoever opens restricted records, and is shown
+/// as initials otherwise ("R. K. S. (restricted)"); a patient in a sensitive category (HIV, mental health, MTP, sexual
+/// violence) keeps their name and UHID, as on the bed board, but their clinical columns are withheld unless the viewer holds
+/// the permission of every category the record is in. A run with no viewer (a schedule, a KPI) holds nothing, so sees both
+/// withheld. The OT register applies the same rules to its own columns.
+/// </summary>
+internal sealed record PatientView(bool ReadRestricted, SensitiveCategory Categories)
+{
+    /// <summary>What a clinical column shows in place of its value.</summary>
+    public const string Withheld = "Withheld: confidential record";
+
+    public static PatientView Of(ReportContext ctx) => new(
+        ctx.ViewerHas(PatientsPermissions.ReadRestricted),
+        PatientAccessGuard.CategoryPermissions.Where(p => ctx.ViewerHas(p.Permission)).Aggregate(SensitiveCategory.None, (held, p) => held | p.Category));
+
+    /// <summary>The name as this viewer may read it.</summary>
+    public string Name(string fullName, bool isVip) => isVip && !ReadRestricted ? PatientNames.Restricted(fullName) : fullName;
+
+    /// <summary>Whether the clinical columns (what was found, what happened) of this patient may be shown.</summary>
+    public bool MayReadClinical(bool isVip, SensitiveCategory categories) =>
+        ReadRestricted || (!isVip && (categories & ~Categories) == SensitiveCategory.None);
+
+    /// <summary><paramref name="value"/> when the viewer may read the patient's clinical columns, else <see cref="Withheld"/>.</summary>
+    public string? Clinical(bool isVip, SensitiveCategory categories, string? value) => MayReadClinical(isVip, categories) ? value : Withheld;
 }
 
 /// <summary>Small arithmetic helpers for totals and shares.</summary>

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
-/// <summary>When a test waits for midnight in India to pass (<see cref="AwayFromMidnightInIndiaAttribute"/>).</summary>
+/// <summary>When a test waits for midnight in India to pass (<see cref="AwayFromMidnightInIndiaAttribute"/>), and which tests never do.</summary>
 public sealed class AwayFromMidnightInIndiaTests
 {
     [Theory]
@@ -16,4 +16,11 @@ public sealed class AwayFromMidnightInIndiaTests
     [InlineData("2026-11-05T00:02:00+05:30", 0)]
     public void A_test_waits_only_near_midnight_in_india_and_then_until_two_minutes_past_it(string at, int seconds) =>
         AwayFromMidnightInIndiaAttribute.WaitAt(DateTimeOffset.Parse(at, CultureInfo.InvariantCulture)).ShouldBe(TimeSpan.FromSeconds(seconds));
+
+    [Fact]
+    public void A_test_that_keeps_the_hospitals_time_on_a_clock_of_its_own_never_waits()
+    {
+        AwayFromMidnightInIndiaAttribute.OnTestClock(typeof(MidnightInIndiaTests)).ShouldBeTrue();
+        AwayFromMidnightInIndiaAttribute.OnTestClock(typeof(AwayFromMidnightInIndiaTests)).ShouldBeFalse();
+    }
 }

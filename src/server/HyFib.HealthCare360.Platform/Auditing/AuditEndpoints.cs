@@ -128,10 +128,10 @@ internal static class AuditEndpoints
     /// <summary>
     /// The sealed audit trail from <paramref name="from"/> to <paramref name="to"/> for an auditor (<see cref="AuditExport"/>):
     /// the contiguous chain positions from the first event sealed in the period to the last, so it can be checked on its own,
-    /// with the anchors that fall in it. Events not yet sealed (the last few seconds) are not in it. It holds patients' data,
-    /// so exporting it is audited.
+    /// with the anchors in force that fall in it (none a restore set aside: <see cref="AuditRestores.InForce"/>). Events not
+    /// yet sealed (the last few seconds) are not in it. It holds patients' data, so exporting it is audited.
     /// </summary>
-    private static async Task<IResult> Export(DateTimeOffset from, DateTimeOffset to, HospitalDbContext db, AuditAnchors anchors, IAuditLogger audit,
+    private static async Task<IResult> Export(DateTimeOffset from, DateTimeOffset to, HospitalDbContext db, AuditAnchors anchors, AuditSealKey key, IAuditLogger audit,
         ICurrentUser user, TimeProvider time, CancellationToken ct)
     {
         if (to < from)
@@ -157,7 +157,8 @@ internal static class AuditEndpoints
             .Where(e => e.ChainIndex >= fromIndex && e.ChainIndex <= toIndex)
             .OrderBy(e => e.ChainIndex)
             .ToListAsync(ct);
-        var inRange = anchors.Read().Anchors.Where(a => a.ChainIndex >= fromIndex && a.ChainIndex <= toIndex).ToList();
+        var inForce = AuditRestores.InForce(anchors.Read().Anchors, key, await AuditRestores.RecordedAsync(db, ct)).Anchors;
+        var inRange = inForce.Where(a => a.ChainIndex >= fromIndex && a.ChainIndex <= toIndex).ToList();
         await audit.WriteAsync(new AuditEntry(AuditCategories.Security, "audit.exported",
             $"Exported audit records {fromIndex:N0} to {toIndex:N0} ({from:u} to {to:u})")
         {

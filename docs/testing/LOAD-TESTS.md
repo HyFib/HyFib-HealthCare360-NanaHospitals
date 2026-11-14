@@ -66,6 +66,48 @@ Run the load test on a different machine from the server, or the load test's own
 workstation is enough for 75 users. Remove the test server's data afterwards: synthetic patients are not meant to be
 kept.
 
+## The hospital's peak: billing, pharmacy, the lab, the wards and the portal
+
+With only `--accounts` the load test runs the registration desk's steps above. With accounts for other roles it runs the
+mix of a busy hour, each virtual user keeping to one role as staff keep to their desks, the users dividing among the roles
+by the weights of their steps:
+
+| Role (option) | Steps measured |
+|---|---|
+| Registration (`--accounts`) | the desk's steps above, and **OPD visit and token** (a visit in a department with its queue token) |
+| Billing (`--billing-accounts`) | find a bill; start a bill, add a service, finalise it, and the **billing receipt** (cash), in that order for each clerk |
+| Pharmacy (`--pharmacy-accounts`) | stock lookup; the **pharmacy counter sale** of one medicine that needs no prescription |
+| Laboratory (`--lab-accounts`) | worklist; **lab order** (walk-in); open a result sheet and **lab result entry** on a sample awaiting results |
+| Ward (`--ward-accounts`) | the medication round's due doses; **MAR administration** of a due dose (doses that need a witness are left alone) |
+| Patient portal (`--portal-tokens`, `--portal-server`) | sign-in check, health records, lab and imaging reports, bills, appointments |
+
+Give each role's account the permissions of that desk (Administration › Users); `loadtest accounts` makes only the
+registration desk's. Before the run: the pharmacy needs medicines in stock, the lab needs samples received and awaiting
+results (order and receive some), and the ward needs admitted patients with scheduled doses. A step the server has nothing
+for is left out, and the report's "Not run" list says why; the report also shows each area's requests and its slowest
+step, beside every step's p50, p95, p99 and slowest time. The portal signs in by a code sent to the patient's phone and a
+proof of work, which a load test cannot answer: sign in to the portal for a few test patients just before the run, put
+their access tokens in a file (one a line; they last 15 minutes or less, so keep `--ramp` and `--duration` short or run in
+rounds), and give the portal's own address, which has a port of its own (`https://HC360-SRV:7361/`).
+
+`--weights "Billing receipt=30,Lab order=0"` changes any step's weight (the defaults are `PeakMix.Defaults` in the load
+test, and the registration desk's in `Operations.All`), 0 leaving the step out. The steps that depend on one another
+(a bill, a result sheet, a dose) follow their order for each user, so their weights are shares among the steps a user may
+take next.
+
+```powershell
+dotnet run --project tools/HyFib.HealthCare360.LoadTest -c Release -- run `
+    --server https://HC360-SRV:7360/ --ca .\hc360-hospital-ca.crt --test-server `
+    --accounts loadtest01,loadtest02 --billing-accounts bill01,bill02 --pharmacy-accounts pharm01 `
+    --lab-accounts lab01 --ward-accounts ward01 --users 75 --ramp 2m --duration 10m --report peak.md
+```
+
+The requests of the steps beyond registration were checked against the API's contracts in the unit tests, and have not yet
+run against a live server in CI: the first run on the test server may need an account's permissions or a fixture set right,
+and says so in "Not run" or as failed requests by status. **Running the peak mix on the hospital's own 6-core desk PC (the
+Server Node it will really use) is a site task** for hospital IT with HyFib: it is the run that decides PERF-01 there
+(RELEASE-1.0.0-READINESS.md, section 8); GitHub's runners and a development machine only compare runs with each other.
+
 ## In CI
 
 `.github/workflows/load.yml` runs the same steps on a GitHub runner: it starts PostgreSQL and the server with

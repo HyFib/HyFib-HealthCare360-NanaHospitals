@@ -49,9 +49,6 @@ param(
     # The port of this machine's PostgreSQL.
     [int] $Port = 5432,
     [ValidatePattern('^hc360_[a-z0-9_]{1,57}$')] [string] $SlotName = 'hc360_standby',
-    # The primary's WAL archive (-WalArchiveDirectory there), if this machine can read it: the standby then catches up from
-    # it too, when the primary no longer has the WAL it needs.
-    [string] $WalArchiveDirectory,
     # Replace a PostgreSQL that holds databases and is not a standby, such as the old primary after a failover.
     [switch] $ReplaceExistingData
 )
@@ -185,8 +182,10 @@ function Set-ConfSettings([string[]] $Lines, [System.Collections.IDictionary] $S
 
 # The settings a copy of the primary needs to be this machine's standby: it follows the primary through the slot, takes
 # connections on this machine only, archives nothing (the primary does), and keeps this machine's port and the memory
-# settings Install-PostgreSQL.ps1 sized for this machine ($OldConf, $OldAutoConf: its configuration before).
-function Get-StandbySettings([string[]] $OldConf, [string[]] $OldAutoConf, [int] $Port, [string] $PrimaryConnInfo, [string] $SlotName, [string] $RestoreCommand) {
+# settings Install-PostgreSQL.ps1 sized for this machine ($OldConf, $OldAutoConf: its configuration before). It reads no
+# archive either: the primary's WAL archive is encrypted with the backup recovery key, which only HC360 on the primary
+# holds, and the slot keeps the WAL the standby still needs while it is away.
+function Get-StandbySettings([string[]] $OldConf, [string[]] $OldAutoConf, [int] $Port, [string] $PrimaryConnInfo, [string] $SlotName) {
     $settings = [ordered] @{
         primary_conninfo = $PrimaryConnInfo
         primary_slot_name = $SlotName
@@ -196,21 +195,13 @@ function Get-StandbySettings([string[]] $OldConf, [string[]] $OldAutoConf, [int]
         archive_mode = 'off'
         archive_command = $null
         archive_timeout = $null
-        restore_command = if ($RestoreCommand) { $RestoreCommand } else { $null }
+        restore_command = $null
     }
     foreach ($name in 'shared_buffers', 'effective_cache_size', 'maintenance_work_mem') {
         $value = Get-PostgresSetting $OldConf $OldAutoConf $name
         if ($value) { $settings[$name] = $value }
     }
     return $settings
-}
-
-# The restore_command that reads a WAL file from the primary's archive, as Enable-HC360Replication.ps1 writes it there.
-function Get-RestoreCommand([string] $Directory) {
-    if (-not [System.IO.Path]::IsPathRooted($Directory) -or $Directory.IndexOfAny([char[]] '"%^&|<>') -ge 0) {
-        throw "Give the WAL archive folder as a full path (D:\HC360-WAL or \\NAS\HC360-WAL), without quotes or any of % ^ & | < >."
-    }
-    return "copy /b `"$($Directory.TrimEnd('\'))\%f`" `"%p`" >nul"
 }
 
 # Why the PostgreSQL data folder $Data may not be replaced, or $null when it may: it is a standby already, or as
@@ -308,7 +299,6 @@ Write-Host '    It must be the fingerprint Enable-HC360Replication.ps1 printed o
 
 if (-not $ReplicationPassword) { $ReplicationPassword = Read-Host -AsSecureString "Password of the replication account $ReplicationRole" }
 if (-not $PostgresSuperuserPassword) { $PostgresSuperuserPassword = Read-Host -AsSecureString "The primary's password for PostgreSQL user '$PostgresSuperuser'" }
-$restoreCommand = if ($WalArchiveDirectory) { Get-RestoreCommand $WalArchiveDirectory } else { $null }
 
 # Nothing from the environment may stand in for the password file, nor PGPASSWORD for the replication account's password.
 foreach ($name in 'PGPASSWORD', 'PGPASSFILE', 'PGSERVICE', 'PGSERVICEFILE') { Remove-Item "Env:\$name" -ErrorAction SilentlyContinue }
@@ -370,7 +360,7 @@ try {
     $oldAuto = Read-TextLines (Join-Path $moved 'postgresql.auto.conf')
     $connInfo = New-PrimaryConnInfo $PrimaryAddress $PrimaryPort $ReplicationRole $rootCertificate $passFile $SlotName
     $autoPath = Join-Path $data 'postgresql.auto.conf'
-    Write-TextLines $autoPath (Set-ConfSettings (Read-TextLines $autoPath) (Get-StandbySettings $oldConf $oldAuto $Port $connInfo $SlotName $restoreCommand))
+    Write-TextLines $autoPath (Set-ConfSettings (Read-TextLines $autoPath) (Get-StandbySettings $oldConf $oldAuto $Port $connInfo $SlotName))
     Set-DataFolderAcl $data $accountSid
 
     Write-Step "Starting PostgreSQL ($($postgres.Name)) as a standby"

@@ -30,6 +30,12 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = AppContext.BaseDirectory,
 });
 
+// A server installed as the Windows service never runs as Development: that file of settings turns backups and MFA off.
+if (DevelopmentGuard.Problem(builder.Environment.EnvironmentName, Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()) is { } developmentProblem)
+{
+    throw new InvalidOperationException($"HC360 cannot start: {developmentProblem}");
+}
+
 // Site-specific settings live beside the data (survive upgrades): %ProgramData%\HyFib\HealthCare360\config\hc360.settings.json.
 // Its secrets (the database password) are kept protected with DPAPI and opened as the file loads (SRS SEC-07).
 var platformOptions = builder.Configuration.GetSection(PlatformOptions.SectionName).Get<PlatformOptions>() ?? new PlatformOptions();

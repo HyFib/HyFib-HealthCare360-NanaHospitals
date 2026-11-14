@@ -11,6 +11,10 @@
       applies the database updates, and hc360_app, the least-privilege account the server works as, which reads and writes
       rows but cannot change a table or the audit trail's triggers (hc360-database-roles.sql). On a database installed
       before the split, which hc360_app owns, -CreateDatabase hands it to hc360_owner as it is.
+    - Creates hc360_restore, the account the weekly test restores of the backups sign in as, which may create databases
+      and read PostgreSQL's settings and nothing else, and writes its connection (ConnectionStrings:BackupRestoreTest),
+      protected: with -CreateDatabase, or on an upgrade given -PostgresSuperuserPassword, where PostgreSQL is on this
+      machine. Once made, its setting and password are kept on every run.
     - Has the service sign in to PostgreSQL with its Windows account (SSPI), so the settings file holds no database
       password (-DatabaseSignIn Windows, the default). The switch is made once the server has started as it was, and is
       undone if the server then cannot reach the database. Needs PostgreSQL on this machine; -DatabaseSignIn Password
@@ -738,6 +742,50 @@ function Invoke-SuperuserSql([string] $Server, [int] $Port, [string] $Sql) {
     }
 }
 
+# ---------------------------------------------------------------- the test restores' account
+# Once a week the nightly upkeep restores the newest backup into a scratch database, to check it restores
+# (docs/deployment/DEPLOYMENT.md, section 8, "Test restores"). hc360_app may not create databases, so the test restores
+# sign in as an account of their own: it may sign in, create databases (which it then owns, and drops) and read
+# PostgreSQL's settings (pg_read_all_settings), to check the disk has room for the restored copy, and nothing else, not
+# even connect to the hospital's database. Its password is made here, and kept in the settings file, protected with DPAPI.
+$RestoreRole = 'hc360_restore'
+$RestoreSetting = 'ConnectionStrings:BackupRestoreTest'
+
+# The statements that make $Role the test restores' account, with the hospital's database $Database. With $Password, it
+# is made with that password, or given it when it exists (Get-RoleSql); without one, an account that exists keeps its own.
+function Get-RestoreRoleSql([string] $Role, [string] $Password, [string] $Database) {
+    if ($Role -notmatch '^[a-z_][a-z0-9_]*$') { throw "The database account '$Role' must be named with lower-case letters, digits and underscores." }
+    if ($Database -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "The database '$Database' cannot be named in a statement as it is: use letters, digits and underscores." }
+    $make = if ($Password) { (Get-RoleSql $Role $Password) + ' ' } else { '' }
+    # Quietly: on a run after the first, PostgreSQL tells of the membership granted before, on psql's error output.
+    return "SET client_min_messages TO warning; ${make}ALTER ROLE $Role LOGIN CREATEDB NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS; GRANT pg_read_all_settings TO $Role; REVOKE ALL ON DATABASE $Database FROM $Role;"
+}
+
+# ConnectionStrings:BackupRestoreTest: the test restores' account, signed in to the maintenance database (postgres), from
+# which it makes and drops its scratch databases.
+function New-RestoreTestConnectionString([string] $Server, [int] $Port, [string] $Role, [string] $Password) {
+    return "Host=$Server;Port=$Port;Database=postgres;Username=$Role;Password=$Password;Timeout=15"
+}
+
+# Whether $Server names this machine, as the server decides it for the database (DatabaseSignIn.IsOnThisMachine).
+function Test-LoopbackHost([string] $Server) {
+    return @('localhost', '127.0.0.1', '::1', '[::1]') -contains "$Server".Trim()
+}
+
+# What the installer does about the test restores' account: 'standby', nothing (the primary's account comes with a
+# failover, when the installer runs again without -Standby); 'remote', nothing (PostgreSQL is on another server, which the
+# installer does not manage); 'make' a new account and its setting; 'check' an account whose setting the file has, and
+# make it again if PostgreSQL lost it; 'keep' the setting as it is (no superuser password to check the account with); or
+# 'ask' for the superuser password, without which no account can be made.
+function Get-RestoreAccountStep([bool] $Standby, [bool] $OnThisMachine, [bool] $HasSetting, [bool] $HasSuperuser) {
+    if ($Standby) { return 'standby' }
+    if (-not $OnThisMachine) { return 'remote' }
+    if ($HasSetting -and $HasSuperuser) { return 'check' }
+    if ($HasSetting) { return 'keep' }
+    if ($HasSuperuser) { return 'make' }
+    return 'ask'
+}
+
 # ---------------------------------------------------------------- checks
 Write-Step 'Checking prerequisites'
 if (-not (Test-Path (Join-Path $PackagePath $ExeName))) {
@@ -877,6 +925,68 @@ elseif (-not $settingsBefore['ConnectionStrings:Hospital']) {
     throw 'No database is configured yet. Re-run with -CreateDatabase (recommended) or create hc360.settings.json with ConnectionStrings.Hospital.'
 }
 
+# ---------------------------------------------------------------- the test restores' account
+# Made where PostgreSQL is on this machine and the superuser's password is at hand (-CreateDatabase, or
+# -PostgresSuperuserPassword on an upgrade); its setting and password are kept on every run after, while the account
+# exists. On another server, which this installer does not manage, it is made by hand (DEPLOYMENT.md section 8).
+$restoreConnectionString = $null
+$databaseAt = $null
+if ($CreateDatabase) {
+    $databaseAt = @{ host = $PostgresHost; port = "$PostgresPort"; database = $DatabaseName }
+}
+elseif (-not $Standby) {
+    $shownAt = @(& (Join-Path $InstallDir $ExeName) database sign-in show --data-dir $DataDir)
+    if ($LASTEXITCODE -eq 0) { $databaseAt = ($shownAt -join "`n") | ConvertFrom-StringData }
+}
+$hasRestoreSetting = [bool] (Find-Setting $settings $RestoreSetting)
+$restoreStep = Get-RestoreAccountStep $Standby.IsPresent ([bool] ($databaseAt -and (Test-LoopbackHost $databaseAt['host']))) $hasRestoreSetting `
+    ([bool] ($PostgresSuperuserPassword -and $pgBin))
+if (-not $Standby -and -not $databaseAt) {
+    Write-Warning "Where the database is could not be read from $settingsPath, so the account the weekly test restores sign in as is left as it is."
+}
+elseif ($restoreStep -eq 'remote') {
+    if ($hasRestoreSetting) { Write-Host "    The weekly test restores sign in as the account $RestoreSetting names, kept as it is." }
+    else {
+        Write-Warning "PostgreSQL is on $($databaseAt['host']), not on this machine, so the installer does not make the account the weekly test restores of the backups sign in as: HC360 cannot check that server's disk has room for the restored copy. Make the account there by hand, as docs/deployment/DEPLOYMENT.md says (section 8, 'Test restores'): until then each test restore fails, and says so."
+    }
+}
+elseif ($restoreStep -eq 'keep') {
+    Write-Host "    The weekly test restores sign in as the account $RestoreSetting names, kept as it is."
+}
+elseif ($restoreStep -eq 'ask') {
+    Write-Warning "The weekly test restores of the backups need a database account of their own that may create databases ($RestoreRole), and making it needs the PostgreSQL superuser's password: run the installer again with -PostgresSuperuserPassword. Until then each test restore fails, and says so."
+}
+elseif ($restoreStep -in @('make', 'check')) {
+    Write-Step "Setting up '$RestoreRole', the account the weekly test restores of the backups sign in as"
+    $restoreServer = $databaseAt['host']
+    $restorePort = [int] $databaseAt['port']
+    $env:PGPASSWORD = [System.Net.NetworkCredential]::new('', $PostgresSuperuserPassword).Password
+    try {
+        $psql = Join-Path $pgBin 'psql.exe'
+        $roleExists = (& $psql -h $restoreServer -p $restorePort -U $PostgresSuperuser -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$RestoreRole'") -eq '1'
+        if ($LASTEXITCODE -ne 0) { throw "PostgreSQL could not be asked whether the account $RestoreRole exists." }
+        # The setting keeps its password while its account exists. A new one is made for a new setting, or for an account
+        # PostgreSQL lost (installed again, say): the old password cannot be read back out of the protected setting.
+        $restorePassword = if ($restoreStep -eq 'make' -or -not $roleExists) { New-RandomSecret } else { $null }
+        # Never echoed: the statement holds the password.
+        & $psql -h $restoreServer -p $restorePort -U $PostgresSuperuser -d postgres -v ON_ERROR_STOP=1 -q -c (Get-RestoreRoleSql $RestoreRole $restorePassword $databaseAt['database'])
+        if ($LASTEXITCODE -ne 0) { throw "Setting up the database account $RestoreRole failed." }
+        if ($restorePassword) {
+            $restoreConnectionString = New-RestoreTestConnectionString $restoreServer $restorePort $RestoreRole $restorePassword
+            Write-Host "    $RestoreRole may create databases and read PostgreSQL's settings, and nothing else. Its password goes into $RestoreSetting, protected."
+        }
+        else {
+            Write-Host "    $RestoreRole may create databases and read PostgreSQL's settings, and nothing else. $RestoreSetting is kept, with its password."
+        }
+    }
+    catch {
+        Write-Warning "$($_.Exception.Message) Until it is set up, each weekly test restore fails, and says so (docs/deployment/DEPLOYMENT.md, section 8, 'Test restores')."
+    }
+    finally {
+        Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue
+    }
+}
+
 # ---------------------------------------------------------------- configuration
 # The installer's own settings. One the file has changes only when its parameter is given again, so an upgrade keeps the
 # port, facility and backup folders as they are; pg_dump follows the newest PostgreSQL found. One it lacks is added.
@@ -894,6 +1004,8 @@ $changed = @(
     Set-Setting $settings 'HealthCare360:Backup:SecondaryDirectory' $SecondaryBackupDir -Replace:$PSBoundParameters.ContainsKey('SecondaryBackupDir')
     if ($pgBin) { Set-Setting $settings 'HealthCare360:Backup:PgDumpPath' (Join-Path $pgBin 'pg_dump.exe') -Replace }
     else { Set-Setting $settings 'HealthCare360:Backup:PgDumpPath' 'pg_dump' }
+    # Only when the test restores' account was given a new password: otherwise the setting, and its password, are kept.
+    if ($restoreConnectionString) { Set-Setting $settings 'ConnectionStrings:BackupRestoreTest' $restoreConnectionString -Replace }
 )
 if ($changed) {
     Save-SettingsFile $settings $settingsBefore $changed $settingsPath

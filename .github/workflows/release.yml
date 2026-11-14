@@ -12,8 +12,11 @@ on:
       - deploy/windows/Publish-HC360.ps1
       - tools/release/**
 
+# contents: write attaches the packages to the release. actions: read lets the CI check below read the workflow runs
+# (the job's own GITHUB_TOKEN; no new secret).
 permissions:
   contents: write
+  actions: read
 
 # A pull request's build takes over an hour on Windows, and each push to it starts one: a newer push stops the older
 # build, which it supersedes. A tag's build, which publishes, is never stopped.
@@ -30,6 +33,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      # A tag publishes packages to the hospital, so it may only name a commit CI has passed: a green CI workflow run on that
+      # exact commit (its push to main; ci.yml never cancels one). Checked first, before an hour of build and tests, and
+      # before anything is signed. A tag on a commit CI never ran on, or one that failed or is still running, stops here:
+      # wait for it, or re-run it, and push the tag again. A pull request has no tag, so it skips this.
+      - name: Refuse to release a commit CI has not passed
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAGGED_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $runs = gh api "repos/$env:REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$env:TAGGED_SHA&event=push&per_page=50" --jq '.workflow_runs'
+          if ($LASTEXITCODE -ne 0) { throw 'The CI runs for the tagged commit could not be read.' }
+          $found = @($runs | ConvertFrom-Json)
+          # The newest run of the commit decides: a re-run that passed after a failure counts, a failure after a pass does not.
+          $latest = $found | Sort-Object { [datetime] $_.created_at } -Descending | Select-Object -First 1
+          if ($null -eq $latest) { throw "CI has no run for the tagged commit $env:TAGGED_SHA. Merge it to main and let CI finish before tagging it." }
+          if ($latest.status -ne 'completed') { throw "CI is still running for the tagged commit ($($latest.html_url)). Tag it once CI has passed." }
+          if ($latest.conclusion -ne 'success') { throw "CI did not succeed for the tagged commit: $($latest.conclusion) ($($latest.html_url)). Fix it, or re-run CI, before tagging." }
+          Write-Host "CI succeeded for $env:TAGGED_SHA ($($latest.html_url))."
 
       # The packages are named after the version in Directory.Build.props, and the tag only starts the release: a tag
       # v1.0.1 on a commit that still says 1.0.0 would publish packages named 1.0.0. Checked first, before an hour of

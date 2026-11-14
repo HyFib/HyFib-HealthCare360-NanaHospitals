@@ -2443,6 +2443,7 @@
     "POST /api/v1/pharmacy/ndps/counts/{id:guid}/witness pharmacy.ndps.count",
     "POST /api/v1/pharmacy/queue/{id:guid}/close pharmacy.dispense|pharmacy.ip.issue",
     "POST /api/v1/pharmacy/queue/{id:guid}/dispense pharmacy.dispense",
+    "POST /api/v1/pharmacy/queue/{id:guid}/dispensed-on-paper pharmacy.dispense",
     "POST /api/v1/pharmacy/queue/{id:guid}/lines/{lineId:guid}/acknowledge-override pharmacy.dispense",
     "POST /api/v1/pharmacy/queue/{id:guid}/refills pharmacy.refills",
     "POST /api/v1/pharmacy/refills pharmacy.refills",

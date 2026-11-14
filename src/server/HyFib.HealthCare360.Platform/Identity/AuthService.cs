@@ -300,6 +300,10 @@ public sealed class AuthService(
         "Invalid username or password. After repeated failures an account is locked for a while; an administrator can unlock it.",
         ErrorType.Unauthorized);
     internal static readonly Error SessionEnded = new("auth.session_ended", "Your session has ended. Please sign in again.", ErrorType.Unauthorized);
+
+    /// <summary>Refused: the account is given no facility to work in (<see cref="User.AllFacilities"/>, an empty list is none).</summary>
+    internal static readonly Error NoFacility = Error.Forbidden("auth.no_facility",
+        "Your account is not given a facility to work in, so you cannot sign in. Ask an administrator to give you one.");
     private static readonly Error ChallengeExpired = new("auth.challenge_expired", "This sign-in attempt has expired. Please start again.", ErrorType.Unauthorized);
     private static readonly Error TemporaryPasswordExpired = new(
         "auth.temporary_password_expired", "This temporary password has expired. Ask an administrator for a new one.", ErrorType.Unauthorized);
@@ -1507,8 +1511,10 @@ public sealed class AuthService(
             return [];
         }
 
+        // Every facility only for a user given all of them (and a Super Administrator); otherwise those given, and with
+        // none, none.
         var query = db.Set<Facility>().Where(f => f.IsActive);
-        if (!roles.Contains(SystemRoles.SuperAdmin) && user.Facilities.Count > 0)
+        if (!roles.Contains(SystemRoles.SuperAdmin) && !user.AllFacilities)
         {
             var ids = user.Facilities.Select(f => f.FacilityId).ToList();
             query = query.Where(f => ids.Contains(f.Id));
@@ -1522,7 +1528,10 @@ public sealed class AuthService(
         var allowed = await AllowedFacilitiesAsync(user, roles, ct);
         if (allowed.Count == 0)
         {
-            return Result<Facility?>.Ok(null);
+            // A session without a facility is not limited to one: the facility filter is off without it. So a member of
+            // staff given no facility (an empty list is none) does not sign in, rather than reading every facility's
+            // records. A Super Administrator of a hospital with no facility yet signs in to set one up.
+            return user.Type == UserType.Patient || roles.Contains(SystemRoles.SuperAdmin) ? Result<Facility?>.Ok(null) : NoFacility;
         }
 
         var targetId = requested ?? user.DefaultFacilityId ?? allowed[0].Id;

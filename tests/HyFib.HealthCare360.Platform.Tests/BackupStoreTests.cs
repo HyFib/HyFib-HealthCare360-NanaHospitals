@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 
 namespace HyFib.HealthCare360.Platform.Tests;
@@ -12,6 +13,12 @@ public sealed class BackupStoreTests : IDisposable
 {
     private const string Installation = "A1B2C3D4E5F60718";
     private static readonly byte[] Key = RandomNumberGenerator.GetBytes(32);
+
+    /// <summary>
+    /// A backup period of 30 days, as grandfather-father-son retention gives it without weekly or monthly backups: every
+    /// backup of the newest 30 days that have one, and nothing older but the newest full backup (<see cref="BackupRetention"/>).
+    /// </summary>
+    private static readonly BackupRetentionOptions ThirtyDays = new() { Daily = 30, Weekly = 0, Monthly = 0 };
     private readonly string _root = Path.Combine(Path.GetTempPath(), "hc360-tests", Guid.NewGuid().ToString("N"));
     private readonly ManualTime _time = new(new DateTimeOffset(2027, 3, 15, 1, 30, 0, TimeSpan.Zero));
 
@@ -155,7 +162,7 @@ public sealed class BackupStoreTests : IDisposable
         mine.Dispose();
         await Should.ThrowAsync<InvalidOperationException>(() => other.AddAsync(mine, path, Id("x"), CancellationToken.None));
         using var current = store.Lock();
-        Should.Throw<InvalidOperationException>(() => other.Prune(current, 30, Key));
+        Should.Throw<InvalidOperationException>(() => other.Prune(current, ThirtyDays, TimeZoneInfo.Utc, Key));
     }
 
     [Fact]
@@ -204,7 +211,7 @@ public sealed class BackupStoreTests : IDisposable
         File.SetLastWriteTimeUtc(Path.Combine(Folder, kept), now.UtcDateTime.AddYears(-5));
         File.WriteAllText(Path.Combine(Folder, "copied-by-hand.hc360bak"), "not ours to date");
 
-        var result = store.Prune(held, 30, Key);
+        var result = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
 
         result.ArchivesDeleted.ShouldBe(1);
         File.Exists(Path.Combine(Folder, expired)).ShouldBeFalse();
@@ -224,7 +231,7 @@ public sealed class BackupStoreTests : IDisposable
         await BackUpAsync(store, held, _time.GetUtcNow().AddDays(-60), path);
         var newest = await BackUpAsync(store, held, _time.GetUtcNow().AddDays(-45), path);
 
-        var result = store.Prune(held, 30, Key);
+        var result = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
 
         result.ArchivesDeleted.ShouldBe(1);
         store.ArchiveNames().ShouldBe([newest]);
@@ -246,12 +253,12 @@ public sealed class BackupStoreTests : IDisposable
         await BackUpAsync(store, held, start.AddDays(1), kept);
 
         _time.Advance(TimeSpan.FromDays(30));
-        var before = store.Prune(held, 30, Key);
+        var before = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
         before.BlobsDeleted.ShouldBe(0);
         store.Contains(Id("erased document"), "erased document".Length).ShouldBeTrue();
 
         _time.Advance(TimeSpan.FromDays(1) + TimeSpan.FromMinutes(1));
-        var after = store.Prune(held, 30, Key);
+        var after = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
 
         after.ArchivesDeleted.ShouldBe(1);
         after.BlobsDeleted.ShouldBe(1);
@@ -259,6 +266,60 @@ public sealed class BackupStoreTests : IDisposable
         after.SweepSkipped.ShouldBeNull();
         File.Exists(store.PathOf(Id("erased document"))).ShouldBeFalse();
         store.Contains(Id("kept document"), "kept document".Length).ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// Grandfather-father-son: of three months of nightly archives, the daily, weekly and monthly ones kept stay with their
+    /// lists, and the documents each of them needs stay with them, however old: one only last month's monthly backup lists
+    /// (a document since erased, or moved to a new key) is still there for it. One only archives retention removed listed goes.
+    /// </summary>
+    [Fact]
+    public async Task A_document_a_kept_weekly_or_monthly_archive_needs_stays_with_it()
+    {
+        var store = Open();
+        using var held = store.Lock();
+        var retention = new BackupRetentionOptions { Daily = 7, Weekly = 4, Monthly = 3 };
+        var everyNight = Document("kept.bin", "in every backup");
+        var start = _time.GetUtcNow().AddDays(-90);
+        string? monthly = null;
+        string? onlyRemoved = null;
+        for (var night = 0; night <= 90; night++)
+        {
+            var at = start.AddDays(night);
+            if (at.Month == _time.GetUtcNow().AddMonths(-1).Month && at.AddDays(1).Month != at.Month)
+            {
+                // The last night of last month: the monthly backup kept for it holds a document no later backup does.
+                monthly = await BackUpAsync(store, held, at, everyNight, Document("erased.bin", "only in the monthly backup"));
+                File.Delete(Path.Combine(_root, "files", "erased.bin"));
+            }
+            else if (night == 20)
+            {
+                // An ordinary night two months back: nothing keeps it, nor the document only it holds.
+                onlyRemoved = await BackUpAsync(store, held, at, everyNight, Document("removed.bin", "only in an ordinary night"));
+                File.Delete(Path.Combine(_root, "files", "removed.bin"));
+            }
+            else
+            {
+                await BackUpAsync(store, held, at, everyNight);
+            }
+        }
+
+        var made = BackupFile.In(Folder);
+        var expected = made.Except(BackupRetention.ToRemove(made, retention, TimeZoneInfo.Utc, _time.GetUtcNow())).Select(f => Path.GetFileName(f.Path)).ToList();
+
+        var result = store.Prune(held, retention, TimeZoneInfo.Utc, Key);
+
+        var kept = store.ArchiveNames().ToList();
+        kept.ShouldBe(expected, ignoreOrder: true);
+        kept.Count.ShouldBe(10, "the newest 7 nights, and the last of 4 weeks and of 3 months, some of them the same");
+        kept.ShouldContain(monthly.ShouldNotBeNull(), "last month's last backup is its monthly backup");
+        kept.ShouldNotContain(onlyRemoved.ShouldNotBeNull());
+        kept.ShouldAllBe(a => File.Exists(store.ReferencesPath(a)));
+        result.SweepSkipped.ShouldBeNull();
+        store.Contains(Id("only in the monthly backup"), "only in the monthly backup".Length).ShouldBeTrue("the monthly backup needs it");
+        store.Contains(Id("in every backup"), "in every backup".Length).ShouldBeTrue();
+        File.Exists(store.PathOf(Id("only in an ordinary night"))).ShouldBeFalse("no backup kept needs it");
+        result.BlobsDeleted.ShouldBe(1);
     }
 
     [Fact]
@@ -272,7 +333,7 @@ public sealed class BackupStoreTests : IDisposable
         var later = await BackUpAsync(store, held, _time.GetUtcNow().AddHours(1));
         File.Delete(store.ReferencesPath(archive));
 
-        var missing = store.Prune(held, 30, Key);
+        var missing = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
         missing.BlobsDeleted.ShouldBe(0);
         missing.SweepSkipped.ShouldNotBeNull();
         missing.SweepSkipped.ShouldContain(archive);
@@ -280,7 +341,7 @@ public sealed class BackupStoreTests : IDisposable
 
         store.WriteReferences(held, archive, [Id("needed")], Key);
         File.AppendAllText(store.ReferencesPath(later), Id("other") + "\n");
-        var edited = store.Prune(held, 30, Key);
+        var edited = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
         edited.BlobsDeleted.ShouldBe(0);
         edited.SweepSkipped.ShouldNotBeNull();
         BlobCount().ShouldBe(1);
@@ -304,7 +365,7 @@ public sealed class BackupStoreTests : IDisposable
         store.WriteReferences(held, crashed, [Id("copied, then the power went")], Key);
         File.WriteAllText(Path.Combine(Folder, crashed + ".partial"), "half an archive");
 
-        var result = store.Prune(held, 30, Key);
+        var result = store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key);
 
         result.LeftoversDeleted.ShouldBe(3);
         result.BlobsDeleted.ShouldBe(1);
@@ -328,12 +389,12 @@ public sealed class BackupStoreTests : IDisposable
 
         using var held = store.Lock();
         await BackUpAsync(store, held, _time.GetUtcNow(), Document("one.bin", "x"));
-        store.Prune(held, 30, Key).SweepSkipped.ShouldBeNull();
+        store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key).SweepSkipped.ShouldBeNull();
 
         // An archive written without a list after that (an older HC360 after a downgrade) is not taken as needing nothing.
         var downgraded = ArchiveName(_time.GetUtcNow().AddHours(1));
         File.WriteAllText(Path.Combine(Folder, downgraded), "documents inside");
-        store.Prune(held, 30, Key).SweepSkipped!.ShouldContain(downgraded);
+        store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key).SweepSkipped!.ShouldContain(downgraded);
     }
 
     [Fact]
@@ -359,7 +420,7 @@ public sealed class BackupStoreTests : IDisposable
         var archive = ArchiveName(_time.GetUtcNow());
         store.WriteReferences(held, archive, [Id("document")], Key);
         store.ReadReferences(archive, Key).ShouldBe([Id("document")]);
-        Should.Throw<InvalidOperationException>(() => store.Prune(held, 30, Key));
+        Should.Throw<InvalidOperationException>(() => store.Prune(held, ThirtyDays, TimeZoneInfo.Utc, Key));
     }
 
     [Fact]
@@ -408,10 +469,10 @@ public sealed class BackupStoreTests : IDisposable
     [Fact]
     public void Archive_dates_come_from_their_names()
     {
-        BackupStore.ArchiveDate("hc360-20270315-013000-scheduled.hc360bak").ShouldBe(new DateTimeOffset(2027, 3, 15, 1, 30, 0, TimeSpan.Zero));
-        BackupStore.ArchiveDate("hc360-20270315-013000-premigration.hc360bak").ShouldNotBeNull();
-        BackupStore.ArchiveDate("hc360-20271345-013000-manual.hc360bak").ShouldBeNull();
-        BackupStore.ArchiveDate("backup.hc360bak").ShouldBeNull();
+        BackupFile.From("hc360-20270315-013000-scheduled.hc360bak").ShouldNotBeNull().StartedAt.ShouldBe(new DateTimeOffset(2027, 3, 15, 1, 30, 0, TimeSpan.Zero));
+        BackupFile.From("hc360-20270315-013000-premigration.hc360bak").ShouldNotBeNull();
+        BackupFile.From("hc360-20271345-013000-manual.hc360bak").ShouldBeNull();
+        BackupFile.From("backup.hc360bak").ShouldBeNull();
     }
 
     [Theory]

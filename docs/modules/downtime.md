@@ -57,15 +57,15 @@ registration from paper (`patients.registered_from_paper`, with the patient) are
 The numbers are reserved with `INumberSeries.ReserveAsync`, which moves the series' counter on by the block's size in
 one statement, as issuing one number does.
 
-## Downtime visit, bill and receipt numbers
+## Downtime visit, bill, receipt and pharmacy sale numbers
 
-A visit slip, a bill or a receipt written on paper during a downtime must carry the number it will keep: the patient
+A visit slip, a bill, a receipt or a pharmacy sale written on paper during a downtime must carry the number it will keep: the patient
 leaves with the receipt, a GST bill's serial number cannot change afterwards, and the paper has to be matched to the
 record entered. So, as for UHIDs, each counter holds **blocks of numbers issued ahead**, printed on its sheet and on the
 pre-downtime pack.
 
 1. **Issue a block** (*Patients → Downtime continuity → Issue numbers*, permission `patients.downtime`): what the
-   numbers are for (visits, OP bills, IP bills or receipts), the counter that keeps them ("OPD billing counter 1") and
+   numbers are for (visits, OP bills, IP bills, receipts or pharmacy sales), the counter that keeps them ("OPD billing counter 1", "OP pharmacy counter") and
    how many, at most 500. HC360 reserves them from the same series the counter would use (`INumberSeries.ReserveAsync`),
    so it never issues them again, and records the series' period at issue (the year for a yearly series).
 2. **Print the sheet** for the counter: each number in order with lines for the patient, the time and the amount.
@@ -76,7 +76,9 @@ pre-downtime pack.
      that month's GSTR-1 is already recorded as filed, the bill warns that it is to be amended in the next return
      (docs/modules/billing.md);
    - a receipt through *Collect payment* with `paper {number, at}`: it keeps the number and the time; the money is
-     counted into the cashier's shift open at entry.
+     counted into the cashier's shift open at entry;
+   - a pharmacy sale through the pharmacy's *Counter sale* or *Dispense* screen with `paper {number, at}` (see
+     *Pharmacy sales on paper* below).
 5. **Return the block** when it is no longer needed: every number not entered is voided as "Returned unused", in one
    audited step, and the block takes no more entries. A single spoilt number is voided on its own with a reason.
    Voided bill numbers stay in the GST series: GSTR-1 table 13 counts them as cancelled in the month they were voided
@@ -98,16 +100,60 @@ Issuing (`patients.downtime_numbers_issued`), voiding (`patients.downtime_number
 (`patients.downtime_block_returned`, with how many were entered and voided) and each entry from paper
 (`patients.entered_from_paper`, Warning when entered late under an approval) are written to the audit trail.
 
+### Pharmacy sales on paper
+
+The pharmacy has no screen to write a sale on while HC360 is down, so the counter keeps a **block of pharmacy sale
+numbers** (kind `PharmacySale`, reserved from the pharmacy invoice series, `pharmacy.invoice`, the same series as an
+invoice made on the screen) and writes each sale in its paper sale book under the next number, with the date and time.
+It is a GST series: a number is the sale's invoice number for good, and the ones voided unused count as cancelled in
+GSTR-1 table 13 like the bill numbers.
+
+When HC360 is back, each paper sale is entered through the same screens as any other, with the number and time on the
+paper (`paper {number, at}` on `POST /api/v1/pharmacy/sales/counter`, or on `POST /api/v1/pharmacy/queue/{id}/dispense`
+for a prescription from the queue). The staff app shows it as *Paper sale* on both screens ("Sale written on paper during
+a downtime"). The number must be an unused pharmacy sale number issued to this facility, the time on the paper after its
+block was issued, in the series' year, in order with the block's other entries, not in the future and within the
+*Pharmacy sale from paper* back-entry window (72 hours unless the administrator sets it, at most 14 days;
+`downtime.backEntryHours.pharmacySale`): the refusals are the table above. The invoice then:
+
+- takes the number on the paper as its invoice number and the time on the paper as its time of sale (the day book, the
+  GST return and the invoice print follow the paper's date);
+- takes stock off now, from the batches handed over (FEFO or the batch named), books the payment split, the controlled
+  drug register and any e-invoice as for any sale; the stock ledger shows the time the entry was made, because the shelf
+  moves when HC360 is told;
+- records when it was entered (`PharmacySaleDetail.enteredFromPaperAt`: the drawer says "Written on paper during a
+  downtime, entered ...") and is audited as `patients.entered_from_paper` against the sale, Warning when entered late
+  under an approval.
+
+**Prescriptions dispensed on paper do not come back in the queue.** An e-prescription signed before or during the outage
+reaches the pharmacy queue when HC360 is back, and would invite a second dispense. It is closed as dispensed (not offered
+in the queue, and refused if someone tries to dispense it: 422 `queue.closed`) in either of two ways:
+
+- a paper sale entered with a prescription reference (`prescription.reference` of a counter sale) that is the number of
+  an open OP prescription of the same patient closes that prescription at once;
+- *Dispensed on paper (downtime)* on the prescription (`POST /api/v1/pharmacy/queue/{id}/dispensed-on-paper`,
+  permission `pharmacy.dispense`, `{at, invoiceNumber?, note?}`): `at` is the time on the paper, `invoiceNumber` the paper
+  sale entered from paper that supplied it (it must exist, be entered from paper and be the same patient: 400 on
+  `invoiceNumber`), or a `note` of where the paper sale is kept when it is not entered yet. 204, audited as
+  `pharmacy.dispensed_on_paper` at Warning with the patient; a prescription that is not open is 422 `queue.closed`, an
+  in-patient one 422 `pharmacy.inpatient_prescription`. The time on the paper counts against the same back-entry window.
+
+The queue entry keeps `dispensedOnPaperAt` and `paperSaleNumber` (`QueueEntryDetail`), and its lines are marked
+dispensed without a quantity: what went out is on the paper sale. Close the sale entries and the prescriptions before the
+block is returned.
+
 | Method | Path | Permission | Body → answer |
 |---|---|---|---|
 | GET | `/api/v1/downtime/number-blocks?kind` | `patients.downtime` | The facility's last 100 blocks: `DowntimeNumberBlockSummary {id, kind, kindName, counter, count, firstNumber, lastNumber, issuedAt, issuedByName, entered, voided, open, returnedAt, returnedByName, returnNote, version}` |
 | GET | `/api/v1/downtime/number-blocks/{id}` | `patients.downtime` | `DowntimeNumberBlockDetail {block, facilityName, numbers[{position, number, status, entityType, entityId, patientId, patientName, paperAt, enteredAt, enteredByName, lateBackEntry, voidedAt, voidReason, voidedByName, version}]}` |
-| POST | `/api/v1/downtime/number-blocks` | `patients.downtime` | `IssueDowntimeNumbersRequest {kind (Visit, OpBill, IpBill, Receipt), counter, count (1–500)}` → 201 |
+| POST | `/api/v1/downtime/number-blocks` | `patients.downtime` | `IssueDowntimeNumbersRequest {kind (Visit, OpBill, IpBill, Receipt, PharmacySale), counter, count (1–500)}` → 201 |
 | POST | `/api/v1/downtime/number-blocks/{id}/void` | `patients.downtime` | `{number, reason, version}` → 204; 422 `downtime.number_entered` |
 | POST | `/api/v1/downtime/number-blocks/{id}/return` | `patients.downtime` | `{note?, version}` → the block; 422 `downtime.block_returned` when already returned |
 | POST | `/api/v1/visits` | `visits.manage` | `CreateVisitRequest` with `paper {number, at}` and `issueToken: false` |
 | POST | `/api/v1/billing/bills/{id}/finalize` | `billing.bills.finalize` | `FinalizeBillRequest {version, paper?}` |
 | POST | `/api/v1/billing/receipts` | `billing.payments.collect` | `CollectPaymentRequest` with `paper?` |
+| POST | `/api/v1/pharmacy/sales/counter` · `/api/v1/pharmacy/queue/{id}/dispense` | `pharmacy.sales` · `pharmacy.dispense` | `CounterSaleRequest` / `DispenseRequest` with `paper?` |
+| POST | `/api/v1/pharmacy/queue/{id}/dispensed-on-paper` | `pharmacy.dispense` | `{at, invoiceNumber?, note?}` → 204 |
 
 ## Back-entry windows and late back-entry
 
@@ -120,6 +166,7 @@ administrator, as a setting in hours, *Administration → Settings*:
 | Visit from paper | `downtime.backEntryHours.visit` | 72 hours | 14 days |
 | Bill from paper | `downtime.backEntryHours.bill` | 72 hours | 14 days |
 | Receipt from the manual receipt book | `downtime.backEntryHours.receipt` | 72 hours | 14 days |
+| Pharmacy sale from paper | `downtime.backEntryHours.pharmacySale` | 72 hours | 14 days |
 | Admission time | `downtime.backEntryHours.admission` | 72 hours (the 3 days it was) | 14 days |
 | Bed transfer time | `downtime.backEntryHours.transfer` | 24 hours | 14 days |
 | Consultant's ward visit time | `downtime.backEntryHours.consultantVisit` | 48 hours | 14 days |
@@ -136,7 +183,7 @@ with the approval. Someone else who holds `patients.back_entry.approve` (medical
 administrator) approves it in the approvals inbox (`patients.late_back_entry`; never the one who asked,
 `approval.self`). The approval lets **that user** enter up to that many records of **that type**, dated within the
 span, for 3 days. A paper within the window needs no approval (422 `backentry.within_window`). Entries under it are
-counted for registrations, visits, bills and receipts, and marked "late, approved" on the block; for admissions,
+counted for registrations, visits, bills, receipts and pharmacy sales, and marked "late, approved" on the block; for admissions,
 transfers, ward visits and nursing charting the approval opens the span for the user until it expires (the validators
 that check those times save nothing, so they do not count). The approvals of the last 30 days are listed at
 `GET /api/v1/downtime/back-entry/late`.
@@ -171,7 +218,7 @@ facility failing does not hold back another.
 | Medication sheets | One page per in-patient: allergies and isolation, each active medication order with the doses due in the next 24 hours, high-alert, controlled and "held: awaiting doctor" marked, and a column to sign each dose given | Inpatient (the MAR) |
 | Pending lab and imaging orders | Tests and studies ordered and not yet reported: every in-patient's, and any ordered in the last 24 hours | Diagnostics |
 | OT list | Operations booked in the next 24 hours and those under way, theatre by theatre, with side and level | SpecialtyCare |
-| Downtime numbers issued | Each desk's and counter's open blocks (UHIDs, visits, bills, receipts) with the next number to use | Patients |
+| Downtime numbers issued | Each desk's and counter's open blocks (UHIDs, visits, bills, receipts, pharmacy sales) with the next number to use | Patients |
 | Back-entry windows | The windows in force | Patients |
 
 The census and medication sheets are the downtime ward sheet's rows (below), asked for every ward of the facility for
@@ -187,9 +234,17 @@ sections[{key, title, note, pagePerTable, tables[{heading, note, alert, columns[
 ## Read-only offline mode (staff app)
 
 While the staff app can reach HC360 it keeps an **offline copy**: the latest pack and the user's worklists (OPD, lab,
-radiology reporting, those the user may open), taken at sign-in and every 15 minutes. When the server cannot be reached
-the app says so, with *Open the offline copy*, which shows the pack and the worklists. Nothing can be saved from it: the
-ward records on paper.
+radiology reporting, those the user may open), taken at sign-in and every 15 minutes. When the server cannot be reached,
+or answers but its database is down, the app says so, with *Open the offline copy*, which shows the pack and the
+worklists. Nothing can be saved from it: the ward records on paper.
+
+A **database that is down** is an outage too, though the server still answers every request, with an error, so the app
+does not take an answer alone as "online". A request that fails with a server error naming no reason (a 500, or a 502
+to 504 the server did not explain) makes it ask `/health/ready`: a 503 there, or no answer in time while `/health/live`
+answers, marks the database down. The connection pill then says *HealthCare360 database down*, the offline banner says
+the server cannot reach its database, and the offline copy is offered. While that lasts the app asks `/health/ready`
+again every 15 seconds; otherwise it asks only `/health/live`, since the server opens a new database connection to
+answer `/health/ready`.
 
 The banner labels each part by its own age, not by when the app last fetched. The ward sheets and medicines are as old as
 the **pack** (its `generatedAt`): **"Read-only copy: ward sheets and medicines as of <pack time>"**, then how old that
@@ -200,12 +255,21 @@ ward to the printed pack. In the opened copy the pack's time is in bold at the t
 - The copy is kept on the computer **encrypted** (AES-GCM) under a key derived (HKDF-SHA-256) from the key the server
   gives the signed-in user with the session (`AuthResult.draftKey`), with the user and the slot as associated data. The
   computer's storage (IndexedDB) holds only ciphertext.
-- The derived key is held in memory and in that tab's session storage, so reloading the tab while the server is down
-  still opens the copy; closing the tab or the app forgets it, and then the printed pack is the copy.
+- The derived key is held in memory and in that tab's session storage; closing the tab or the app forgets it, and then
+  the printed pack is the copy.
 - A **service worker** (`/sw.js`) keeps the app's own page, scripts and styles so the app still opens; it never keeps an
   API answer.
 - **Signing out wipes** the copy, the key and the kept app files, whether or not the server can be reached; a session
-  that ends while the server can be reached wipes them too.
+  that ends while the server can be reached wipes them too, and so does another user's sign-in on the computer. The
+  copy is taken for one user and shown to nobody else.
+
+**From a locked screen.** During an outage nothing can unlock the screen (unlocking needs the server), and signing out
+would wipe the copy. So the lock screen says what is down and offers *Open the offline copy*: the PIN or password is
+checked on the computer, against a verifier kept at the user's last sign-in or unlock there that the server accepted, and
+the copy opens read only over the lock, which stays: nothing is sent to the server, and the screens behind stay hidden.
+It closes on the idle lock's timer (`ui.idleLockMinutes`), or when closed, and the PIN is then asked again. It opens only
+for the user whose screen it is, and only their copy. Five wrong tries (PINs and passwords together) wipe the verifier,
+and the printed pack is then the copy until the server is back. How the verifier is kept: SECURITY.md, *Sessions*.
 
 ### Not covered
 
@@ -213,6 +277,8 @@ ward to the printed pack. In the opened copy the pack's time is in bold at the t
   on demand for the names.
 - Even refreshed every 30 minutes, the pack misses what was ordered or stopped since it was made, and the app may hold an
   older pack than the server (it fetches every 15 minutes): the banner says how old, and the paper MAR decides.
+- A tab reloaded, or HC360 Desktop started again, while the server is down opens at the sign-in page, which cannot
+  offer the copy; the locked screen's check works only in the session it locked.
 - A late back-entry approval for admissions, transfers, ward visits and nursing charting is not counted entry by entry.
 - A number issued in one period and written on paper of the next (a yearly series across 1 January, or a financial
   year) is refused: issue blocks for the new period before a planned downtime that crosses it.
@@ -302,7 +368,7 @@ hospital's procedure, not this page, is what staff follow.
      requisitions, medication administration records, bills and receipts, back-entry tallies), and the manual receipt
      book.
    - Every OPD registration and billing counter holds blocks of downtime visit, bill and receipt numbers with their
-     printed sheets.
+     printed sheets, and each pharmacy counter a block of pharmacy sale numbers.
    - HC360 makes the pre-downtime pack every night; each ward keeps the latest printed copy where the procedure says.
    - Medical records keeps the kits stocked: a block is replaced when it runs low, and its unused numbers are voided.
    - IT keeps the list of who to call and how a downtime is announced (overhead page, phone tree, WhatsApp group).
@@ -321,14 +387,16 @@ hospital's procedure, not this page, is what staff follow.
    - Registration registers on paper under the kit's UHIDs, in order.
    - Clinicians write on the paper forms, with the UHID, date and time on every page.
    - The laboratory phones critical results and files paper reports.
-   - Pharmacy dispenses against paper prescriptions.
+   - Pharmacy dispenses against paper prescriptions and writes each sale in the paper sale book under the next downtime
+     sale number, with the date and time.
    - Billing issues receipts from the manual receipt book.
    - Nothing waits for HC360 that patient care needs.
 5. **Recover.**
    - IT confirms HC360 is back and the announcement goes out.
    - Each area enters its paper records with the time on the paper, not the time of entry, in this order:
      registrations, admissions, orders, results, medication administration, notes, bills. Visits, bills and receipts
-     are entered under the downtime numbers on the paper.
+     are entered under the downtime numbers on the paper, pharmacy sales included (a prescription dispensed on paper is
+     closed in the queue: *Dispensed on paper*).
    - Paper older than its back-entry window is entered only after a late back-entry approval: the area in charge asks
      once for the batch, with the count from the tally.
    - The paper originals go to medical records with the patient's file.
