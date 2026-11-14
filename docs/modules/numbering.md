@@ -118,6 +118,53 @@ issued. It must be above the last number issued in the current period (this year
 have at most 8 digits (or as many as `{SEQ:n}` pads to, if more). A later number leaves a gap in the series; the change
 is recorded in the audit trail as a warning, because auditors of bills and receipts ask about gaps.
 
+## After a restore: the high-water mark
+
+The counters are rows of `platform.number_series`, so a restore puts every one back to where it was when the backup was
+made. Without more, the UHIDs, visit numbers, bills, receipts and GST invoices issued after the backup, already on
+cards, wristbands and invoices, would be issued again. So HC360 keeps a **high-water mark** of every series outside the
+database, and moves each series past it as it starts.
+
+* **The mark.** The server that runs the jobs reads every counter as it starts and every minute after, writes the mark
+  when one changed, and writes it once more as it stops. For each series it holds the facility, key, period and last
+  number, with the reset and format, and the file says when it was written and which database it was taken from (by the
+  id of the hospital's first facility). It is `numbering/number-series-high-water-mark.json` in the data folder (the
+  folder the servers share, with several), with a copy beside the backups' second copy
+  (`HealthCare360:Backup:SecondaryDirectory`), which is what outlives the server's own disk. A write that fails is
+  logged and tried again a minute later; numbers are issued as before meanwhile. The mark never goes back with the
+  database: a database restored while the server runs leaves the higher counters in the mark until the next start.
+* **Its seal.** The file is sealed with the audit seal key, which every backup carries and a restore puts back. A file
+  written by anyone without the key, or by another installation (a training server sharing the backup share), is not
+  used, so nobody who can write the folder can make the numbers jump.
+* **At every start**, before the server takes requests, the newest mark of the two copies is compared with the
+  database. Each series behind it moves past the last number the mark records in the period the series counts in now
+  (this year, this month, this day, or ever), **plus 100**: room for the numbers issued after the mark was last written,
+  at most a minute's worth before a power cut. So the next number leaves a gap of about 100.
+  - A yearly series restored to last year whose mark has numbers of this year moves into this year.
+  - Numbers the mark has only in an earlier period move nothing: the series starts again from 1 anyway.
+  - A series the restored database lacks (its first number came after the backup) is made again, with the mark's format
+    and reset.
+  - A mark taken from another database (a hospital that went live on a new database with the data folder it trained
+    with) is not used.
+  - Each series moved is audited as `numbering.raised` (a warning), with its counter before and after and the mark's, so
+    the gap can be explained to the auditors of bills and receipts.
+
+  This also catches a restore made by hand, without Restore-HC360.ps1.
+* **After Restore-HC360.ps1**, which leaves `restored.json` in the data folder, the same start also:
+  - holds outgoing messages: it sets the hospital-wide setting `messaging.outbox.hold` to
+    `{reason: "restore", since, backupTakenAt}`, which the outbox reads;
+  - records the restore in `platform.restore.last`;
+  - raises the critical System health warning `system.restored`, which names the backup, the series moved with their
+    next numbers, and the held messages, until an administrator checks and releases them.
+
+  The raises, the hold and the record are saved together, and then the marker is renamed `restored-<time>.json`, so all
+  this happens once. If any of it fails after a restore, start-up stops and says why in the log, rather than issue
+  numbers or send messages twice. If it fails on an ordinary start, HC360 starts, and System health says so
+  (`numbering.startup_check_failed`).
+
+Nothing else lowers a counter: the next number an administrator sets must be above the last one issued, and a change of
+reset keeps counting from it. So a series behind the mark has been put back by a restore.
+
 ## Who sees what
 
 The list shows the series of the facility the administrator is signed in to, and the series shared by all facilities
@@ -183,6 +230,12 @@ numbers stay gap-free.
 `ReserveAsync(series, facilityId, count)` issues `count` numbers at once, in order, for use later: the downtime UHIDs
 of a registration desk's kit (see `docs/modules/downtime.md`). They count as issued, so the series never issues them
 again and the next number cannot be set below them.
+
+The high-water mark (see above) is `NumberSeriesHighWaterMark` (the file, its copy and its seal), with the rules in
+`NumberSeriesHighWater` (when a counter is behind, how far it moves, what the mark keeps). `NumberSeriesHighWaterJob`
+writes it on the node that runs the jobs. `NumberSeriesStartupCheck`, a seeder that runs first at every start, moves
+the series and acts on `RestoreMarker` (`restored.json`); `RestoreHealthWarnings` is System health's warning. A series
+needs nothing of its own for any of this: every row of `platform.number_series` is covered, hidden ones included.
 
 ## All series
 

@@ -171,6 +171,16 @@ jobs:
           pwsh -NoProfile -File tests/deploy/Test-InstallerDatabaseRoles.ps1
           if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
 
+      # The marker Restore-HC360.ps1 leaves for HC360's next start (restored.json), which then moves the number series past
+      # the numbers issued before the restore and holds outgoing messages. The .NET job checks what the server does with it.
+      - name: Test the restore marker Restore-HC360.ps1 leaves for HC360
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/deploy/Test-RestoreMarker.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in Windows PowerShell 5.1.' }
+          pwsh -NoProfile -File tests/deploy/Test-RestoreMarker.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'The checks failed in PowerShell 7.' }
+
       - name: Test the installers' restart of HC360 and PostgreSQL when they fail
         shell: pwsh
         run: |

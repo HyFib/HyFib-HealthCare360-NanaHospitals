@@ -277,6 +277,9 @@ public static class PlatformServiceCollectionExtensions
 
         services.AddServerClock();
         services.AddScoped<INumberSeries, NumberSeriesService>();
+
+        // Every series' high-water mark, kept outside the database: start-up moves the series past it after a restore.
+        services.AddNumberSeriesHighWaterMark();
         services.AddScoped<IOutbox, Outbox>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ApprovalService>();

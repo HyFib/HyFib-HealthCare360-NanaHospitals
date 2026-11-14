@@ -1221,7 +1221,10 @@ each.
    data.
 3. **Restore the backup:** `.\Restore-HC360.ps1 -BackupFile '<file>'`. It keeps the upgraded database under another
    name (`hc360_before_restore_<time>`), restores the one from before the update, and starts HC360. The backup holds
-   the database and its keys, not the documents, which stay as they are.
+   the database and its keys, not the documents, which stay as they are. As HC360 starts on it, it moves every number
+   series past the numbers issued since the upgrade, so a bill or UHID printed meanwhile is not issued again, and holds
+   outgoing messages until an administrator releases them (section 8, "After a restore"; a previous version does so
+   only if it is this version or later).
 4. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`, so that HC360 starts with
    Windows again. *Check:* Administration › System health shows the previous version and nothing red.
 5. **Workstations.** HC360 Desktop never goes back a version by itself. One that took the newer version keeps it; where
@@ -1235,8 +1238,9 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
-- **The copy to the second disk or NAS** is what survives if the server's own disk fails. When a copy fails (the USB
-  disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:
+- **The copy to the second disk or NAS** is what survives if the server's own disk fails. The number series'
+  high-water mark is copied there too, every minute while numbers are issued ("After a restore" below). When a copy
+  fails (the USB disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:
   - the Backups screen shows "No" in its **Second copy** column, and the reason in its **File / error** column;
   - the administrators are told in the app ("Backup not copied");
   - System health warns (`backup.copy_failed`), naming the folder and the reason;
@@ -1254,14 +1258,17 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   records.
 - Each backup holds the database, the stored documents, the field encryption keys and the audit seal key, all encrypted.
   Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this.
-- **Restore test every quarter** on a spare machine. To check a copy on the NAS or a USB drive without restoring it:
+- **Restore test every quarter** on a spare machine. The restored copy holds its outgoing messages ("After a restore"
+  below): leave them held there, or patients get the test copy's messages. To check a copy on the NAS or a USB drive
+  without restoring it:
 
   ```powershell
   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
   ```
 
 - To restore after a disk failure on new hardware:
-  1. Install PostgreSQL and HC360 as above.
+  1. Install PostgreSQL and HC360 as above, with the old server's `-SecondaryBackupDir`: HC360 finds the copy of the
+     number series' high-water mark there ("After a restore" below).
   2. Run:
 
      ```powershell
@@ -1279,6 +1286,9 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      before HC360 left those out holds them: the script clears them after restoring the database, and names them
      ("Cleared the rows of the servers the backup knew …"). If it cannot, it says so and goes on; remove any old
      server that shows as not reporting with **Remove** on its card in System health.
+
+     Last, before it starts HC360, it leaves `restored.json` in the data folder. What HC360 then does, and what to check
+     before the hospital works on the restored server, is under "After a restore" below.
   3. Workstations see a new server certificate. If the hospital CA was exported from the old server and kept (section
      9, step 3), install it with step 1's installer run: `.\Install-HC360Server.ps1 -HospitalCaFile <the .pfx>`, before
      the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
@@ -1294,6 +1304,38 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   Backups whose recovery key is "Original key" open with the original key, which no screen shows any more. On the
   Server Node that made them, enter `original` when the script asks for the key; elsewhere, use the copy made when
   administrators could still display it.
+
+### After a restore
+
+A restore puts the database back to the moment its backup was made, and with it every number series. The UHIDs, visit
+numbers, bills, receipts and GST invoices issued since would be issued again, though they are on cards, wristbands and
+invoices already, and messages queued then would go again. So as HC360 starts on a restored database, before anyone
+can sign in, it:
+
+1. **Moves every number series past the numbers issued before the restore.** The server that runs the jobs keeps a
+   high-water mark of every series outside the database: `numbering\number-series-high-water-mark.json` in the data
+   folder, written every minute while numbers are issued and as the service stops, and copied beside the backups'
+   second copy (`-SecondaryBackupDir`), which is the copy that survives a disk failure. Each series behind the mark goes
+   on from the last number the mark records **plus 100**, for the numbers issued in the minute before a power cut. So
+   after last night's backup is restored, the next UHID is about 100 above the last one printed. Each series moved is in
+   the audit trail (`numbering.raised`, Administration › Audit), which explains its gap to the auditors of bills and
+   receipts. A yearly series moves into the new year when the mark has numbers of it. This happens at every start, so a
+   restore made by hand, without the script, is caught too; only the next two steps need the script's `restored.json`.
+2. **Holds outgoing messages** (SMS, WhatsApp, e-mail). Some were sent after the backup was made and would go again.
+3. **Says so in System health**, as a critical warning (`system.restored`): the backup it was restored from, the series
+   it moved with their next numbers, and that the messages are held. It lasts until the messages are released.
+
+Before the hospital works on the restored server:
+- Sign in, check the records entered last before the failure, and enter again from paper what is missing.
+- Check the next numbers System health names against the last ones printed (the last bill, the last wristband).
+- Check the held messages, then release them. None goes out until then.
+
+Without the mark's copy (no `-SecondaryBackupDir`, or a different one on the new hardware), a restore on new hardware
+finds no mark, and System health says so: set each series' next number past the last one printed, in Hospital setup ›
+Number formats, before the hospital works on it. The mark is sealed with the audit seal key that every backup carries,
+so one written elsewhere, or changed by hand, is not used. If start-up cannot do all of this after a restore, it stops
+rather than issue numbers or send messages twice; the reason is in the log and Windows Event Viewer, and the marker
+stays until HC360 starts.
 
 ## 9. Warm standby and failover (optional)
 

@@ -1582,6 +1582,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   identifiers such as Aadhaar and ABHA, which are unreadable without that key.
 - Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
   this check is discarded and reported.
+- A restore does not make HC360 issue a number twice (UHIDs, bills, receipts, GST invoices) or send a message twice. A
+  high-water mark of every number series is kept outside the database, in the data folder and beside the backups'
+  second copy, and start-up moves each series behind it past it, audited. The mark is sealed with the audit seal key:
+  one written without that key, or by another installation, is not used, so nobody who can write the backup share can
+  make the numbers jump. After Restore-HC360.ps1, outgoing messages are held until an administrator releases them
+  (docs/modules/numbering.md, "After a restore").
 - **The recovery key opens the backups**, and the hospital keeps it **offline** (ASVS V11.1.1, V13.3.2).
   - It is 256 random bits of its own, not derived from the data keys, kept on the Server Node with Data Protection
     (machine DPAPI) to encrypt new backups.
