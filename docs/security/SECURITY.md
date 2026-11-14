@@ -1863,8 +1863,15 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 - **Secret scan:** gitleaks checks every commit in the history of the change under test, not only the latest files.
   On a pull request, that is GitHub's merge of it with main: the pull request's commits and all of main's.
   - A commit on another branch is checked in that branch's own pull request, against that branch's `.gitleaks.toml`,
-    so a test fixture on one branch cannot fail another's checks. A commit on a branch that never has a pull request
-    is not scanned.
+    so a test fixture on one branch cannot fail another's checks.
+  - The daily **Security audit** workflow also scans, for every branch and tag, the commits main does not have, each
+    against its own `.gitleaks.toml` and `.gitleaksignore` (main's `.gitleaks.toml` when it has none), so a branch that
+    never has a pull request is scanned too (`.github/scripts/branch_secret_scan.py`). A finding fails that run, which
+    emails whoever last changed its schedule, and is listed in its summary; it never fails a pull request. The run also
+    fails when gitleaks reads fewer commits than git has for it, as gitleaks says "no leaks found" when git cannot read
+    a ref.
+  - A branch's own `.gitleaks.toml` decides what is allowlisted on it, in its pull request and in the daily scan alike,
+    so whoever can push a branch can allowlist values on it. An entry reaches main only through a reviewed pull request.
   - Values reviewed as not secret, such as the fixed fake tokens in the tests, are listed in `.gitleaks.toml` with
     where they come from, in the same change as the value.
   - A real secret found in a commit must be revoked at its provider first. Removing it from the files is not enough,
