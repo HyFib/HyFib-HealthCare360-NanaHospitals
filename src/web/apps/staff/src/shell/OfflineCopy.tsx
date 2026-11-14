@@ -33,6 +33,9 @@ import {
 import { indexedDbBackend } from '@/lib/offline/vault';
 import { DowntimePackView, PackTable } from '@/modules/downtime/DowntimePackView';
 
+/** A pack older than this is called out: a drug stopped or started since is not in its medicine lists. */
+const PACK_STALE_MS = 60 * 60 * 1000;
+
 const useStyles = makeStyles({
   banner: { margin: '0 16px 8px' },
   surface: { maxWidth: '1100px', width: '95vw' },
@@ -111,13 +114,29 @@ export function OfflineCopyBanner({ now = Date.now }: { now?: () => number }) {
     );
   }
 
+  const fetchedAt = formatDateTime(new Date(copy.takenAt).toISOString());
+  const packAge = copy.pack ? now() - Date.parse(copy.pack.generatedAt) : null;
+  const packStale = packAge !== null && packAge > PACK_STALE_MS;
   return (
     <>
-      <MessageBar intent="info" layout="multiline" className={styles.banner}>
+      <MessageBar intent={packStale || !copy.pack ? 'warning' : 'info'} layout="multiline" className={styles.banner}>
         <MessageBarBody>
-          <MessageBarTitle>Read-only copy from {formatDateTime(new Date(copy.takenAt).toISOString())}</MessageBarTitle>
-          It is {ageText(copy.takenAt, now())} old. Anything since then is not in it. Nothing can be saved: record on
-          paper.
+          <MessageBarTitle>
+            {copy.pack
+              ? `Read-only copy: ward sheets and medicines as of ${formatDateTime(copy.pack.generatedAt)}`
+              : 'Read-only copy: no pre-downtime pack in it'}
+          </MessageBarTitle>
+          {copy.pack ? (
+            <>
+              The ward sheets and medicine lists are {ageText(Date.parse(copy.pack.generatedAt), now())} old. The
+              worklists were fetched {fetchedAt}, {ageText(copy.takenAt, now())} ago.{' '}
+            </>
+          ) : (
+            <>Use the printed pack for ward sheets and medicines. The worklists were fetched {fetchedAt}. </>
+          )}
+          Anything since then is not in it.
+          {packStale && ' The pack is more than an hour old: check medicines against the paper MAR.'} Nothing can be
+          saved: record on paper.
         </MessageBarBody>
         <MessageBarActions>
           <Button icon={<DocumentTableRegular />} onClick={() => setOpen(true)}>

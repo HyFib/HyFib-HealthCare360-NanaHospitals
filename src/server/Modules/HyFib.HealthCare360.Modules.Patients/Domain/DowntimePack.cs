@@ -56,6 +56,12 @@ public enum DowntimePackKind
 
     /// <summary>Printed by someone, before a planned downtime or when it is declared.</summary>
     OnDemand,
+
+    /// <summary>
+    /// Made by HC360 at any hour (<c>downtime.pack.refreshMinutes</c>), so the ward sheets and medicines in the latest pack
+    /// are no older than that. Only the last few hours of them are kept (<see cref="DowntimePackSnapshot.RefreshedKeptFor"/>).
+    /// </summary>
+    Refreshed,
 }
 
 /// <summary>
@@ -65,6 +71,9 @@ public enum DowntimePackKind
 public sealed class DowntimePackSnapshot : AuditableEntity
 {
     public static readonly TimeSpan KeptFor = TimeSpan.FromDays(7);
+
+    /// <summary>The refreshed packs of the day are kept only this long: each replaces the one before, so they would pile up.</summary>
+    public static readonly TimeSpan RefreshedKeptFor = TimeSpan.FromHours(6);
 
     public Guid FacilityId { get; set; }
     public DowntimePackKind Kind { get; set; }

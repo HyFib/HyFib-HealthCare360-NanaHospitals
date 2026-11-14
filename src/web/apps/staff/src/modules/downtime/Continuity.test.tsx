@@ -274,7 +274,8 @@ describe('the read-only offline copy', () => {
     });
     act(() => useConnection.setState({ serverReachable: false }));
     const { baseElement } = render(wrap(<OfflineCopyBanner now={() => takenAt + 3 * 3_600_000} />));
-    expect(screen.getByText(/It is 3 hours old/)).toBeInTheDocument();
+    expect(screen.getByText(/ward sheets and medicine lists are 3 hours old/)).toBeInTheDocument();
+    expect(screen.getByText(/worklists were fetched .*, 3 hours ago/)).toBeInTheDocument();
     await expectNoAxeViolations(baseElement);
     await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
     const dialog = await screen.findByRole('dialog', { name: 'Offline copy (read only)' });
@@ -287,6 +288,32 @@ describe('the read-only offline copy', () => {
         .map((b) => b.textContent),
     ).toEqual(['Close']);
     await expectNoAxeViolations(baseElement);
+  });
+
+  it('labels the ward sheets with the pack time, not the fetch time, and warns when the pack is over an hour old', () => {
+    // The pack was made at 02:05, the nightly one; the copy was fetched at 14:30, when the screen went dark.
+    const generatedAt = '2026-11-14T02:05:00+05:30';
+    const fetchedAt = Date.parse('2026-11-14T14:30:00+05:30');
+    useOfflineCopy.setState({ takenAt: fetchedAt, pack: { ...PACK, kind: 'Nightly', generatedAt }, worklists: [] });
+    act(() => useConnection.setState({ serverReachable: false }));
+    render(wrap(<OfflineCopyBanner now={() => fetchedAt + 20 * 60_000} />));
+    expect(screen.getByText(/ward sheets and medicines as of 14 Nov 2026, 2:05 am/)).toBeInTheDocument();
+    expect(screen.getByText(/medicine lists are 12 hours old/)).toBeInTheDocument();
+    expect(screen.getByText(/worklists were fetched 14 Nov 2026, 2:30 pm, 20 minutes ago/)).toBeInTheDocument();
+    expect(screen.getByText(/check medicines against the paper MAR/)).toBeInTheDocument();
+  });
+
+  it('does not warn about medicines while the pack is less than an hour old', () => {
+    const fetchedAt = Date.parse('2026-11-14T14:30:00+05:30');
+    useOfflineCopy.setState({
+      takenAt: fetchedAt,
+      pack: { ...PACK, kind: 'Refreshed', generatedAt: '2026-11-14T14:10:00+05:30' },
+      worklists: [],
+    });
+    act(() => useConnection.setState({ serverReachable: false }));
+    render(wrap(<OfflineCopyBanner now={() => fetchedAt + 5 * 60_000} />));
+    expect(screen.getByText(/ward sheets and medicines as of 14 Nov 2026, 2:10 pm/)).toBeInTheDocument();
+    expect(screen.queryByText(/paper MAR/)).not.toBeInTheDocument();
   });
 
   it('points to the paper pack when there is no copy', () => {
