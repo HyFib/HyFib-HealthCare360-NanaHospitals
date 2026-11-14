@@ -123,13 +123,20 @@ Open **PowerShell as Administrator** in the extracted `deploy` folder:
 .\Install-PostgreSQL.ps1 -SuperuserPassword (Read-Host -AsSecureString 'New postgres password')
 ```
 
-This does six things:
+This does seven things:
 - Installs PostgreSQL through winget.
 - Restricts it to localhost, with scram-sha-256 authentication only. Only a warm standby is ever let in from the
   network, and only once it is set up (section 9).
 - Sizes its memory settings from the machine's RAM.
 - Logs statements slower than two seconds, without their parameter values, which can be patient details.
 - Sets the time zone to IST.
+- Sets `wal_sync_method = fsync`. On Windows PostgreSQL's default (`open_datasync`) is safe only while the disk's write
+  cache is off or survives a power cut, and a server without a UPS can lose committed work when the power goes.
+  PostgreSQL's documentation (Reliability) says to turn the cache off or use `fsync`: it flushes the cache at every
+  commit. The setting is written with `ALTER SYSTEM`, so running the script again changes nothing. A server installed
+  earlier needs `ALTER SYSTEM SET wal_sync_method = 'fsync';` as the postgres user, then a restart of its service. The
+  preflight (`Test-HC360ServerNode.ps1`, section 1) reports the system disk's write cache and, once PostgreSQL is
+  installed, the `wal_sync_method` it runs with, and warns on a cache that is on without power protection.
 - Has Windows restart its service if the service's process fails. The HC360 installer (step 3) also starts PostgreSQL
   again when the database itself crashes (see "When PostgreSQL stops" below).
 

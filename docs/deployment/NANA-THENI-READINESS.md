@@ -211,7 +211,9 @@ Each step ends with a check, and the next step starts only once it passes.
    It changes nothing. Send its JSON report to HyFib. Expect a Warn on the processor cores (6 of 8) until the load test.
    *Check:* no Fail, and a decision written beside each Warn.
 2. **Buy and connect the UPS and the two USB backup disks** (section 3, *To buy before go-live*).
-   *Check:* in the preflight, *UPS on USB* passes and *Second disk for backup copies* lists the USB disk.
+   *Check:* in the preflight, *UPS on USB* passes and *Second disk for backup copies* lists the USB disk. *Disk write
+   cache* is Pass, or a Warn that the installer's fsync setting covers (step 5): with no UPS yet, a power cut can lose
+   work still in the disk's cache, which the UPS and that setting prevent.
 3. **Prepare Windows:**
    - Rename the machine HC360-SRV and restart.
    - Run Windows Update until nothing is pending.
@@ -237,7 +239,10 @@ Each step ends with a check, and the next step starts only once it passes.
    & "$env:ProgramFiles\PostgreSQL\17\bin\pg_test_fsync.exe" -s 3 -f "$env:ProgramData\pg_test_fsync.out"
    ```
 
-   *Check:* write the figures down. A hard disk manages at most a few hundred flushes a second, an SSD thousands.
+   *Check:* write the figures down. A hard disk manages at most a few hundred flushes a second, an SSD thousands. Run
+   the preflight again: *PostgreSQL wal_sync_method* passes (the installer sets `fsync`, which makes PostgreSQL flush the
+   disk's write cache at every commit, as PostgreSQL's documentation says to on Windows without a disk cache that is
+   off or protected).
 6. **Run the load test on this machine, before any real data** ([LOAD-TESTS.md](../testing/LOAD-TESTS.md)). Use a test
    installation with demonstration data and 75 users (PERF-01's figure; the hospital has 40 at once), with the desk
    user's everyday programs open.
