@@ -13,6 +13,7 @@ internal static class PointInTimeRecoveryRegistration
     {
         services.AddScoped<BaseBackupService>();
         services.AddSingleton<IBaseBackupTool, PgBaseBackupTool>();
+        services.AddScoped<WalArchiveService>();
         return services;
     }
 
@@ -20,10 +21,15 @@ internal static class PointInTimeRecoveryRegistration
     /// Whether nightly backups are on or not, as the off-site copy's: each job does nothing until PostgreSQL archives the WAL
     /// (Enable-HC360Replication.ps1 -WalArchive).
     /// </summary>
-    public static void SchedulePointInTimeRecovery(this IQuartzBuilder quartz) =>
+    public static void SchedulePointInTimeRecovery(this IQuartzBuilder quartz)
+    {
         quartz.ScheduleJob<BaseBackupJob>(trigger => trigger
             .WithIdentity("base-backup")
             .WithCronSchedule(BaseBackupJob.CheckSchedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+        quartz.ScheduleJob<WalArchiveJob>(trigger => trigger
+            .WithIdentity("wal-archive")
+            .WithCronSchedule(WalArchiveJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
+    }
 }
 
 /// <summary>
@@ -41,6 +47,30 @@ public sealed record PointInTimeRecoveryStatus
     public DateTimeOffset? BaseBackupFailedAt { get; init; }
 
     public string? BaseBackupError { get; init; }
+
+    /// <summary>When a WAL file was last encrypted into the backup folder, and its name.</summary>
+    public DateTimeOffset? WalSealedAt { get; init; }
+
+    public string? WalSealed { get; init; }
+
+    /// <summary>When encrypting the archived WAL last failed, and why; null once a run has encrypted all there was.</summary>
+    public DateTimeOffset? WalFailedAt { get; init; }
+
+    public string? WalError { get; init; }
+
+    /// <summary>
+    /// A WAL file PostgreSQL archived again with other content than the one already encrypted: it is left in the archive
+    /// folder, unencrypted, for a person to look at, and nothing replaces the one kept.
+    /// </summary>
+    public string? WalConflict { get; init; }
+
+    /// <summary>When everything encrypted was last found copied to the secondary directory.</summary>
+    public DateTimeOffset? CopiedAt { get; init; }
+
+    /// <summary>Since when the copies to the secondary directory have failed, and why the last one did; null while they succeed.</summary>
+    public DateTimeOffset? CopyFailingSince { get; init; }
+
+    public string? CopyError { get; init; }
 }
 
 /// <summary>PostgreSQL's WAL archiving as any account reads it: <c>archive_mode</c> and <c>archive_command</c>.</summary>
@@ -64,12 +94,20 @@ public static class PointInTimeRecovery
     /// <summary>The folder of the backup folder (and of its second copy) the base backups are kept in.</summary>
     public const string BaseBackupFolderName = "base";
 
+    /// <summary>The folder of the backup folder (and of its second copy) the encrypted WAL is kept in.</summary>
+    public const string WalFolderName = "wal";
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
+    private static readonly Lock Gate = new();
 
     public static string StatusPath(DataDirectories directories) => Path.Combine(directories.Config, StatusFileName);
 
     /// <summary>Where the base backups of the cluster <paramref name="systemIdentifier"/> are kept under <paramref name="backups"/>.</summary>
     public static string BaseBackupFolder(string backups, string systemIdentifier) => Path.Combine(backups, BaseBackupFolderName, systemIdentifier);
+
+    /// <summary>Where the encrypted WAL of the cluster <paramref name="systemIdentifier"/> is kept under <paramref name="backups"/>.</summary>
+    public static string WalFolder(string backups, string systemIdentifier) => Path.Combine(backups, WalFolderName, systemIdentifier);
 
     /// <summary>The status as last saved; empty when there is none yet, or it cannot be read (it is written again).</summary>
     public static PointInTimeRecoveryStatus Load(DataDirectories directories)
@@ -81,6 +119,18 @@ public static class PointInTimeRecovery
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             return new();
+        }
+    }
+
+    /// <summary>
+    /// Changes the saved status with <paramref name="change"/>, one job at a time: the base backup job and the WAL job each
+    /// change only their own fields, and neither loses the other's.
+    /// </summary>
+    public static void Update(DataDirectories directories, Func<PointInTimeRecoveryStatus, PointInTimeRecoveryStatus> change)
+    {
+        lock (Gate)
+        {
+            Save(directories, change(Load(directories)));
         }
     }
 

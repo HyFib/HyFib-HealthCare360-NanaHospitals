@@ -13,7 +13,7 @@
       - Enable-HC360Replication.ps1 on the primary, with WAL archiving to a folder; and again, which changes nothing. The
         account HC360's base backups sign in as takes the runner's Windows account (standing in for the HC360 service's)
         over SSPI, for replication only.
-      - New-HC360Standby.ps1 for the standby, which reads the primary's archive too.
+      - New-HC360Standby.ps1 for the standby, which reads no archive: the primary's is encrypted (SRS REL-02).
       - A row written on the primary is read on the standby; the standby takes no write; the primary takes the replication
         account over TLS only, and for replication only.
       - The built HC360 server, given the standby's database, stops at once and says why.
@@ -174,7 +174,7 @@ try {
 
     Write-Host 'New-HC360Standby.ps1 on the standby'
     $certificate = Join-Path $primary.DataDirectory 'hc360-server.crt'
-    $arguments = "-PrimaryAddress 127.0.0.1 -PrimaryPort 5432 -Port $standbyPort -PrimaryCertificate '$certificate' -PostgresSuperuser $superuser -WalArchiveDirectory '$archive'"
+    $arguments = "-PrimaryAddress 127.0.0.1 -PrimaryPort 5432 -Port $standbyPort -PrimaryCertificate '$certificate' -PostgresSuperuser $superuser"
     Assert ((Invoke-DeployScript 'New-HC360Standby.ps1' $arguments $bothSecrets) -eq 0) 'it runs to the end'
     Assert ((Invoke-Sql $standbyPort 'SELECT pg_is_in_recovery()') -eq 't') 'the standby is in recovery: read-only, following the primary'
     Assert ((Invoke-Sql $standbyPort "SELECT status || ' ' || slot_name FROM pg_stat_wal_receiver") -eq 'streaming hc360_standby') 'it streams through the slot'
@@ -183,7 +183,7 @@ try {
     $conninfo = Invoke-Sql $standbyPort 'SHOW primary_conninfo'
     Assert ($conninfo -like "*sslmode='verify-ca'*" -and $conninfo -like '*hc360-standby/replication.pgpass*' -and $conninfo -notlike '*hc360-replication-*') 'it trusts the primary''s certificate alone, and reads its password from its own file, not the one used meanwhile'
     Assert ((Invoke-Sql $standbyPort 'SHOW listen_addresses') -eq 'localhost' -and (Invoke-Sql $standbyPort 'SHOW port') -eq "$standbyPort") 'it listens on localhost, on its own port'
-    Assert ((Invoke-Sql $standbyPort 'SHOW archive_mode') -eq 'off' -and (Invoke-Sql $standbyPort 'SHOW restore_command') -like "*$archive*") 'it archives nothing, and reads the primary''s archive'
+    Assert ((Invoke-Sql $standbyPort 'SHOW archive_mode') -eq 'off' -and "$(Invoke-Sql $standbyPort 'SHOW restore_command')" -eq '') 'it archives nothing, and reads no archive: the primary''s is encrypted with a key only HC360 there holds'
     $passFile = Join-Path $standbyRoot 'hc360-standby\replication.pgpass'
     $passReaders = @((Get-Acl -LiteralPath $passFile).Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value } | Sort-Object -Unique)
     Assert (-not @($passReaders | Where-Object { $_ -notin @('S-1-5-18', 'S-1-5-32-544', $serviceSid) })) "its password file is readable by SYSTEM, Administrators and PostgreSQL's account alone (found: $($passReaders -join ', '))"

@@ -9,9 +9,11 @@
 .DESCRIPTION
     With -WalArchive, which needs no standby:
       - PostgreSQL copies every finished WAL file, its record of every change, to a folder on this server's own disk
-        (-WalArchiveDirectory, by default %ProgramData%\HyFib\HealthCare360\wal-archive), at least every 15 minutes
-        (archive_mode, archive_command, archive_timeout). Only PostgreSQL's and HC360's service accounts, Administrators and
-        SYSTEM may open the folder: the WAL holds patient data.
+        (-WalArchiveDirectory, by default %ProgramData%\HyFib\HealthCare360\wal-archive, never a share), at least every 15
+        minutes (archive_mode, archive_command, archive_timeout). Only PostgreSQL's and HC360's service accounts,
+        Administrators and SYSTEM may open the folder: the WAL holds patient data. HC360 encrypts each file from there
+        into its backups within a minute, with the backup recovery key, removes the plain one, and copies the encrypted
+        one to the backups' secondary directory: no WAL leaves the server unencrypted.
       - Creates the account hc360_basebackup, which may only stream the database (REPLICATION) and signs in only as the HC360
         service's Windows account, from this machine, with no password (SSPI, in pg_hba.conf and pg_ident.conf). HC360 takes
         a base backup with it at once, and then every Sunday, encrypted with the backup recovery key: the copy a restore to a
@@ -69,8 +71,8 @@ param(
     [ValidateRange(1, 10000)] [int] $StandbyWalLimitGB = 20,
     # Archive the WAL, for a restore to any moment (off by default). -NoWalArchive turns it off again.
     [switch] $WalArchive,
-    # The folder on this server's own disk PostgreSQL archives the WAL to; giving it turns archiving on. By default
-    # %ProgramData%\HyFib\HealthCare360\wal-archive.
+    # The folder on this server's own disk (not a share, nor a disk taken off site) PostgreSQL archives the WAL to, which
+    # HC360 encrypts it from; giving it turns archiving on. By default %ProgramData%\HyFib\HealthCare360\wal-archive.
     [string] $WalArchiveDirectory,
     [switch] $NoWalArchive,
     # The Windows account the HC360 service runs as, which takes base backups. By default the HC360Server service's.
@@ -352,13 +354,15 @@ function Remove-ListenAddress([string] $Current, [string] $Address) {
     return $items -join ','
 }
 
-# The archive_command that copies a finished WAL file to $Directory: through a temporary name, so the archive never holds
-# part of a file under its real name, and never over a file already there. A file archived before with the same content
-# counts as archived (PostgreSQL may ask again after a crash); one with other content fails, so PostgreSQL keeps the WAL,
-# retries, and System health warns.
+# The archive_command that copies a finished WAL file to $Directory, a folder on this server's own disk: HC360 encrypts
+# each file from there into its backups within a minute, and removes the plain one, so no WAL leaves the server
+# unencrypted (HC360 finds the folder in this very command, WalArchive.ArchiveFolder). Through a temporary name, so the
+# archive never holds part of a file under its real name, and never over a file already there. A file archived before with
+# the same content counts as archived (PostgreSQL may ask again after a crash); one with other content fails, so PostgreSQL
+# keeps the WAL, retries, and System health warns.
 function Get-ArchiveCommand([string] $Directory) {
-    if (-not [System.IO.Path]::IsPathRooted($Directory) -or $Directory.IndexOfAny([char[]] '"%^&|<>') -ge 0) {
-        throw "Give the WAL archive folder as a full path (D:\HC360-WAL or \\NAS\HC360-WAL), without quotes or any of % ^ & | < >."
+    if (-not [System.IO.Path]::IsPathRooted($Directory) -or $Directory.StartsWith('\\') -or $Directory.IndexOfAny([char[]] '"%^&|<>') -ge 0) {
+        throw "Give the WAL archive folder as a full path on this server's own disk (such as C:\HC360-WAL), not a share, and without quotes or any of % ^ & | < >: HC360 encrypts the WAL there before any copy of it leaves the server."
     }
     $dir = $Directory.TrimEnd('\')
     return "if exist `"$dir\%f`" (fc /b `"%p`" `"$dir\%f`" >nul) else (copy /b /y `"%p`" `"$dir\%f.tmp`" >nul && move /y `"$dir\%f.tmp`" `"$dir\%f`" >nul)"
@@ -715,15 +719,11 @@ END `$`$;
 # ---------------------------------------------------------------- archiving
 if ($archiveRequested) {
     Write-Step "Archiving the WAL to $WalArchiveDirectory"
-    if (-not $WalArchiveDirectory.StartsWith('\\')) {
-        New-Item -ItemType Directory -Force -Path $WalArchiveDirectory | Out-Null
-        # PostgreSQL's service writes the archive and HC360's reads it, and nobody else may: the WAL holds patient data.
-        Set-WalArchiveAcl $WalArchiveDirectory @($serviceSid, $hc360Sid)
-    }
-    elseif (-not (Test-Path -LiteralPath $WalArchiveDirectory)) {
-        throw "The share $WalArchiveDirectory cannot be reached from this machine."
-    }
-    $statements += 'ALTER SYSTEM SET archive_mode = on', "ALTER SYSTEM SET archive_command = $(ConvertTo-SqlLiteral $archiveCommand)", "ALTER SYSTEM SET archive_timeout = '15min'"
+    New-Item -ItemType Directory -Force -Path $WalArchiveDirectory | Out-Null
+    # PostgreSQL's service writes the archive and HC360's encrypts and removes what is in it, and nobody else may open it:
+    # the WAL holds patient data.
+    Set-WalArchiveAcl $WalArchiveDirectory @($serviceSid, $hc360Sid)
+    $statements +='ALTER SYSTEM SET archive_mode = on', "ALTER SYSTEM SET archive_command = $(ConvertTo-SqlLiteral $archiveCommand)", "ALTER SYSTEM SET archive_timeout = '15min'"
 }
 elseif ($NoWalArchive -and $ownArchive) {
     Write-Step 'Turning WAL archiving off'
@@ -820,8 +820,9 @@ if ($archiveRequested) {
 Write-Host ''
 if ($archiving) {
     Write-Host "PostgreSQL archives the WAL, at least every 15 minutes, for a restore to any moment." -ForegroundColor Green
-    Write-Host "    HC360 takes a base backup within a quarter of an hour, and then every Sunday at 03:30, signed in as $BaseBackupRole"
-    Write-Host '    (its service''s Windows account, no password), encrypted with the backup recovery key. System health says when one fails.'
+    Write-Host '    HC360 encrypts each WAL file with the backup recovery key within a minute, and copies it to the backups'' secondary directory.'
+    Write-Host "    It takes a base backup within a quarter of an hour, and then every Sunday at 03:30, signed in as $BaseBackupRole"
+    Write-Host '    (its service''s Windows account, no password), encrypted the same way. System health says when either fails.'
 }
 elseif ($NoWalArchive) {
     Write-Host 'PostgreSQL no longer archives the WAL, and HC360 no longer takes base backups. Those already made stay in its backup folder.' -ForegroundColor Green

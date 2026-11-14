@@ -96,6 +96,13 @@ public static class BaseBackupArchive
             ? [.. Directory.EnumerateFiles(folder, "*" + FileExtension).Select(Describe).OfType<BaseBackupFile>().OrderByDescending(f => f.CreatedAt)]
             : [];
 
+    /// <summary>
+    /// Of <paramref name="newestFirst"/>, those made before <paramref name="cutoff"/>, all but the newest: a restore to a
+    /// point in time always needs one.
+    /// </summary>
+    public static IEnumerable<BaseBackupFile> Expired(IReadOnlyList<BaseBackupFile> newestFirst, DateTimeOffset cutoff) =>
+        newestFirst.Skip(1).Where(f => f.CreatedAt < cutoff);
+
     /// <summary>The files pg_basebackup wrote in <paramref name="folder"/>, by name.</summary>
     public static IReadOnlyList<BaseBackupPart> ListParts(string folder) =>
         [.. Directory.EnumerateFiles(folder)
@@ -450,7 +457,7 @@ internal sealed class BaseBackupService(
         try
         {
             var result = await CreateAsync(database, ct);
-            PointInTimeRecovery.Save(directories, PointInTimeRecovery.Load(directories) with
+            PointInTimeRecovery.Update(directories, saved => saved with
             {
                 BaseBackupAt = time.GetUtcNow(),
                 BaseBackupFile = result.FileName,
@@ -464,7 +471,7 @@ internal sealed class BaseBackupService(
         {
             var reason = ex.Message.Length > 2000 ? ex.Message[..2000] : ex.Message;
             logger.LogError(ex, "Base backup failed");
-            PointInTimeRecovery.Save(directories, PointInTimeRecovery.Load(directories) with { BaseBackupFailedAt = time.GetUtcNow(), BaseBackupError = reason });
+            PointInTimeRecovery.Update(directories, saved => saved with { BaseBackupFailedAt = time.GetUtcNow(), BaseBackupError = reason });
             try
             {
                 await notifications.NotifyPermissionHoldersAsync(PlatformPermissions.SystemRead, null, FailedTitle,
@@ -556,7 +563,7 @@ internal sealed class BaseBackupService(
     internal void RemoveOld(string folder)
     {
         var cutoff = time.GetUtcNow().AddDays(-Math.Max(options.Value.Backup.RetentionDays, 1));
-        foreach (var old in BaseBackupArchive.List(folder).Skip(1).Where(f => f.CreatedAt < cutoff))
+        foreach (var old in BaseBackupArchive.Expired(BaseBackupArchive.List(folder), cutoff))
         {
             File.Delete(old.Path);
         }
