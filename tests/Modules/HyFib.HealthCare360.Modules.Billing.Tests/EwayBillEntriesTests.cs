@@ -1,10 +1,12 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Platform.Contracts;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
 
 /// <summary>
 /// An e-way bill generated outside HC360 and entered by hand from its print is checked against what the e-way bill system
-/// itself allows (CGST rule 138, GSTN advisories of 17 December 2024 and 4 November 2026).
+/// itself allows (CGST rule 138, GSTN advisories of 17 December 2024 and 4 November 2026), then against what the e-invoice
+/// portal holds for the invoice's IRN.
 /// </summary>
 public sealed class EwayBillEntriesTests
 {
@@ -82,5 +84,27 @@ public sealed class EwayBillEntriesTests
         EwayBillEntries.Problems(Twelve, Generated, Generated.AddDays(360), InvoiceDate, Now).ShouldBeEmpty();
         EwayBillEntries.Problems(Twelve, Generated, Generated.AddDays(360).AddMinutes(1), InvoiceDate, Now)
             .ShouldBe(["The portal extends an e-way bill to at most 360 days after its generation."]);
+    }
+
+    [Theory]
+    [InlineData("ACT", 331000123456L, EwayBillCheck.Confirmed)]
+    [InlineData("ACT", 331000999999L, EwayBillCheck.Contradicted)]
+    [InlineData("CNL", 331000123456L, EwayBillCheck.Cancelled)]
+    [InlineData("CNL", 331000999999L, EwayBillCheck.NotHeld)]
+    [InlineData(IrpError.EwayBillNotFound, null, EwayBillCheck.NotHeld)]
+    [InlineData(IrpError.Unreachable, null, EwayBillCheck.Unanswered)]
+    [InlineData(IrpError.NotConnected, null, EwayBillCheck.Unanswered)]
+    [InlineData("9999", null, EwayBillCheck.Unsaid)]
+    [InlineData("", 331000123456L, EwayBillCheck.Unsaid)]
+    public void What_the_portal_holds_for_the_irn_decides_whether_an_e_way_bill_entered_by_hand_is_recorded(
+        string held, long? number, EwayBillCheck expected)
+    {
+        // held: the status of the e-way bill the portal gives for the IRN ("" for one without a status), or the code of the
+        // error the question got.
+        var answer = held is "" or IrpIrn.ActiveStatus or IrpIrn.CancelledStatus
+            ? IrpResult<IrpEwayBill>.Ok(new IrpEwayBill(number!.Value, Generated, Generated.AddDays(1), held is "" ? null : held))
+            : IrpResult<IrpEwayBill>.Fail(held, "The portal's words.");
+
+        EwayBillEntries.Against(answer, 331000123456L).ShouldBe(expected);
     }
 }

@@ -85,5 +85,44 @@ public static class EwayBillEntries
         return problems;
     }
 
+    /// <summary>
+    /// What the e-invoice portal's answer <paramref name="held"/> (the e-way bill it holds for the invoice's IRN,
+    /// <see cref="IInvoiceRegistrationPortal.GetEwayBillAsync"/>) says about the e-way bill <paramref name="number"/> entered by
+    /// hand. Only an answer saying <c>ACT</c> confirms one live, and only one saying <c>CNL</c> shows one cancelled.
+    /// </summary>
+    public static EwayBillCheck Against(IrpResult<IrpEwayBill> held, long number) => held switch
+    {
+        { Value: { IsActive: true } live } => live.EwbNo == number ? EwayBillCheck.Confirmed : EwayBillCheck.Contradicted,
+        { Value: { IsCancelled: true } gone } => gone.EwbNo == number ? EwayBillCheck.Cancelled : EwayBillCheck.NotHeld,
+        { Error.Code: IrpError.EwayBillNotFound } => EwayBillCheck.NotHeld,
+        { Error.Code: IrpError.Unreachable or IrpError.NotConnected } => EwayBillCheck.Unanswered,
+        _ => EwayBillCheck.Unsaid,
+    };
+
     private static string Day(DateOnly date) => date.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
+}
+
+/// <summary>What the e-invoice portal's answer says about an e-way bill entered by hand (<see cref="EwayBillEntries.Against"/>).</summary>
+public enum EwayBillCheck
+{
+    /// <summary>The portal holds this e-way bill, live, for the IRN: it is recorded with the portal's own dates.</summary>
+    Confirmed,
+
+    /// <summary>The portal holds another e-way bill, live, for the IRN: the one entered is not this invoice's.</summary>
+    Contradicted,
+
+    /// <summary>The portal holds the e-way bill entered as cancelled: there is no live one to record.</summary>
+    Cancelled,
+
+    /// <summary>
+    /// The portal holds no live e-way bill for the IRN: none at all (4005, as for one generated on the e-way bill portal), or
+    /// its own one cancelled and this another. It was generated elsewhere and is recorded on its print.
+    /// </summary>
+    NotHeld,
+
+    /// <summary>The portal could not be asked: it did not answer, or the connection cannot be used. Nothing is recorded.</summary>
+    Unanswered,
+
+    /// <summary>The portal would not say: it refused the question, or gave an e-way bill without its status. Nothing is recorded.</summary>
+    Unsaid,
 }
