@@ -169,7 +169,7 @@ public sealed class PeakMixTests(HospitalServer server)
     private async Task<(Guid Id, string Uhid)> RegisterAsync(ApiClient frontOffice, string phone)
     {
         var created = await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
-            Title: "Mr.", FirstName: TestPatients.FirstName("Mohan"), MiddleName: null, LastName: "Peakmix" + Guid.NewGuid().ToString("N")[..6], Gender: Gender.Male,
+            Title: "Mr.", FirstName: TestPatients.FirstName("Mohan"), MiddleName: null, LastName: "Peakmix" + Letters(6), Gender: Gender.Male,
             DateOfBirth: new DateOnly(1962, 1, 1).AddDays(Random.Shared.Next(3650)), AgeYears: null, AgeMonths: null, Phone: phone, AlternatePhone: null,
             Email: null, Address: null, BloodGroup: null, MaritalStatus: null, GuardianName: null, GuardianRelation: null, EmergencyContactName: null,
             EmergencyContactPhone: null, EmergencyContactRelation: null, Occupation: null, Religion: null, Nationality: null, PreferredLanguage: null,
@@ -244,4 +244,7 @@ public sealed class PeakMixTests(HospitalServer server)
         var due = await nurse.GetAsync<JsonElement>($"/api/v1/nursing/wards/{wardId}/mar/due?withinMinutes=240");
         return due.EnumerateArray().Single(e => e.GetProperty("entryId").GetGuid() == entryId).GetProperty("version").GetUInt32();
     }
+
+    /// <summary>Lowercase letters, as a patient's name may hold (registration takes letters only).</summary>
+    private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
 }
