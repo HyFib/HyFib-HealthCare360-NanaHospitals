@@ -160,27 +160,152 @@ public sealed class BackupArchiveFormat3Tests : IDisposable
     }
 
     [Fact]
-    public async Task Restore_refuses_a_format_3_backup_with_documents_until_it_reads_the_backup_folder()
+    public async Task A_format_3_backup_restores_its_documents_from_the_folder_it_is_in()
     {
-        // Until restore copies documents from the backup folder (implementation step 4), it must not install a backup's
-        // keys and database without its documents.
+        var (backup, recoveryKey, document, plain) = await BackupWithStoredDocumentAsync();
+        var newServer = Machine("new");
+        var protection = new EphemeralDataProtectionProvider();
+
+        var result = await BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(newServer.Temp, "r.dump"), newServer, protection, TimeProvider.System,
+            CancellationToken.None);
+
+        result.DocumentsRestored.ShouldBe(1);
+        var restored = Path.Combine(newServer.Files, document);
+        new FieldProtector(newServer, protection).UnprotectBytes(File.ReadAllBytes(restored), "files").ShouldBe(plain);
+        Directory.EnumerateFiles(newServer.Temp, "*", SearchOption.AllDirectories).Where(f => !f.EndsWith("r.dump", StringComparison.Ordinal)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Without_its_documents_a_format_3_backup_changes_nothing()
+    {
+        // F16: the archive was copied without the folder beside it.
+        var (backup, recoveryKey, _, _) = await BackupWithStoredDocumentAsync();
+        var alone = Path.Combine(_root, "alone", Path.GetFileName(backup));
+        Directory.CreateDirectory(Path.GetDirectoryName(alone)!);
+        File.Copy(backup, alone);
+        var newServer = Machine("new");
+
+        var refused = await Should.ThrowAsync<InvalidDataException>(() => BackupRestore.RestoreAsync(alone, recoveryKey, Path.Combine(newServer.Temp, "r.dump"),
+            newServer, new EphemeralDataProtectionProvider(), TimeProvider.System, CancellationToken.None));
+
+        refused.Message.ShouldContain("1 of the backup's 1 documents have no good copy");
+        refused.Message.ShouldContain("copy the whole folder");
+        File.Exists(FieldMasterKey.PathIn(newServer)).ShouldBeFalse();
+        Directory.EnumerateFiles(newServer.Files, "*", SearchOption.AllDirectories).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_documents_can_be_restored_from_a_folder_named_apart_from_the_archive()
+    {
+        var (backup, recoveryKey, document, _) = await BackupWithStoredDocumentAsync();
+        var alone = Path.Combine(_root, "alone", Path.GetFileName(backup));
+        Directory.CreateDirectory(Path.GetDirectoryName(alone)!);
+        File.Copy(backup, alone);
+        var newServer = Machine("new");
+
+        await BackupRestore.RestoreAsync(alone, recoveryKey, Path.Combine(newServer.Temp, "r.dump"), newServer, new EphemeralDataProtectionProvider(),
+            TimeProvider.System, CancellationToken.None, blobsFolder: Path.GetDirectoryName(backup));
+
+        File.Exists(Path.Combine(newServer.Files, document)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_damaged_copy_is_passed_over_for_a_good_one_beside_it_and_none_good_changes_nothing()
+    {
+        // F23: on an append-only share a copy cut short stays, and the next run writes another beside it.
+        var (backup, recoveryKey, document, _) = await BackupWithStoredDocumentAsync();
+        var folder = Path.GetDirectoryName(backup)!;
+        var blob = Directory.EnumerateFiles(Path.Combine(folder, BackupStore.BlobsFolder), "*.blob", SearchOption.AllDirectories).Single();
+        var good = File.ReadAllBytes(blob);
+        File.WriteAllBytes(Path.ChangeExtension(blob, null) + ".1.blob", good);
+        var damaged = good.ToArray();
+        damaged[^1] ^= 1;
+        File.WriteAllBytes(blob, damaged);
+
+        var first = Machine("first");
+        (await BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(first.Temp, "r.dump"), first, new EphemeralDataProtectionProvider(), TimeProvider.System,
+            CancellationToken.None)).DocumentsRestored.ShouldBe(1);
+        File.ReadAllBytes(Path.Combine(first.Files, document)).ShouldBe(good);
+
+        File.WriteAllBytes(Path.ChangeExtension(blob, null) + ".1.blob", damaged);
+        var second = Machine("second");
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(second.Temp, "r.dump"), second,
+            new EphemeralDataProtectionProvider(), TimeProvider.System, CancellationToken.None))).Message.ShouldContain("every copy found is damaged");
+        File.Exists(FieldMasterKey.PathIn(second)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Documents_are_found_in_the_generations_of_an_append_only_destination()
+    {
+        var (backup, recoveryKey, document, _) = await BackupWithStoredDocumentAsync();
+        var folder = Path.GetDirectoryName(backup)!;
+        Directory.CreateDirectory(Path.Combine(folder, "gen-20270111"));
+        Directory.Move(Path.Combine(folder, BackupStore.BlobsFolder), Path.Combine(folder, "gen-20270111", BackupStore.BlobsFolder));
+        var newServer = Machine("new");
+
+        await BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(newServer.Temp, "r.dump"), newServer, new EphemeralDataProtectionProvider(),
+            TimeProvider.System, CancellationToken.None);
+
+        File.Exists(Path.Combine(newServer.Files, document)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task A_document_encrypted_with_a_key_the_backup_does_not_hold_is_refused()
+    {
+        // F9: every document a backup lists must be readable with a key it escrows.
         var oldServer = Machine("old");
-        var masterKey = RandomNumberGenerator.GetBytes(32);
+        var masterKey = new FieldProtector(oldServer, new EphemeralDataProtectionProvider()).ExportMasterKey();
+        var path = Path.Combine(oldServer.Files, "2027", "01", "a.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, [2, .. RandomNumberGenerator.GetBytes(8), .. RandomNumberGenerator.GetBytes(60)]);
+        var (backup, recoveryKey) = await WriteBackupAsync(oldServer, masterKey, [path]);
+        var newServer = Machine("new");
+
+        (await Should.ThrowAsync<InvalidDataException>(() => BackupRestore.RestoreAsync(backup, recoveryKey, Path.Combine(newServer.Temp, "r.dump"), newServer,
+            new EphemeralDataProtectionProvider(), TimeProvider.System, CancellationToken.None))).Message.ShouldContain("which the backup does not hold");
+    }
+
+    /// <summary>
+    /// A machine with one document stored encrypted, backed up as the backup service does: the document in the backup
+    /// folder (<see cref="BackupStore"/>), and a format 3 archive beside it listing it.
+    /// </summary>
+    private async Task<(string Backup, byte[] RecoveryKey, string Document, byte[] Plain)> BackupWithStoredDocumentAsync()
+    {
+        var oldServer = Machine("old");
+        var protector = new FieldProtector(oldServer, new EphemeralDataProtectionProvider());
+        var plain = RandomNumberGenerator.GetBytes(64);
+        var path = Path.Combine(oldServer.Files, "2027", "01", "scan.bin");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllBytes(path, protector.ProtectBytes(plain, "files"));
+        var (backup, recoveryKey) = await WriteBackupAsync(oldServer, protector.ExportMasterKey(), [path]);
+        return (backup, recoveryKey, Path.Combine("2027", "01", "scan.bin"), plain);
+    }
+
+    private static async Task<(string Backup, byte[] RecoveryKey)> WriteBackupAsync(DataDirectories machine, byte[] masterKey, IReadOnlyList<string> documents)
+    {
+        var referencesKey = FieldMasterKey.DeriveKey(masterKey, BackupStore.ReferencesKeyPurpose);
+        var store = BackupStore.Open(machine.Backups, FieldMasterKey.Fingerprint(masterKey), referencesKey, TimeProvider.System);
+        var index = new List<BackupIndexedDocument>();
+        using (var held = store.Lock())
+        {
+            foreach (var path in documents)
+            {
+                var id = await BackupStore.HashFileAsync(path, CancellationToken.None);
+                await store.AddAsync(held, path, id, CancellationToken.None);
+                index.Add(new BackupIndexedDocument(Path.GetRelativePath(machine.Files, path).Replace('\\', '/'), id, new FileInfo(path).Length));
+            }
+        }
+
         var recoveryKey = BackupRecoveryKey.Original(masterKey);
-        var file = Path.Combine(oldServer.Backups, "test.hc360bak");
+        var file = Path.Combine(machine.Backups, "hc360-20270115-013000-scheduled.hc360bak");
         await using (var output = File.Create(file))
         await using (var encryptor = BackupEncryption.CreateEncryptor(output, recoveryKey))
         {
-            await BackupArchive.WriteIndexedAsync(encryptor, Manifest(masterKey), masterKey, [], null, WriteDump(oldServer), [Indexed("2026/09/a.bin", 10)],
-                CancellationToken.None);
+            await BackupArchive.WriteIndexedAsync(encryptor, Manifest(masterKey), masterKey, [], null, WriteDump(machine), index, CancellationToken.None);
             await encryptor.CompleteAsync(CancellationToken.None);
         }
 
-        var newServer = Machine("new");
-        (await Should.ThrowAsync<InvalidDataException>(() => BackupRestore.RestoreAsync(file, recoveryKey, Path.Combine(newServer.Temp, "r.dump"), newServer,
-            new EphemeralDataProtectionProvider(), TimeProvider.System, CancellationToken.None))).Message.ShouldContain("backup folder");
-
-        File.Exists(FieldMasterKey.PathIn(newServer)).ShouldBeFalse();
+        return (file, recoveryKey);
     }
 
     [Fact]

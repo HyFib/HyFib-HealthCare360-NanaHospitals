@@ -34,14 +34,16 @@ internal static class ServerCli
     private const string Usage = """
         HyFib HealthCare360 server maintenance
 
-          backup verify --in <backup.hc360bak> [--key <recovery-key>]
+          backup verify --in <backup.hc360bak> [--blobs <folder>] [--key <recovery-key>]
               Reads a backup in full and checks it: every part decrypts, and the database, the encryption key and the
               documents match its manifest. Use it for the quarterly restore test and for copies on a NAS or USB drive.
+              A backup keeps its documents beside it, in the same folder (each checked against its SHA-256): give that
+              folder with --blobs when the documents are elsewhere.
 
           backup decrypt --in <backup.hc360bak> --out <database.dump> [--key <recovery-key>]
               Checks the whole backup and writes only its database dump, for pg_restore. Nothing else changes.
 
-          backup restore --in <backup.hc360bak> [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
+          backup restore --in <backup.hc360bak> [--blobs <folder>] [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
               Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
               rotations) on this Server Node, with the HC360 service stopped. A different key already here is kept under a
               new name. The whole backup is checked first,
@@ -252,6 +254,20 @@ internal static class ServerCli
         var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None);
         CryptographicOperations.ZeroMemory(contents.MasterKey);
         Describe(contents.Manifest);
+        if (contents.Index.Count > 0)
+        {
+            // A format 3 backup's documents are in its backup folder: each must have a copy whose SHA-256 is the index's.
+            var folder = options.GetValueOrDefault("blobs") ?? BackupBlobs.FolderOf(options["in"]);
+            var problems = await BackupBlobs.CheckAsync(folder, contents, CancellationToken.None);
+            if (problems.Count > 0)
+            {
+                Console.Error.WriteLine(BackupBlobs.Missing(folder, problems, contents.Index.Count));
+                return 2;
+            }
+
+            Console.WriteLine($"All {contents.Index.Count} documents are in {folder}, each matching the SHA-256 the backup lists.");
+        }
+
         Console.WriteLine(payload.KeyId is { } keyId
             ? $"The backup decrypts in full and matches its manifest. It opens with recovery key {keyId}."
             : "The backup decrypts in full and matches its manifest. It opens with the original recovery key.");
@@ -271,7 +287,7 @@ internal static class ServerCli
 
         var databaseOut = options.GetValueOrDefault("database-out");
         var result = await BackupRestore.RestoreAsync(options["in"], key, databaseOut, directories,
-            HospitalDataProtection.CreateProvider(directories), TimeProvider.System, CancellationToken.None);
+            HospitalDataProtection.CreateProvider(directories), TimeProvider.System, CancellationToken.None, options.GetValueOrDefault("blobs"));
         if (result.Manifest is null)
         {
             Console.WriteLine(databaseOut is null

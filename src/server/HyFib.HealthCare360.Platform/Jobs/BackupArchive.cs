@@ -455,7 +455,8 @@ public static class BackupRestore
         DataDirectories directories,
         IDataProtectionProvider dataProtection,
         TimeProvider time,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? blobsFolder = null)
     {
         await using var input = new FileStream(backupFile, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true);
         await using var payload = await BackupEncryption.OpenAsync(input, recoveryKey, ct);
@@ -480,13 +481,10 @@ public static class BackupRestore
             var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(databaseDumpPath, staging), ct);
             try
             {
-                // The documents of a format 3 backup are in the backup folder beside it, which this restore does not read
-                // yet: refuse rather than install the keys without the documents.
-                if (contents.Index.Count > 0)
-                {
-                    throw new InvalidDataException(
-                        $"This backup keeps its {contents.Index.Count} documents in the backup folder beside it, which this restore does not read yet.");
-                }
+                // A format 3 backup's documents are in the backup folder beside it: each is copied into the staging folder
+                // and checked there (its SHA-256, and that the backup holds the key it is encrypted with) before anything
+                // on this machine changes, as the documents inside a format 2 backup are.
+                await BackupBlobs.CopyAsync(blobsFolder ?? BackupBlobs.FolderOf(backupFile), contents, staging, ct);
 
                 // A version 3 backup names its recovery key in a header every chunk authenticates. A version 2 backup was
                 // encrypted with the original recovery key, which comes from the key inside it.
@@ -604,5 +602,197 @@ public static class BackupRestore
         }
 
         return (restored, present);
+    }
+}
+
+/// <summary>
+/// Finds the documents a format 3 backup needs (<see cref="BackupContents.Index"/>) in a backup folder, whatever its layout:
+/// <c>blobs\ab\cd\&lt;id&gt;.blob</c> (<see cref="BackupStore"/>), the generations of an append-only destination
+/// (<c>gen-*\blobs\…</c>), and the second copies written beside one cut short there (<c>&lt;id&gt;.1.blob</c>, …). A copy is
+/// taken only when its length and SHA-256 are the index's, so where it was found does not matter, and a restore from any
+/// one copy of the folder (the server's, a USB disk, a download of the bucket) gets the same bytes.
+/// </summary>
+public static class BackupBlobs
+{
+    /// <summary>The folder a backup's documents are looked for in by default: the folder the archive is in.</summary>
+    public static string FolderOf(string archivePath) => Path.GetDirectoryName(Path.GetFullPath(archivePath))!;
+
+    /// <summary>Where a copy of <paramref name="blobId"/> may be in <paramref name="folder"/>, the plain layout first.</summary>
+    public static IEnumerable<string> Candidates(string folder, string blobId)
+    {
+        if (!BackupStore.IsBlobId(blobId))
+        {
+            yield break;
+        }
+
+        var roots = new List<string> { folder };
+        if (Directory.Exists(folder))
+        {
+            roots.AddRange(Directory.EnumerateDirectories(folder, "gen-*").Order(StringComparer.Ordinal).Reverse());
+        }
+
+        foreach (var root in roots)
+        {
+            var directory = Path.Combine(root, BackupStore.BlobsFolder, blobId[..2], blobId[2..4]);
+            if (!Directory.Exists(directory))
+            {
+                continue;
+            }
+
+            var first = Path.Combine(directory, blobId + BackupStore.BlobExtension);
+            if (File.Exists(first))
+            {
+                yield return first;
+            }
+
+            foreach (var other in Directory.EnumerateFiles(directory, blobId + ".*" + BackupStore.BlobExtension).Order(StringComparer.Ordinal))
+            {
+                yield return other;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Copies every document of a format 3 backup into <paramref name="staging"/> at its storage path, each from the first
+    /// copy whose length and SHA-256 match the index, checking that the backup holds the key it is encrypted with.
+    /// </summary>
+    /// <exception cref="InvalidDataException">A document has no good copy in the folder, or is encrypted with a key the backup does not hold.</exception>
+    public static async Task CopyAsync(string folder, BackupContents contents, string staging, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        var problems = new List<string>();
+        foreach (var document in contents.Index)
+        {
+            var target = Path.Combine(staging, document.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            var problem = await CopyOneAsync(folder, document, contents.Manifest, target, ct);
+            if (problem is not null)
+            {
+                problems.Add(problem);
+            }
+        }
+
+        if (problems.Count > 0)
+        {
+            throw new InvalidDataException(Missing(folder, problems, contents.Index.Count));
+        }
+    }
+
+    /// <summary>
+    /// Checks every document of a format 3 backup in the folder, as <see cref="CopyAsync"/> would, without writing
+    /// anything. Returns what is wrong, one line a document; empty when every document has a good copy.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> CheckAsync(string folder, BackupContents contents, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(contents);
+        var problems = new List<string>();
+        foreach (var document in contents.Index)
+        {
+            if (await CopyOneAsync(folder, document, contents.Manifest, null, ct) is { } problem)
+            {
+                problems.Add(problem);
+            }
+        }
+
+        return problems;
+    }
+
+    /// <summary>The message for documents without a good copy: how many, the first few, and where they were looked for.</summary>
+    public static string Missing(string folder, IReadOnlyList<string> problems, int documents)
+    {
+        ArgumentNullException.ThrowIfNull(problems);
+        return $"{problems.Count} of the backup's {documents} documents have no good copy in {folder}: {string.Join("; ", problems.Take(3))}" +
+            (problems.Count > 3 ? "; …" : "") +
+            ". The documents are kept beside the archive in its backup folder: copy the whole folder, not only the .hc360bak file, " +
+            "or name the folder with --blobs.";
+    }
+
+    private static async Task<string?> CopyOneAsync(string folder, BackupIndexedDocument document, BackupManifest manifest, string? target, CancellationToken ct)
+    {
+        var tried = false;
+        foreach (var candidate in Candidates(folder, document.BlobId))
+        {
+            tried = true;
+            if (new FileInfo(candidate).Length != document.Length)
+            {
+                continue;
+            }
+
+            var temp = target is null ? null : target + ".restoring";
+            try
+            {
+                string? keyProblem = null;
+                string sha256;
+                await using (var source = new FileStream(candidate, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, useAsync: true))
+                await using (var output = temp is null ? null : new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
+                {
+                    using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                    var buffer = new byte[1 << 16];
+                    var first = true;
+                    int read;
+                    while ((read = await source.ReadAsync(buffer, ct)) > 0)
+                    {
+                        if (first)
+                        {
+                            keyProblem = KeyProblem(buffer.AsSpan(0, read), manifest, document);
+                            first = false;
+                        }
+
+                        hash.AppendData(buffer, 0, read);
+                        if (output is not null)
+                        {
+                            await output.WriteAsync(buffer.AsMemory(0, read), ct);
+                        }
+                    }
+
+                    sha256 = Convert.ToHexStringLower(hash.GetHashAndReset());
+                }
+
+                if (!string.Equals(sha256, document.BlobId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (keyProblem is not null)
+                {
+                    return keyProblem;
+                }
+
+                if (temp is not null)
+                {
+                    File.Move(temp, target!, overwrite: true);
+                }
+
+                return null;
+            }
+            finally
+            {
+                if (temp is not null)
+                {
+                    File.Delete(temp);
+                }
+            }
+        }
+
+        return tried ? $"{document.RelativePath} (every copy found is damaged)" : $"{document.RelativePath} (no copy)";
+    }
+
+    /// <summary>
+    /// A stored document starts with the protector's version (1: the original key, which every backup holds; 2: then the
+    /// 8-byte id of the key it is encrypted with). A document naming a key the backup does not hold would not be readable
+    /// after the restore. Only that is refused: a header of another form is left to the file store to read.
+    /// </summary>
+    private static string? KeyProblem(ReadOnlySpan<byte> start, BackupManifest manifest, BackupIndexedDocument document)
+    {
+        if (start.Length >= 9 && start[0] == 2)
+        {
+            var keyId = Convert.ToHexString(start.Slice(1, 8));
+            return manifest.RingKeys?.Contains(keyId, StringComparer.OrdinalIgnoreCase) == true
+                || string.Equals(keyId, manifest.KeyFingerprint, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : $"{document.RelativePath} (encrypted with key {keyId}, which the backup does not hold)";
+        }
+
+        return null;
     }
 }
