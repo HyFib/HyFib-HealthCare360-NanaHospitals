@@ -79,6 +79,16 @@ public sealed class Role : AuditableEntity
     /// <summary>Built-in roles cannot be deleted or renamed.</summary>
     public bool IsSystem { get; set; }
 
+    /// <summary>
+    /// Whether the role gives its holders anything. A role turned off gives no permission, counts no holder as someone who
+    /// may approve grants and routes them no notification or work, while it stays assigned, so turning it back on gives
+    /// back what it held. What the role requires of its holders (two-step verification, an enrolled workstation, its idle
+    /// lock) still applies while it is off: turning a role off narrows access and never weakens a safeguard. Turned off at
+    /// once; turned back on only when a second person who may approve grants agrees (<see cref="GrantApprovals"/>). The
+    /// Super Administrator and Patient roles are never off.
+    /// </summary>
+    public bool IsActive { get; set; } = true;
+
     public List<RolePermission> Permissions { get; set; } = [];
 }
 

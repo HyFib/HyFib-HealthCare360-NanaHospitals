@@ -998,7 +998,8 @@ internal static class AccessAdminEndpoints
             return Result.Success();
         }
 
-        // From the account's roles, active or not: a deactivated Super Administrator is still one.
+        // From the account's roles, the account and its roles active or not: a deactivated Super Administrator is still one,
+        // and a role turned off may be turned on again.
         var target = await (from ur in db.Set<UserRole>()
                             join rp in db.Set<RolePermission>() on ur.RoleId equals rp.RoleId
                             where ur.UserId == targetId

@@ -397,8 +397,9 @@ internal sealed class GrantApprovals(
                 .Where(PlatformPermissions.IsAdministrative).ToList();
 
     /// <summary>
-    /// The administrative permissions an account holds through its roles, active or not: only someone who holds them all may
-    /// change the account (<see cref="AccessAdminEndpoints.EnsureMayManageAsync"/>), or approve a change to it.
+    /// The administrative permissions an account holds through its roles, the account and its roles active or not: only
+    /// someone who holds them all may change the account (<see cref="AccessAdminEndpoints.EnsureMayManageAsync"/>), or
+    /// approve a change to it. A role turned off may be turned on again, so it still protects the accounts that hold it.
     /// </summary>
     public async Task<List<string>> AdministrativeOfUserAsync(Guid userId, CancellationToken ct) =>
         (await (from ur in db.Set<UserRole>()
@@ -407,11 +408,15 @@ internal sealed class GrantApprovals(
                 select rp.Permission).Distinct().ToListAsync(ct))
             .Where(PlatformPermissions.IsAdministrative).ToList();
 
-    /// <summary>The administrative permissions (all-access included) the active members of staff hold, through their roles.</summary>
+    /// <summary>
+    /// The administrative permissions (all-access included) the active members of staff hold, through their roles in use: a
+    /// role turned off makes nobody an approver, as it gives them nothing (<see cref="Role.IsActive"/>).
+    /// </summary>
     private static async Task<List<(Guid User, string Permission)>> HoldingsAsync(HospitalDbContext db, CancellationToken ct) =>
         [.. (await (from u in db.Set<User>()
                     where u.IsActive && u.Type == UserType.Staff
                     join ur in db.Set<UserRole>() on u.Id equals ur.UserId
+                    where ur.Role!.IsActive
                     join rp in db.Set<RolePermission>() on ur.RoleId equals rp.RoleId
                     where rp.Permission == PermissionRegistry.Wildcard || rp.Permission.StartsWith("admin.")
                     select new { u.Id, rp.Permission }).Distinct().ToListAsync(ct))

@@ -50266,6 +50266,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(256)")
                         .HasColumnName("description");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
