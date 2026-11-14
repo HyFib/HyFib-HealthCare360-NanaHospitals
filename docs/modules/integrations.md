@@ -980,6 +980,13 @@ acknowledgements are never acknowledged in turn.
 * **Results**: ORU^R01/R30/R32 and OUL^R21–R24.
   * Samples are identified by `sampleIdFields`, default SPM-2, SAC-3, OBR-3, OBR-2. Results of an order with none of
     them go to the LIS under no sample id, which keeps them for the lab to assign.
+  * The patient of the PID before an order goes with its results, for the LIS to check against the tube's patient
+    (*Patient identity check* in [diagnostics.md](diagnostics.md)): from PID-3, the id whose assigning authority is
+    `HC360` (as HC360's 2.5.1 orders send the UHID), else a medical record number (type `MR`) no other authority
+    assigned, else the only id when it names neither, never another authority's id or one of several bare ones; from
+    PID-5, the family, given and further given names (not the prefix, suffix or degree). A PID field listed in
+    `sampleIdFields` holds the analyser's sample id and is not read as the patient's. A sample sent under two patients
+    goes to the LIS as two messages. A message without a PID, or with an empty one, carries no patient.
   * OBX handling:
     * NM, ST and TX values are read as text.
     * CE, CWE and CNE use the coded value's text.
@@ -1024,7 +1031,11 @@ acknowledgements are never acknowledged in turn.
   see *Withdrawn results and results not obtained* in [diagnostics.md](diagnostics.md#analyser-interface) for what the
   LIS does with it. `W` is passed on as a value: in ASTM it only warns that the value's validity is questionable,
   whereas in HL7 it withdraws the result. Each result passed on carries its unit (R.5), abnormal flags (R.7) and status
-  (R.9: F final, P preliminary, C correction…), and the C records after an R record are its comment.
+  (R.9: F final, P preliminary, C correction…), and the C records after an R record are its comment. The patient of the
+  P record before them goes with them, for the LIS to check against the tube's (*Patient identity check* in
+  [diagnostics.md](diagnostics.md)): the first of P.3 (where HC360's orders put the UHID), P.4 and P.5 the analyser
+  filled, and P.6 (last, first and middle name). A sample sent under two P records' patients goes to the LIS as two
+  messages; an empty P record, or none, carries no patient.
 * **Size limit**: once a message passes `maxMessageKilobytes`, the transfer is refused as a whole: that frame and every
   later one are NAKed until the analyser gives up with EOT, and nothing of it is stored, not even frames already
   acknowledged. The rejection is logged without the message.
