@@ -1387,8 +1387,8 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   **Back up now**: check that the Second copy column says "No", the in-app notice arrives, and System health shows
   `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Keep the result with the go-live
   records.
-- Each backup holds the database, the stored documents, the field encryption keys and the audit seal key, all encrypted.
-  Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this, and the
+- Each backup holds the database, the stored documents (with the SHA-256 of each), the field encryption keys, the audit
+  seal key, the erasure ledger and the hospital CA, all encrypted. Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this, and the
   **Checked** column also shows the backup's last test restore ("Test restores" below).
 - **The copies on the second disk or NAS are read back.** During the nightly upkeep, each copy there is read back
   every 7 days (`Backup:CopyCheckDays`), the least recently checked first, for up to three hours a night, and checked
@@ -1441,10 +1441,15 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
      Last, before it starts HC360, it leaves `restored.json` in the data folder. What HC360 then does, and what to check
      before the hospital works on the restored server, is under "After a restore" below.
-  3. Workstations see a new server certificate. If the hospital CA was exported from the old server and kept (section
-     9, step 3), install it with step 1's installer run: `.\Install-HC360Server.ps1 -HospitalCaFile <the .pfx>`, before
-     the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
-     Otherwise re-run HC360 Desktop setup on each (Change server…) and compare the new fingerprint.
+  3. Every backup carries the hospital CA, inside its encryption, and the script installs it with the database
+     ("Installed the backup's hospital CA …", with its fingerprint): HC360 Desktop, the lab agents, tablets and browsers
+     trust the new server as they trusted the old one, and find it on the network, without being set up again. The CA
+     the new hardware made as it first started is kept under a new name. Restore the newest backup you have: one made
+     before a `certificates new-ca` carries the CA it replaced, which the devices no longer trust. A next CA prepared for
+     a rollover is not in the backups: prepare it again (CA-ROLLOVER.md). A backup made before HC360 carried the CA says
+     so ("This backup carries no hospital CA …"): then install the CA exported from the old server (section 9, step 3)
+     with `certificates import-ca` (or the installer's `-HospitalCaFile`), or re-run HC360 Desktop setup on each
+     workstation (Change server…) and compare the new fingerprint.
   4. Where doctors sign prescriptions with their DSC, copy the CCA India root certificates back into
      `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 9): they are not in the backup. Until then
      DSC signing is refused and DSC-signed prescriptions are not printed as such (where the DSC is required, not at all);

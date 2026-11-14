@@ -46,8 +46,10 @@ internal static class ServerCli
               rotations) on this Server Node, with the HC360 service stopped. A document already here whose bytes are not
               those the backup records is replaced, and the file that was there kept in a folder of its own. The erasures in
               the backup's erasure ledger, and in the ledger's copy beside the backup file, are added to this server's
-              ledger, which HC360 applies as it starts. A different key already here is kept under a new name. The whole
-              backup is checked first,
+              ledger, which HC360 applies as it starts. A different key already here is kept under a new name. Last, the
+              hospital CA the backup carries is installed, so the devices trust this server, unless this server's own CA
+              took its place after the backup was made (a rollover, or new-ca); a different CA here is kept under a new
+              name. The whole backup is checked first,
               so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
               machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order. A machine without a recovery
               key of its own, such as new hardware, goes on backing up with the key the backup was opened with.
@@ -270,6 +272,7 @@ internal static class ServerCli
 
         var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None);
         CryptographicOperations.ZeroMemory(contents.MasterKey);
+        CryptographicOperations.ZeroMemory(contents.HospitalCa);
         Describe(contents.Manifest);
         Console.WriteLine(payload.KeyId is { } keyId
             ? $"The backup decrypts in full and matches its manifest. It opens with recovery key {keyId}."
@@ -290,7 +293,7 @@ internal static class ServerCli
 
         var databaseOut = options.GetValueOrDefault("database-out");
         var result = await BackupRestore.RestoreAsync(options["in"], key, databaseOut, directories,
-            HospitalDataProtection.CreateProvider(directories), TimeProvider.System, CancellationToken.None);
+            HospitalDataProtection.CreateProvider(directories), HospitalDataProtection.CreateNodeProvider(directories), TimeProvider.System, CancellationToken.None);
         if (result.Manifest is null)
         {
             Console.WriteLine(databaseOut is null
@@ -332,6 +335,8 @@ internal static class ServerCli
             Console.WriteLine($"The different key that was here is kept as {keptAs}.");
         }
 
+        DescribeHospitalCa(result);
+
         if (result.RecoveryKeyKept)
         {
             Console.WriteLine($"Backups made here from now on also open with the recovery key you entered ({BackupRecoveryKey.Id(key)}).");
@@ -348,6 +353,36 @@ internal static class ServerCli
         }
 
         return 0;
+    }
+
+    /// <summary>What became of the hospital CA the backup carries, which every device pinned: its fingerprint, to compare with theirs.</summary>
+    private static void DescribeHospitalCa(BackupRestoreResult result)
+    {
+        if (result.HospitalCa is { KeptFingerprint: { } kept } own)
+        {
+            Console.WriteLine($"This server keeps its own hospital CA, {GroupFingerprint(kept)}: it took the place of the backup's ({GroupFingerprint(own.Fingerprint)})");
+            Console.WriteLine("after the backup was made, and the devices trust it now.");
+        }
+        else if (result.HospitalCa is { Installed: true } installed)
+        {
+            Console.WriteLine($"Installed the backup's hospital CA, {GroupFingerprint(installed.Fingerprint)} (valid until {installed.ExpiresAt:dd MMM yyyy}), protected for this machine.");
+            Console.WriteLine("HC360 Desktop, the lab agents, tablets and browsers trust this server as they trusted the one the backup came from.");
+            if (installed.PreviousKeptAs is { } previous)
+            {
+                Console.WriteLine($"The different CA that was here is kept as {previous}.");
+            }
+        }
+        else if (result.HospitalCa is { } same)
+        {
+            Console.WriteLine($"This server already has the backup's hospital CA, {GroupFingerprint(same.Fingerprint)}.");
+        }
+        else
+        {
+            Console.WriteLine(result.HospitalCaProblem is { } problem
+                ? $"The backup's hospital CA could not be installed ({problem})."
+                : "This backup carries no hospital CA (it is older, or its server had none).");
+            Console.WriteLine("Install the CA exported from the old server with 'certificates import-ca', or set every device up again.");
+        }
     }
 
     /// <summary>Protects the settings file's plain-text secrets with DPAPI for this machine (SRS SEC-07).</summary>
@@ -1084,6 +1119,7 @@ internal static class ServerCli
             finally
             {
                 CryptographicOperations.ZeroMemory(contents.MasterKey);
+                CryptographicOperations.ZeroMemory(contents.HospitalCa);
             }
 
             Console.WriteLine("Only the database was written. After it is restored, 'backup restore' puts back the encryption key and documents.");

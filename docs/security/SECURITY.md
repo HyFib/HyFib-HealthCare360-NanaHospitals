@@ -1659,6 +1659,29 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   document already on the disk restored onto whose bytes differ (damaged, or encrypted again since the backup) is
   replaced by the backup's copy, so the documents always match the restored database; the file it replaced is kept
   beside the documents folder, never deleted, and put back if the restore fails after it.
+- **The hospital CA travels with the backups**, so a server restored on new hardware, from the second disk or the
+  off-site copy, serves a certificate every workstation, tablet, HC360 Desktop and lab agent already trusts, and none
+  has to be set up again in a disaster.
+  - Every backup carries the CA with its private key (after a switch, also the CA it replaced and the certificate that
+    CA signed for it), as a PKCS#12 file inside the archive, beside the database and the field keys. It has no
+    password of its own: the archive's encryption protects it exactly as it protects the database (AES-256-GCM under
+    the recovery key, every chunk authenticated), which is the protection the CA's key must have, no weaker. The
+    archive's manifest names the CA's fingerprint, and reading a backup checks that the file holds that CA with its key.
+    A restore reads it in memory, never onto the disk, and installs it protected for the new machine with Data
+    Protection, as `certificates import-ca` does.
+  - *The trade-off, accepted.* Whoever holds a backup and its recovery key can now issue certificates the devices trust,
+    as well as read every patient's record: the CA's key is exactly as safe as the database. The alternative, a
+    password-protected export kept in the safe as a go-live step, adds a second secret to keep and goes stale at every
+    rollover, and it is missing the day nobody made it, when every device must be set up again during a disaster; a
+    recovery key and backup in the wrong hands already mean every patient's data exposed, the graver loss. So a backup
+    and recovery key that may have been exposed now also mean the CA exposed: make a new CA with the new recovery key
+    (Key policy, below).
+  - A restore never puts back a CA the hospital has moved off: a server whose CA took the backup's place after the
+    backup was made, by a rollover's switch or by `certificates new-ca` (whose CA it replaced may have been seen), keeps
+    its own, which the devices trust now. Any other CA there, such as the one new hardware made as it first started, is
+    kept under a new name, never deleted. A failure to install the CA is reported, and leaves the rest of the restore
+    in place. A next CA prepared for a rollover is not carried. `certificates export-ca` and `import-ca` remain how a
+    warm standby gets the CA.
 - Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
   this check is discarded and reported.
 - A restore does not make HC360 issue a number twice (UHIDs, bills, receipts, GST invoices) or send a message twice. A
@@ -1724,7 +1747,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   Server Node leaves. Retire an earlier data key once System health shows nothing is encrypted with it; the backups
   made before keep their copy of it until they are deleted. Make a new backup recovery key when someone who has seen
   the current one leaves or a copy may have been exposed, and keep each one offline as long as backups made with it are
-  kept.
+  kept. A backup and its recovery key that may both have been exposed carry the hospital CA's key too: make a new CA
+  as well (`certificates new-ca`, every device set up again, docs/deployment/CA-ROLLOVER.md).
 
 #### Keys and certificates
 
@@ -1732,14 +1756,14 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 |---|---|---|---|---|
 | Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; an earlier key retired there once nothing is encrypted with it, the original never |
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
-| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; two people keep a copy each offline, one of them outside the building, and type it in every quarter | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed or lost; each key kept as long as backups made with it |
+| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; two people keep a copy each offline, one of them outside the building, and type it in every quarter | Every backup file (chunked AES-256-GCM), which carries all the data keys and the hospital CA, and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed or lost; each key kept as long as backups made with it |
 | Off-site upload key | The secret setting `backup.offsite.secret`; the store's console | The data encryption key, as every secret setting | Uploads to the off-site bucket, which its policy limits to adding copies and reading them back: no delete, and each copy locked | In the store's console, then entered under Administration › Backups (a second administrator approves), when someone who saw it leaves or it may be exposed |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through keys derived from it, of the addresses and mobile numbers whose failures are counted (in memory, or in the database with several servers) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers share it from the shared folder's `keys` |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI; with several servers, the ring in the shared folder is protected with the cluster key certificate (RSA, in each server's Local Computer store), and each server keeps its own DPAPI ring for its LAN certificates | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Cluster key certificate (several servers only) | The Local Computer's Personal store of each server; the PFX and its password offline, in the hospital's password safe | Windows (the private key readable by `NT SERVICE\HC360Server` and Administrators) | The shared Data Protection key ring, hence every key in the shared folder | Not rotated in place; to replace it, copy the documents and restore the latest backup into a new, empty shared folder named with the new certificate (DEPLOYMENT.md section 10, steps 2 to 4) |
-| Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
-| Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
+| Hospital CA and server certificate | `certs\*.pfx.protected`; the CA also inside every backup | Data Protection; in a backup, the backup's own encryption under the recovery key, as the database (Backups and keys, above) | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires. A backup and recovery key that may have been exposed are a CA exposed: make a new CA |
+| Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby (replacement hardware takes the CA from the backup it is restored from); kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
 | PostgreSQL TLS certificate (warm standby) | `hc360-server.key` in PostgreSQL's data folder, copied to the standby with the database | File permissions: PostgreSQL's service account and Administrators | The replication stream between the Server Nodes | Made by `Enable-HC360Replication.ps1`, valid 10 years; made again when it is within 30 days of expiry (copy the new `hc360-server.crt` to the standby) |
 | Replication password (warm standby) | On the primary, only its SCRAM verifier, in PostgreSQL; on the standby, `hc360-standby\replication.pgpass` beside the data folder; the hospital's password safe | File permissions on the standby: PostgreSQL's service account and Administrators | Streaming the database to the standby's address | Run `Enable-HC360Replication.ps1` with a new password, then `New-HC360Standby.ps1` with it |
 | Database sign-in | None: the service's Windows account (`NT SERVICE\HC360Server`, SSPI), which `pg_hba.conf` and `pg_ident.conf` allow from this machine only | Windows | The server's PostgreSQL account | Nothing to rotate. Where the server signs in with a password instead (PostgreSQL on another machine), the password is in `config\hc360.settings.json` under machine DPAPI, and changed from System health every year or when someone who knew it leaves |

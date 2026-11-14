@@ -30,7 +30,10 @@
        was there kept in files-replaced-<time> beside the documents. The erasures in the erasure ledger the backup carries,
        and in the ledger's copy beside the backup file, are added to this server's ledger first: as it starts, HC360
        carries out again each one the restored database does not have. A different key already here is kept under a new
-       name, never deleted. On new hardware, later backups open with the recovery key entered here.
+       name, never deleted. On new hardware, later backups open with the recovery key entered here. Last, it installs the
+       hospital CA the backup carries, so HC360 Desktop, the lab agents, tablets and browsers trust this server without
+       being set up again; a server whose own CA took its place after the backup was made (a rollover, or new-ca) keeps
+       its own.
     5. Leaves the restore marker (restored.json) in the data folder, for HC360's next start. As it starts, HC360 moves
        every number series (UHIDs, visits, bills, receipts, GST invoices) past the numbers issued after the backup was
        made, by their high-water mark kept outside the database; holds outgoing messages, some of which went after the

@@ -4,6 +4,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -184,7 +185,8 @@ internal sealed class BackupService(
     IPostgresTools postgres,
     INotificationService notifications,
     TimeProvider time,
-    ILogger<BackupService> logger) : IPreMigrationBackup
+    ILogger<BackupService> logger,
+    LanCertificateManager? certificates = null) : IPreMigrationBackup
 {
     public const string FileExtension = ".hc360bak";
     internal const string PartialExtension = ".partial";
@@ -396,8 +398,8 @@ internal sealed class BackupService(
             var documents = includeDocuments ? BackupArchive.ListDocuments(directories.Files) : [];
 
             // The erasure ledger after the dump: an erasure committed since is in the ledger and not the dump, and a restore
-            // of this backup carries it out again.
-            var extras = new BackupExtras(ErasureLedgerFiles.ReadForBackup(directories, options.Value.Backup));
+            // of this backup carries it out again. And the hospital CA the devices trust.
+            var extras = new BackupExtras(ErasureLedgerFiles.ReadForBackup(directories, options.Value.Backup), ExportHospitalCa());
 
             // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores.
             var ring = keys.ExportRing();
@@ -421,6 +423,11 @@ internal sealed class BackupService(
             {
                 CryptographicOperations.ZeroMemory(masterKey);
                 CryptographicOperations.ZeroMemory(sealKey);
+                if (extras.HospitalCa is { } ca)
+                {
+                    CryptographicOperations.ZeroMemory(ca.Pkcs12);
+                }
+
                 foreach (var key in ring.Keys)
                 {
                     CryptographicOperations.ZeroMemory(key);
@@ -472,6 +479,24 @@ internal sealed class BackupService(
             CryptographicOperations.ZeroMemory(backupKey);
             File.Delete(dump);
             File.Delete(partial);
+        }
+    }
+
+    /// <summary>
+    /// The hospital CA for the backup to carry, inside its encryption, so a server restored from it on new hardware serves a
+    /// certificate the devices already trust (docs/security/SECURITY.md, "Backups and keys"); null when this server has
+    /// none. One that cannot be read is left out, and said in the log: the backup of the database matters more.
+    /// </summary>
+    private ExportedHospitalCa? ExportHospitalCa()
+    {
+        try
+        {
+            return certificates?.ExportForBackup();
+        }
+        catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "The hospital CA could not be read, so this backup does not carry it");
+            return null;
         }
     }
 

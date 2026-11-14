@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Platform.Hosting;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Security;
 using Microsoft.AspNetCore.DataProtection;
 
@@ -31,6 +32,10 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// The SHA-256 of the erasure ledger the archive carries (<see cref="BackupArchive.ErasureLedgerEntry"/>); null in older
 /// backups. <see cref="BackupArchive.WriteAsync"/> sets it.
 /// </param>
+/// <param name="HospitalCa">
+/// The fingerprint, as HC360 Desktop pins it, of the hospital CA the archive carries (<see cref="BackupArchive.HospitalCaEntry"/>);
+/// null in older backups and when the server had no CA of its own. <see cref="BackupArchive.WriteAsync"/> sets it.
+/// </param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -47,7 +52,8 @@ public sealed record BackupManifest(
     string? AuditSealKey = null,
     IReadOnlyDictionary<string, long>? RowCounts = null,
     bool DocumentHashes = false,
-    string? ErasureLedger = null);
+    string? ErasureLedger = null,
+    string? HospitalCa = null);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);
@@ -57,7 +63,8 @@ public sealed record BackupDocument(string RelativePath, long Length);
 /// on new hardware needs. Each is left out when null.
 /// </summary>
 /// <param name="ErasureLedger">The erasure ledger's lines, as <see cref="ErasureLedgerFiles.ReadForBackup"/> reads them.</param>
-public sealed record BackupExtras(byte[]? ErasureLedger = null);
+/// <param name="HospitalCa">The hospital CA with its private key, as <see cref="LanCertificateManager.ExportForBackup"/> exports it.</param>
+public sealed record BackupExtras(byte[]? ErasureLedger = null, ExportedHospitalCa? HospitalCa = null);
 
 /// <summary>Where <see cref="BackupArchive.ReadAsync"/> writes what it reads; null reads and checks without writing.</summary>
 public sealed record BackupReadTargets(string? DatabaseDumpPath = null, string? DocumentsFolder = null);
@@ -79,12 +86,18 @@ public sealed record BackupContents(BackupManifest Manifest, byte[] MasterKey, i
 
     /// <summary>The erasure ledger the backup carries, as the server had it when the backup was made; null in older backups.</summary>
     public byte[]? ErasureLedger { get; init; }
+
+    /// <summary>
+    /// The hospital CA with its private key (PKCS#12, no password of its own), when the backup carries it: its caller zeroes
+    /// it once done, as it does the keys.
+    /// </summary>
+    public byte[]? HospitalCa { get; init; }
 }
 
 /// <summary>
 /// The payload of an archive backup (DED-16): one tar archive with the manifest, an escrow copy of the field master key,
-/// the erasure ledger, the PostgreSQL dump and, for full backups, the stored documents exactly as they are on disk (each
-/// already encrypted), followed by the SHA-256 of each as it was copied.
+/// the hospital CA, the erasure ledger, the PostgreSQL dump and, for full backups, the stored documents exactly as they
+/// are on disk (each already encrypted), followed by the SHA-256 of each as it was copied.
 /// The archive itself is encrypted by <see cref="BackupEncryption"/> with the recovery key administrators keep offline
 /// (<see cref="BackupRecoveryKey"/>), so one backup file and that key restore everything on replacement hardware.
 /// </summary>
@@ -110,6 +123,15 @@ public static class BackupArchive
     /// so every copy of the backup, the off-site one included, carries it to wherever the backup is restored.
     /// </summary>
     public const string ErasureLedgerEntry = "privacy/" + ErasureLedgerFiles.FileName;
+
+    /// <summary>
+    /// The hospital CA with its private key (<see cref="LanCertificateManager.ExportForBackup"/>), beside the field keys:
+    /// protected, as they are and as the database is, by the archive's encryption alone.
+    /// </summary>
+    public const string HospitalCaEntry = "keys/hospital-ca.pfx";
+
+    /// <summary>The largest hospital CA file a backup carries: a few kilobytes in practice.</summary>
+    private const int MaxHospitalCaLength = 1024 * 1024;
 
     /// <summary>The largest erasure ledger a backup carries: some 300,000 erasures, a line each.</summary>
     private const int MaxErasureLedgerLength = 128 * 1024 * 1024;
@@ -170,6 +192,7 @@ public static class BackupArchive
         {
             DocumentHashes = true,
             ErasureLedger = extras.ErasureLedger is { } ledger ? Convert.ToHexStringLower(SHA256.HashData(ledger)) : null,
+            HospitalCa = extras.HospitalCa?.Fingerprint,
         };
         await WriteEntryAsync(tar, ManifestEntry, new MemoryStream(JsonSerializer.SerializeToUtf8Bytes(manifest, Json)), ct);
         await WriteEntryAsync(tar, KeyEntry, new MemoryStream(masterKey, writable: false), ct);
@@ -181,6 +204,11 @@ public static class BackupArchive
         if (auditSealKey is not null)
         {
             await WriteEntryAsync(tar, AuditSealKeyEntry, new MemoryStream(auditSealKey, writable: false), ct);
+        }
+
+        if (extras.HospitalCa is { } hospitalCa)
+        {
+            await WriteEntryAsync(tar, HospitalCaEntry, new MemoryStream(hospitalCa.Pkcs12, writable: false), ct);
         }
 
         if (extras.ErasureLedger is { } erasures)
@@ -228,6 +256,7 @@ public static class BackupArchive
         var documentHashes = new Dictionary<string, string>(StringComparer.Ordinal);
         Dictionary<string, string>? recordedHashes = null;
         byte[]? erasureLedger = null;
+        byte[]? hospitalCa = null;
 
         await using (var tar = new TarReader(payload, leaveOpen: true))
         {
@@ -272,6 +301,15 @@ public static class BackupArchive
                         if (auditSealKey.Length != FieldMasterKey.Length || FieldMasterKey.Fingerprint(auditSealKey) != manifest.AuditSealKey)
                         {
                             throw new InvalidDataException("The audit seal key in the backup does not match its manifest.");
+                        }
+
+                        break;
+
+                    case HospitalCaEntry when hospitalCa is null:
+                        hospitalCa = await ReadSmallAsync(entry, MaxHospitalCaLength, ct);
+                        if (manifest.HospitalCa is null || LanCertificateManager.BackupFingerprint(hospitalCa) != manifest.HospitalCa)
+                        {
+                            throw new InvalidDataException("The hospital CA in the backup does not match its manifest.");
                         }
 
                         break;
@@ -339,6 +377,11 @@ public static class BackupArchive
             throw new InvalidDataException("The backup is incomplete: the erasure ledger its manifest lists is missing.");
         }
 
+        if (manifest.HospitalCa is not null && hospitalCa is null)
+        {
+            throw new InvalidDataException("The backup is incomplete: the hospital CA its manifest lists is missing.");
+        }
+
         if (documentCount != manifest.DocumentCount || documentBytes != manifest.DocumentBytes)
         {
             throw new InvalidDataException($"The backup holds {documentCount} documents ({documentBytes} bytes); its manifest lists {manifest.DocumentCount} ({manifest.DocumentBytes} bytes).");
@@ -351,6 +394,7 @@ public static class BackupArchive
             AuditSealKey = auditSealKey,
             DocumentHashes = documentHashes,
             ErasureLedger = erasureLedger,
+            HospitalCa = hospitalCa,
         };
     }
 
@@ -631,6 +675,12 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 
     /// <summary>How many lines of those ledgers this server's ledger did not have, added to it.</summary>
     public int ErasureLedgerLinesAdded { get; init; }
+
+    /// <summary>What became of the hospital CA the backup carries; null when it carries none (older backups) or that failed.</summary>
+    public RestoredHospitalCa? HospitalCa { get; init; }
+
+    /// <summary>Why the backup's hospital CA could not be installed, when that failed after everything else was restored.</summary>
+    public string? HospitalCaProblem { get; init; }
 }
 
 /// <summary>
@@ -642,19 +692,38 @@ public sealed record BackupRestoreResult(int Version, BackupManifest? Manifest, 
 /// <summary>
 /// Puts back what a backup holds besides its database, on the Server Node with the service stopped: the stored documents,
 /// the erasures of its erasure ledger (added to this server's, which the next start applies), then the field encryption
-/// key. The whole archive is read and checked first, and the key comes last, so a failure never
+/// key, and last the hospital CA the devices trust. The whole archive is read and checked first, and the key comes last of
+/// what the database needs, so a failure never
 /// leaves this machine with the backup's key but not its database. Restore-HC360.ps1 restores the database first, runs
 /// this after it succeeds, and puts the previous database back if this fails.
 /// </summary>
 public static class BackupRestore
 {
+    /// <summary>Restores a backup on a single Server Node, whose hospital CA is protected with the same key ring as its other keys.</summary>
     /// <param name="databaseDumpPath">Where to write the database dump as well, or null to only check it.</param>
+    public static Task<BackupRestoreResult> RestoreAsync(
+        string backupFile,
+        byte[] recoveryKey,
+        string? databaseDumpPath,
+        DataDirectories directories,
+        IDataProtectionProvider dataProtection,
+        TimeProvider time,
+        CancellationToken ct) =>
+        RestoreAsync(backupFile, recoveryKey, databaseDumpPath, directories, dataProtection, dataProtection, time, ct);
+
+    /// <param name="databaseDumpPath">Where to write the database dump as well, or null to only check it.</param>
+    /// <param name="dataProtection">The key ring that protects the keys (<see cref="HospitalDataProtection.CreateProvider"/>).</param>
+    /// <param name="nodeProtection">
+    /// The key ring of this machine alone, which protects its hospital CA (<see cref="HospitalDataProtection.CreateNodeProvider"/>):
+    /// the same as <paramref name="dataProtection"/> on a single Server Node.
+    /// </param>
     public static async Task<BackupRestoreResult> RestoreAsync(
         string backupFile,
         byte[] recoveryKey,
         string? databaseDumpPath,
         DataDirectories directories,
         IDataProtectionProvider dataProtection,
+        IDataProtectionProvider nodeProtection,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -746,8 +815,26 @@ public static class BackupRestore
                     recoveryKeyProblem = ex.Message;
                 }
 
+                // The hospital CA, which every device pins, with the database it was backed up with: on new hardware the
+                // server they find then serves a certificate they trust. Reported, as the recovery key is, if it fails.
+                RestoredHospitalCa? hospitalCa = null;
+                string? hospitalCaProblem = null;
+                if (contents.HospitalCa is { } carriedCa)
+                {
+                    try
+                    {
+                        hospitalCa = LanCertificateManager.RestoreCa(directories, nodeProtection, carriedCa, time.GetUtcNow());
+                    }
+                    catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException or CryptographicException)
+                    {
+                        hospitalCaProblem = ex.Message;
+                    }
+                }
+
                 return new BackupRestoreResult(payload.Version, contents.Manifest, documents.Restored, documents.Present, KeyInstalled: true, keptAs)
                 {
+                    HospitalCa = hospitalCa,
+                    HospitalCaProblem = hospitalCaProblem,
                     RingKeysInstalled = contents.RingKeys.Count,
                     AuditSealKeyInstalled = contents.AuditSealKey is not null,
                     RecoveryKeyKept = recoveryKeyKept,
@@ -770,6 +857,11 @@ public static class BackupRestore
                 if (contents.AuditSealKey is { } sealKey)
                 {
                     CryptographicOperations.ZeroMemory(sealKey);
+                }
+
+                if (contents.HospitalCa is { } ca)
+                {
+                    CryptographicOperations.ZeroMemory(ca);
                 }
             }
         }

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -218,6 +219,73 @@ public sealed class BackupRestoreTests(HospitalServer server)
 
             Directory.Delete(machine.Root, recursive: true);
         }
+    }
+
+    /// <summary>
+    /// After a disaster no device has to be set up again: the backup service puts the hospital CA in every backup, inside
+    /// its encryption, and <c>backup restore</c>, as Restore-HC360.ps1 runs it on new hardware, installs it there, protected
+    /// for that machine. The server there announces the CA every device pinned and issues itself a certificate from it.
+    /// The test server makes no CA of its own (it does not listen on the network), so the backup is made with a Server
+    /// Node's, as HC360 starts one.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_restored_on_new_hardware_installs_the_hospital_CA_every_device_pinned()
+    {
+        Assert.SkipUnless(ScriptedRestore.PgRestoreInstalled(), "Needs PostgreSQL's pg_restore, in PGBIN or on the PATH.");
+        var serverNode = NewMachine();
+        var replacement = NewMachine();
+        string? backup = null;
+        try
+        {
+            using var serving = StartTls(serverNode);
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                var run = await ActivatorUtilities.CreateInstance<BackupService>(scope.ServiceProvider, serving).RunAsync(BackupKind.Manual, null, Ct);
+                run.Status.ShouldBe(BackupStatus.Succeeded, run.Error);
+                backup = Path.Combine(server.Services.GetRequiredService<DataDirectories>().Backups, run.FileName!);
+            }
+
+            // The new hardware's HC360 started once before the restore, and made a CA of its own that no device trusts.
+            using (var own = StartTls(replacement))
+            {
+                own.CaFingerprint.ShouldNotBe(serving.CaFingerprint);
+            }
+
+            var recoveryKey = server.Services.GetRequiredService<RecoveryKeyStore>().Current().Key;
+            (await CliAsync(recoveryKey, "backup", "restore", "--in", backup, "--data-dir", replacement.Root)).ShouldBe(0, "backup restore");
+
+            using var restored = StartTls(replacement);
+            restored.CaFingerprint.ShouldBe(serving.CaFingerprint, "it announces the CA the devices pinned");
+            using (var pinned = X509Certificate2.CreateFromPem(serving.CaPem!))
+            using (var chain = new X509Chain())
+            {
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                chain.ChainPolicy.CustomTrustStore.Add(pinned);
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                chain.Build(restored.ServerCertificate).ShouldBeTrue("its certificate is issued by the CA the devices pinned");
+            }
+
+            Directory.GetFiles(replacement.Certificates, "hospital-ca.pfx.protected.replaced-*").ShouldHaveSingleItem("the CA it made itself is kept, never deleted");
+        }
+        finally
+        {
+            if (backup is not null)
+            {
+                File.Delete(backup);
+            }
+
+            Directory.Delete(serverNode.Root, recursive: true);
+            Directory.Delete(replacement.Root, recursive: true);
+        }
+    }
+
+    /// <summary>A Server Node's TLS as HC360 starts it, with the machine's own key ring: on first start it makes the hospital CA.</summary>
+    private static LanCertificateManager StartTls(DataDirectories machine)
+    {
+        var certificates = new LanCertificateManager(machine, new PlatformOptions { DataDirectory = machine.Root }, HospitalDataProtection.CreateNodeProvider(machine),
+            NullLogger<LanCertificateManager>.Instance);
+        certificates.EnsureCertificates();
+        return certificates;
     }
 
     private static async Task<long> ServerRowsAsync(NpgsqlConnection connection)
