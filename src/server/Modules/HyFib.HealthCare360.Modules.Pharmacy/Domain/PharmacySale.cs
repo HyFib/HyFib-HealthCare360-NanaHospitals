@@ -35,7 +35,18 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     /// <summary>The date written on an outside prescription sold against at the counter: the paper the sale is matched to.</summary>
     public DateOnly? PrescriptionDate { get; set; }
 
+    /// <summary>The time the sale was made: for a sale written on paper during a downtime, the time on the paper.</summary>
     public DateTimeOffset SoldAt { get; set; }
+
+    /// <summary>
+    /// When a sale written on paper during a downtime was entered into HC360, under the downtime number on the paper
+    /// (<see cref="InvoiceNumber"/>); <c>null</c> for a sale made on the screen at the time. <see cref="SoldAt"/> is the
+    /// time on the paper.
+    /// </summary>
+    public DateTimeOffset? EnteredFromPaperAt { get; set; }
+
+    public bool IsBackEntered => EnteredFromPaperAt is not null;
+
     public Guid? SoldByUserId { get; set; }
     public string? CounsellingNotes { get; set; }
     public decimal DiscountPercent { get; set; }

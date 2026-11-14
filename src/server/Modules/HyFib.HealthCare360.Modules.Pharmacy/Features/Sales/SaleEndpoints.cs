@@ -203,7 +203,8 @@ internal static class SaleEndpoints
             sale.PrescriptionDate,
             await adjustments.PendingAsync(sale.Id, ct),
             sale.HandledBy(currentUser.UserId),
-            einvoice.Missing));
+            einvoice.Missing,
+            sale.EnteredFromPaperAt));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)

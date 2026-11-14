@@ -26,6 +26,7 @@ internal sealed class PharmacyQueueEntryConfiguration : IEntityTypeConfiguration
         b.ToTable("queue_entries", PharmacySchema.Name);
         b.Property(x => x.PrescriptionNumber).HasMaxLength(40);
         b.Property(x => x.CloseReason).HasMaxLength(300);
+        b.Property(x => x.PaperSaleNumber).HasMaxLength(24);
         b.Property(x => x.RefillNote).HasMaxLength(300);
         b.Property(x => x.SafetyOverrideReason).HasMaxLength(1000);
         b.Ignore(x => x.RefillsRemaining);
@@ -87,6 +88,7 @@ internal sealed class PharmacySaleConfiguration : IEntityTypeConfiguration<Pharm
         b.Property(x => x.DiscountPercent).IsPercent();
         b.Property(x => x.FreeTreatmentReason).HasMaxLength(200);
         b.Property(x => x.CancelReason).HasMaxLength(300);
+        b.Ignore(x => x.IsBackEntered);
         b.HasMany(x => x.Items).WithOne().HasForeignKey(x => x.PharmacySaleId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(x => x.Payments).WithOne().HasForeignKey(x => x.PharmacySaleId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Patient>().WithMany().HasForeignKey(x => x.PatientId).OnDelete(DeleteBehavior.Restrict);
