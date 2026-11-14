@@ -68,10 +68,22 @@ the WHO ICD-API. It also holds the server's PDF renderer, which drives headless 
   and analysers whose facility the LIS cannot give.
 * **Transport.** Each HTTP provider is a typed `HttpClient` behind the standard resilience handler. Cloud APIs use a
   15 s attempt timeout and a 20 s total; Tally uses 20 s for both, because the day book posts from an outbox message
-  that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). Unsafe methods (POST) are **never retried** at the HTTP
+  that has 30 s in all (see [Tally Prime](#tally-prime-int-tally)). A connection that does not open within 5 s, TLS
+  included, fails at once (`IntegrationHttp.ConnectTimeout`): on an internet link that drops packets an SMS fails in 5 s
+  rather than after its whole attempt. Unsafe methods (POST) are **never retried** at the HTTP
   layer, because a lost response may mean the SMS was already sent or the order already created. The outbox retries
   whole messages instead. Responses are capped at 4 MB. Endpoints must be absolute http(s) URLs without embedded
   credentials, and https is required for every internet provider.
+* **No answer, or a refusal.** A send that got no answer (a timeout, a connection that could not be made or broke, an
+  open circuit) returns a failed `SendResult` with `ProviderUnreachable` set (`IntegrationErrors.Failed`); SMTP sets it for
+  a connection failure or a timeout. A refusal, such as an unapproved template, is an answer and does not set it. The
+  notification handlers then throw `ProviderUnreachableException`, and the outbox counts the failure towards the
+  provider's cool-down: after 3 in a row its messages wait 30 s, doubling to 5 min, without being tried, while every other
+  provider carries on. The outbox handlers name their provider (`IOutboxHandler.Provider`): `sms`, `whatsapp` (template
+  messages and STOP/START confirmations), `email` (notifications and scheduled reports), `abdm` (linking and transfers).
+* **Outbox lanes.** Every handler here is on the internet lane, except `LabOrderOutboxHandler`, which only adds the
+  order to the analysers' queue in the database: an analyser's order never waits behind SMS and WhatsApp, and is not held
+  after a restore. See [ARCHITECTURE.md](../architecture/ARCHITECTURE.md) (Internet outage).
 
 ## What other modules resolve
 
@@ -1065,8 +1077,9 @@ acknowledgements are never acknowledged in turn.
   [diagnostics.md](diagnostics.md#analyser-interface)): a tube received in the lab (`New`), a reopened result (`Rerun`),
   a cancelled test or a rejected tube (`Cancel`). It writes one `lab.analyser.order` outbox message naming the active
   bidirectional analysers of the tube's facility that run its tests, with their channel codes.
-* **Queue.** `LabOrderOutboxHandler` adds one `integrations.lab_order_downloads` row per analyser, in the dispatcher's
-  transaction; a redelivered message adds nothing. Rows hold the barcode and channel codes, never patient data. They
+* **Queue.** `LabOrderOutboxHandler` adds one `integrations.lab_order_downloads` row per analyser, in the transaction
+  that commits the message as delivered (each message has its own); a redelivered message adds nothing. It is on the
+  outbox's local lane, so an internet outage never holds an order up. Rows hold the barcode and channel codes, never patient data. They
   wait until the analyser is connected and its line is quiet (looked for every 3 s).
 * **Built when sent.** The order is built from the LIS when its turn comes (`GetOrderToSendAsync`), so a test
   cancelled or resulted in the meantime is not sent. A row with nothing left to send is closed as `Skipped` with the
@@ -1390,7 +1403,8 @@ Permissions:
   Platform, with the `IIntegrationLogger` it writes through.
 * **Typed HTTP clients** with the standard resilience handler: `Msg91SmsProvider`, `TwilioSmsProvider`,
   `GenericHttpSmsProvider`, `MetaWhatsAppProvider`, `RazorpayGateway`, `PineLabsPosTerminal`, `DicomWebPacsProvider`
-  and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both.
+  and `WhoIcdApiClient` use a 15 s attempt timeout and 20 s total. `TallyPrimeExporter` uses 20 s for both. Every one
+  connects within 5 s or fails (`IntegrationHttp.ConnectTimeout`).
 * **Providers** (scoped, keyed by `Key`):
   * `ISmsProvider`: msg91, twilio, generic, simulator.
   * `IWhatsAppProvider`: meta, simulator.

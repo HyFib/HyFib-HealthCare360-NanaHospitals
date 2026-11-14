@@ -1321,14 +1321,16 @@ can sign in, it:
    the audit trail (`numbering.raised`, Administration › Audit), which explains its gap to the auditors of bills and
    receipts. A yearly series moves into the new year when the mark has numbers of it. This happens at every start, so a
    restore made by hand, without the script, is caught too; only the next two steps need the script's `restored.json`.
-2. **Holds outgoing messages** (SMS, WhatsApp, e-mail). Some were sent after the backup was made and would go again.
+2. **Holds the outgoing messages queued before the restore** (SMS, WhatsApp, e-mail, ABDM, e-invoicing). Some were sent
+   after the backup was made and would go again. Messages queued after the restore go as usual, among them the SMS that
+   tells IT on-call of the restore.
 3. **Says so in System health**, as a critical warning (`system.restored`): the backup it was restored from, the series
    it moved with their next numbers, and that the messages are held. It lasts until the messages are released.
 
 Before the hospital works on the restored server:
 - Sign in, check the records entered last before the failure, and enter again from paper what is missing.
 - Check the next numbers System health names against the last ones printed (the last bill, the last wristband).
-- Check the held messages, then release them. None goes out until then.
+- Check the held messages, then release them (below). None of them goes out until then.
 
 Without the mark's copy (no `-SecondaryBackupDir`, or a different one on the new hardware), a restore on new hardware
 finds no mark, and System health says so: set each series' next number past the last one printed, in Hospital setup ›
@@ -1336,6 +1338,28 @@ Number formats, before the hospital works on it. The mark is sealed with the aud
 so one written elsewhere, or changed by hand, is not used. If start-up cannot do all of this after a restore, it stops
 rather than issue numbers or send messages twice; the reason is in the log and Windows Event Viewer, and the marker
 stays until HC360 starts.
+
+**The held messages.** A restored database holds, as waiting, the messages that were waiting when the
+backup was made, and some of them may have gone out since: a payment link, a bill, a result. So as the restored server
+starts, it holds the messages queued before that moment that go to the internet (the hospital-wide setting
+`messaging.outbox.hold`): none of them goes by SMS, WhatsApp, e-mail, ABDM or e-invoicing until an administrator
+releases them. Messages queued after the restore are new and go as usual, the SMS that tells IT on-call of the restore
+among them, and so do alerts in the app, the analysers' orders and Tally. A held message still expires when its time
+is up (a sign-in code after ten minutes), and System health counts it as expired. System health shows the restore as
+a critical warning (`system.restored`), which the alerts tell IT on-call, and counts the held messages in a warning of
+its own, which does not page anyone again: "12 outgoing messages queued before the restore at … are held: check them,
+then release". To release them:
+1. Open **Administration › System health**. The **Messages waiting to send** card says how many messages are held and
+   when the backup was made.
+2. Check what is held: **Check the queued messages** opens **Administration › Notifications › Delivery log** at the
+   Queued messages; those queued before the restore are the held ones. Compare them with what the providers' own
+   portals show went out after the backup was made (MSG91's report, Meta's WhatsApp Manager, the mail server's log), and
+   tell anyone who should know of a message that will go twice.
+3. Press **Release** on the card (`admin.system.manage`) and confirm. The release clears the hold and the restore's
+   warning, is audited (`messaging.outbox_released`, with what the hold said and how many messages it held), and the
+   messages go within seconds, on every server, as each provider answers.
+
+A hold set for any other reason works the same way, and its warning is critical: nothing else tells of it.
 
 ## 9. Warm standby and failover (optional)
 
@@ -1847,6 +1871,8 @@ they keep the audit trail for a period (8 years at the least), after it exports 
 | Slow screens on one ward | Administration › Devices shows each workstation's WiFi signal (a workstation on a cable shows —); Administration › System health shows the server's link: on a cable, its speed (1 Gbps), else its WiFi signal. On a cabled ward, the ward's switch and its uplink |
 | "Cable disconnected" (System health), or the on-call phone says the server lost its network cable | Which cable: the alert and System health name it, with the address it had. Is it in at both ends, and its switch on (on the UPS)? The port's lights show a link. If it comes back and drops again (**Last cable drop**), change the cable, then the switch port, then turn off Energy-Efficient Ethernet in the card's Advanced settings (section 1, Network checklist) |
 | The on-call phone says the server's network cable is connected again, with no SMS of its loss before | The server reaches the SMS gateway over that cable alone, so the loss could not go while it was out: it was withdrawn (**Administration › Notifications** shows it suppressed), and the return says when the cable was lost and when it was back. If it happens again, see the row above |
+| "Outbound messages are queued for more than 30 minutes (internet down?)" (System health), or SMS and WhatsApp arrive late | Is the internet up? Alerts in the app (a fridge out of range, a critical result) do not wait for it. A provider that could not be reached three times in a row waits 30 s, doubling to 5 minutes, before its next try, and the server log says so ("… could not be reached 3 or more times in a row"); once the internet is back, its messages go within 5 minutes. System health counts the messages that failed or expired unsent in the last day |
+| "… outgoing messages queued before the restore at … are held: check them, then release" (System health) | The messages queued before the restore wait; those queued since go as usual. Check the queued messages, then press **Release** on the Messages waiting to send card (section 8, "Messages held after a restore"), which also clears the restore's warning |
 | Desktop setup finds no server | Multicast blocked. Type the server name (`HC360-SRV`) or use `-ServerUrl` |
 | At busy times staff on some workstations are told to wait before signing in again | Do those workstations reach the server over internet (global) IPv6 addresses from another subnet than the server's? Sign-in limits count such an address by its /64, which the whole subnet shares. List the hospital's IPv6 networks in `HealthCare360:Network:LocalNetworks` in `hc360.settings.json` (for example `[ "2001:db8:12::/48" ]`) and restart the `HC360Server` service: addresses there count one by one, as on the server's own subnet |
 | "The server could not be verified" | The server was reinstalled or replaced. Re-run setup (Change server…) and compare the fingerprint |

@@ -1033,7 +1033,7 @@ which lets go a document dated before `gst.einvoice.from`): a bill as it is fina
 payer with a GSTIN), a bill's credit note or debit note to the payer as the approver issues it, a pharmacy counter sale
 to a buyer with a GSTIN, and the return of such a sale while its GST can still be reduced. The outbox delivers it once
 that transaction commits (`EInvoiceGenerateHandler`, in a scope of its own, so a conflict on the register fails that
-message alone and not the outbox's batch), and `EInvoiceService.GenerateQueuedAsync` decides what follows
+message alone), and `EInvoiceService.GenerateQueuedAsync` decides what follows
 (`EInvoiceAutomation`):
 * **Nothing more** when the document needs no IRN now: it is no longer a B2B e-invoice of e-invoicing's days, it is
   cancelled, it has an IRN (live, or cancelled on the portal), or the facility is not connected (the IRN is recorded by
