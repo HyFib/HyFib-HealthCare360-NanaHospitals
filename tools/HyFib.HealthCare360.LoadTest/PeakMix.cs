@@ -646,16 +646,8 @@ internal static class FixtureDiscovery
                 .Select(r => Answer.Id(r)).FirstOrDefault(id => id is not null);
             if (fixtures.PharmacyStoreId is { } store)
             {
-                // Medicines that sell over the counter: in stock, with a price, and not needing a prescription.
-                var stock = await ReadAsync(http, pharmacy, $"api/v1/pharmacy/stock?storeId={store}&inStockOnly=true&take=100", log, cancellationToken);
-                fixtures.PharmacyItems =
-                [
-                    .. Answer.Rows(stock)
-                        .Where(r => Answer.Prop(r, "needsPrescription") is not { ValueKind: JsonValueKind.True } && Answer.Number(r, "available") > 0 && Answer.Number(r, "currentMrp") > 0)
-                        .Select(r => (Id: Answer.Id(r, "itemId"), Mrp: Answer.Number(r, "currentMrp"), Units: (int)Math.Min(Answer.Number(r, "available"), 100_000)))
-                        .Where(r => r.Id is not null)
-                        .Select(r => new StockItem(r.Id!.Value, r.Mrp, r.Units)),
-                ];
+                fixtures.PharmacyItems = SellableItems(
+                    await ReadAsync(http, pharmacy, $"api/v1/pharmacy/stock?storeId={store}&inStockOnly=true&take=100", log, cancellationToken));
             }
         }
 
@@ -677,6 +669,19 @@ internal static class FixtureDiscovery
 
         return fixtures;
     }
+
+    /// <summary>
+    /// The medicines of the pharmacy's stock rows (PharmacyStockRow) that sell over the counter: in stock, with an MRP, and
+    /// said not to need a prescription. A row that does not say so is left out, as one that does.
+    /// </summary>
+    internal static IReadOnlyList<StockItem> SellableItems(JsonElement stock) =>
+    [
+        .. Answer.Rows(stock)
+            .Where(r => Answer.Prop(r, "requiresPrescription") is { ValueKind: JsonValueKind.False } && Answer.Number(r, "available") > 0 && Answer.Number(r, "mrp") > 0)
+            .Select(r => (Id: Answer.Id(r, "itemId"), Mrp: Answer.Number(r, "mrp"), Units: (int)Math.Min(Answer.Number(r, "available"), 100_000)))
+            .Where(r => r.Id is not null)
+            .Select(r => new StockItem(r.Id!.Value, r.Mrp, r.Units)),
+    ];
 
     /// <summary>
     /// Opens the cashier shift of a billing account that has none, before the users start: the clerks sharing the account would
