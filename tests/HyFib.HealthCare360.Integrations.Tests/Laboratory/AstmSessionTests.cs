@@ -615,4 +615,91 @@ public sealed class AstmSessionTests
 
         await _processor.ReceivedWithAnyArgs(1).SubmitResultsAsync(default!, default!, default!, Ct);
     }
+
+    private static LabInstrumentSettings Yumizen { get; } =
+        LabSamples.AstmInstrument with { Code = "C150", AstmDialect = AstmDialect.YumizenC150Name };
+
+    [Fact]
+    public async Task A_yumizen_query_for_several_ids_is_answered_in_backtick_repeats_with_the_tube_as_patient_id()
+    {
+        var run = Start(Yumizen);
+
+        await OpenAsync();
+        await SendAcknowledgedAsync(AstmFrames.BuildMessage(
+            [@"H|\^&|||ABC^3.6^11052213|||||||E-1394-97|20131205091027", "Q|1|^SMP-1`SMP-2|||S||||||O", "L|1|N"], Latin1));
+        await SendAsync(AstmControl.Eot);
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        await _processor.Received(1).QueryOrdersAsync(
+            Arg.Is(Yumizen), Arg.Is<IReadOnlyList<string>>(ids => ids.SequenceEqual(new[] { "SMP-1", "SMP-2" })), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        records.Count.ShouldBe(4);
+        records[0].ShouldBe("H|`^&|||HC360^1.0|||||||P|E 1394-97|20260925103000");
+        records[1].ShouldBe("P|1|SMP-1|||SHARMA&S&RAVI||19800115000000|M");
+        records[2].ShouldStartWith("O|1|SMP-1||^^^GLU`^^^CREA|R|");
+        records[2].ShouldEndWith("|SERUM||||||||||O");
+        records[3].ShouldBe("L|1|N");
+    }
+
+    [Fact]
+    public async Task A_yumizen_result_upload_without_an_order_record_reaches_the_tube_in_its_patient_id()
+    {
+        var run = Start(Yumizen);
+
+        await OpenAsync();
+        await SendAcknowledgedAsync(AstmFrames.BuildMessage(
+        [
+            @"H|\^&|||ABC^3.6^11052213|||||||E-1394-97|20131203141051",
+            "P|1|SMP-1|||SHARMA^RAVI|||M",
+            "R|1|^^^GLU|98|mg/dL|0^0|||N|F||||20131203141051",
+            "L|1|N",
+        ], Latin1));
+        await SendAsync(AstmControl.Eot);
+        await FinishAsync(run);
+
+        await _processor.Received(1).SubmitResultsAsync(
+            Arg.Is(Yumizen),
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "SMP-1" && m[0].Results[0].Status == "F"),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Sends_a_yumizen_its_orders_with_the_tube_as_patient_id()
+    {
+        QueueOneDownload();
+        var run = Start(Yumizen);
+
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        records[0].ShouldStartWith("H|`^&|");
+        records[1].ShouldBe("P|1|SMP-1|||SHARMA&S&RAVI||19800115000000|M");
+        records[2].ShouldStartWith("O|1|SMP-1||^^^GLU`^^^CREA|S|");
+        records[3].ShouldBe("L|1|N");
+    }
+
+    [Fact]
+    public async Task Answers_the_yumizen_h500_query_from_its_manual_with_an_empty_order_when_nothing_is_pending()
+    {
+        IReadOnlyList<InstrumentOrder> none = [];
+        _processor.QueryOrdersAsync(default!, default!, default!, Ct).ReturnsForAnyArgs(HostQueryAnswer.Answer(none));
+        var h500 = LabSamples.AstmInstrument with { Code = "H500", AstmDialect = AstmDialect.YumizenH500Name };
+        var run = Start(h500, LabRuntimeOptions.From(new LabGatewaySettings(), h500) with { Zone = LabSamples.India });
+
+        await OpenAsync();
+        // The query as the manual prints it (§3.6.1). The checksums of Q and L are the manual's; the header's printed one
+        // does not match its text (the line wraps in the manual), so it carries the computed one.
+        await SendAcknowledgedAsync(
+        [
+            [AstmControl.Stx, .. "1H|\\^&|||H500/H500E^112YADH47745^3.0.0.3a|||||||P|LIS2-A2|20210709175737\r"u8, AstmControl.Etx, .. "F2\r\n"u8],
+            [AstmControl.Stx, .. "2Q|1|^0124||ALL||||||||O\r"u8, AstmControl.Etx, .. "E1\r\n"u8],
+            [AstmControl.Stx, .. "3L|1|N\r"u8, AstmControl.Etx, .. "06\r\n"u8],
+        ]);
+        await SendAsync(AstmControl.Eot);
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        records.ShouldBe([@"H|\^&||||||||||P|LIS2-A2|20260925103000", "P|1|", "O|1|0124||^^^|||||||N||||||||||||||Y", "L|1|N"]);
+    }
 }

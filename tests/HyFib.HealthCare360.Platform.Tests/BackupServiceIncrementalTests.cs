@@ -215,7 +215,12 @@ public sealed class BackupServiceIncrementalTests : IDisposable
 
         result.DocumentCount.ShouldBeNull();
         BlobCount(_directories.Backups).ShouldBe(0);
-        (await ContentsAsync(_directories.Backups, result)).Manifest.IncludesDocuments.ShouldBeFalse();
+        var contents = await ContentsAsync(_directories.Backups, result);
+        contents.Manifest.IncludesDocuments.ShouldBeFalse();
+
+        // Undoing an update restores this backup with the version updated from, which reads format 2 only (F17).
+        contents.Manifest.Format.ShouldBe(BackupArchive.InlineDocumentsFormat);
+        contents.Manifest.DocumentIndexSha256.ShouldBeNull();
         File.Exists(Path.ChangeExtension(Path.Combine(Usb, result.FileName), ".refs")).ShouldBeTrue();
     }
 

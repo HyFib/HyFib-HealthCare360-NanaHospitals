@@ -1,0 +1,748 @@
+<!-- The shareable roles page. tools/build-roles-page.cs fills its placeholders from docs/security/roles.json: the data,
+     the commit that last changed the file with that commit's date, and the totals. Page content only: the build wraps it
+     in a document for a browser, or leaves it bare (fragment) for a publisher that adds its own. -->
+<title>HealthCare360 roles</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="What each built-in HealthCare360 role may do on a new installation, read from the code and checked against two other records.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: an access register. A masthead that states what the page covers and where it came from, four views
+   (roles, permissions, the role-by-permission grid, how access is switched) under one tab row, and the record of
+   how the page was checked at the foot. Matrix colours: --held and --admin, validated for colour-vision deficiency
+   and contrast against --surface in both themes. */
+:root {
+  --bg: #f2f5f7;
+  --surface: #ffffff;
+  --ink: #14212b;
+  --ink-2: #3b4a57;
+  --muted: #5f6f7e;
+  --rule: #d7dee5;
+  --rule-strong: #b6c1cc;
+  --accent: #00675d;
+  --held: #008f82;
+  --admin: #b45309;
+  --wash: #e5f2f0;
+  --admin-wash: #fbefe3;
+  --tip-bg: #14212b;
+  --tip-ink: #f2f5f7;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1216; --surface: #121a20; --ink: #e4ebf0; --ink-2: #c2ced7; --muted: #8e9fad; --rule: #233039;
+    --rule-strong: #34434e; --accent: #5ec7b8; --held: #1f9e90; --admin: #c4862a; --wash: #15302c; --admin-wash: #32251a;
+    --tip-bg: #e4ebf0; --tip-ink: #0c1216; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1216; --surface: #121a20; --ink: #e4ebf0; --ink-2: #c2ced7; --muted: #8e9fad; --rule: #233039;
+  --rule-strong: #34434e; --accent: #5ec7b8; --held: #1f9e90; --admin: #c4862a; --wash: #15302c; --admin-wash: #32251a;
+  --tip-bg: #e4ebf0; --tip-ink: #0c1216; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.55 var(--font-body); -webkit-font-smoothing: antialiased; }
+.page {
+  max-width: 1200px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px; display: grid; gap: 28px;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; line-height: 1.15; text-wrap: balance; margin: 0; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Masthead */
+.masthead { display: grid; gap: 14px; max-width: 74ch; }
+.eyebrow { margin: 0; font: 500 12px/1.2 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+h1 { font-size: clamp(30px, 5vw, 44px); letter-spacing: -0.01em; }
+.lede { margin: 0; font-size: 17px; color: var(--ink-2); }
+.figures { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 4px 0 0; padding: 0; list-style: none; }
+.figures li { display: grid; gap: 0; }
+.figures b { font: 600 22px/1.1 var(--font-display); letter-spacing: 0.01em; }
+.figures span { font-size: 12.5px; color: var(--muted); }
+.caveat { margin: 0; padding: 10px 12px; border-left: 3px solid var(--rule-strong); background: var(--surface); color: var(--ink-2); font-size: 14px; border-radius: 0 6px 6px 0; }
+
+/* Tabs */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--rule); position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 5; padding-top: 6px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.tabs a { padding: 9px 14px 10px; font: 500 14.5px/1 var(--font-body); color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 6px 6px 0 0; }
+.tabs a:hover { color: var(--ink); background: var(--surface); }
+.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+@media (max-width: 560px) {
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 0 4px; }
+  .tabs a { text-align: center; padding-inline: 8px; }
+}
+.view { display: grid; gap: 16px; min-width: 0; }
+.view-intro { margin: 0; color: var(--ink-2); max-width: 78ch; }
+
+/* Filters (permissions and matrix) */
+.filters { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+.filters label { display: grid; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.filters input[type="search"], .filters select {
+  font: 400 14.5px/1.2 var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--rule-strong);
+  border-radius: 6px; padding: 8px 10px; min-width: 0;
+}
+.filters input[type="search"] { width: min(340px, 100%); }
+.filters .check { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--ink-2); padding-bottom: 8px; }
+.filters .count { margin-left: auto; font-size: 13px; color: var(--muted); padding-bottom: 9px; font-variant-numeric: tabular-nums; }
+
+/* Tags */
+.tag { display: inline-flex; align-items: center; gap: 5px; font: 500 11.5px/1 var(--font-body); color: var(--ink-2); border: 1px solid var(--rule-strong); border-radius: 999px; padding: 3px 8px 3px 7px; white-space: nowrap; }
+.tag::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--muted); }
+.tag.admin { border-color: var(--admin); background: var(--admin-wash); }
+.tag.admin::before { background: var(--admin); }
+.tag.unheld::before { background: transparent; border: 1.5px solid var(--muted); width: 5px; height: 5px; }
+.tag.mfa::before { background: var(--accent); border-radius: 50%; }
+.tag.optional::before { background: transparent; border: 1.5px solid var(--muted); border-radius: 50%; width: 5px; height: 5px; }
+
+/* Roles view */
+.order { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+.order select { font: 400 14px/1.2 var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--rule-strong); border-radius: 6px; padding: 6px 8px; }
+.role-table { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; }
+.role-cols, .role-row { display: grid; grid-template-columns: minmax(190px, 1.15fr) minmax(0, 2fr) 92px 150px 132px 108px; gap: 14px; align-items: center; }
+.role-cols { padding: 10px 16px; font: 500 12px/1.25 var(--font-body); color: var(--muted); border-bottom: 1px solid var(--rule); letter-spacing: 0.02em; }
+.role-cols .num, .role-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.role-list { list-style: none; margin: 0; padding: 0; }
+.role-item + .role-item { border-top: 1px solid var(--rule); }
+.role-row { scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 112px); width: 100%; padding: 12px 16px; text-align: left; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.role-row:hover { background: var(--wash); }
+.role-row[aria-expanded="true"] { background: var(--wash); }
+.rr-name { display: grid; gap: 2px; min-width: 0; }
+.rr-name strong { font: 600 16px/1.2 var(--font-display); display: flex; align-items: center; gap: 7px; }
+.rr-name strong::before { content: ""; width: 0; height: 0; border-left: 5px solid var(--muted); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform 0.15s; flex: none; }
+.role-row[aria-expanded="true"] .rr-name strong::before { transform: rotate(90deg); }
+.rr-name code { color: var(--muted); font-size: 12px; }
+.rr-resp { color: var(--ink-2); font-size: 14px; min-width: 0; }
+.rr-endpoints { display: grid; grid-template-columns: 44px 1fr; gap: 8px; align-items: center; }
+.meter { height: 6px; background: var(--rule); border-radius: 3px; overflow: hidden; }
+.meter > span { display: block; height: 100%; background: var(--held); border-radius: 0 3px 3px 0; }
+.rr-off { font-size: 13.5px; color: var(--ink-2); }
+.rr-off.no { color: var(--muted); }
+.role-detail { padding: 6px 16px 22px 34px; display: grid; gap: 18px; background: var(--surface); }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 24px; margin: 0; padding: 14px 0 0; border-top: 1px dashed var(--rule); }
+.facts div { display: grid; gap: 2px; }
+.facts dt { font-size: 12px; color: var(--muted); letter-spacing: 0.02em; }
+.facts dd { margin: 0; font-size: 14.5px; }
+.role-detail h4 { font-size: 15px; margin-bottom: 8px; }
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chips li { font-size: 13px; }
+.chips a { display: inline-block; padding: 3px 9px; border: 1px solid var(--rule-strong); border-radius: 999px; text-decoration: none; color: var(--ink); background: var(--surface); }
+.chips a:hover { border-color: var(--accent); color: var(--accent); }
+.chips.quiet li { padding: 3px 9px; border-radius: 999px; background: var(--bg); color: var(--ink-2); }
+.areas { columns: 2 340px; column-gap: 32px; }
+.area-block { break-inside: avoid; margin: 0 0 16px; }
+.area-block h5 { margin: 0 0 6px; font: 600 12.5px/1.3 var(--font-body); letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.area-block ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.area-block li { display: grid; gap: 1px; font-size: 14px; }
+.area-block li code { color: var(--muted); font-size: 12px; }
+.area-block li .line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+
+/* Permissions view */
+.perm-areas { display: grid; gap: 22px; }
+.perm-area h3 { font-size: 18px; display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+.perm-area h3 small { font: 400 13px/1 var(--font-body); color: var(--muted); font-variant-numeric: tabular-nums; }
+.perm-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
+.perm { padding: 12px 16px; display: grid; gap: 6px; min-width: 0; }
+.perm + .perm { border-top: 1px solid var(--rule); }
+.perm-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.perm-desc { font-weight: 500; }
+.perm-id { color: var(--muted); font-size: 12.5px; }
+.perm-holders { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.perm-holders > span { font-size: 12.5px; color: var(--muted); }
+.perm-foot { font-size: 13px; color: var(--muted); }
+.empty { padding: 28px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--rule-strong); border-radius: 10px; }
+
+/* Matrix */
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.legend .key { display: inline-flex; align-items: center; gap: 7px; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; background: var(--held); display: inline-block; }
+.swatch.off { background: transparent; position: relative; }
+.swatch.off::after { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: var(--rule-strong); }
+.matrix-wrap { overflow: auto; max-height: min(80vh, 920px); background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; overscroll-behavior: contain; }
+.matrix { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.matrix thead th { position: sticky; top: 0; background: var(--surface); z-index: 2; border-bottom: 1px solid var(--rule); }
+.matrix .corner { left: 0; z-index: 4; text-align: left; vertical-align: bottom; padding: 10px 12px; font: 500 12px/1.3 var(--font-body); color: var(--muted); min-width: 300px; max-width: 300px; }
+.matrix th.role { height: 172px; width: 28px; min-width: 28px; padding: 0 0 8px; vertical-align: bottom; }
+.matrix th.role button { writing-mode: vertical-rl; transform: rotate(180deg); background: none; border: 0; padding: 4px 0; font: 500 12.5px/1 var(--font-body); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.matrix th.role button:hover { color: var(--accent); }
+.matrix th.role.hot button { color: var(--ink); font-weight: 600; }
+.matrix th.total { font: 500 11.5px/1.2 var(--font-body); color: var(--muted); padding: 0 10px 10px; vertical-align: bottom; text-align: right; }
+.matrix tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; font-weight: 400; padding: 5px 12px; min-width: 300px; max-width: 300px; border-right: 1px solid var(--rule); }
+.matrix tbody tr.grp th { padding: 14px 12px 6px; font: 600 12px/1.2 var(--font-body); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); border-right: 0; }
+.matrix tbody tr.grp td { background: var(--surface); }
+.matrix .pd { display: block; line-height: 1.3; }
+.matrix .pi { display: flex; gap: 6px; align-items: center; color: var(--muted); font-family: var(--font-mono); font-size: 11px; margin-top: 1px; }
+.matrix .pi .adm { width: 7px; height: 7px; border-radius: 2px; background: var(--admin); flex: none; }
+.matrix td.c { width: 28px; height: 28px; padding: 3px; position: relative; }
+.matrix td.c::before { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--rule); }
+.matrix td.c.on::before { left: 3px; top: 3px; right: 3px; bottom: 3px; width: auto; height: auto; margin: 0; border-radius: 3px; background: var(--held); }
+.matrix td.n { padding: 0 10px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.matrix tr.hot th, .matrix tr.hot td { background: var(--wash); }
+.matrix td.c.focus { outline: 2px solid var(--ink); outline-offset: -2px; border-radius: 4px; }
+.matrix tfoot td, .matrix tfoot th { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--rule); font: 500 11.5px/1.2 var(--font-body); color: var(--muted); padding: 8px 0; text-align: center; font-variant-numeric: tabular-nums; z-index: 2; }
+.matrix tfoot th { left: 0; z-index: 4; text-align: left; padding: 8px 12px; }
+@media (forced-colors: active) { .matrix td.c.on::before { background: CanvasText; } .meter > span { background: CanvasText; } }
+.tip { position: fixed; z-index: 20; pointer-events: none; max-width: 300px; padding: 9px 11px; border-radius: 8px; background: var(--tip-bg); color: var(--tip-ink); font-size: 12.5px; line-height: 1.35; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); display: grid; gap: 3px; }
+.tip strong { font-size: 13.5px; }
+.tip code { opacity: 0.8; font-size: 11.5px; }
+
+/* Access view */
+.access { display: grid; gap: 26px; max-width: 980px; }
+.access h3 { font-size: 20px; margin-bottom: 10px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; }
+.card h4 { font-size: 16px; }
+.card p { margin: 0; font-size: 14px; color: var(--ink-2); }
+.card .meta { font-size: 13px; color: var(--muted); }
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
+.switches { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+.switches th, .switches td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--rule); }
+.switches thead th { font: 500 12px/1.3 var(--font-body); color: var(--muted); letter-spacing: 0.02em; }
+.switches tbody tr:last-child td, .switches tbody tr:last-child th { border-bottom: 0; }
+.switches tbody th { font-weight: 600; width: 20%; }
+.rules { margin: 0; padding-left: 20px; display: grid; gap: 8px; max-width: 78ch; color: var(--ink-2); }
+.note { margin: 0; max-width: 78ch; color: var(--ink-2); }
+
+/* Record */
+.record { border-top: 1px solid var(--rule); padding-top: 22px; display: grid; gap: 14px; max-width: 86ch; color: var(--ink-2); font-size: 14px; }
+.record h2 { font-size: 20px; color: var(--ink); }
+.record dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0; }
+.record dt { color: var(--muted); }
+.record dd { margin: 0; }
+.record p { margin: 0; }
+
+@media (max-width: 900px) {
+  .role-cols { display: none; }
+  .role-row { grid-template-columns: 1fr auto; grid-template-areas: "name num" "resp resp" "end end" "mfa off"; gap: 6px 12px; }
+  .rr-name { grid-area: name; } .rr-resp { grid-area: resp; } .rr-perms { grid-area: num; }
+  .rr-endpoints { grid-area: end; grid-template-columns: auto 1fr; }
+  .rr-mfa { grid-area: mfa; } .rr-off { grid-area: off; text-align: right; }
+  .rr-perms::after { content: " permissions"; color: var(--muted); font-size: 12.5px; }
+  .rr-endpoints .num::after { content: " API endpoints"; color: var(--muted); font-size: 12.5px; }
+  .role-detail { padding-left: 16px; }
+  .matrix .corner, .matrix tbody th { min-width: 190px; max-width: 190px; }
+  .record dl { grid-template-columns: 1fr; gap: 2px; }
+  .record dd { margin-bottom: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+  <header class="masthead">
+    <p class="eyebrow">HealthCare360 · access register</p>
+    <h1>HealthCare360 roles</h1>
+    <p class="lede">What each of the __ROLES__ built-in roles may do on a new installation: its job, its permissions, how much of the server it opens and what it may approve. Written from the code at commit <code>__COMMIT__</code>, __DATE__.</p>
+    <ul class="figures">
+      <li><b>__ROLES__</b><span>built-in roles</span></li>
+      <li><b>__PERMISSIONS__</b><span>permissions</span></li>
+      <li><b>__ENDPOINTS__</b><span>API endpoints that ask for one</span></li>
+      <li><b>__APPROVALS__</b><span>kinds of change a second person approves</span></li>
+    </ul>
+    <p class="caveat">These are the defaults. What a hospital changes afterwards (roles of its own, permissions given or taken back, roles turned off) is on its <strong>Administration › Roles and permissions</strong> screen and in its audit trail, not on this page.</p>
+  </header>
+
+  <nav class="tabs" aria-label="Views">
+    <a href="#roles" data-view="roles">Roles</a>
+    <a href="#permissions" data-view="permissions">Who can do what</a>
+    <a href="#matrix" data-view="matrix">Matrix</a>
+    <a href="#access" data-view="access">Switching access</a>
+  </nav>
+
+  <main>
+    <section class="view" id="view-roles" aria-labelledby="h-roles">
+      <h2 class="sr" id="h-roles">Roles</h2>
+      <div class="filters" style="justify-content: space-between">
+        <p class="view-intro">Open a role to see everything it holds, grouped by area, and the changes it may approve as the second person.</p>
+        <label class="order" for="role-order">Order
+          <select id="role-order">
+            <option value="hc360">As HealthCare360 lists them</option>
+            <option value="endpoints">Most of the API first</option>
+            <option value="permissions">Most permissions first</option>
+          </select>
+        </label>
+      </div>
+      <div class="role-table">
+        <div class="role-cols" aria-hidden="true">
+          <span>Role</span><span>Responsibility</span><span class="num">Permissions</span><span>API endpoints it opens</span><span>Two-step verification</span><span>Can be turned off</span>
+        </div>
+        <ul class="role-list" id="role-list"></ul>
+      </div>
+    </section>
+
+    <section class="view" id="view-permissions" aria-labelledby="h-perms" hidden>
+      <h2 class="sr" id="h-perms">Who can do what</h2>
+      <p class="view-intro">Every permission the code declares, with the roles that hold it on a new installation. The Super Administrator holds all of them and is left out of the lists. Search also matches role names, so typing <em>dietitian</em> lists what a dietitian may do.</p>
+      <div class="filters" data-filters></div>
+      <div class="perm-areas" id="perm-areas"></div>
+    </section>
+
+    <section class="view" id="view-matrix" aria-labelledby="h-matrix" hidden>
+      <h2 class="sr" id="h-matrix">Matrix</h2>
+      <p class="view-intro">Each row is a permission and each column a role. A filled square means the role holds the permission on a new installation. The Super Administrator holds every permission and has no column. The <a href="#permissions">Who can do what</a> view lists the same grants as text.</p>
+      <div class="filters" data-filters></div>
+      <div class="legend" aria-hidden="true">
+        <span class="key"><span class="swatch"></span>Holds by default</span>
+        <span class="key"><span class="swatch off"></span>Does not</span>
+        <span class="key"><span class="tag admin">Administrative</span>accounts, roles, credentials or the server; holders must use two-step verification</span>
+      </div>
+      <div class="matrix-wrap" id="matrix-wrap"></div>
+    </section>
+
+    <section class="view" id="view-access" aria-labelledby="h-access" hidden>
+      <h2 class="sr" id="h-access">Switching access</h2>
+      <div class="access">
+        <div>
+          <h3>Who signs in</h3>
+          <div class="cards">
+            <div class="card"><h4>Staff</h4><p>Doctors, nurses, front office, billing, pharmacy, laboratory, administration and every other department. Also accounts the hospital makes for other care providers that read records over FHIR, with a role of their own that holds <code>fhir.read</code>.</p><p class="meta">User name and password, with two-step verification where a role requires it. Administration only from an enrolled HC360 Desktop. Any staff role, built-in or the hospital's own.</p></div>
+            <div class="card"><h4>Patients</h4><p>Patients and their families, on the patient portal.</p><p class="meta">Mobile number and a one-time code. The Patient role only, given at the first sign-in.</p></div>
+            <div class="card"><h4>Devices</h4><p>Workstations, kiosks, queue displays and lab agents sign in as enrolled devices, not as users. No code creates a service account.</p><p class="meta">A new installation has one account, <code>admin</code>, the first Super Administrator, whose one-time password must be changed at the first sign-in.</p></div>
+          </div>
+        </div>
+        <div>
+          <h3>Turning access off and on</h3>
+          <div class="table-wrap">
+            <table class="switches">
+              <thead><tr><th scope="col">Question</th><th scope="col">Where</th><th scope="col">Who may change it</th><th scope="col">Off</th><th scope="col">Back on</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">May this person use HC360?</th><td>Administration › Users, <em>Account is active</em></td><td><code>admin.users.manage</code>, and only on an account whose administrative permissions they hold themselves</td><td>At once, and the person's sessions end</td><td>Waits for a second administrator who may approve grants</td></tr>
+                <tr><th scope="row">Does this role give anything?</th><td>Administration › Roles and permissions, <em>In use</em></td><td><code>admin.roles.manage</code> (the Super Administrator by default)</td><td>From each holder's next request. Holders keep the role but get nothing from it: no permission, no work sent to them, no part in approving grants</td><td>Waits for a second administrator who may approve grants and does not hold the role</td></tr>
+                <tr><th scope="row">What may a role do?</th><td>Administration › Roles and permissions, the role's permissions</td><td><code>admin.roles.manage</code></td><td>A permission taken away applies at once</td><td>A permission added waits for a second administrator</td></tr>
+                <tr><th scope="row">Is a part of HC360 in use here?</th><td>Hospital setup › Features</td><td><code>admin.settings.manage</code></td><td>At once: its endpoints refuse requests and both apps hide it</td><td>At once</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div>
+          <h3>Rules every switch follows</h3>
+          <ul class="rules">
+            <li>Narrowing access applies at once. Widening it waits for a second person. Nobody approves their own request, or access given to themselves.</li>
+            <li>The Super Administrator and Patient roles are never turned off. Nobody turns off their own account, or a role they hold.</li>
+            <li>A role that is off still binds its holders: the two-step verification, enrolled workstation and idle lock it requires still apply.</li>
+            <li>Before a role is turned off, the screen says how many people hold it and for how many it is the only role in use.</li>
+            <li>Every change is in the audit trail, with the approval that gave the access.</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Departments have no switch yet</h3>
+          <p class="note">Three parts of HC360 have a switch: the patient portal, video consultations and ABDM health records. A switch per department (pharmacy, laboratory, billing and the rest) is planned, and is safe only when it also covers the department's background services and the work other departments send it. A switch that only hid screens would leave orders and prescriptions arriving where nobody looks. Until then, a department that is not live is kept closed through its roles.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="record" aria-labelledby="h-record">
+    <h2 id="h-record">How this page was made and checked</h2>
+    <dl>
+      <dt>Source</dt>
+      <dd><code>docs/security/roles.json</code> as of commit <code>__COMMIT__</code> (__DATE__), built into this page by <code>tools/build-roles-page.cs</code>. <code>RolesInventoryTests</code> writes that file from the code: the built-in roles, every permission with the roles that get it on a new installation, the sign-in policy's defaults, each API endpoint's permission rule and the kinds of change a second person approves.</dd>
+      <dt>Kept true by</dt>
+      <dd>The same test, which writes the tables in <code>docs/security/ROLES.md</code> from the same reading of the code. It runs on every change, on Linux and Windows, and fails when either file no longer matches the code or when one kind of approval has two different approvers.</dd>
+      <dt>API endpoints</dt>
+      <dd>A role opens an endpoint when its default permissions meet every permission rule on it. __ENDPOINTS__ endpoints ask for a permission; the rest are for anyone signed in, or public. The list of routes is left out of this page on purpose.</dd>
+      <dt>Two-step verification</dt>
+      <dd>Required of the roles named in the hospital's <code>MfaRequiredRoles</code> setting (by default <span id="mfa-roles">the roles the data names</span>) and of anyone holding an administrative permission (<code>admin.*</code> or all-access). Shown here as the defaults.</dd>
+    </dl>
+  </footer>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+<script id="roles-data" type="application/json">__DATA__</script>
+<script>
+(() => {
+  "use strict";
+  const D = JSON.parse(document.getElementById("roles-data").textContent);
+  // The page reads version 1 of roles.json. A later version may have removed a field or changed its meaning, so say so
+  // rather than show the wrong thing; tools/build-roles-page.cs refuses to build it in the first place.
+  if (D.version !== 1) {
+    const note = document.createElement("p");
+    note.className = "empty";
+    note.textContent = `This page reads version 1 of docs/security/roles.json and was given version ${D.version}. Update tools/roles-page.html for it and build the page again.`;
+    document.querySelector("main").replaceChildren(note);
+    return;
+  }
+  const fmt = (n) => n.toLocaleString("en-IN");
+  const ACRONYMS = { Mrd: "MRD", Ot: "OT", Cssd: "CSSD", Hr: "HR", Crm: "CRM", Mis: "MIS" };
+  const label = (name) => name.replace(/([a-z])([A-Z])/g, "$1 $2").split(" ").map((w) => ACRONYMS[w] || w).join(" ");
+  const $ = (s, r = document) => r.querySelector(s);
+
+  function el(tag, props, ...kids) {
+    const e = document.createElement(tag);
+    if (props) {
+      for (const [k, v] of Object.entries(props)) {
+        if (v == null || v === false) continue;
+        if (k === "class") e.className = v;
+        else if (k === "text") e.textContent = v;
+        else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+        else e.setAttribute(k, v === true ? "" : v);
+      }
+    }
+    for (const kid of kids.flat(Infinity)) {
+      if (kid == null || kid === false) continue;
+      e.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+    }
+    return e;
+  }
+
+  // D is docs/security/roles.json as the repository has it: each approval names the permission its approver holds.
+  const approvesOf = new Map();
+  for (const a of D.approvals) {
+    if (!approvesOf.has(a.approvePermission)) approvesOf.set(a.approvePermission, []);
+    approvesOf.get(a.approvePermission).push(a.title);
+  }
+  for (const p of D.permissions) p.approves = (approvesOf.get(p.name) || []).sort((a, b) => a.localeCompare(b));
+  const perms = new Map(D.permissions.map((p) => [p.name, p]));
+  const allApprovals = [...new Set(D.approvals.map((a) => a.title))].sort((a, b) => a.localeCompare(b));
+  const roles = D.roles.map((r, i) => {
+    const all = r.defaultPermissions.includes("*");
+    const held = all ? D.permissions : r.defaultPermissions.map((n) => perms.get(n));
+    return {
+      ...r, all, held, order: i, label: label(r.name),
+      admin: held.filter((p) => p.administrative).length,
+      approves: all ? allApprovals : [...new Set(held.flatMap((p) => p.approves))].sort((a, b) => a.localeCompare(b)),
+    };
+  });
+  const roleByName = new Map(roles.map((r) => [r.name, r]));
+  const areas = [...new Set(D.permissions.map((p) => p.area))].sort((a, b) => a.localeCompare(b));
+
+  const MFA = {
+    "required-by-role": ["Required", "Required for this role"],
+    "required-to-administer": ["Required", "Required, because it holds administrative permissions"],
+    "optional": ["Optional", "Optional. Each user may set it up"],
+    "not-enforced": ["Not enforced", "Not enforced on this server"],
+  };
+  const mfaTag = (mfa) => {
+    const [short, long] = MFA[mfa] || [mfa, mfa];
+    return el("span", { class: "tag " + (short === "Required" ? "mfa" : "optional"), title: long }, short);
+  };
+
+  // ---- Roles ------------------------------------------------------------------------------------------------------
+  const roleList = $("#role-list");
+  const items = new Map();
+
+  function fact(term, value) { return el("div", null, el("dt", { text: term }), el("dd", null, value)); }
+
+  function roleDetail(r) {
+    const parts = [];
+    parts.push(el("dl", { class: "facts" },
+      fact("Default permissions", r.all ? `All ${fmt(D.totals.permissions)}, and any that future updates add` : `${fmt(r.defaultPermissions.length)} of ${fmt(D.totals.permissions)}`),
+      fact("API endpoints it opens", `${fmt(r.endpoints)} of ${fmt(D.totals.guardedEndpoints)}`),
+      fact("Administrative permissions", r.admin ? fmt(r.admin) : "None"),
+      fact("Two-step verification", (MFA[r.mfa] || [r.mfa, r.mfa])[1]),
+      fact("Turning it off", r.canBeTurnedOff ? "Allowed. Turning it back on needs a second administrator who does not hold it." : "Never. It is always in use."),
+    ));
+    if (r.approves.length) {
+      parts.push(el("div", null,
+        el("h4", { text: `Changes it may approve as the second person (${r.approves.length})` }),
+        el("ul", { class: "chips quiet" }, r.approves.map((t) => el("li", { text: t })))));
+    } else {
+      parts.push(el("p", { class: "view-intro", text: "It approves no one else's changes." }));
+    }
+    if (r.all) {
+      parts.push(el("p", { class: "view-intro" }, "It holds every permission (", el("code", { text: "*" }), "), including those that future updates add. The other views list them all."));
+    } else {
+      const byArea = new Map();
+      for (const p of r.held) { if (!byArea.has(p.area)) byArea.set(p.area, []); byArea.get(p.area).push(p); }
+      parts.push(el("div", null,
+        el("h4", { text: `What it may do, by area (${byArea.size} areas)` }),
+        el("div", { class: "areas" }, [...byArea.keys()].sort((a, b) => a.localeCompare(b)).map((area) =>
+          el("div", { class: "area-block" },
+            el("h5", { text: `${area} (${byArea.get(area).length})` }),
+            el("ul", null, byArea.get(area).map((p) => el("li", null,
+              el("span", { class: "line" }, p.description, p.administrative ? el("span", { class: "tag admin", text: "Administrative" }) : null),
+              el("code", { text: p.name })))))))));
+    }
+    return parts;
+  }
+
+  function buildRoles() {
+    for (const r of roles) {
+      const detail = el("div", { class: "role-detail", id: `detail-${r.name}`, hidden: true });
+      const button = el("button", { class: "role-row", type: "button", id: `role-${r.name}`, "aria-expanded": "false", "aria-controls": `detail-${r.name}` },
+        el("span", { class: "rr-name" }, el("strong", { text: r.label }), el("code", { text: r.name })),
+        el("span", { class: "rr-resp", text: r.description }),
+        el("span", { class: "rr-perms num", text: r.all ? "All" : fmt(r.defaultPermissions.length) }),
+        el("span", { class: "rr-endpoints" },
+          el("span", { class: "num", text: fmt(r.endpoints) }),
+          el("span", { class: "meter", "aria-hidden": "true" }, (() => { const s = el("span"); s.style.width = `${(100 * r.endpoints / D.totals.guardedEndpoints).toFixed(1)}%`; return s; })())),
+        el("span", { class: "rr-mfa" }, mfaTag(r.mfa)),
+        el("span", { class: "rr-off" + (r.canBeTurnedOff ? "" : " no"), text: r.canBeTurnedOff ? "Yes" : "No, always in use" }));
+      button.addEventListener("click", () => toggleRole(r.name));
+      const li = el("li", { class: "role-item" }, button, detail);
+      items.set(r.name, { li, button, detail, built: false });
+    }
+    orderRoles();
+  }
+
+  function orderRoles() {
+    const by = $("#role-order").value;
+    const sorted = [...roles].sort((a, b) =>
+      by === "endpoints" ? b.endpoints - a.endpoints || a.order - b.order
+      : by === "permissions" ? (b.all - a.all) || b.held.length - a.held.length || a.order - b.order
+      : a.order - b.order);
+    roleList.replaceChildren(...sorted.map((r) => items.get(r.name).li));
+  }
+
+  function setRoleOpen(name, open) {
+    const it = items.get(name);
+    if (!it) return;
+    if (open && !it.built) { it.detail.append(...roleDetail(roleByName.get(name))); it.built = true; }
+    it.detail.hidden = !open;
+    it.button.setAttribute("aria-expanded", String(open));
+  }
+
+  function toggleRole(name) {
+    const open = items.get(name).button.getAttribute("aria-expanded") !== "true";
+    setRoleOpen(name, open);
+    try { history.replaceState(null, "", open ? `#role-${name}` : "#roles"); } catch { /* the frame may refuse; the page still works */ }
+  }
+
+  // ---- Filters (shared by the two permission views) ---------------------------------------------------------------
+  const state = { q: "", area: "", admin: false, unheld: false };
+  const haystack = new Map(D.permissions.map((p) => [p.name,
+    [p.name, p.description, p.area, ...p.defaultRoles.map(label), ...p.defaultRoles, ...p.approves].join(" ").toLowerCase()]));
+  const matches = (p) => (!state.area || p.area === state.area) && (!state.admin || p.administrative)
+    && (!state.unheld || p.defaultRoles.length === 0)
+    && (!state.q || state.q.split(/\s+/).every((w) => haystack.get(p.name).includes(w)));
+
+  const filterHosts = [...document.querySelectorAll("[data-filters]")];
+  const counts = [];
+  filterHosts.forEach((host, i) => {
+    const id = (s) => `${s}-${i}`;
+    const search = el("input", { type: "search", id: id("q"), placeholder: "Permission, area or role", autocomplete: "off" });
+    const area = el("select", { id: id("area") }, el("option", { value: "", text: "All areas" }), areas.map((a) => el("option", { value: a, text: a })));
+    const admin = el("input", { type: "checkbox", id: id("admin") });
+    const unheld = el("input", { type: "checkbox", id: id("unheld") });
+    const count = el("span", { class: "count", "aria-live": "polite" });
+    counts.push(count);
+    host.append(
+      el("label", { for: id("q") }, "Search", search),
+      el("label", { for: id("area") }, "Area", area),
+      el("label", { class: "check", for: id("admin") }, admin, "Administrative only"),
+      el("label", { class: "check", for: id("unheld") }, unheld, "Held by no role"),
+      count);
+    search.addEventListener("input", () => { state.q = search.value.trim().toLowerCase(); sync(); });
+    area.addEventListener("change", () => { state.area = area.value; sync(); });
+    admin.addEventListener("change", () => { state.admin = admin.checked; sync(); });
+    unheld.addEventListener("change", () => { state.unheld = unheld.checked; sync(); });
+    host._controls = { search, area, admin, unheld };
+  });
+
+  function sync() {
+    for (const host of filterHosts) {
+      const c = host._controls;
+      if (c.search.value.trim().toLowerCase() !== state.q && document.activeElement !== c.search) c.search.value = state.q;
+      c.area.value = state.area; c.admin.checked = state.admin; c.unheld.checked = state.unheld;
+    }
+    applyFilter();
+  }
+
+  // ---- Who can do what --------------------------------------------------------------------------------------------
+  const permAreas = $("#perm-areas");
+  const permRows = [];
+  const areaSections = [];
+  function buildPermissions() {
+    for (const area of areas) {
+      const list = el("ul", { class: "perm-list" });
+      const small = el("small");
+      const section = el("section", { class: "perm-area" }, el("h3", null, area, small), list);
+      for (const p of D.permissions.filter((x) => x.area === area)) {
+        const holders = p.defaultRoles.length
+          ? el("div", { class: "perm-holders" }, el("span", { text: "Held by default by" }),
+              el("ul", { class: "chips" }, p.defaultRoles.map((n) => el("li", null, el("a", { href: `#role-${n}`, text: label(n) })))))
+          : el("div", { class: "perm-holders" }, el("span", { text: "No built-in role holds it. Only the Super Administrator has it until an administrator who holds it gives it to a role." }));
+        const row = el("li", { class: "perm" },
+          el("div", { class: "perm-head" }, el("span", { class: "perm-desc", text: p.description }),
+            p.administrative ? el("span", { class: "tag admin", text: "Administrative" }) : null,
+            p.defaultRoles.length ? null : el("span", { class: "tag unheld", text: "Held by no role" })),
+          el("code", { class: "perm-id", text: p.name }),
+          holders,
+          el("div", { class: "perm-foot" },
+            `Asked for by ${fmt(p.endpoints)} API endpoint${p.endpoints === 1 ? "" : "s"}`,
+            p.approves.length ? `. Lets its holder approve: ${p.approves.join("; ")}` : ""));
+        list.append(row);
+        permRows.push({ p, row });
+      }
+      areaSections.push({ section, small, rows: permRows.filter((x) => x.p.area === area) });
+      permAreas.append(section);
+    }
+    permAreas.append(el("p", { class: "empty", id: "perm-empty", hidden: true, text: "No permission matches. Clear the search or choose All areas." }));
+  }
+
+  // ---- Matrix -----------------------------------------------------------------------------------------------------
+  const cols = roles.filter((r) => !r.all);
+  const matrixRows = [];
+  const footCells = [];
+  let table;
+  function buildMatrix() {
+    const headRow = el("tr", null,
+      el("th", { class: "corner", scope: "col" }, "Permission"),
+      cols.map((r, c) => el("th", { class: "role", scope: "col", "data-c": c },
+        el("button", { type: "button", title: `${r.label}: ${r.description}`, onclick: () => { location.hash = `role-${r.name}`; } }, r.label))),
+      el("th", { class: "total", scope: "col" }, "Roles"));
+    const body = el("tbody");
+    for (const area of areas) {
+      const grp = el("tr", { class: "grp" }, el("th", { scope: "rowgroup", colspan: String(cols.length + 2) }, area));
+      body.append(grp);
+      for (const p of D.permissions.filter((x) => x.area === area)) {
+        const holders = new Set(p.defaultRoles);
+        const tr = el("tr", { "data-p": p.name },
+          el("th", { scope: "row" },
+            el("span", { class: "pd", text: p.description }),
+            el("span", { class: "pi" }, p.administrative ? el("span", { class: "adm", title: "Administrative" }) : null, p.name)),
+          cols.map((r, c) => {
+            const on = holders.has(r.name);
+            return el("td", { class: on ? "c on" : "c", "data-c": c }, on ? el("span", { class: "sr", text: "holds" }) : null);
+          }),
+          el("td", { class: "n", text: String(p.defaultRoles.length) }));
+        body.append(tr);
+        matrixRows.push({ p, tr, grp });
+      }
+    }
+    const foot = el("tr", null, el("th", { scope: "row" }, "Permissions held of those shown"),
+      cols.map(() => { const td = el("td"); footCells.push(td); return td; }), el("td"));
+    table = el("table", { class: "matrix", id: "matrix" }, el("caption", { class: "sr", text: "Built-in roles and the permissions each holds by default" }),
+      el("thead", null, headRow), body, el("tfoot", null, foot));
+    $("#matrix-wrap").append(table);
+    wireMatrix();
+  }
+
+  const tip = $("#tip");
+  const hotStyle = el("style");
+  document.head.append(hotStyle);
+  let hotRow = null;
+  function showCell(td, x, y) {
+    const c = Number(td.dataset.c);
+    const tr = td.parentElement;
+    const p = perms.get(tr.dataset.p);
+    const r = cols[c];
+    if (hotRow && hotRow !== tr) hotRow.classList.remove("hot");
+    hotRow = tr; tr.classList.add("hot");
+    hotStyle.textContent = `#matrix td.c[data-c="${c}"]{background:var(--wash)} #matrix th.role[data-c="${c}"]{background:var(--wash)}`;
+    table.querySelectorAll("th.role.hot").forEach((th) => th.classList.remove("hot"));
+    table.querySelector(`th.role[data-c="${c}"]`).classList.add("hot");
+    tip.replaceChildren(
+      el("strong", { text: td.classList.contains("on") ? "Holds by default" : "Not by default" }),
+      el("span", { text: r.label }),
+      el("span", { text: p.description }),
+      el("code", { text: p.name }));
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    let left = x + 14, top = y + 14;
+    if (left + w > innerWidth - 8) left = x - w - 14;
+    if (top + h > innerHeight - 8) top = y - h - 14;
+    tip.style.left = `${Math.max(8, left)}px`;
+    tip.style.top = `${Math.max(8, top)}px`;
+  }
+  function clearHot() {
+    tip.hidden = true; hotStyle.textContent = "";
+    if (hotRow) hotRow.classList.remove("hot");
+    hotRow = null;
+    table.querySelectorAll("th.role.hot").forEach((th) => th.classList.remove("hot"));
+  }
+
+  let focusCell = null;
+  function setFocusCell(td, scroll) {
+    if (focusCell) { focusCell.classList.remove("focus"); focusCell.tabIndex = -1; }
+    focusCell = td;
+    td.tabIndex = 0; td.classList.add("focus");
+    if (scroll) td.focus({ preventScroll: false });
+  }
+
+  function wireMatrix() {
+    table.addEventListener("pointermove", (e) => {
+      const td = e.target.closest("td.c");
+      if (td) showCell(td, e.clientX, e.clientY); else clearHot();
+    });
+    table.addEventListener("pointerleave", clearHot);
+    table.addEventListener("focusin", (e) => {
+      const td = e.target.closest("td.c");
+      if (!td) return;
+      if (focusCell !== td) setFocusCell(td, false);
+      const b = td.getBoundingClientRect();
+      showCell(td, b.right, b.bottom);
+    });
+    table.addEventListener("focusout", (e) => { if (!table.contains(e.relatedTarget)) clearHot(); });
+    table.addEventListener("keydown", (e) => {
+      const td = e.target.closest("td.c");
+      if (!td) return;
+      const keys = { ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [-1, 0], ArrowDown: [1, 0] };
+      if (!keys[e.key]) return;
+      e.preventDefault();
+      const [dr, dc] = keys[e.key];
+      const visible = matrixRows.filter((m) => !m.tr.hidden).map((m) => m.tr);
+      let ri = visible.indexOf(td.parentElement) + dr;
+      let ci = Number(td.dataset.c) + dc;
+      ri = Math.max(0, Math.min(visible.length - 1, ri));
+      ci = Math.max(0, Math.min(cols.length - 1, ci));
+      const next = visible[ri] && visible[ri].querySelector(`td.c[data-c="${ci}"]`);
+      if (next) setFocusCell(next, true);
+    });
+  }
+
+  function applyFilter() {
+    let shown = 0;
+    for (const { p, row } of permRows) { const ok = matches(p); row.hidden = !ok; if (ok) shown++; }
+    for (const a of areaSections) {
+      const n = a.rows.filter((x) => !x.row.hidden).length;
+      a.section.hidden = n === 0;
+      a.small.textContent = n === a.rows.length ? `${n}` : `${n} of ${a.rows.length}`;
+    }
+    $("#perm-empty").hidden = shown !== 0;
+    const visibleGroups = new Set();
+    const held = new Array(cols.length).fill(0);
+    for (const { p, tr, grp } of matrixRows) {
+      const ok = matches(p);
+      tr.hidden = !ok;
+      if (ok) {
+        visibleGroups.add(grp);
+        const holders = new Set(p.defaultRoles);
+        cols.forEach((r, c) => { if (holders.has(r.name)) held[c]++; });
+      }
+    }
+    for (const { grp } of matrixRows) grp.hidden = !visibleGroups.has(grp);
+    footCells.forEach((td, c) => { td.textContent = String(held[c]); });
+    const text = shown === D.permissions.length ? `${fmt(shown)} permissions` : `${fmt(shown)} of ${fmt(D.permissions.length)} permissions`;
+    counts.forEach((c) => { c.textContent = text; });
+    if (focusCell && focusCell.parentElement.hidden) { focusCell.classList.remove("focus"); focusCell.tabIndex = -1; focusCell = null; }
+    if (!focusCell) {
+      const first = matrixRows.find((m) => !m.tr.hidden);
+      if (first) { const td = first.tr.querySelector("td.c"); td.tabIndex = 0; focusCell = td; }
+    }
+  }
+
+  // ---- Views and links --------------------------------------------------------------------------------------------
+  const VIEWS = ["roles", "permissions", "matrix", "access"];
+  function route() {
+    const hash = decodeURIComponent(location.hash.slice(1));
+    let view = "roles", role = null;
+    if (VIEWS.includes(hash)) view = hash;
+    else if (hash.startsWith("role-") && roleByName.has(hash.slice(5))) role = hash.slice(5);
+    for (const v of VIEWS) $(`#view-${v}`).hidden = v !== view;
+    document.querySelectorAll(".tabs a").forEach((a) => { if (a.dataset.view === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    if (view !== "matrix") clearHot();
+    if (role) {
+      setRoleOpen(role, true);
+      requestAnimationFrame(() => items.get(role).button.scrollIntoView({ block: "start", behavior: "auto" }));
+    }
+  }
+
+  const mfaRoles = D.security.mfaRequiredRoles.map(label);
+  $("#mfa-roles").textContent = mfaRoles.length > 1 ? `${mfaRoles.slice(0, -1).join(", ")} and ${mfaRoles.at(-1)}` : (mfaRoles[0] || "none");
+
+  buildRoles();
+  buildPermissions();
+  buildMatrix();
+  applyFilter();
+  $("#role-order").addEventListener("change", orderRoles);
+  window.addEventListener("hashchange", route);
+  route();
+})();
+</script>

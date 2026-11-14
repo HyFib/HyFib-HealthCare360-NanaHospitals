@@ -553,6 +553,9 @@ public sealed class BackupOffsiteUploadTests : IDisposable
         // Locked until the generation's last backup has expired: its start, plus a generation, plus the backup period.
         blob.Lock.ShouldNotBeNull().RetainUntil.ShouldBe("2026-12-26T00:00:00Z");
         run.OffsiteUploadedAt.ShouldBe(_clock.Now);
+
+        // The backup names its generation, for a restore to download with it.
+        _store.Objects[archive].Metadata[BackupOffsite.GenerationMetadata].ShouldBe("gen-20261114");
     }
 
     [Fact]

@@ -207,19 +207,21 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
 
 Each nightly backup holds the database dump and a list of the stored documents. Each backup folder keeps one copy of
 every document, so a folder grows by about one dump and the day's new documents each night (DEPLOYMENT.md section 8;
-docs/design/incremental-backup.md, section 2). Space needed, with *R* backups kept, a dump of *D* and documents of *Docs*:
+docs/design/incremental-backup.md, section 2). Space needed, with *R* backups kept (31: tonight's and the 30 days
+before), a dump of *D* and documents of *Docs*:
 
 - **The server's backup folder, and each USB disk:** about *R* × *D* + *Docs*, and *Docs* more for 30 days after the
   data encryption key is rotated (every document is copied once more).
 - **The off-site bucket:** about 35 × *D* + 6 × *Docs*.
 
-The hospital's own figures are not measured yet. Run the queries in docs/design/incremental-backup.md, Appendix A, on
-this PC after the first month and put the results here. Until then, the figures below assume **0.25 GB of documents a
+The hospital's own figures are not measured yet. Run `deploy\windows\Measure-HC360BackupSizing.ps1 -MeasureDump` on
+this PC before go-live and again after the first month (docs/design/incremental-backup.md, Appendix A). It reads only,
+projects these figures from the hospital's own data, and writes a table to put here in place of the one below. Until then, the figures below assume **0.25 GB of documents a
 day**, with dumps of about 5 GB in year 1 and 15 GB in year 3.
 
 | | Year 1 | Year 3 | Before (every document in every backup), year 3 |
 |---|---|---|---|
-| Server's backup folder (30 backups) | 0.24 TB | 0.73 TB (1.0 TB after a key rotation) | 8.7 TB |
+| Server's backup folder (31 backups) | 0.25 TB | 0.74 TB (1.0 TB after a key rotation) | 9.0 TB |
 | Each USB disk (about 16 backups on each of two disks swapped weekly) | 0.17 TB | 0.51 TB (0.79 TB after a key rotation) | 4.6 TB |
 | Off-site bucket | 0.72 TB | 2.2 TB | 10 TB |
 
@@ -310,13 +312,16 @@ monitor is set up. The dates are against the release on 23 November.
      keeps one copy; a second administrator (the medical director or the hospital administrator) keeps another outside
      the hospital, at home or in a bank locker, and types it in under Backups › Recovery key, *I hold this key*. Put the
      quarterly check, when each holder types the key in again, in both their calendars.
-   - Let the first night's backup run and go off site. On a spare PC, download it from the bucket with the hospital's
-     own login, check it with `backup verify`, and restore it with `Restore-HC360.ps1` (DEPLOYMENT.md section 8,
-     *Restoring from the off-site copy*).
+   - Let the first night's backup run and go off site. Right after it, export the row counts on the server
+     (`Invoke-HC360RestoreDrill.ps1 -ExportReference`). On a spare PC, download the backup and its generation from the
+     bucket with the hospital's own login (DEPLOYMENT.md section 8, *Restoring from the off-site copy*), and run the
+     restore drill on it (`Invoke-HC360RestoreDrill.ps1 -BackupFile ... -ReferenceFile ...`, section 8, *Restore drill
+     every quarter*). Do the same from one of the USB disks.
 
    *Check:* the night's backup shows Yes in the Backups screen's *Off site* column, and the bucket shows it locked for 35
    days. Backups › Recovery key lists both holders, and System health shows neither `backup.offsite_stale` nor
-   `backup.recovery_key_custodians`. The restored copy opens and holds what the original holds.
+   `backup.recovery_key_custodians`. Both drills say PASSED: every document in place and as saved, and no table missing or with
+   more rows than the server had. Keep their reports, with the time each restore took.
 9. **Build the item master in HC360.** No data comes from the current software. Set each scheduled drug's schedule
    from its molecule against the H1 list, and fill in its manufacturer.
    *Check:* the pharmacist-in-charge reviews the H1 and X list before it is used.
