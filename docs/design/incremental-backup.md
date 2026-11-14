@@ -166,9 +166,15 @@ versions 1, 2 and 3.
 
 The sorted blob ids the archive references, in plain text, plus an HMAC-SHA256 under
 `IFieldProtector.DeriveKey("backup-refs")`, which comes from the original master key and is the same on every server
-restored from these backups. The sweep reads only `.refs` files, so it needs no recovery key and keeps working across
+restored from these backups. The seal also covers the archive's name and the installation, so a list copied beside
+another archive is refused. The sweep reads only `.refs` files, so it needs no recovery key and keeps working across
 recovery-key rotations (F10). A missing or failed `.refs` file means no sweep (F15). Restore and verify **do not trust**
 `.refs`. They use the encrypted `documents.idx`.
+
+**Every archive has a list** (refined in step 1). When a folder is first marked, each archive already there gets an
+empty list, because archives made before documents were kept apart reference none. From then on, an archive without a
+list blocks the sweep, whatever its date. That includes an archive written by an older HC360 after a downgrade, which
+the operator then has to resolve.
 
 ### 5.4 One run, in order
 
@@ -176,15 +182,24 @@ recovery-key rotations (F10). A missing or failed `.refs` file means no sweep (F
 2. Dump the database. Take the document lock (shared). List the documents, then export the ring (keep today's order).
 3. For each document: hash the stored file. If `blobs/<id>` is missing, copy it to `*.tmp`, flush and rename. The space
    check counts only these new bytes.
-4. Write the archive (`.partial`, then verify it by reading it back, which **also re-hashes the blobs it references**,
-   then rename). Write `.refs`.
+4. Write the archive (`.partial`, then verify it by reading it back, which **also re-hashes the blobs it references**).
+   Write `.refs`, **then** rename the archive into place, so an archive in the folder always has its list. A crash in
+   between leaves only an orphan list.
 5. Release the document lock.
 6. Secondary location (the disk mounted now): take its lock, check its marker, copy the blobs it lacks, then the archive
    and `.refs`, then retention + sweep **on that disk only**, using its own `.refs` files.
 7. Retention + sweep on the primary.
 
-Retention: delete archives (and their `.refs`) older than *R* days by name or manifest date, keeping the newest
-complete one. Sweep: delete blobs no remaining `.refs` names, skipping `*.tmp` younger than a day.
+Retention: delete archives (and their `.refs`) older than *R* days by the date in their name, keeping the newest.
+Archives with other names are never deleted. Sweep: delete blobs no remaining `.refs` names.
+
+**No time-based grace periods** (refined in step 1). Every writer holds the store lock, so whatever the sweep finds
+while holding it (`*.tmp`, `*.partial`, a `.refs` without its archive) comes from a crashed run and is removed at once.
+Nothing in the sweep reads a clock or a file time (F19).
+
+**Hashing every document every night** reads the whole `files` folder from the server's disk, not the USB disk. Step 3
+adds a cache of (storage path, length, last write time) → blob id, kept in the primary folder. A key-move rewrite
+changes the last write time, so it never serves a stale id.
 
 ### 5.5 Restore, verify, failover
 
@@ -196,15 +211,15 @@ file".
 
 ---
 
-## 6. Decisions needed from you
+## 6. Decisions (agreed 2026-11-14)
 
-1. **What a stolen USB disk reveals (section 3, end):** accept that document count and sizes are visible, with
-   timestamps cleared? Recommended: yes.
-2. **Where the sizing goes:** `NANA-THENI-HARDWARE.md` does not exist. Update `NANA-THENI-READINESS.md` §2–3, or create
-   the hardware doc? Recommended: update the readiness doc.
-3. **USB disks: require NTFS**, with a warning on exFAT (F18)? Recommended: yes.
-4. **Run Appendix A on the Nana server.** Someone with access has to run it. Until then the sizing in 2.2 stays marked
-   as assumed.
+1. **What a stolen USB disk reveals:** accepted. Document count and sizes are visible. Every stored copy gets a fixed
+   timestamp (`BackupStore.BlobTimestamp`), so upload dates are not.
+2. **Where the sizing goes:** `NANA-THENI-READINESS.md` §2–3. No new hardware doc.
+3. **USB disks must be NTFS.** FAT and exFAT are flagged (`BackupStore.UnsuitableFileSystem`). The warning on the
+   Backups screen and in the preflight comes with step 3.
+4. **Appendix A will be run on the Nana server** by someone with access. Until then the sizing in 2.2 stays marked as
+   assumed.
 
 ## 7. Implementation plan (each step its own commit)
 
