@@ -1324,6 +1324,11 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   (below), it is uploaded to a bucket outside the building within 15 minutes.
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
+- **A backup missed while the server was off** (a power cut, an update, a restart over 01:30) is caught up. HC360
+  looks every quarter of an hour. Back inside the backup window, the four hours after the scheduled time (01:30 to
+  05:30), it takes the backup at once. Back in the day, it leaves it to tonight's backup rather than load the server
+  while the hospital works, unless the newest good backup is over 36 hours old, the age at which System health turns
+  critical. Then it takes it at once all the same, gently: one pg_dump at a time, below normal priority.
 - **The copy to the second disk or NAS** is what survives if the server's own disk fails. The number series'
   high-water mark is copied there too, every minute while numbers are issued ("After a restore" below). When a copy
   fails (the USB disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:

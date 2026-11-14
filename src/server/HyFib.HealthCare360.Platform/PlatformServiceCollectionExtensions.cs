@@ -452,9 +452,10 @@ public static class PlatformServiceCollectionExtensions
                     quartz.ScheduleJob<BackupJob>(trigger => trigger
                         .WithIdentity("nightly-backup")
                         .WithCronSchedule(options.Backup.Schedule, cron => cron.InTimeZone(ResolveTimeZone(options.TimeZone))));
+                    // A missed nightly backup: taken in the next backup window, or at once, gently, once the newest is stale.
                     quartz.ScheduleJob<BackupCatchUpJob>(trigger => trigger
                         .WithIdentity("backup-catch-up")
-                        .StartAt(DateTimeOffset.UtcNow.Add(BackupCatchUpJob.Delay)));
+                        .WithCronSchedule(BackupCatchUpJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
                 }
 
                 // Every quarter of an hour, whether nightly backups are on or not: a backup taken by hand goes off site too.

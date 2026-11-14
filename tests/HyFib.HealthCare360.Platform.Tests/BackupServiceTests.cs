@@ -198,6 +198,22 @@ public sealed class BackupServiceTests : IDisposable
         await Should.ThrowAsync<BackupKeyMismatchException>(() => BackupEncryption.OpenAsync(input, original, ct));
     }
 
+    /// <summary>
+    /// A missed backup caught up while the hospital works runs pg_dump below normal priority, so the server's requests come
+    /// first (<see cref="BackupCatchUpJob"/>); every other backup at normal priority, to be done within the night.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_taken_gently_runs_pg_dump_below_normal_priority()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await Service().CreateAsync(BackupKind.Scheduled, DateTimeOffset.UtcNow, includeDocuments: true, [], lowPriority: true, ct);
+        _postgres.LowPriority.ShouldBe(true);
+
+        await Service().CreatePreMigrationAsync([], ct);
+        _postgres.LowPriority.ShouldBe(false);
+    }
+
     [Fact]
     public async Task A_backup_is_refused_when_the_disk_has_no_room_for_it()
     {
@@ -267,6 +283,9 @@ public sealed class BackupServiceTests : IDisposable
 
         public byte[]? Validated { get; private set; }
 
+        /// <summary>Whether pg_dump was asked to run below normal priority.</summary>
+        public bool? LowPriority { get; private set; }
+
         /// <summary>Something that happens on the server while pg_dump runs.</summary>
         public Action? DuringDump { get; set; }
 
@@ -274,8 +293,9 @@ public sealed class BackupServiceTests : IDisposable
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(DatabaseSize);
 
-        public async Task DumpAsync(string outputFile, CancellationToken ct)
+        public async Task DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
         {
+            LowPriority = lowPriority;
             DuringDump?.Invoke();
             Dumped = [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(4096)];
             await File.WriteAllBytesAsync(outputFile, Dumped, ct);

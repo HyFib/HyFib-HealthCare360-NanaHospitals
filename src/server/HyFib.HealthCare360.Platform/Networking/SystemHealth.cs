@@ -223,7 +223,7 @@ public sealed class SystemHealthService(
         databaseWarnings.AddRange(await SystemHealthArchive.WarningsAsync(db, directories, options.Value, now, ct));
 
         var backupWarnings = new List<HealthWarning>();
-        if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > TimeSpan.FromHours(36)))
+        if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > BackupService.StaleAfter))
         {
             backupWarnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
         }

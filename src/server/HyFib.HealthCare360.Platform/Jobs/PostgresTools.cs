@@ -22,7 +22,8 @@ public interface IPostgresTools
     /// Dumps the hospital database in pg_dump's custom format, without the rows of the servers that made it
     /// (<see cref="PostgresTools.ServerDataLeftOut"/>).
     /// </summary>
-    Task DumpAsync(string outputFile, CancellationToken ct);
+    /// <param name="lowPriority">Run pg_dump below normal priority, for a backup taken while the hospital works.</param>
+    Task DumpAsync(string outputFile, bool lowPriority, CancellationToken ct);
 
     /// <summary>
     /// Lists the dump with pg_restore, which reads its whole table of contents and fails on a damaged archive. Returns
@@ -55,7 +56,7 @@ internal sealed class PostgresTools(
         return (long)(await command.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task DumpAsync(string outputFile, CancellationToken ct)
+    public async Task DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
     {
         var connection = Connection;
         var (exitCode, stderr) = await RunAsync(
@@ -66,6 +67,7 @@ internal sealed class PostgresTools(
                 $"--username={connection.Username}", $"--dbname={connection.Database}",
             ],
             connection.Password,
+            lowPriority,
             ct);
         if (exitCode != 0)
         {
@@ -79,7 +81,7 @@ internal sealed class PostgresTools(
         string stderr;
         try
         {
-            (exitCode, stderr) = await RunAsync(ResolvePgRestore(), ["--list", dumpFile], password: null, ct);
+            (exitCode, stderr) = await RunAsync(ResolvePgRestore(), ["--list", dumpFile], password: null, lowPriority: false, ct);
         }
         catch (Win32Exception ex)
         {
@@ -90,7 +92,8 @@ internal sealed class PostgresTools(
         return exitCode == 0 ? true : throw new InvalidOperationException($"pg_restore cannot read the database dump (exit code {exitCode}): {stderr}");
     }
 
-    private static async Task<(int ExitCode, string Stderr)> RunAsync(string executable, IReadOnlyList<string> arguments, string? password, CancellationToken ct)
+    private static async Task<(int ExitCode, string Stderr)> RunAsync(
+        string executable, IReadOnlyList<string> arguments, string? password, bool lowPriority, CancellationToken ct)
     {
         var startInfo = new ProcessStartInfo(executable)
         {
@@ -108,6 +111,11 @@ internal sealed class PostgresTools(
         startInfo.Environment["PGPASSWORD"] = password ?? string.Empty;
 
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"{Path.GetFileName(executable)} could not be started.");
+        if (lowPriority)
+        {
+            LowerPriority(process);
+        }
+
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromHours(2));
 
@@ -124,6 +132,23 @@ internal sealed class PostgresTools(
         {
             process.Kill(entireProcessTree: true);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Below normal priority, so the server's requests are served first while the tool runs: the CPU's share only, as
+    /// Windows gives no way to lower another process's disk priority. A tool that has already ended, or a system that
+    /// refuses, leaves it as it is.
+    /// </summary>
+    private static void LowerPriority(Process process)
+    {
+        try
+        {
+            process.PriorityClass = ProcessPriorityClass.BelowNormal;
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or NotSupportedException)
+        {
+            // Normal priority then: the backup is still made.
         }
     }
 

@@ -175,11 +175,45 @@ internal sealed class BackupService(
     /// </summary>
     internal const string OldCopiesKeptNote = "Copied to the secondary directory; older copies there were not removed: ";
 
+    /// <summary>
+    /// How old the newest good backup may be before System health says no backup succeeded (<c>backup.stale</c>, critical):
+    /// a night's backup missed, and the half day after it. A missed backup is caught up at once past it, even in the day
+    /// (<see cref="BackupCatchUpJob"/>).
+    /// </summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromHours(36);
+
+    /// <summary>
+    /// One backup at a time on this server: the nightly one, one taken by hand, the one before an update and a missed one
+    /// caught up each run a pg_dump and read the whole database, so the one that comes second waits for the first.
+    /// </summary>
+    internal static readonly SemaphoreSlim Gate = new(1, 1);
+
     private static readonly string ServerVersion =
         typeof(BackupService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
     /// <summary>A full backup (nightly or on demand), recorded in the backup history as it runs.</summary>
-    public async Task<BackupRunDto> RunAsync(BackupKind kind, Guid? triggeredBy, CancellationToken cancellationToken)
+    public Task<BackupRunDto> RunAsync(BackupKind kind, Guid? triggeredBy, CancellationToken cancellationToken) =>
+        RunAsync(kind, triggeredBy, lowPriority: false, cancellationToken);
+
+    /// <summary>A full backup, recorded in the backup history as it runs.</summary>
+    /// <param name="lowPriority">
+    /// Gently, for a missed backup caught up while the hospital works (<see cref="BackupCatchUpJob"/>): pg_dump below
+    /// normal priority, so the server's requests come first.
+    /// </param>
+    public async Task<BackupRunDto> RunAsync(BackupKind kind, Guid? triggeredBy, bool lowPriority, CancellationToken cancellationToken)
+    {
+        await Gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RunHeldAsync(kind, triggeredBy, lowPriority, cancellationToken);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    private async Task<BackupRunDto> RunHeldAsync(BackupKind kind, Guid? triggeredBy, bool lowPriority, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var run = new BackupRun { StartedAt = time.GetUtcNow(), Kind = kind, Status = BackupStatus.Running, TriggeredBy = triggeredBy };
@@ -189,7 +223,7 @@ internal sealed class BackupService(
         try
         {
             var migrations = (await db.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
-            Apply(run, await CreateAsync(kind, run.StartedAt, includeDocuments: true, migrations, cancellationToken));
+            Apply(run, await CreateAsync(kind, run.StartedAt, includeDocuments: true, migrations, lowPriority, cancellationToken));
             logger.LogInformation("Backup {File} completed and verified ({Size:N0} bytes, {Documents} documents)", run.FileName, run.SizeBytes, run.DocumentCount);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -234,8 +268,18 @@ internal sealed class BackupService(
     /// never touch them), written and verified without using the tables that are about to change. It is added to the
     /// backup history with <see cref="RecordAsync"/> once the migrations are applied.
     /// </summary>
-    public Task<BackupResult> CreatePreMigrationAsync(IReadOnlyList<string> appliedMigrations, CancellationToken cancellationToken) =>
-        CreateAsync(BackupKind.PreMigration, time.GetUtcNow(), includeDocuments: false, appliedMigrations, cancellationToken);
+    public async Task<BackupResult> CreatePreMigrationAsync(IReadOnlyList<string> appliedMigrations, CancellationToken cancellationToken)
+    {
+        await Gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await CreateAsync(BackupKind.PreMigration, time.GetUtcNow(), includeDocuments: false, appliedMigrations, cancellationToken);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
 
     public async Task RecordAsync(BackupResult result, CancellationToken cancellationToken)
     {
@@ -251,7 +295,11 @@ internal sealed class BackupService(
         new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt,
             r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError);
 
-    internal async Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct)
+    internal Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct) =>
+        CreateAsync(kind, startedAt, includeDocuments, migrations, lowPriority: false, ct);
+
+    internal async Task<BackupResult> CreateAsync(
+        BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, bool lowPriority, CancellationToken ct)
     {
         Directory.CreateDirectory(directories.Temp);
         Directory.CreateDirectory(directories.Backups);
@@ -266,7 +314,7 @@ internal sealed class BackupService(
         try
         {
             await EnsureRoomAsync(includeDocuments ? BackupArchive.ListDocuments(directories.Files).Sum(d => d.Length) : 0, ct);
-            await postgres.DumpAsync(dump, ct);
+            await postgres.DumpAsync(dump, lowPriority, ct);
 
             // The documents are listed after the database snapshot. The file store writes a document in full before its row
             // is committed and never removes it, so every document the dump refers to is on disk by now. One saved since is
@@ -515,12 +563,31 @@ internal sealed class BackupJob(BackupService backups) : IJob
         await backups.RunAsync(BackupKind.Scheduled, null, cancellationToken);
 }
 
+/// <summary>When a missed nightly backup is taken (<see cref="BackupCatchUpJob.Decide"/>).</summary>
+internal enum BackupCatchUp
+{
+    /// <summary>Not now: nothing was missed, or the next window's nightly backup takes it.</summary>
+    None,
+
+    /// <summary>Now, inside a backup window, when the hospital is quiet.</summary>
+    Now,
+
+    /// <summary>Now, outside the window, as the newest good backup is stale: gently, one pg_dump below normal priority.</summary>
+    NowGently,
+}
+
 /// <summary>
 /// The nightly backup the server was off for: the job scheduler keeps its schedule in memory, so a run missed while the
-/// server was stopped (a power cut, an update, a reboot at the wrong hour) is never fired late. Shortly after start-up this
-/// checks whether the schedule fell due since the last full backup was attempted and, if so, takes it now. A new
-/// installation that has never attempted one waits for its schedule.
+/// server was stopped (a power cut, an update, a reboot at the wrong hour) is never fired late. Every quarter of an hour
+/// this checks whether the schedule fell due since the last full backup was attempted and, if so, whether to take it now
+/// (<see cref="Decide"/>): inside the backup window that follows each scheduled time (<see cref="Window"/>, 01:30 to
+/// 05:30 by default), at once; outside it, a backup at 10:00 would load the server while the hospital works, so the next
+/// window's nightly backup takes it, unless the newest good backup is older than <see cref="BackupService.StaleAfter"/>,
+/// when it is taken at once all the same, gently: one pg_dump at a time, below normal priority. A new installation that
+/// has never attempted one waits for its schedule. The checks are on the clock, so every server that may run the jobs
+/// names the same times and each is claimed once for the hospital (<see cref="JobSlotClaim"/>).
 /// </summary>
+[DisallowConcurrentExecution]
 internal sealed class BackupCatchUpJob(
     BackupService backups,
     IDbContextFactory<HospitalDbContext> contexts,
@@ -528,42 +595,85 @@ internal sealed class BackupCatchUpJob(
     TimeProvider time,
     ILogger<BackupCatchUpJob> logger) : IJob
 {
-    /// <summary>How long after start-up the check is made, so the server is serving before a backup loads the disk.</summary>
-    public static readonly TimeSpan Delay = TimeSpan.FromMinutes(2);
+    /// <summary>Every quarter of an hour, at 7, 22, 37 and 52 minutes past: clear of a nightly backup set on the hour or half hour.</summary>
+    public const string Schedule = "0 7/15 * * * ?";
+
+    /// <summary>The backup window: the hours after each scheduled backup, when the hospital is quietest.</summary>
+    public static readonly TimeSpan Window = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// How late a scheduled backup is before it counts as missed: the night's own backup starts on the minute and is in the
+    /// backup history at once, so a check just after it never takes it a second time.
+    /// </summary>
+    public static readonly TimeSpan MissedAfter = TimeSpan.FromMinutes(10);
 
     public async ValueTask Execute(IJobExecutionContext context, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
+        BackupCatchUp decision;
         await using (var db = await contexts.CreateDbContextAsync(cancellationToken))
         {
-            // A backup this server started is under way (and is the backup); one still marked as running from before it
-            // started was cut off with its server, by the power cut or update that made the nightly backup missed.
+            // A backup started since the jobs started here is under way (and is the backup); one still marked as running
+            // from before was cut off with its server, by the power cut or update that made the nightly backup missed.
             var full = db.Set<BackupRun>().Where(r => r.Kind == BackupKind.Scheduled || r.Kind == BackupKind.Manual);
-            var serverStarted = context.Trigger.StartTimeUtc - Delay;
-            if (await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt >= serverStarted, cancellationToken))
+            var jobsStarted = (await context.Scheduler.GetMetadata(cancellationToken)).RunningSince ?? now;
+            if (BackupService.Gate.CurrentCount == 0
+                || await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt >= jobsStarted, cancellationToken))
             {
                 return;
             }
 
             var lastAttempt = await full.MaxAsync(r => (DateTimeOffset?)r.StartedAt, cancellationToken);
+            var lastGood = await db.Set<BackupRun>().Where(r => r.Status == BackupStatus.Succeeded).MaxAsync(r => r.CompletedAt, cancellationToken);
             var zone = PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone);
-            if (!Missed(options.Value.Backup.Schedule, zone, lastAttempt, now))
+            decision = Decide(options.Value.Backup.Schedule, zone, lastAttempt, lastGood, now);
+            if (decision == BackupCatchUp.None)
             {
                 return;
             }
 
-            logger.LogWarning("The scheduled backup was missed while the server was stopped (last attempted {LastAttempt}); taking it now", lastAttempt);
+            if (decision == BackupCatchUp.Now)
+            {
+                logger.LogWarning("The scheduled backup was missed while the server was stopped (last attempted {LastAttempt}); taking it now", lastAttempt);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "The scheduled backup was missed (last attempted {LastAttempt}) and the newest good backup, of {LastGood}, is over {Hours} hours old; taking it now, at low priority",
+                    lastAttempt, lastGood, BackupService.StaleAfter.TotalHours);
+            }
         }
 
-        await backups.RunAsync(BackupKind.Scheduled, null, cancellationToken);
+        await backups.RunAsync(BackupKind.Scheduled, null, lowPriority: decision == BackupCatchUp.NowGently, cancellationToken);
     }
 
-    /// <summary>Whether <paramref name="schedule"/> fell due after <paramref name="lastAttempt"/> and before <paramref name="now"/>.</summary>
+    /// <summary>
+    /// Whether, and how, to take the backup <paramref name="schedule"/> missed: not at all when it did not fall due at least
+    /// <see cref="MissedAfter"/> after <paramref name="lastAttempt"/>; now when <paramref name="now"/> is inside the
+    /// <see cref="Window"/> after a scheduled time; now, gently, when the newest good backup (<paramref name="lastGood"/>,
+    /// when it finished) is older than <see cref="BackupService.StaleAfter"/>, or there is none; otherwise not yet: the next
+    /// window's nightly backup takes it, or a later check once the newest good backup turns stale.
+    /// </summary>
+    public static BackupCatchUp Decide(string schedule, TimeZoneInfo zone, DateTimeOffset? lastAttempt, DateTimeOffset? lastGood, DateTimeOffset now)
+    {
+        if (!Missed(schedule, zone, lastAttempt, now))
+        {
+            return BackupCatchUp.None;
+        }
+
+        if (new CronExpression(schedule, zone).GetNextValidTimeAfter(now - Window) is { } scheduled && scheduled <= now)
+        {
+            return BackupCatchUp.Now;
+        }
+
+        return lastGood is null || now - lastGood > BackupService.StaleAfter ? BackupCatchUp.NowGently : BackupCatchUp.None;
+    }
+
+    /// <summary>Whether <paramref name="schedule"/> fell due after <paramref name="lastAttempt"/>, and at least <see cref="MissedAfter"/> before <paramref name="now"/>.</summary>
     public static bool Missed(string schedule, TimeZoneInfo zone, DateTimeOffset? lastAttempt, DateTimeOffset now) =>
         lastAttempt is { } last
-        && ((ICronTrigger)Quartz.TriggerBuilder.Create().WithCronSchedule(schedule, cron => cron.InTimeZone(zone)).StartAt(last).Build())
-            .GetFireTimeAfter(last) is { } due
-        && due <= now;
+        && new CronExpression(schedule, zone).GetNextValidTimeAfter(last) is { } due
+        && due <= now - MissedAfter;
 }
 
 internal static class BackupEndpoints
