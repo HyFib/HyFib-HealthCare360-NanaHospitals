@@ -207,6 +207,7 @@ describe('the save request', () => {
     };
 
     expect(toSaveRequest(values, false, 1).astmDialect).toBe('YumizenC150');
+    expect(toSaveRequest({ ...values, astmDialect: 'YumizenH500' }, false, 1).astmDialect).toBe('YumizenH500');
     expect(toSaveRequest({ ...values, astmDialect: '' }, false, 1).astmDialect).toBeNull();
     expect(toSaveRequest(values, true, 1).astmDialect).toBeNull();
   });

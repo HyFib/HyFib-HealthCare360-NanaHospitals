@@ -299,7 +299,7 @@ export const SERIAL_HANDSHAKES = ['None', 'XOnXOff', 'RequestToSend', 'RequestTo
 export const HL7_ORDER_MESSAGES = ['OML^O21', 'ORM^O01'] as const;
 
 /** ASTM analyser models whose departures from E1394 the gateway follows; none means standard ASTM. */
-export const ASTM_DIALECTS = ['YumizenC150'] as const;
+export const ASTM_DIALECTS = ['YumizenC150', 'YumizenH500'] as const;
 export type AstmDialect = (typeof ASTM_DIALECTS)[number];
 
 export interface LabSerialPortDto {

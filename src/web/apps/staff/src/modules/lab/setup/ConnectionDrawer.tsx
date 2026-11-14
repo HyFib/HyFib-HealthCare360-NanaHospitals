@@ -80,7 +80,10 @@ const HANDSHAKE_LABELS: Record<ConnectionForm['handshake'], string> = {
   RequestToSendXOnXOff: 'RTS/CTS and XON/XOFF',
 };
 
-const ASTM_DIALECT_LABELS: Record<AstmDialect, string> = { YumizenC150: 'HORIBA Yumizen C150' };
+const ASTM_DIALECT_LABELS: Record<AstmDialect, string> = {
+  YumizenC150: 'HORIBA Yumizen C150',
+  YumizenH500: 'HORIBA Yumizen H500 / H500E',
+};
 
 const STOP_BIT_LABELS: Record<ConnectionForm['stopBits'], string> = { One: '1', OnePointFive: '1.5', Two: '2' };
 
@@ -272,7 +275,7 @@ export function ConnectionFields({
             name="astmDialect"
             label="Analyser model"
             disabled={disabled}
-            hint="Choose the model when its ASTM differs from the standard, as the HORIBA Yumizen C150's does."
+            hint="Choose the model when its ASTM differs from the standard, as the HORIBA Yumizen analysers' does."
             options={[
               { value: '', label: 'Standard ASTM (most analysers)' },
               ...ASTM_DIALECTS.map((value) => ({ value, label: ASTM_DIALECT_LABELS[value] })),
