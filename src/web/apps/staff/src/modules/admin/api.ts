@@ -615,6 +615,21 @@ export interface BackupRunDto {
   verifiedAt: string | null;
   /** The id of the recovery key that opens the backup; null for backups made before backups named it (the original key). */
   recoveryKeyId: string | null;
+  /** When its copy in the off-site bucket was uploaded and checked; null while it is not off site. */
+  offsiteUploadedAt: string | null;
+  /** Its object key in the off-site bucket, once an upload was tried. */
+  offsiteKey: string | null;
+  /** How many times its upload was tried. */
+  offsiteAttempts: number;
+  /** Why its last upload attempt failed. */
+  offsiteError: string | null;
+}
+
+/** Someone who has shown they hold the current recovery key by typing it in, and when they last did. */
+export interface RecoveryKeyCustodian {
+  userId: string;
+  name: string;
+  lastProvenAt: string;
 }
 
 /** Which recovery key new backups use. The key itself is shown once only, when it is made. */
@@ -629,6 +644,46 @@ export interface RecoveryKeyStatus {
   originalShown: boolean;
   /** The original key's id, which the backups made with it name. */
   originalKeyId: string;
+  /** Who has typed the key in to show they hold it, each once, the most recent first. Two people should, every quarter. */
+  custodians: RecoveryKeyCustodian[] | null;
+}
+
+/** How many different people should hold the recovery key, and how often one of them should type it in (as the server). */
+export const RECOVERY_KEY_CUSTODIANS = 2;
+export const RECOVERY_KEY_CHECK_DAYS = 90;
+
+/**
+ * What the screen says of who holds the current key: null when two people have typed it in within the last 90 days;
+ * otherwise what to do, as System health says it.
+ */
+export function custodyAdvice(status: Pick<RecoveryKeyStatus, 'custodians'>, now: Date = new Date()): string | null {
+  const custodians = status.custodians ?? [];
+  if (custodians.length === 0) {
+    return 'Nobody has typed this key in to show they hold a copy. Two administrators who keep a copy each should, one copy kept outside the building.';
+  }
+  if (custodians.length < RECOVERY_KEY_CUSTODIANS) {
+    return `Only ${custodians[0]!.name} has shown they hold this key. A second administrator, with a copy of their own kept outside the building, should type it in.`;
+  }
+  const last = Math.max(...custodians.map((c) => new Date(c.lastProvenAt).getTime()));
+  return now.getTime() - last > RECOVERY_KEY_CHECK_DAYS * 24 * 60 * 60 * 1000
+    ? 'Nobody has typed this key in for 90 days. Check each copy can still be found and read, and type it in.'
+    : null;
+}
+
+/** Whether a backup is off site, in words for the backup list. */
+export function offsiteText(
+  run: Pick<BackupRunDto, 'status' | 'kind' | 'offsiteUploadedAt' | 'offsiteAttempts' | 'offsiteError'>,
+): string {
+  if (run.status !== 'Succeeded' || run.kind === 'PreMigration') {
+    return '—';
+  }
+  if (run.offsiteUploadedAt) {
+    return 'Yes';
+  }
+  if (run.offsiteError) {
+    return 'Not yet: the last try failed';
+  }
+  return run.offsiteAttempts > 0 ? 'Uploading' : 'No';
 }
 
 /** A new recovery key, shown this once. It replaces the current key only when it is typed back before `expiresAt`. */
@@ -795,6 +850,15 @@ export function confirmRecoveryKey(keyId: string, key: string) {
   return api.post<RecoveryKeyStatus>(`/api/v1/admin/backups/recovery-key/${encodeURIComponent(keyId)}/confirm`, {
     key,
   });
+}
+
+/**
+ * Records that the signed-in administrator holds the current recovery key, once they type it in from their copy: 400 with
+ * a `key` field error when it is not the current key. Nothing changes, and the key is never shown. Needs
+ * `admin.backups.manage`.
+ */
+export function proveRecoveryKey(key: string) {
+  return api.post<RecoveryKeyStatus>('/api/v1/admin/backups/recovery-key/prove', { key });
 }
 
 /**

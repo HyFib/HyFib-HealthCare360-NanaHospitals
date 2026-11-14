@@ -77,6 +77,10 @@ const KNOWN: Record<string, string> = {
     "The address a heartbeat monitor outside the hospital gives (a dead-man's switch): the server that runs the jobs fetches it every few minutes while the database answers, and the monitor raises its alarm when that stops, as in a power cut or a stopped server. https, or http to a private address on the hospital's network. Kept encrypted and never shown again: whoever has it could fetch it and hide an outage.",
   'alerts.heartbeatMinutes':
     'Minutes between heartbeats (5 if not set, 1 to 60). Give the monitor a period to match, and a grace time of a few minutes.',
+  'backup.offsite':
+    'The off-site copy of the backups, for the whole hospital: the S3-compatible bucket outside the building that every verified backup is uploaded to within 15 minutes (enabled, endpoint, region, bucket, prefix, pathStyle), how long each copy is locked there (retainDays, 35 if not set, 0 for no lock) and how far back older backups go too (backfillDays, 7 if not set). Easiest set under Administration › Backups, Off-site copy. A change waits for a second administrator.',
+  'backup.offsite.secret':
+    'The access key the off-site uploads are signed with ({ "accessKeyId": …, "secretAccessKey": … }): one that may upload but not delete. Kept encrypted and never shown again.',
   'security.antiAutomation.enabled':
     'Ask the patient portal’s sign-in and feedback forms for a proof of work, against scripts (on unless set to false).',
   'security.antiAutomation.bits':

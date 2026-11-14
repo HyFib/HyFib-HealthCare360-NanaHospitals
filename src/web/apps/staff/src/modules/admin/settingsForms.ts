@@ -2092,6 +2092,140 @@ export const INTEGRATION_SETTINGS: Partial<Record<IntegrationName, SettingsSpec>
   irp: irpSpec,
 };
 
+const OFFSITE = 'backup.offsite';
+const OFFSITE_SECRET = 'backup.offsite.secret';
+const offsiteOn = switchedOn(OFFSITE);
+
+/**
+ * The off-site store's address is its https origin alone, as the server checks: the bucket, the folder and the key are
+ * set apart, and a key in the address would be logged with it.
+ */
+export function offsiteEndpointProblem(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  try {
+    const url = new URL(value);
+    return url.pathname === '/' && !url.search && !url.hash
+      ? null
+      : 'Enter the store’s address alone, such as https://s3.ap-south-1.amazonaws.com: the bucket and the folder are set below.';
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The off-site copy of the backups (DEPLOYMENT.md section 8): an S3-compatible bucket outside the building, for the whole
+ * hospital, and the access key the uploads are signed with. The server uploads each verified backup within 15 minutes.
+ */
+export const BACKUP_OFFSITE_SETTINGS: SettingsSpec = {
+  id: 'backup-offsite',
+  title: 'Off-site copy',
+  intro:
+    'Every verified backup is uploaded to a bucket outside the building (AWS Mumbai or Hyderabad, OCI, or any S3-compatible store in India), encrypted as it is on the server, and locked there so that nobody can delete it for the days set. Use an access key that may upload but not delete. A change here waits for a second administrator.',
+  prefix: OFFSITE,
+  globalOnly: true,
+  fields: [
+    {
+      key: OFFSITE,
+      path: 'enabled',
+      label: 'Upload the backups off site',
+      kind: 'switch',
+      hint: 'The server that runs the background jobs uploads each new backup within 15 minutes, and goes on where it stopped after a failure.',
+    },
+    {
+      key: OFFSITE,
+      path: 'endpoint',
+      label: 'Store address',
+      kind: 'url',
+      https: true,
+      placeholder: 'https://s3.ap-south-1.amazonaws.com',
+      when: offsiteOn,
+      requiredWhen: offsiteOn,
+      check: offsiteEndpointProblem,
+      hint: 'The store’s https address alone. AWS Mumbai is https://s3.ap-south-1.amazonaws.com and Hyderabad https://s3.ap-south-2.amazonaws.com; OCI is https://<namespace>.compat.objectstorage.ap-mumbai-1.oraclecloud.com.',
+    },
+    {
+      key: OFFSITE,
+      path: 'region',
+      label: 'Region',
+      kind: 'text',
+      placeholder: 'ap-south-1',
+      when: offsiteOn,
+      requiredWhen: offsiteOn,
+      pattern: {
+        regex: /^[a-z0-9][a-z0-9-]{1,39}$/,
+        message: 'The region as the store names it, in lower case, such as ap-south-1 or ap-mumbai-1.',
+      },
+    },
+    {
+      key: OFFSITE,
+      path: 'bucket',
+      label: 'Bucket',
+      kind: 'text',
+      when: offsiteOn,
+      requiredWhen: offsiteOn,
+      pattern: {
+        regex: /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/,
+        message: '3 to 63 lower-case letters, digits, dots or hyphens, starting and ending with a letter or digit.',
+      },
+      hint: 'Created with Object Lock and versioning on, as the deployment guide says.',
+    },
+    {
+      key: OFFSITE,
+      path: 'prefix',
+      label: 'Folder in the bucket',
+      kind: 'text',
+      placeholder: 'hc360/',
+      when: offsiteOn,
+      pattern: {
+        regex: /^(?!\/)[A-Za-z0-9._/-]{0,200}$/,
+        message: 'Letters, digits, dots, hyphens, underscores and slashes, not starting with a slash.',
+      },
+      hint: 'Put before each backup’s file name. The access key’s policy can be limited to it.',
+    },
+    {
+      key: OFFSITE,
+      path: 'pathStyle',
+      label: 'Bucket in the path (path-style addresses)',
+      kind: 'switch',
+      when: offsiteOn,
+      hint: 'On for OCI and MinIO-based stores, and for a bucket with dots in its name; off for AWS.',
+    },
+    {
+      key: OFFSITE,
+      path: 'retainDays',
+      label: 'Lock each copy for (days)',
+      kind: 'number',
+      defaultNumber: 35,
+      min: 0,
+      max: 3650,
+      when: offsiteOn,
+      hint: 'S3 Object Lock in compliance mode: nobody, not even the store’s own administrator, deletes or overwrites a copy before then. 0 uploads without a lock, for a store that locks the whole bucket instead (OCI’s retention rules).',
+    },
+    {
+      key: OFFSITE,
+      path: 'backfillDays',
+      label: 'Also upload older backups from the last (days)',
+      kind: 'number',
+      defaultNumber: 7,
+      min: 0,
+      max: 365,
+      when: offsiteOn,
+      hint: 'After the newest backup, the older ones not yet off site that were made within this many days, newest first.',
+    },
+  ],
+  secrets: [
+    { key: OFFSITE_SECRET, prop: 'accessKeyId', label: 'Access key ID' },
+    {
+      key: OFFSITE_SECRET,
+      prop: 'secretAccessKey',
+      label: 'Secret access key',
+      hint: 'Enter both. Use a key that may upload but not delete; the deployment guide has the policy to give it.',
+    },
+  ],
+};
+
 const SPEECH = 'ai.speech';
 const whisper = when(SPEECH, 'provider', 'whisper');
 const OPENAI = 'ai.openai';
