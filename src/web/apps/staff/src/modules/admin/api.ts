@@ -2,6 +2,7 @@ import type { PagedResult } from '@hc360/core';
 import { keepPreviousData, queryOptions } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { ApprovalRequestDto } from '@/modules/approvals/api';
+import type { OutboxHold } from './outboxHold';
 
 export interface UserListItem {
   id: string;
@@ -440,7 +441,17 @@ export interface SystemHealthReport {
     lastError: string | null;
     lastSizeBytes: number | null;
   };
-  outbox: { pending: number; failedLast24Hours: number; oldestPendingAt: string | null };
+  outbox: {
+    pending: number;
+    failedLast24Hours: number;
+    oldestPendingAt: string | null;
+    /** Messages whose time was up before they could be tried, in the last day. */
+    expiredLast24Hours?: number;
+    /** While outgoing messages are held after a restore, the hold; else null. */
+    hold?: OutboxHold | null;
+    /** How many messages the hold holds: those going to the internet queued before it began. */
+    heldMessages?: number;
+  };
   certificate: {
     caFingerprint: string | null;
     serverExpiresAt: string | null;

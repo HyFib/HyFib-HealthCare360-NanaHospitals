@@ -1845,6 +1845,7 @@
     "POST /api/v1/admin/system/keys/data/rotate admin.system.read,admin.system.manage",
     "POST /api/v1/admin/system/keys/data/{keyId}/retire admin.system.read,admin.system.manage",
     "POST /api/v1/admin/system/keys/signing/rotate admin.system.read,admin.system.manage",
+    "POST /api/v1/admin/system/outbox/release admin.system.manage",
     "POST /api/v1/admin/system/simulator-records/sign-off admin.system.read,admin.system.manage",
     "POST /api/v1/admin/system/simulator-records/sweep admin.system.read,admin.system.manage",
     "POST /api/v1/admin/users admin.users.manage",
