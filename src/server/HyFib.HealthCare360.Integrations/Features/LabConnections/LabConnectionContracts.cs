@@ -14,7 +14,8 @@ public sealed record LabConnectionsDto(bool GatewayEnabled, uint ListVersion, IR
 /// One analyser's connection. <c>Transport</c> is <c>Tcp</c>, <c>Serial</c> or <c>Simulator</c> (the training analyser);
 /// <c>Protocol</c> follows Lab setup
 /// (<c>Hl7v2</c> or <c>Astm</c>). <c>HostQueryRetiredOff</c> means the connection still carries the retired
-/// <c>"hostQuery": false</c>, which keeps host queries and order download off until it is saved again. <c>Problem</c>
+/// <c>"hostQuery": false</c>, which keeps host queries and order download off until it is saved again. <c>AstmDialect</c>
+/// (ASTM only) is the analyser model whose departures from E1394 the gateway follows (null: E1394). <c>Problem</c>
 /// says why the gateway ignores it. <c>OpenToAnyDevice</c>: a network connection saved without the analyser's IP address
 /// (before Lab setup required one), which takes results from any device that reaches its port (ASVS V13.2.1); System
 /// health warns of it too, until the address is entered.
@@ -40,7 +41,8 @@ public sealed record LabConnectionDto(
     LabConnectionStatusDto? Status,
     int PendingOrders,
     bool OpenToAnyDevice,
-    Laboratory.Devices.LabDeviceAuthentication DeviceAuthentication = Laboratory.Devices.LabDeviceAuthentication.None);
+    Laboratory.Devices.LabDeviceAuthentication DeviceAuthentication = Laboratory.Devices.LabDeviceAuthentication.None,
+    string? AstmDialect = null);
 
 /// <summary>A COM port's settings (names as Windows uses them: Parity None/Odd/Even/Mark/Space, StopBits One/OnePointFive/Two, Handshake None/XOnXOff/RequestToSend/RequestToSendXOnXOff).</summary>
 public sealed record LabSerialPortDto(string PortName, int BaudRate, int DataBits, string Parity, string StopBits, string Handshake, bool DtrEnable, bool RtsEnable);
@@ -59,7 +61,8 @@ public sealed record LabAgentDto(Guid Id, string Name, string? MachineName, stri
 /// <summary>
 /// Saves an analyser's connection. Network: <c>Port</c>, and the analyser's fixed IP address in <c>AllowedIps</c>: an
 /// analyser connects without signing in, so its address is the only check (ASVS V13.2.1). Serial: <c>AgentDeviceId</c>
-/// and <c>Serial</c>. HL7 analysers may set <c>SampleIdFields</c> and <c>OrderMessage</c>.
+/// and <c>Serial</c>. HL7 analysers may set <c>SampleIdFields</c> and <c>OrderMessage</c>; ASTM analysers
+/// <c>AstmDialect</c> (<c>YumizenC150</c>, or null for E1394 as written).
 /// </summary>
 public sealed record SaveLabConnectionRequest(
     string Transport,
@@ -72,7 +75,8 @@ public sealed record SaveLabConnectionRequest(
     Guid? AgentDeviceId,
     LabSerialPortDto? Serial,
     uint ListVersion,
-    Laboratory.Devices.LabDeviceAuthentication? DeviceAuthentication = null);
+    Laboratory.Devices.LabDeviceAuthentication? DeviceAuthentication = null,
+    string? AstmDialect = null);
 
 public sealed class SaveLabConnectionRequestValidator : AbstractValidator<SaveLabConnectionRequest>
 {
@@ -110,5 +114,7 @@ public sealed class SaveLabConnectionRequestValidator : AbstractValidator<SaveLa
         RuleFor(r => r.SampleIdFields).Must(f => f is null || f.Count <= 6).WithMessage("List at most 6 fields.");
         RuleForEach(r => r.SampleIdFields).Matches("^(SPM|SAC|OBR|PID)-[0-9]{1,2}$").WithMessage("A field is written like SPM-2, SAC-3, OBR-3 or OBR-2.");
         RuleFor(r => r.OrderMessage).Must(Hl7OrderMessages.IsKnown).WithMessage("The order message is OML^O21 or ORM^O01.");
+        RuleFor(r => r.AstmDialect).Must(Laboratory.Astm.AstmDialect.IsKnown)
+            .WithMessage($"The ASTM dialect is one of {string.Join(", ", Laboratory.Astm.AstmDialect.Names)}, or none for standard ASTM.");
     }
 }

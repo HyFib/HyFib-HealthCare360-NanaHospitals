@@ -115,6 +115,12 @@ internal sealed partial record LabInstrumentSettings
     public string? OrderMessage { get; init; }
 
     /// <summary>
+    /// ASTM only: the analyser model's departures from E1394 (<see cref="Astm.AstmDialect"/>): none (E1394 as written,
+    /// the default) or <c>YumizenC150</c> (HORIBA Yumizen C150).
+    /// </summary>
+    public string? AstmDialect { get; init; }
+
+    /// <summary>
     /// Retired. Host queries and order download follow Bidirectional in Lab setup. A stored <c>false</c> (set before
     /// that) still keeps both off for this analyser, and saving the connection in Lab setup clears it.
     /// </summary>
@@ -130,6 +136,11 @@ internal sealed partial record LabInstrumentSettings
         if (!Enum.IsDefined(Protocol))
         {
             return "protocol must be Hl7v2 or Astm";
+        }
+
+        if (!Astm.AstmDialect.IsKnown(AstmDialect))
+        {
+            return $"the ASTM dialect must be one of {string.Join(", ", Astm.AstmDialect.Names)}, or none";
         }
 
         return Transport switch

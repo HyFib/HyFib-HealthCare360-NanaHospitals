@@ -615,4 +615,67 @@ public sealed class AstmSessionTests
 
         await _processor.ReceivedWithAnyArgs(1).SubmitResultsAsync(default!, default!, default!, Ct);
     }
+
+    private static LabInstrumentSettings Yumizen { get; } =
+        LabSamples.AstmInstrument with { Code = "C150", AstmDialect = AstmDialect.YumizenC150Name };
+
+    [Fact]
+    public async Task A_yumizen_query_for_several_ids_is_answered_in_backtick_repeats_with_the_tube_as_patient_id()
+    {
+        var run = Start(Yumizen);
+
+        await OpenAsync();
+        await SendAcknowledgedAsync(AstmFrames.BuildMessage(
+            [@"H|\^&|||ABC^3.6^11052213|||||||E-1394-97|20131205091027", "Q|1|^SMP-1`SMP-2|||S||||||O", "L|1|N"], Latin1));
+        await SendAsync(AstmControl.Eot);
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        await _processor.Received(1).QueryOrdersAsync(
+            Arg.Is(Yumizen), Arg.Is<IReadOnlyList<string>>(ids => ids.SequenceEqual(new[] { "SMP-1", "SMP-2" })), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        records.Count.ShouldBe(4);
+        records[0].ShouldBe("H|`^&|||HC360^1.0|||||||P|E 1394-97|20260925103000");
+        records[1].ShouldBe("P|1|SMP-1|||SHARMA&S&RAVI||19800115000000|M");
+        records[2].ShouldStartWith("O|1|SMP-1||^^^GLU`^^^CREA|R|");
+        records[2].ShouldEndWith("|SERUM||||||||||O");
+        records[3].ShouldBe("L|1|N");
+    }
+
+    [Fact]
+    public async Task A_yumizen_result_upload_without_an_order_record_reaches_the_tube_in_its_patient_id()
+    {
+        var run = Start(Yumizen);
+
+        await OpenAsync();
+        await SendAcknowledgedAsync(AstmFrames.BuildMessage(
+        [
+            @"H|\^&|||ABC^3.6^11052213|||||||E-1394-97|20131203141051",
+            "P|1|SMP-1|||SHARMA^RAVI|||M",
+            "R|1|^^^GLU|98|mg/dL|0^0|||N|F||||20131203141051",
+            "L|1|N",
+        ], Latin1));
+        await SendAsync(AstmControl.Eot);
+        await FinishAsync(run);
+
+        await _processor.Received(1).SubmitResultsAsync(
+            Arg.Is(Yumizen),
+            Arg.Is<IReadOnlyList<InstrumentResultMessage>>(m => m.Count == 1 && m[0].SampleBarcode == "SMP-1" && m[0].Results[0].Status == "F"),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Sends_a_yumizen_its_orders_with_the_tube_as_patient_id()
+    {
+        QueueOneDownload();
+        var run = Start(Yumizen);
+
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        records[0].ShouldStartWith("H|`^&|");
+        records[1].ShouldBe("P|1|SMP-1|||SHARMA&S&RAVI||19800115000000|M");
+        records[2].ShouldStartWith("O|1|SMP-1||^^^GLU`^^^CREA|S|");
+        records[3].ShouldBe("L|1|N");
+    }
 }

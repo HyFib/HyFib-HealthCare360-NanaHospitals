@@ -89,14 +89,18 @@ internal sealed class AstmRecord
 
 internal static class AstmRecords
 {
-    /// <summary>Parses message text (records separated by CR); delimiters come from the message's header record.</summary>
-    public static IReadOnlyList<AstmRecord> Parse(string text)
+    /// <summary>
+    /// Parses message text (records separated by CR); delimiters come from the message's header record, as the
+    /// analyser's dialect reads it (<see cref="AstmDialect.Incoming"/>).
+    /// </summary>
+    public static IReadOnlyList<AstmRecord> Parse(string text, AstmDialect? dialect = null)
     {
         var lines = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
             .Select(line => line.Trim())
             .Where(line => line.Length > 0 && char.IsAsciiLetter(line[0]))
             .ToList();
-        var delimiters = AstmDelimiters.FromHeader(lines.FirstOrDefault(l => char.ToUpperInvariant(l[0]) == 'H'));
+        var delimiters = (dialect ?? AstmDialect.Standard).Incoming(
+            AstmDelimiters.FromHeader(lines.FirstOrDefault(l => char.ToUpperInvariant(l[0]) == 'H')));
         return lines.Select(line => new AstmRecord(line, delimiters)).ToList();
     }
 

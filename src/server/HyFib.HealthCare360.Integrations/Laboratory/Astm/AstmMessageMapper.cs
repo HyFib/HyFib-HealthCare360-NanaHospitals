@@ -14,15 +14,18 @@ internal static class AstmMessageMapper
     /// (<see cref="Patient"/>), for the LIS to check against the tube's. Results under an order record whose sample id
     /// cannot be read, or with no order record of their own, come under an empty sample id: the LIS keeps them for a
     /// person to assign, where acknowledging the message and dropping them would lose them without anyone knowing. A
-    /// sample sent under two patients makes two messages.
+    /// sample sent under two patients makes two messages. An analyser whose dialect keys samples by P.3
+    /// (<see cref="AstmDialect.SampleIdInPatientRecord"/>) sends results with no order record under the P.3 sample id.
     /// </summary>
     public static IReadOnlyList<InstrumentResultMessage> MapResults(
-        IReadOnlyList<AstmRecord> records, string instrumentCode, string rawMessage, DateTimeOffset receivedAt, TimeZoneInfo zone)
+        IReadOnlyList<AstmRecord> records, string instrumentCode, string rawMessage, DateTimeOffset receivedAt, TimeZoneInfo zone, AstmDialect? dialect = null)
     {
+        dialect ??= AstmDialect.Standard;
         var header = records.FirstOrDefault(r => r.Type == 'H');
-        var messageTime = LabTime.Parse(header?.Field(14), zone);
+        var messageTime = MessageTime(header, zone);
         var samples = new List<(string SampleId, InstrumentPatient? Patient, List<InstrumentResult> Results)>();
         InstrumentPatient? patient = null;
+        string? patientSampleId = null;
         List<InstrumentResult>? current = null;
 
         // A comment record belongs to the result record it follows (its position in the sample's results), if any.
@@ -33,24 +36,25 @@ internal static class AstmMessageMapper
             {
                 case 'P':
                     // A new patient: results must be preceded by their own order record.
-                    patient = Patient(record);
+                    patient = Patient(record, dialect);
+                    patientSampleId = dialect.SampleIdInPatientRecord && record.Component(3, 1).Trim() is { Length: > 0 } keyed ? keyed : null;
                     current = null;
                     commented = -1;
                     break;
                 case 'O':
                     current = [];
-                    samples.Add((SampleId(record) ?? string.Empty, patient, current));
+                    samples.Add((SampleId(record) ?? patientSampleId ?? string.Empty, patient, current));
                     commented = -1;
                     break;
                 case 'R':
                     if (current is null)
                     {
                         current = [];
-                        samples.Add((string.Empty, patient, current));
+                        samples.Add((patientSampleId ?? string.Empty, patient, current));
                     }
 
                     commented = -1;
-                    if (Result(record, zone, messageTime) is { } result)
+                    if (Result(record, zone, messageTime, dialect) is { } result)
                     {
                         current.Add(result);
                         commented = current.Count - 1;
@@ -81,10 +85,20 @@ internal static class AstmMessageMapper
     /// differ in where they put it. One of them may be the analyser's own number: the LIS takes an id for a patient's only
     /// when a registered patient has it. Null when the record names no one.
     /// </summary>
-    internal static InstrumentPatient? Patient(AstmRecord record) =>
+    /// <remarks>An analyser whose P.3 is the sample id (<see cref="AstmDialect.SampleIdInPatientRecord"/>) names the patient by P.4 or P.5 only.</remarks>
+    internal static InstrumentPatient? Patient(AstmRecord record, AstmDialect? dialect = null) =>
         InstrumentPatient.Of(
-            new[] { 3, 4, 5 }.Select(field => record.Component(field, 1).Trim()).FirstOrDefault(id => id.Length > 0),
+            (dialect?.SampleIdInPatientRecord == true ? new[] { 4, 5 } : [3, 4, 5])
+                .Select(field => record.Component(field, 1).Trim()).FirstOrDefault(id => id.Length > 0),
             string.Join(' ', record.Components(6).Take(3).Select(c => c.Trim()).Where(c => c.Length > 0)));
+
+    /// <summary>
+    /// H.14, the message's date and time; else H.13 when it holds a full <c>YYYYMMDDHHMMSS</c>, as analysers that leave
+    /// out the processing id write it (the Yumizen C150's <c>…|E-1394-97|20131203141051</c>).
+    /// </summary>
+    internal static DateTimeOffset? MessageTime(AstmRecord? header, TimeZoneInfo zone) =>
+        LabTime.Parse(header?.Field(14), zone)
+        ?? (header?.Field(13).Trim() is { Length: 14 } stamp && stamp.All(char.IsAsciiDigit) ? LabTime.Parse(stamp, zone) : null);
 
     /// <summary>O.3 specimen id (first component: analysers append rack/position), else O.4 instrument specimen id.</summary>
     internal static string? SampleId(AstmRecord order)
@@ -97,11 +111,14 @@ internal static class AstmMessageMapper
     /// R.3 universal test id (<c>^^^CODE</c>: the manufacturer's code is the 4th component), R.4 value, R.5 units,
     /// R.7 abnormal flags, R.9 status (I = pending on the analyser is skipped; X = cannot be done is passed on as a
     /// result not obtained, which needs no value; the rest, F final, P preliminary, C correction…, is passed on),
-    /// R.13 completion time.
+    /// R.13 completion time. In a dialect whose result fields may sit one to the right
+    /// (<see cref="AstmDialect.ResultFieldsShifted"/>), a record with a status in R.10 is read as flags R.8, status R.10
+    /// and time R.14.
     /// </summary>
-    internal static InstrumentResult? Result(AstmRecord record, TimeZoneInfo zone, DateTimeOffset? messageTime)
+    internal static InstrumentResult? Result(AstmRecord record, TimeZoneInfo zone, DateTimeOffset? messageTime, AstmDialect? dialect = null)
     {
-        var status = record.Value(9).Trim().ToUpperInvariant();
+        var shift = dialect?.ResultFieldsShifted == true && IsResultStatus(record.Value(10)) ? 1 : 0;
+        var status = record.Value(9 + shift).Trim().ToUpperInvariant();
         if (status == "I")
         {
             return null;
@@ -117,14 +134,17 @@ internal static class AstmMessageMapper
         }
 
         var units = record.Component(5, 1).Trim();
-        var flags = string.Join(",", record.Repeats(7).Select(f => record.Delimiters.Unescape(f).Trim()).Where(f => f.Length > 0));
+        var flags = string.Join(",", record.Repeats(7 + shift).Select(f => record.Delimiters.Unescape(f).Trim()).Where(f => f.Length > 0));
         return new InstrumentResult(code.Trim(), value, units.Length == 0 ? null : units, flags.Length == 0 ? null : flags,
-            LabTime.Parse(record.Field(13), zone) ?? messageTime)
+            LabTime.Parse(record.Field(13 + shift), zone) ?? messageTime)
         {
             Status = status.Length == 0 ? null : status,
             Kind = kind,
         };
     }
+
+    /// <summary>E1394 result status codes (R.9): C, P, F, X, I, S, M, R, N, Q, V, W.</summary>
+    private static bool IsResultStatus(string value) => value.Trim() is { Length: 1 } code && "CPFXISMRNQVW".Contains(char.ToUpperInvariant(code[0]));
 
     /// <summary>C.4 comment text (its components joined), or null for an empty comment.</summary>
     internal static string? Comment(AstmRecord record)
@@ -153,20 +173,23 @@ internal static class AstmMessageMapper
 
     /// <summary>
     /// Host-query answer: header, one patient + order record per sample (O.5 lists <c>^^^code</c> tests, O.26 = Q
-    /// "response to query"), and a terminator with code F (query processed) or I (no information available).
+    /// "response to query"), and a terminator with code F (query processed) or I (no information available); the dialect
+    /// may ask for other codes (<see cref="AstmDialect.QueryAnswerReportType"/>, <see cref="AstmDialect.TerminatorAlwaysNormal"/>).
     /// </summary>
-    public static IReadOnlyList<string> BuildOrderResponse(IReadOnlyList<InstrumentOrder> orders, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone)
+    public static IReadOnlyList<string> BuildOrderResponse(
+        IReadOnlyList<InstrumentOrder> orders, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone, AstmDialect? dialect = null)
     {
-        var records = new List<string> { Header(delimiters, localNow) };
+        dialect ??= AstmDialect.Standard;
+        var records = new List<string> { Header(delimiters, localNow, dialect) };
         var sequence = 0;
         foreach (var order in orders.Where(o => o.ChannelCodes.Count > 0))
         {
             sequence++;
-            records.Add(PatientRecord(delimiters, sequence, order));
-            records.Add(OrderRecord(delimiters, order, actionCode: "N", reportType: "Q", zone));
+            records.Add(PatientRecord(delimiters, sequence, order, dialect));
+            records.Add(OrderRecord(delimiters, order, actionCode: "N", reportType: dialect.QueryAnswerReportType, zone, dialect));
         }
 
-        records.Add(AstmRecords.Build(delimiters, "L", "1", sequence == 0 ? "I" : "F"));
+        records.Add(AstmRecords.Build(delimiters, "L", "1", dialect.TerminatorAlwaysNormal ? "N" : sequence == 0 ? "I" : "F"));
         return records;
     }
 
@@ -174,15 +197,17 @@ internal static class AstmMessageMapper
     /// Orders sent unasked (order download): header, then a patient + order record per sample. O.12 is the action:
     /// N for a sample that reached the lab, A to add (rerun) tests, C to cancel them; O.26 = O (order).
     /// </summary>
-    public static IReadOnlyList<string> BuildOrderDownload(IReadOnlyList<LabDownload> downloads, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone)
+    public static IReadOnlyList<string> BuildOrderDownload(
+        IReadOnlyList<LabDownload> downloads, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone, AstmDialect? dialect = null)
     {
-        var records = new List<string> { Header(delimiters, localNow) };
+        dialect ??= AstmDialect.Standard;
+        var records = new List<string> { Header(delimiters, localNow, dialect) };
         var sequence = 0;
         foreach (var download in downloads.Where(d => d.Order.ChannelCodes.Count > 0))
         {
             sequence++;
-            records.Add(PatientRecord(delimiters, sequence, download.Order));
-            records.Add(OrderRecord(delimiters, download.Order, ActionCode(download.Action), reportType: "O", zone));
+            records.Add(PatientRecord(delimiters, sequence, download.Order, dialect));
+            records.Add(OrderRecord(delimiters, download.Order, ActionCode(download.Action), reportType: "O", zone, dialect));
         }
 
         records.Add(AstmRecords.Build(delimiters, "L", "1", "N"));
@@ -204,17 +229,31 @@ internal static class AstmMessageMapper
         _ => "R",
     };
 
-    private static string Header(AstmDelimiters d, DateTimeOffset localNow) =>
-        AstmRecords.Build(d, "H", d.Definition, null, null, $"HC360{d.Component}1.0", null, null, null, null, null, null, "P", "1",
+    private static string Header(AstmDelimiters d, DateTimeOffset localNow, AstmDialect dialect) =>
+        AstmRecords.Build(d, "H", d.Definition, null, null, $"HC360{d.Component}1.0", null, null, null, null, null, null, "P", dialect.HeaderVersion,
             localNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture));
 
-    /// <summary>P.3 hospital patient id (UHID), P.6 name, P.8 date of birth, P.9 sex.</summary>
-    private static string PatientRecord(AstmDelimiters d, int sequence, InstrumentOrder order) =>
-        AstmRecords.Build(d, "P", sequence.ToString(CultureInfo.InvariantCulture), order.PatientId is { Length: > 0 } uhid ? d.EscapeText(uhid) : null,
-            null, null, d.EscapeText(order.PatientName), null, order.DateOfBirth?.ToString("yyyyMMdd", CultureInfo.InvariantCulture), Sex(order.Gender));
+    /// <summary>
+    /// P.3 hospital patient id (UHID), P.6 name, P.8 date of birth, P.9 sex. An analyser that keys samples by P.3
+    /// (<see cref="AstmDialect.SampleIdInPatientRecord"/>) is given the tube's barcode there instead, which it sends
+    /// back with the results.
+    /// </summary>
+    private static string PatientRecord(AstmDelimiters d, int sequence, InstrumentOrder order, AstmDialect dialect)
+    {
+        var id = dialect.SampleIdInPatientRecord ? order.SampleBarcode : order.PatientId;
+        var name = d.EscapeText(order.PatientName);
+        if (dialect.MaxPatientNameLength is { } max && name.Length > max)
+        {
+            name = name[..max].TrimEnd();
+        }
+
+        var birth = order.DateOfBirth?.ToString(dialect.DateOfBirthWithTime ? "yyyyMMdd'000000'" : "yyyyMMdd", CultureInfo.InvariantCulture);
+        return AstmRecords.Build(d, "P", sequence.ToString(CultureInfo.InvariantCulture), id is { Length: > 0 } ? d.EscapeText(id) : null,
+            null, null, name, null, birth, Sex(order.Gender));
+    }
 
     /// <summary>O.3 sample id, O.5 tests, O.6 priority, O.8 collected at, O.12 action, O.16 specimen, O.26 report type.</summary>
-    private static string OrderRecord(AstmDelimiters d, InstrumentOrder order, string actionCode, string reportType, TimeZoneInfo zone)
+    private static string OrderRecord(AstmDelimiters d, InstrumentOrder order, string actionCode, string reportType, TimeZoneInfo zone, AstmDialect dialect)
     {
         var tests = string.Join(d.Repeat, order.ChannelCodes.Select(code => $"{d.Component}{d.Component}{d.Component}{d.EscapeText(code)}"));
         var fields = new string?[26];
@@ -225,7 +264,7 @@ internal static class AstmMessageMapper
         fields[5] = Priority(order.Priority);
         fields[7] = order.CollectedAt is { } collected ? TimeZoneInfo.ConvertTime(collected, zone).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) : null;
         fields[11] = actionCode;
-        fields[15] = order.SpecimenType is { Length: > 0 } specimen ? d.EscapeText(specimen) : null;
+        fields[15] = dialect.Specimen(order.SpecimenType) is { } specimen ? d.EscapeText(specimen) : null;
         fields[25] = reportType;
         return AstmRecords.Build(d, fields);
     }
