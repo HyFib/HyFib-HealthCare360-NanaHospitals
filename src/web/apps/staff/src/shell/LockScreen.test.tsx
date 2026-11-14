@@ -353,6 +353,9 @@ async function readyForAnOutage() {
 
 const offlineCopy = () => screen.queryByRole('dialog', { name: 'Offline copy (read only)' });
 
+/** How long to wait for a PIN to be checked: 210,000 rounds of PBKDF2 take a while on a busy test machine. */
+const checked = { timeout: 10_000 };
+
 /**
  * DED-07 with UX-11: the screen locks during an outage, when nothing can unlock it and signing out would wipe the
  * offline copy. The PIN or password, checked on this computer, opens the copy read only over the lock, for the user
@@ -384,7 +387,7 @@ describe('LockScreen during an outage', () => {
     await userEvent.type(screen.getByLabelText('PIN'), '2468');
     await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
 
-    const copy = await screen.findByRole('dialog', { name: 'Offline copy (read only)' });
+    const copy = await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked);
     expect(within(copy).getByRole('region', { name: 'Census by ward' })).toHaveTextContent('Meena Iyer (NH26000001)');
     // Read only, over a screen that stays locked: nothing to save, and nothing sent.
     expect(
@@ -411,7 +414,7 @@ describe('LockScreen during an outage', () => {
     await userEvent.type(screen.getByLabelText('PIN'), '1357');
     await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
 
-    expect(await screen.findByText(/That did not match\. 4 more tries/)).toBeInTheDocument();
+    expect(await screen.findByText(/That did not match\. 4 more tries/, {}, checked)).toBeInTheDocument();
     expect(offlineCopy()).not.toBeInTheDocument();
     expect(useSession.getState().locked).toBe(true);
     expect(api.post).not.toHaveBeenCalledWith('/api/v1/auth/unlock', expect.anything());
@@ -441,7 +444,7 @@ describe('LockScreen during an outage', () => {
     await userEvent.type(screen.getByLabelText('PIN'), '2468');
     await userEvent.keyboard('{Enter}');
 
-    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
   });
 
   it('keeps the PIN typed when unlocking fails for the server, so it opens the copy once the outage shows', async () => {
@@ -461,7 +464,7 @@ describe('LockScreen during an outage', () => {
     act(() => useConnection.setState({ databaseDown: true }));
     await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
     expect(useSession.getState().locked).toBe(true);
   });
 
@@ -482,7 +485,7 @@ describe('LockScreen during an outage', () => {
 
     await typist.type(screen.getByLabelText('PIN'), '2468');
     await typist.click(screen.getByRole('button', { name: 'Open the offline copy' }));
-    await screen.findByRole('dialog', { name: 'Offline copy (read only)' });
+    await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked);
     // The copy opened once the check of the PIN was done, after the click: let it start its idle timer.
     await act(() => Promise.resolve());
 
@@ -504,7 +507,7 @@ describe('LockScreen during an outage', () => {
     await userEvent.type(screen.getByLabelText('PIN'), '2468');
     await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
     await waitFor(() => expect(useSession.getState().locked).toBe(false));
-    await waitFor(() => expect(localStorage.getItem('hc360:offline-unlock')).toContain('"pin"'));
+    await waitFor(() => expect(localStorage.getItem('hc360:offline-unlock')).toContain('"pin"'), checked);
     expect(localStorage.getItem('hc360:offline-unlock')).not.toContain('2468');
 
     // Later the server goes down, and the screen locks again.
@@ -515,7 +518,7 @@ describe('LockScreen during an outage', () => {
     await userEvent.type(await screen.findByLabelText('PIN'), '2468');
     await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
 
-    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
   });
 
   it('sends a PIN it has not checked here since sign-in to the password instead', async () => {
@@ -531,6 +534,6 @@ describe('LockScreen during an outage', () => {
     expect(await screen.findByText(/Use your password: your PIN has not been used/)).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Password'), 'Morning rounds at seven');
     await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
-    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
   });
 });
