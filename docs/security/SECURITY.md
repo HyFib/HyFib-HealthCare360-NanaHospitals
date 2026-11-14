@@ -296,6 +296,8 @@ What they all share:
 | **Password prompts** before sensitive actions | The password again, from a signed-in staff member | Wrong ones count toward the account lock |
 | **Patient portal sign-in** | A 6-digit code sent by SMS to the registered number, valid 5 minutes: one factor (AAL1), as strong as the phone number | 5 tries per code; 3 codes per number in 15 minutes (the refusal, `auth.otp_throttled`, gives `retryAfterSeconds` until the next is allowed, and the portal counts down to it); a proof of work for asking for a code and for giving it (Anti-automation, below) |
 | **Link to the portal** (staff send it to the patient's registered number) | Not a credential. A 128-bit token, stored as its SHA-256, valid 7 days, until a newer link is sent, and only while the record still has the number it went to (and is in use and in no protected category). It lets whoever opens it see the hospital and the number masked, and send the portal sign-in's code to that number; signing in then takes the code, as above | Too large to guess; any token that does not work gets one 404; asking for a code takes a proof of work and the sign-in's limits (5 code requests per address and 3 codes per number in 15 minutes); staff may send 3 links per patient in 24 hours |
+| **Verifying a patient's registered number** (staff, at the desk, "Verify mobile") | Not a sign-in, but it decides what the number's portal account sees and whether documents go to the number. A 6-digit code goes to the number on the record (SMS, and WhatsApp once its template is switched on), entered by staff who edit patients as the patient reads it out; the record keeps its number, marked verified | As a number change's code, and sharing its 3 codes per number in 15 minutes |
+| **Confirming records in the portal** (the account signed in with the number) | The patient's date of birth (as given, not one worked out from an age) or UHID, for each record on the number nobody has verified; a match shows the record and verifies its number | 5 wrong answers per number in 24 hours, counted under a lock on the number, then every try is refused until the oldest is a day old (`portal.confirm_throttled` with `retryAfterSeconds`); each try audited, nothing typed kept |
 | **Changing a patient's registered number** (staff, at the desk) | Not a sign-in, but it decides where the portal's sign-in code goes. A new number becomes the patient's only with a 6-digit code sent by SMS to that number and entered by staff who edit patients (`patients.register` and `patients.contact.read`), as the patient reads it out; valid 10 minutes, stored salted and hashed. Nothing goes to the old number | 5 tries per code, judged one at a time; 3 codes per number in 15 minutes (`patient.phone_code_throttled` with `retryAfterSeconds`); made only while the record still has the number it had when the code was sent |
 | **Video consultation guests** | The 256-bit token in the link sent to the patient, valid until 2 hours after the consultation's scheduled end. A guest waits until the doctor admits them, and the link reveals only the patient's first name | Too large to guess; 5 failed joins per connection |
 | **Enrolling a workstation or lab PC** | A code an administrator makes: 8 characters from 31 (about 40 bits), good for one device, for 30 minutes by default (5 minutes to 24 hours) | Too many to try in its lifetime at 60 a minute per address |
@@ -1023,8 +1025,8 @@ and grants nothing.
   address are refused. A terminal registered before the address was required is held to the first address it calls from.
 - **Switched-off controls are shown.** Outside development, System health shows a critical warning while two-step sign-in
   (`security.mfa_off`) or administration only from an enrolled desktop (`security.desktop_admin_off`) is off.
-- **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with,
-  and family members on other numbers only through a family link in force (PP-01):
+- **Patient portal scope.** A portal account sees the patients registered with the mobile number it signed in with
+  whose number is verified (below), and family members on other numbers only through a family link in force (PP-01):
   - A link is made at the front desk, after staff check both people's identity documents and record who agreed, or in
     the portal with a 6-digit code sent to the relative's own registered number.
   - Codes are stored hashed and work for 10 minutes and 5 tries. Each account may ask for 5 an hour and each number may
@@ -1066,6 +1068,25 @@ and grants nothing.
     name and record, so whoever holds the number next signs in to nothing of theirs.
   - Both steps are on the patient's record history (`patient.phone_code_sent`; `patient.phone_changed`, a warning naming
     who asked and who confirmed), with the numbers masked and never the code.
+  - The new number is verified with the change: the patient read out the code sent to it.
+- **A number nobody has verified** (ASVS V6.6.1). Holding the number on a record is not proof of being the patient: the
+  desk may have typed a digit wrong, or the telco may have given a disconnected number to someone new. Each record keeps
+  when its number was verified and which number that was (`Patient.PhoneVerifiedAt`, `PhoneVerifiedNumber`), and the
+  verification holds only while the record still has that number, so any change of it, by whatever route, starts over.
+  - A number is verified at the desk with "Verify mobile" (a code to the number, entered as the patient reads it out:
+    `PatientPhoneVerificationService`, the number change's code and limits), by a number change with a code, or in the
+    portal by the patient's date of birth or UHID (`PortalRecordConfirmationService`).
+  - The portal shows a record on the account's number only once its number is verified; until then it tells the account
+    how many records wait, nothing else of them, not even a name, and a new portal account takes no name from them. A
+    date of birth matches only a record that has it as given (not one worked out from an age). Wrong answers are limited
+    per number, 5 in 24 hours, counted under a lock on the number so tries sent together take turns; every try is
+    audited (`portal.record_confirm_failed`, `portal.record_confirm_throttled`, `patient.phone_verified`) without what was
+    typed. Family links and the protected categories' shared-number rule are unchanged.
+  - A report's PDF, a prescription, a bill and a discharge summary go to a patient's mobile number only once it is
+    verified (`VerifiedNumbers`): to any other number the notice goes alone (the bill's template carries its PDF, so the
+    receipt goes on WhatsApp instead, and the billing desk is told to verify the number or print the bill). E-mail is
+    unchanged: a report still goes with its PDF to the patient's own address.
+  - After the upgrade, only numbers given with a code (a number change) count as verified.
 - Every access to a patient record is audited, and so is every way staff see one: a patient search (what was searched
   for, how many matched and which patients were shown, `patient.searched`), the summary the banner shows and a lookup
   by UHID (`PatientAccessAuditTests`).

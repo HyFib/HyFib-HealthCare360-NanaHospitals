@@ -396,6 +396,51 @@ Points we would most like checked:
 | 148 | `message.privacy.child_guardian_unverified` | The patient is under 18: a parent's or lawful guardian's consent must be verified first, by a code sent to their mobile number or by their identity document. | रोगी की आयु 18 वर्ष से कम है: पहले माता-पिता या वैध अभिभावक की सहमति की जाँच ज़रूरी है, उनके मोबाइल नंबर पर भेजे गए कोड से या उनके पहचान दस्तावेज़ से। | |
 | 149 | `message.privacy.child_marketing` | The patient is under 18: the DPDP Act (s.9(3)) does not allow marketing or targeted messages to children, even with a parent's consent. | रोगी की आयु 18 वर्ष से कम है: DPDP अधिनियम (धारा 9(3)) बच्चों को विपणन या लक्षित संदेश भेजने की अनुमति नहीं देता, माता-पिता की सहमति होने पर भी नहीं। | |
 | 150 | `message.privacy.consent_ended` | This consent has already ended. | यह सहमति पहले ही समाप्त हो चुकी है। | |
+| 151 | `message.portal.confirm_no_match` | These details do not match a record registered with this mobile number. Check them and try again. | ये विवरण इस मोबाइल नंबर से पंजीकृत किसी रिकॉर्ड से मेल नहीं खाते। इन्हें जाँचें और फिर कोशिश करें। | |
+| 152 | `message.portal.confirm_throttled` | Too many wrong tries for this mobile number. Try again later, or ask at the hospital's front desk to confirm your mobile number. | इस मोबाइल नंबर से कई बार गलत विवरण दिए गए हैं। बाद में फिर कोशिश करें, या अपने मोबाइल नंबर की पुष्टि के लिए अस्पताल के फ्रंट डेस्क पर पूछें। | |
+| 153 | `message.portal.confirm_nothing` | There are no records waiting to be confirmed on this mobile number. | इस मोबाइल नंबर पर पुष्टि के लिए कोई रिकॉर्ड बाकी नहीं है। | |
+| 154 | `message.portal.confirm_details_required` | Enter the patient's date of birth, or the UHID printed on the hospital card. | रोगी की जन्मतिथि दर्ज करें, या अस्पताल कार्ड पर छपा UHID। | |
+| 155 | `message.portal.confirm_date_of_birth` | Enter a date of birth that has passed. | ऐसी जन्मतिथि दर्ज करें जो बीत चुकी हो। | |
+
+## Portal text for confirming records on a number
+
+The portal's own screen for a record on the patient's mobile number that nobody has verified yet: it is shown once
+the patient's date of birth or UHID is given (`src/web/apps/portal/src/i18n/messages/confirm.ts`). The Hindi was written by
+the development team. A correction goes in that file.
+
+| # | Key | English | Hindi | OK? |
+|---|---|---|---|---|
+| 1 | `confirm.title` | Confirm your details | अपनी जानकारी की पुष्टि करें | |
+| 2 | `confirm.banner.title` | Some records on this number are not confirmed yet | इस नंबर के कुछ रिकॉर्ड की अभी पुष्टि नहीं हुई है | |
+| 3 | `confirm.banner.body` | To see them here, enter the patient’s date of birth or UHID. | उन्हें यहाँ देखने के लिए रोगी की जन्मतिथि या UHID दर्ज करें। | |
+| 4 | `confirm.banner.action` | Confirm details | जानकारी की पुष्टि करें | |
+| 5 | `confirm.lead.one` | One record registered with your mobile number is not confirmed yet. To keep patients’ records private, it is shown here only once you enter the patient’s date of birth, or the UHID printed on their hospital card. | आपके मोबाइल नंबर से पंजीकृत एक रिकॉर्ड की अभी पुष्टि नहीं हुई है। रोगियों के रिकॉर्ड गोपनीय रखने के लिए, यह यहाँ तभी दिखेगा जब आप रोगी की जन्मतिथि, या उनके अस्पताल कार्ड पर छपा UHID दर्ज करेंगे। | |
+| 6 | `confirm.lead.many` | {count} records registered with your mobile number are not confirmed yet. To keep patients’ records private, each is shown here only once you enter that patient’s date of birth, or the UHID printed on their hospital card, one at a time. | आपके मोबाइल नंबर से पंजीकृत {count} रिकॉर्ड की अभी पुष्टि नहीं हुई है। रोगियों के रिकॉर्ड गोपनीय रखने के लिए, हर रिकॉर्ड यहाँ तभी दिखेगा जब आप उस रोगी की जन्मतिथि, या उनके अस्पताल कार्ड पर छपा UHID दर्ज करेंगे, एक-एक करके। | |
+| 7 | `confirm.method` | Confirm with | किससे पुष्टि करें | |
+| 8 | `confirm.method.dateOfBirth` | Date of birth | जन्मतिथि | |
+| 9 | `confirm.method.uhid` | UHID | UHID | |
+| 10 | `confirm.dob.label` | The patient’s date of birth | रोगी की जन्मतिथि | |
+| 11 | `confirm.dob.day` | Day | दिन | |
+| 12 | `confirm.dob.month` | Month | महीना | |
+| 13 | `confirm.dob.year` | Year | वर्ष | |
+| 14 | `confirm.dob.hint` | As given at the hospital, for example 23 06 1979. | जैसी अस्पताल में बताई गई थी, उदाहरण के लिए 23 06 1979। | |
+| 15 | `confirm.dob.invalid` | Enter a real date: the day, the month and the year in four digits. | सही तारीख दर्ज करें: दिन, महीना और चार अंकों में वर्ष। | |
+| 16 | `confirm.dob.past` | Enter a date of birth that has passed. | ऐसी जन्मतिथि दर्ज करें जो बीत चुकी हो। | |
+| 17 | `confirm.uhid.label` | The patient’s UHID | रोगी का UHID | |
+| 18 | `confirm.uhid.hint` | Printed on the hospital card, bills and receipts. | अस्पताल कार्ड, बिल और रसीदों पर छपा होता है। | |
+| 19 | `confirm.uhid.invalid` | Enter the UHID printed on the hospital card or a bill. | अस्पताल कार्ड या बिल पर छपा UHID दर्ज करें। | |
+| 20 | `confirm.submit` | Confirm | पुष्टि करें | |
+| 21 | `confirm.submitting` | Checking… | जाँच हो रही है… | |
+| 22 | `confirm.attemptsLeft` | Tries left today: {count}. | आज बाकी प्रयास: {count}। | |
+| 23 | `confirm.done.one` | The record is confirmed. You can see it now. | रिकॉर्ड की पुष्टि हो गई। अब आप इसे देख सकते हैं। | |
+| 24 | `confirm.done.many` | {count} records are confirmed. You can see them now. | {count} रिकॉर्ड की पुष्टि हो गई। अब आप इन्हें देख सकते हैं। | |
+| 25 | `confirm.error.noMatch` | These details do not match a record registered with this number. Check them and try again. | ये विवरण इस नंबर से पंजीकृत किसी रिकॉर्ड से मेल नहीं खाते। इन्हें जाँचें और फिर कोशिश करें। | |
+| 26 | `confirm.error.throttled` | Too many wrong tries for this number. Please try again later, or ask at the hospital’s front desk to confirm your mobile number. | इस नंबर से कई बार गलत विवरण दिए गए हैं। कृपया बाद में फिर कोशिश करें, या अपने मोबाइल नंबर की पुष्टि के लिए अस्पताल के फ्रंट डेस्क पर पूछें। | |
+| 27 | `confirm.error.nothing` | There is nothing left to confirm on this number. | इस नंबर पर पुष्टि के लिए अब कुछ बाकी नहीं है। | |
+| 28 | `confirm.wait.hours` | You can try again in about {count} hours. | आप लगभग {count} घंटे बाद फिर कोशिश कर सकते हैं। | |
+| 29 | `confirm.wait.minutes` | You can try again in about {count} minutes. | आप लगभग {count} मिनट बाद फिर कोशिश कर सकते हैं। | |
+| 30 | `confirm.wait.minute` | You can try again in about a minute. | आप लगभग एक मिनट बाद फिर कोशिश कर सकते हैं। | |
+| 31 | `confirm.frontDesk` | You can also ask at the hospital’s front desk to confirm your mobile number on the patient’s record, with a code sent to it. | आप अस्पताल के फ्रंट डेस्क पर भी कह सकते हैं कि वे रोगी के रिकॉर्ड पर आपके मोबाइल नंबर की पुष्टि करें, उस पर भेजे गए कोड से। | |
 
 ## The validators' own messages (shown next to a field)
 

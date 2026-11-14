@@ -169,6 +169,14 @@ webhooks accept `?facility=<id>` to select whose credentials verify them.
   does not have, and a template that has one without it. So a message that carries no document is not sent with a
   header template: its log is marked Skipped with the reason, and it is not retried. The log records the file's
   size, never its content.
+* **Documents only to a verified number.** A report's PDF, a prescription, a bill and a discharge summary go to a
+  patient's mobile number only once the number is verified on the record (`VerifiedNumbers`, ASVS V6.6.1: a code at the
+  desk, a number change with a code, or the patient's date of birth or UHID in the portal). To any other number the
+  message goes without its document: the report-ready and prescription messages as text, the discharge as
+  `discharge_completed` instead of `discharge_summary`, and a paid bill not at all (`bill_shared` can't go without its
+  PDF), the receipt going on WhatsApp instead. A hospital that ticked "Document header" on `lab_report_ready` or
+  `prescription_shared` sees those messages Skipped for an unverified number, as when report PDFs are switched off. The
+  e-mail is not affected: it is the patient's own address, and a report still goes to it with its PDF.
 * Webhook `GET` answers `hub.challenge` only when `hub.verify_token` matches (constant time) and the challenge is a
   plain token.
 * Webhook `POST` requires `X-Hub-Signature-256`, an HMAC-SHA256 of the **raw** body with the app secret. Statuses
@@ -307,7 +315,8 @@ what goes out (`TemplateSwitch`):
 * WhatsApp templates that Meta must approve first are seeded **not in use** (`DefaultNotificationTemplates.SeededNotInUse`,
   and Engagement's own): the queue token (`visit_token`), the payment receipt (`bill_receipt`), the admission
   (`admission_admitted`), the discharge (`discharge_completed`), the discharge summary (`discharge_summary`), the feedback request (`feedback_request`), the follow-up
-  reminder (`followup_reminder`) and the complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp
+  reminder (`followup_reminder`), the complaint acknowledgement (`complaint_acknowledged`) and the code that verifies a
+  patient's mobile number at the desk (`patients_verify_code`, an authentication template; its SMS goes from the start). Register each in WhatsApp
   Manager, then switch it on; until then those messages go by SMS alone. The WhatsApp templates seeded before them
   (appointments, reports, bills, payment links, prescriptions, video consultations, refills, portal links, alerts) are in
   use, as they were.

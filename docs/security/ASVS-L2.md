@@ -24,7 +24,7 @@ reviewed again once a year, and before each major release.
 | [V3 Web Frontend Security](#v3-web-frontend-security) | 15 | 3 | 1 | 0 |
 | [V4 API and Web Service](#v4-api-and-web-service) | 5 | 2 | 1 | 2 |
 | [V5 File Handling](#v5-file-handling) | 6 | 1 | 1 | 1 |
-| [V6 Authentication](#v6-authentication) | 21 | 8 | 1 | 5 |
+| [V6 Authentication](#v6-authentication) | 21 | 9 | 0 | 5 |
 | [V7 Session Management](#v7-session-management) | 10 | 5 | 0 | 3 |
 | [V8 Authorization](#v8-authorization) | 4 | 2 | 0 | 1 |
 | [V9 Self-contained Tokens](#v9-self-contained-tokens) | 6 | 0 | 0 | 1 |
@@ -36,7 +36,7 @@ reviewed again once a year, and before each major release.
 | [V15 Secure Coding and Architecture](#v15-secure-coding-and-architecture) | 8 | 5 | 0 | 0 |
 | [V16 Security Logging and Error Handling](#v16-security-logging-and-error-handling) | 4 | 11 | 1 | 0 |
 | [V17 WebRTC](#v17-webrtc) | 1 | 0 | 2 | 4 |
-| **Total** | **130** | **60** | **9** | **54** |
+| **Total** | **130** | **61** | **8** | **54** |
 
 ## Fixed while making this checklist
 
@@ -126,8 +126,9 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
   - a first administrator not named `admin`, and first passwords only HC360 makes;
   - an identity check and a reason recorded before a lost authenticator is reset;
   - a TOTP window of one step.
-- **Patient portal sign-in:** verify the mobile number at registration, before records are linked (a change of
-  number is verified already), and offer an optional stronger factor. (V6.6.1)
+- **Patient portal sign-in** (V6.6.1): a record's number is verified now before the portal shows the record or
+  documents go to it (a code at the desk, a number change, or the patient's date of birth or UHID in the portal).
+  Still to do: an optional factor stronger than the SMS code, and telling patients the risks of SMS codes.
 - **Data in the browser, and data classes** (V14.1.1, V14.1.2, V14.3.1, V8.1.2):
   - send Clear-Site-Data at sign-out;
   - classify sensitive data, with protection rules per class and a field-access matrix.
@@ -295,7 +296,7 @@ The remaining Gap and Partial rows, in the order they should be closed. Each ite
 | V6.5.3 | L2 | Codes and TOTP seeds from a secure random generator | Met | The 160-bit TOTP seed comes from a CSPRNG key generator; OTP digits come from RandomNumberGenerator. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
 | V6.5.4 | L2 | Codes of at least 20 bits of entropy | Met | The portal OTP is six random digits (about 20 bits). | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [Tokens.cs](../../src/server/HyFib.HealthCare360.Platform/Security/Tokens.cs) |
 | V6.5.5 | L2 | Codes and TOTPs have a set lifetime | Partial | OTP and MFA challenges expire after 5 minutes. The TOTP step is 30 s, but a ±1-step window keeps each code valid for about 60 s. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
-| V6.6.1 | L2 | SMS codes only for verified numbers, with alternatives | Gap | The portal relies only on SMS OTP. A registered patient's number changes only with a code sent to the new number and entered at the desk, but the number given at registration is never verified before records are linked, and there is no stronger option or SMS-risk information. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [PatientQueries.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PatientQueries.cs), [PatientPhoneChangeService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PatientPhoneChangeService.cs) |
+| V6.6.1 | L2 | SMS codes only for verified numbers, with alternatives | Partial | A record's mobile number counts only once it is verified: a code at the desk ("Verify mobile"), a number change with a code to the new number, or the patient's date of birth or UHID in the portal (5 wrong answers per number a day, audited). Until then the portal does not show the record to whoever signs in with the number, and reports, prescriptions, bills and discharge summaries go to it without the document. Still missing: an optional factor stronger than the SMS code, and telling patients the risks of SMS codes. | [PortalPatientScope.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PortalPatientScope.cs), [PortalRecordConfirmationService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PortalRecordConfirmationService.cs), [PatientPhoneVerificationService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PatientPhoneVerificationService.cs), [VerifiedNumbers.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/VerifiedNumbers.cs), [PatientPhoneChangeService.cs](../../src/server/Modules/HyFib.HealthCare360.Modules.Patients/Services/PatientPhoneChangeService.cs) |
 | V6.6.2 | L2 | Out-of-band codes bound to their request | Met | The code hash includes its challenge ID and is looked up by that ID. MFA challenges are tied to the user, device and facility. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs) |
 | V6.6.3 | L2 | Out-of-band codes rate limited | Met | Five guesses per code, three codes per number per 15 minutes, and per-address request limits. Guesses and requests sent at once take turns, so the limits hold however they arrive, and on whichever server they arrive: the per-code and per-number counts are in the database, and with several servers so is the per-address count. | [AuthService.cs](../../src/server/HyFib.HealthCare360.Platform/Identity/AuthService.cs), [RateLimitPolicies.cs](../../src/server/HyFib.HealthCare360.Platform/Http/RateLimitPolicies.cs), [ClusterRateLimit.cs](../../src/server/HyFib.HealthCare360.Platform/Http/ClusterRateLimit.cs) |
 | V6.8.1 | L2 | Identity not spoofable across identity providers | N/A | Local accounts only; no external identity providers. | – |
