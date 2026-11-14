@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using HyFib.HealthCare360.Platform.Auditing;
@@ -6,6 +7,7 @@ using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
 using HyFib.HealthCare360.SharedKernel;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -38,38 +40,14 @@ public sealed record ApprovalSubject(string Type, Guid Id, uint? Version, Guid F
 /// <summary>One thing the checker needs to see, for example ("Balance due", "₹4,500.00").</summary>
 public sealed record ApprovalDetail(string Label, string Value);
 
-/// <param name="Handover">
-/// What the approval hands the person who approved it, in the answer to their approval and never again (a temporary
-/// password they give in person: <see cref="ApprovalHandover"/>); null in every other answer.
-/// </param>
+/// <remarks>
+/// Nothing an approval makes is handed to the person who approves it: a temporary password goes to the account's holder,
+/// and the outcome says only where (<see cref="Identity.AccountApprovals"/>).
+/// </remarks>
 public sealed record ApprovalRequestDto(
     Guid Id, string Kind, string Title, string Summary, IReadOnlyList<ApprovalDetail> Details, string Reason, ApprovalStatus Status, bool IsExpired,
     string SubjectType, Guid SubjectId, Guid? PatientId, Guid RequestedBy, string RequestedByName, DateTimeOffset RequestedAt, DateTimeOffset ExpiresAt,
-    Guid? DecidedBy, string? DecidedByName, DateTimeOffset? DecidedAt, string? DecisionNote, string? Outcome, bool CanDecide, bool CanWithdraw, uint Version,
-    ApprovalHandoverDto? Handover = null);
-
-/// <summary>A secret handed to the person who approved a change, once: what it is for, the secret, and when it stops working.</summary>
-public sealed record ApprovalHandoverDto(string Label, string Secret, DateTimeOffset? ExpiresAt);
-
-/// <summary>
-/// A secret an approval makes for the person who approves it to hand over in person, such as the temporary password of an
-/// account with no mobile number or e-mail address to send it to. The action gives it while it makes the change; the
-/// approvals service puts it in the answer to that approval once the change is committed, and it is kept nowhere else:
-/// not in the request, its outcome, the audit trail or the notification to the person who asked.
-/// </summary>
-public sealed class ApprovalHandover
-{
-    private ApprovalHandoverDto? _handover;
-
-    public void Give(string label, string secret, DateTimeOffset? expiresAt) => _handover = new ApprovalHandoverDto(label, secret, expiresAt);
-
-    internal ApprovalHandoverDto? Take()
-    {
-        var handover = _handover;
-        _handover = null;
-        return handover;
-    }
-}
+    Guid? DecidedBy, string? DecidedByName, DateTimeOffset? DecidedAt, string? DecisionNote, string? Outcome, bool CanDecide, bool CanWithdraw, uint Version);
 
 /// <summary>What a module calls to ask for a second person's approval instead of making a change at once.</summary>
 public interface IApprovals
@@ -102,17 +80,25 @@ public enum ApprovalView
 
 /// <summary>Asks for approvals, and lists, approves, rejects and withdraws them (the approvals inbox).</summary>
 /// <remarks>
+/// <para>
 /// The actions are resolved when first needed rather than injected: the module service that asks for an approval
 /// (<see cref="IApprovals"/>) is usually the one its action calls to make the change, and injecting both ways would be a cycle.
+/// </para>
+/// <para>
+/// Who may decide a kind of change is decided as an endpoint that needed its permission would decide it
+/// (<see cref="PermissionGate"/>): one that needs an administrative permission, such as access given or an account's
+/// password, is listed, opened and decided only in a session on an enrolled HC360 Desktop (SRS SEC-08), as the change
+/// itself would be.
+/// </para>
 /// </remarks>
 internal sealed class ApprovalService(
     HospitalDbContext db,
     IServiceProvider services,
-    IPermissionService permissions,
+    PermissionGate gate,
+    IHttpContextAccessor http,
     ICurrentUser currentUser,
     IAuditLogger audit,
     INotificationService notifications,
-    ApprovalHandover handover,
     TimeProvider time) : IApprovals
 {
     private const string Category = "approvals";
@@ -120,6 +106,9 @@ internal sealed class ApprovalService(
     /// <summary>The record, or the request itself, changed while the approval was being made: nothing was saved.</summary>
     private static readonly Error Concurrent =
         Error.Conflict("approval.conflict", "The record changed while this was being approved, so nothing was changed. Open the request again and decide it.");
+
+    /// <summary>The request is for administration, and this session is not on an enrolled desktop: as an endpoint says it.</summary>
+    private static readonly Error DesktopRequired = Error.Forbidden(AdministrationOnDesktop.ErrorCode, AdministrationOnDesktop.Message);
 
     private IReadOnlyList<IApprovalAction>? actions;
 
@@ -211,7 +200,6 @@ internal sealed class ApprovalService(
         var (request, action, checker) = loaded.Value;
         var now = time.GetUtcNow();
         Error? failure;
-        handover.Take();
         await using (var transaction = await db.Database.BeginTransactionAsync(ct))
         {
             try
@@ -226,7 +214,7 @@ internal sealed class ApprovalService(
                     await transaction.CommitAsync(ct);
                     await notifications.NotifyUsersAsync([request.RequestedBy], $"{request.Title} approved", $"{request.Summary}: {applied.Value}.", Link(request.Id), Category,
                         cancellationToken: ct);
-                    return await ToDtoAsync(request, ct) with { Handover = handover.Take() };
+                    return await ToDtoAsync(request, ct);
                 }
 
                 failure = applied.Error!;
@@ -237,11 +225,10 @@ internal sealed class ApprovalService(
             }
         }
 
-        // Nothing the action staged is kept, nor anything it would have handed over. A refusal that is about the checker (a
-        // record they may not open), or a save that lost a race with another change, leaves the request waiting; any other
-        // means the change can no longer be made as asked.
+        // Nothing the action staged is kept, messages to send included. A refusal that is about the checker (a record they may
+        // not open), or a save that lost a race with another change, leaves the request waiting; any other means the change
+        // can no longer be made as asked.
         db.ChangeTracker.Clear();
-        handover.Take();
         if (failure.Type is ErrorType.Forbidden or ErrorType.Unauthorized || failure.Code == Concurrent.Code)
         {
             return failure;
@@ -321,9 +308,24 @@ internal sealed class ApprovalService(
         }
 
         var request = await db.Set<ApprovalRequest>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
-        if (request is null || (request.RequestedBy != user && !(await DecidableKindsAsync(user, ct)).Contains(request.Kind)))
+        if (request is null)
         {
             return Error.NotFound("Approval request", id);
+        }
+
+        if (request.RequestedBy != user)
+        {
+            var verdict = Action(request.Kind) is { } action ? await VerdictAsync(action.ApprovePermission, ct) : PermissionVerdict.NotHeld;
+            if (verdict == PermissionVerdict.NotHeld)
+            {
+                return Error.NotFound("Approval request", id);
+            }
+
+            // Someone who may decide it only on an enrolled desktop is told so, rather than that it does not exist.
+            if (verdict == PermissionVerdict.DesktopRequired)
+            {
+                return DesktopRequired;
+            }
         }
 
         return await ToDtoAsync(request, ct);
@@ -337,7 +339,7 @@ internal sealed class ApprovalService(
             return Error.Forbidden("approval.staff_only", "Only staff can see approval requests.");
         }
 
-        var kinds = await DecidableKindsAsync(user, ct);
+        var kinds = await DecidableKindsAsync(ct);
         var decidable = kinds.ToArray();
         var now = time.GetUtcNow();
         var requests = db.Set<ApprovalRequest>().AsNoTracking();
@@ -373,7 +375,15 @@ internal sealed class ApprovalService(
             return Error.NotFound("Approval request", id);
         }
 
-        if (!await permissions.HasPermissionAsync(checker, action.ApprovePermission, ct))
+        // As the endpoint that makes the change would decide: a restricted session decides nothing, and a change only an
+        // administrative permission approves is decided on an enrolled desktop alone (SRS SEC-08).
+        var verdict = await VerdictAsync(action.ApprovePermission, ct);
+        if (verdict == PermissionVerdict.DesktopRequired)
+        {
+            return DesktopRequired;
+        }
+
+        if (verdict != PermissionVerdict.Allowed)
         {
             return Error.Forbidden("approval.not_permitted", $"You cannot decide this request: it needs the permission to approve {request.Title.ToLowerInvariant()}.");
         }
@@ -394,22 +404,27 @@ internal sealed class ApprovalService(
         return (request, action, checker);
     }
 
-    private async Task<IReadOnlySet<string>> DecidableKindsAsync(Guid user, CancellationToken ct)
+    /// <summary>The kinds the signed-in user may decide here: those whose permission they may use in this session.</summary>
+    private async Task<IReadOnlySet<string>> DecidableKindsAsync(CancellationToken ct)
     {
         var kinds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var action in Actions)
+        foreach (var byPermission in Actions.GroupBy(a => a.ApprovePermission, StringComparer.Ordinal))
         {
-            if (await permissions.HasPermissionAsync(user, action.ApprovePermission, ct))
+            if (await VerdictAsync(byPermission.Key, ct) == PermissionVerdict.Allowed)
             {
-                kinds.Add(action.Kind);
+                kinds.UnionWith(byPermission.Select(a => a.Kind));
             }
         }
 
         return kinds;
     }
 
+    /// <summary>Whether the signed-in user may use <paramref name="permission"/> in this session (<see cref="PermissionGate"/>).</summary>
+    private ValueTask<PermissionVerdict> VerdictAsync(string permission, CancellationToken ct) =>
+        gate.CheckAsync(http.HttpContext?.User ?? new ClaimsPrincipal(), [permission], cancellationToken: ct);
+
     private async Task<ApprovalRequestDto> ToDtoAsync(ApprovalRequest request, CancellationToken ct) =>
-        ToDto(request, currentUser.UserId ?? Guid.Empty, await DecidableKindsAsync(currentUser.UserId ?? Guid.Empty, ct), time.GetUtcNow());
+        ToDto(request, currentUser.UserId ?? Guid.Empty, await DecidableKindsAsync(ct), time.GetUtcNow());
 
     private static ApprovalRequestDto ToDto(ApprovalRequest r, Guid user, IReadOnlySet<string> kinds, DateTimeOffset now)
     {

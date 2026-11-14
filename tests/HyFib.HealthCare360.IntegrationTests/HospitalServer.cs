@@ -653,23 +653,37 @@ public sealed class HospitalServer : IAsyncLifetime
 
     /// <summary>
     /// A member of staff's password reset by <paramref name="maker"/> as Administration › Users resets it: the temporary
-    /// password, read where it went. The administrator is never shown it: it goes to the account's own mobile number or
-    /// e-mail address (the test server sends nothing, so it is read from the outbox), or, for an account with neither, the
-    /// reset waits for the other administrator, who is shown it once when they approve.
+    /// password, read where it went. Nobody is shown it: it goes to the account's own mobile number or e-mail address (the
+    /// test server sends nothing, so it is read from the outbox). For an account with neither, the reset gives a mobile number
+    /// of the holder's, and waits for the other administrator, whose approval sends it there.
     /// </summary>
     public async Task<string> ResetPasswordAsync(ApiClient maker, Guid userId)
     {
         ArgumentNullException.ThrowIfNull(maker);
         var path = $"/api/v1/admin/users/{userId}/reset-password";
-        using var response = await maker.SendRawAsync(HttpMethod.Post, path);
+        PasswordResetRequest? destination;
+        await using (var scope = Services.CreateAsyncScope())
+        {
+            var account = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<User>().AsNoTracking()
+                .SingleAsync(u => u.Id == userId, TestContext.Current.CancellationToken);
+            destination = account.Phone is null && account.Email is null ? new PasswordResetRequest("9" + Random.Shared.Next(100_000_000, 999_999_999), null) : null;
+        }
+
+        using var response = destination is null ? await maker.SendRawAsync(HttpMethod.Post, path) : await maker.SendRawAsync(HttpMethod.Post, path, destination);
         if (response.StatusCode == HttpStatusCode.Accepted)
         {
             var approved = await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path)).Id);
-            return approved.Handover?.Secret ?? throw new InvalidOperationException($"Approving the password reset of {userId} handed over no password ({approved.Status}: {approved.Outcome}).");
+            if (approved.Status != ApprovalStatus.Approved)
+            {
+                throw new InvalidOperationException($"Approving the password reset of {userId} made nothing ({approved.Status}: {approved.Outcome}).");
+            }
+        }
+        else
+        {
+            await ApiClient.ReadAsync<PasswordResetResponse>(response, HttpMethod.Post, path);
         }
 
-        var reset = await ApiClient.ReadAsync<PasswordResetResponse>(response, HttpMethod.Post, path);
-        return reset.TemporaryPassword ?? await TemporaryPasswordSentAsync(userId);
+        return await TemporaryPasswordSentAsync(userId);
     }
 
     /// <summary>The last temporary password sent to the account's own mobile number or e-mail address: the test server sends nothing, so it is read from the outbox.</summary>

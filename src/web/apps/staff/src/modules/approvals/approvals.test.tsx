@@ -102,14 +102,19 @@ const SETTING_CHANGE: ApprovalRequestDto = {
  * A temporary password for a nurse with no mobile number or e-mail address: the approving administrator is shown it once,
  * to give her in person.
  */
-const PASSWORD_HANDOVER: ApprovalRequestDto = {
+/**
+ * A temporary password for an account with no mobile number or e-mail address: the administrator who asked gave the
+ * holder's own, which the approver checks; approved, the password goes there.
+ */
+const PASSWORD_RESET: ApprovalRequestDto = {
   ...CREDIT_NOTE,
   kind: 'identity.password_reset',
-  title: 'Temporary password given in person',
-  summary: 'Temporary password for Kavitha Raman (kavitha.r), to be given in person',
+  title: 'Temporary password for an account without contact details',
+  summary: 'Temporary password for Kavitha Raman (kavitha.r), sent to the mobile number given for them',
   details: [
     { label: 'User', value: 'Kavitha Raman (kavitha.r)' },
-    { label: 'Mobile number and e-mail address', value: 'None: the password cannot be sent to them' },
+    { label: 'Mobile number and e-mail address now', value: 'None' },
+    { label: 'Send it to', value: 'mobile +919840012345' },
   ],
   reason: 'No reason given.',
   subjectType: 'User',
@@ -322,45 +327,29 @@ describe('the approvals inbox', SCREEN_TESTS, () => {
     expect(notify.success).not.toHaveBeenCalled();
   });
 
-  it('shows the approver the temporary password once, to give in person, and nothing of it afterwards', async () => {
-    // Made for the test: never a password anyone uses.
-    const secret = ['QXRT', 'MNPB', String(Date.now() % 10_000).padStart(4, '7')].join('-');
-    serve(
-      PASSWORD_HANDOVER,
-      () => ({
-        ...PASSWORD_HANDOVER,
-        status: 'Approved',
-        outcome: 'temporary password made for kavitha.r, shown once to Super Admin to give in person',
-        canDecide: false,
-        handover: {
-          label: 'Temporary password for Kavitha Raman (kavitha.r)',
-          secret,
-          expiresAt: '2026-11-11T06:30:00Z',
-        },
-      }),
-      { ...PASSWORD_HANDOVER, status: 'Approved', canDecide: false },
-    );
+  it('approves a temporary password and tells the approver only where it went, never the password', async () => {
+    const outcome =
+      "temporary password sent to kavitha.r's mobile +91******2345 (given with the request, now the account's); nobody was shown it";
+    const approved = { ...PASSWORD_RESET, status: 'Approved' as const, outcome, canDecide: false };
+    serve(PASSWORD_RESET, () => approved, approved);
     openScreen(`/approvals/${REQUEST_ID}`, GRANTS_ADMIN);
     const user = userEvent.setup();
 
-    expect(await screen.findByText('None: the password cannot be sent to them', {}, SLOW)).toBeInTheDocument();
+    // The approver sees where it is to go, in full, to check it is the holder's own.
+    expect(await screen.findByText('mobile +919840012345', {}, SLOW)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Approve' }));
-    const dialog = await screen.findByRole('alertdialog', { name: 'Approve: temporary password given in person' });
+    const dialog = await screen.findByRole('alertdialog', {
+      name: 'Approve: temporary password for an account without contact details',
+    });
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
-    const handover = await screen.findByRole(
-      'alertdialog',
-      { name: 'Temporary password for Kavitha Raman (kavitha.r)' },
-      SLOW,
-    );
-    expect(within(handover).getByText(secret)).toBeInTheDocument();
-    expect(within(handover).getByText('Shown only now')).toBeInTheDocument();
-    expect(within(handover).getByText(/It is kept nowhere/)).toBeInTheDocument();
-    await expectNoAxeViolations();
-    await user.click(within(handover).getByRole('button', { name: 'Done' }));
-
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
-    expect(screen.queryByText(secret)).not.toBeInTheDocument();
+    expect(notify.success).toHaveBeenCalledWith(
+      'Temporary password for an account without contact details approved',
+      outcome,
+    );
+    expect(screen.queryByText('Shown only now')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copy' })).not.toBeInTheDocument();
     expect(posts()).toHaveLength(1);
   });
 });

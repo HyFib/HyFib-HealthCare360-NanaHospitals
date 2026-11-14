@@ -13,9 +13,14 @@ using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Platform.Identity;
 
-/// <summary>A temporary password for an account with no mobile number or e-mail address to send it to, as asked for.</summary>
+/// <summary>
+/// A temporary password for an account with no mobile number or e-mail address, as asked for: sent to the holder's own,
+/// given with the request, which become the account's once it is approved.
+/// </summary>
 /// <param name="Stamp">The account's password and contact details when it was asked (<see cref="AccountApprovals"/>).</param>
-public sealed record PasswordResetPayload(Guid UserId, string Stamp);
+/// <param name="Phone">The holder's mobile number to send it to; null in a request from before it was sent (nothing is made).</param>
+/// <param name="Email">The holder's e-mail address to send it to.</param>
+public sealed record PasswordResetPayload(Guid UserId, string Stamp, string? Phone = null, string? Email = null);
 
 /// <summary>An account's two-step verification reset, as asked for.</summary>
 /// <param name="Stamp">The account's two-step verification when it was asked.</param>
@@ -36,9 +41,10 @@ public sealed record PendingAccountChange(Guid ApprovalId, string Kind, string S
 /// password (and be shown it) and their two-step verification, and sign in as them; or link an account to another doctor's
 /// practitioner record, and sign their notes, prescriptions and ABDM records as that doctor. So:
 /// <list type="bullet">
-/// <item>a temporary password goes to the account's own mobile number and e-mail address, never to the administrator
-/// (<see cref="CredentialNotices.QueueTemporaryPassword"/>); an account with neither waits for a second administrator, who is
-/// shown it once, to hand over (<see cref="PasswordResetKind"/>, <see cref="ApprovalHandover"/>);</item>
+/// <item>a temporary password goes to the account's own mobile number and e-mail address, never to an administrator, the
+/// one who approves included (<see cref="CredentialNotices.QueueTemporaryPassword"/>); for an account with neither, the
+/// administrator gives the holder's own, and the reset waits for a second administrator who checks them: approved, they
+/// become the account's and the password goes there (<see cref="PasswordResetKind"/>);</item>
 /// <item>a two-step verification reset (<see cref="MfaResetKind"/>), another user's e-mail address or mobile number
 /// (<see cref="ContactChangeKind"/>, the old ones told once it changes) and an account linked or re-linked to a practitioner
 /// (<see cref="PractitionerLinkKind"/>) wait for a second administrator.</item>
@@ -60,7 +66,6 @@ internal sealed class AccountApprovals(
     GrantApprovals grants,
     INotificationService notifications,
     PasswordHashing hashing,
-    ApprovalHandover handover,
     ISessionValidator sessions,
     IOptions<PlatformOptions> options,
     TimeProvider time)
@@ -85,17 +90,22 @@ internal sealed class AccountApprovals(
     public async Task<Result<GrantDecision>> DecideAsync(Guid userId, CancellationToken ct) =>
         await grants.DecideAsync(self: userId == current.UserId, await grants.AdministrativeOfUserAsync(userId, ct), ct);
 
-    /// <summary>Asks a second administrator to make a temporary password for <paramref name="user"/>, who has nowhere to send it.</summary>
-    public Task<Result<ApprovalRequestDto>> AskPasswordResetAsync(User user, CancellationToken ct) =>
+    /// <summary>
+    /// Asks a second administrator to send <paramref name="user"/>, who has no mobile number or e-mail address, a temporary
+    /// password at the holder's own <paramref name="phone"/> and <paramref name="email"/>. The approver sees them in full, to
+    /// check they are the holder's: they become the account's.
+    /// </summary>
+    public Task<Result<ApprovalRequestDto>> AskPasswordResetAsync(User user, string? phone, string? email, CancellationToken ct) =>
         RequestAsync(
             PasswordResetKind,
             user,
-            new PasswordResetPayload(user.Id, PasswordStamp(user)),
-            $"Temporary password for {user.DisplayName} ({user.UserName}), to be given in person",
+            new PasswordResetPayload(user.Id, PasswordStamp(user), phone, email),
+            $"Temporary password for {user.DisplayName} ({user.UserName}), sent to the {Destination(phone, email)} given for them",
             [
                 new("User", $"{user.DisplayName} ({user.UserName})"),
-                new("Mobile number and e-mail address", "None: the password cannot be sent to them"),
-                new("What approving does", "Makes a temporary password, shown once to you, to give them in person. Their sessions end, and their PIN and quick-unlock devices are removed."),
+                new("Mobile number and e-mail address now", "None"),
+                new("Send it to", string.Join("; ", new[] { phone is null ? null : $"mobile {phone}", email is null ? null : $"e-mail {email}" }.OfType<string>())),
+                new("What approving does", "These become the account's mobile number and e-mail address, and a temporary password is sent there: nobody is shown it. Check they are the holder's own. Their sessions end, and their PIN and quick-unlock devices are removed."),
             ],
             ct);
 
@@ -192,12 +202,20 @@ internal sealed class AccountApprovals(
 
     /// <summary>
     /// Makes an approved temporary password, in the approval's transaction, for the account as it was asked: still with no
-    /// mobile number or e-mail address (one added since gets it instead: ask again), and the same password. It is handed to
-    /// the approver once, in the answer to their approval, to give in person, and kept nowhere.
+    /// mobile number or e-mail address (one added since gets it instead: ask again), and the same password. The mobile number
+    /// and e-mail address given with the request become the account's, and the password goes there; the approver is told
+    /// only where, as an administrator's reset tells them (<see cref="CredentialNotices.QueueTemporaryPassword"/>).
     /// </summary>
     internal async Task<Result<string>> ApplyPasswordResetAsync(ApprovalRequest request, CancellationToken ct)
     {
         var asked = ApprovalPayload.Read<PasswordResetPayload>(request.Payload);
+        if (asked.Phone is null && asked.Email is null)
+        {
+            // Asked for before the password was always sent, to be handed over by whoever approved it: that is not done.
+            return Error.Rule("account.reset_destination",
+                "This was asked for to hand the password over in person, which is no longer done, so nothing was changed. Reset the password again, with the holder's own mobile number or e-mail address.");
+        }
+
         var target = await TargetAsync(asked.UserId, ct);
         if (target.IsFailure)
         {
@@ -211,21 +229,22 @@ internal sealed class AccountApprovals(
         }
 
         var now = time.GetUtcNow();
+        user.Phone = asked.Phone;
+        user.Email = asked.Email;
         var (password, ended) = await ResetPasswordAsync(db, user, hashing, options, now, ct);
-        var approver = ApproverName();
+        var sentTo = CredentialNotices.QueueTemporaryPassword(notifications, user, password, user.TemporaryPasswordExpiresAt!.Value, now);
         audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset",
-            Fit($"Password reset for {user.UserName}, asked for by {request.RequestedByName}, approved by {approver}, who was shown the temporary password to give in person", 1000))
+            Fit($"Password reset for {user.UserName}, asked for by {request.RequestedByName}, approved by {ApproverName()}: the temporary password sent to their {string.Join(" and ", sentTo)}, given with the request and now the account's", 1000))
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
-            Details = new { approval = request.Id, requestedBy = request.RequestedBy, handedOverBy = current.UserId },
+            Details = new { approval = request.Id, requestedBy = request.RequestedBy, sentTo },
         });
         CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordReset, now);
         CredentialNotices.AddInApp(db, user, CredentialNotices.PasswordReset, now);
-        handover.Give($"Temporary password for {user.DisplayName} ({user.UserName})", password, user.TemporaryPasswordExpiresAt);
         db.AfterCommit(() => Invalidate(sessions, ended));
-        return $"temporary password made for {user.UserName}, shown once to {approver} to give in person";
+        return $"temporary password sent to {user.UserName}'s {string.Join(" and ", sentTo)} (given with the request, now the account's); nobody was shown it";
     }
 
     /// <summary>Resets an approved account's two-step verification, in the approval's transaction, if it is as it was asked.</summary>
@@ -474,17 +493,24 @@ internal sealed class AccountApprovals(
 
     private string ApproverName() => current.DisplayName ?? current.UserName ?? "another administrator";
 
+    /// <summary>Where a temporary password is to go, in words: "mobile number", "e-mail address" or both.</summary>
+    private static string Destination(string? phone, string? email) =>
+        phone is not null && email is not null ? "mobile number and e-mail address" : phone is not null ? "mobile number" : "e-mail address";
+
     private static string Fit(string text, int length) => text.Length <= length ? text : text[..(length - 1)] + "…";
 
     private sealed record PractitionerWords(string Name, string Words);
 }
 
-/// <summary>A temporary password for an account with nowhere to send it: one administrator asks, another approves and hands it over.</summary>
+/// <summary>
+/// A temporary password for an account with no mobile number or e-mail address: one administrator asks, giving the holder's
+/// own, and another checks and approves them; the password goes there, and nobody is shown it.
+/// </summary>
 internal sealed class PasswordResetApproval(AccountApprovals accounts) : IApprovalAction
 {
     public string Kind => AccountApprovals.PasswordResetKind;
 
-    public string Title => "Temporary password given in person";
+    public string Title => "Temporary password for an account without contact details";
 
     public string ApprovePermission => PlatformPermissions.GrantsApprove;
 

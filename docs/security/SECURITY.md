@@ -146,10 +146,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     reset sends it to the account's own mobile number by SMS and to its e-mail address (`auth.temporary_password`; the
     outbox drops a message not sent before the password expires), and tells the administrator only where it went,
     masked ("mobile +91******3210").
-  - An account with neither waits for a second administrator who holds `admin.grants.approve`
-    (`identity.password_reset`); nothing changes until then. Approving makes the password and shows it to that
-    administrator once, in the answer to the approval, to give in person (`ApprovalHandover`): it is kept nowhere, not
-    in the request, its outcome, the audit trail or the notice to the one who asked. The audit names both.
+  - For an account with neither, the administrator enters the holder's own mobile number or e-mail address with the
+    reset, and it waits for a second administrator who holds `admin.grants.approve` (`identity.password_reset`), who
+    sees them in full to check they are the holder's; nothing changes until then. Approving makes them the account's
+    and sends the password there the same way. Nobody is shown it, the approver included: the answer to the approval and
+    its outcome say only where it went, masked. The audit names both administrators. A hospital still setting up, with
+    one administrator who may approve, makes it at once, as other account changes.
   - Either way the sessions end, the PIN and the quick-unlock devices go, and the password must be changed at the next
     sign-in. Enter a mobile number for every member of staff, so a reset does not wait.
 - **Notices** (ASVS V6.4.3): when a password is changed or reset, or two-step verification is turned on, off or reset,
@@ -256,6 +258,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     credential. Any
     other permission the endpoint takes is enough anywhere. The app is given the permissions the session can use, so it
     shows no administration there, and says where it is.
+  - **Approving administration obeys the same rule** (`PermissionGate`): the approvals inbox reads the permission a
+    decision needs from the kind of change, and checks it as an endpoint needing it would. A kind only an administrative
+    permission approves (access given, an account's password or two-step verification, contact details, a practitioner
+    link, another desktop, a guarded setting, the audit trail's purge) is listed, opened and decided only on an enrolled
+    workstation or tablet; elsewhere opening or deciding it is refused (403 `auth.device_required`), and a restricted
+    session decides nothing.
   - Revoking a desktop ends its sessions at once; its credential then signs in as a browser does, without administration.
   - While no workstation or tablet is enrolled (a new installation, or one whose desktops are kiosks and queue displays
     only), a browser may still list the devices and make an enrolment code, and nothing else, so the first workstation
@@ -458,12 +466,12 @@ and grants nothing.
   - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
     holds `admin.grants.approve`, and any administrative permission it gives, approves;
   - changes that would let one administrator take over an account (see "Nobody takes over a colleague's account alone"
-    above): a temporary password for an account with nowhere to send it (`identity.password_reset`, shown once to the
-    approver), a two-step verification reset (`identity.mfa_reset`), another user's e-mail address or mobile number
+    above): a temporary password for an account with nowhere to send it (`identity.password_reset`, sent to the
+    contact details given for its holder, shown to nobody), a two-step verification reset (`identity.mfa_reset`), another user's e-mail address or mobile number
     (`identity.contact_change`), an account linked to a practitioner (`identity.practitioner_link`) and a linked
     practitioner's registration number, HPR ID or signature (`masters.practitioner_identity`): one administrator asks,
-    another who holds `admin.grants.approve` approves. A temporary password otherwise goes to the account's own mobile
-    number and e-mail address, never to the administrator;
+    another who holds `admin.grants.approve` approves, on an enrolled desktop. A temporary password otherwise goes to the
+    account's own mobile number and e-mail address, never to an administrator;
   - another workstation or tablet enrolled once one is (`devices.enrollment`, see "Administration needs an enrolled
     device"): one administrator asks, another who holds `admin.grants.approve` approves, and the code is shown once to
     the one who asked;

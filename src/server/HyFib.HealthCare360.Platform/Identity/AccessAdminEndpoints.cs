@@ -67,14 +67,16 @@ public sealed record UpdateUserRequest(
 /// <param name="PractitionerLinkApprovalId">The request to link the new account to its practitioner, when it waits for a second administrator.</param>
 public sealed record TemporaryPasswordResponse(Guid UserId, string TemporaryPassword, DateTimeOffset ExpiresAt, Guid? ApprovalId = null, Guid? PractitionerLinkApprovalId = null);
 
-/// <summary>A password reset made.</summary>
+/// <summary>
+/// Where to send the temporary password of an account with no mobile number or e-mail address: the holder's own, which
+/// become the account's. Left out for an account that has either: the password goes there.
+/// </summary>
+public sealed record PasswordResetRequest(string? Phone, string? Email);
+
+/// <summary>A password reset made. Nobody is shown the temporary password, the administrator who reset it included.</summary>
 /// <param name="SentTo">Where the temporary password went, masked: the account's own mobile number and e-mail address.</param>
 /// <param name="ExpiresAt">When the temporary password stops working, unless the user has replaced it by then.</param>
-/// <param name="TemporaryPassword">
-/// Only for an account with nowhere to send it, reset while the hospital has never had two people who may approve: the
-/// password, to give in person. Otherwise such a reset waits for a second administrator (202), who is shown it.
-/// </param>
-public sealed record PasswordResetResponse(Guid UserId, IReadOnlyList<string> SentTo, DateTimeOffset ExpiresAt, string? TemporaryPassword = null);
+public sealed record PasswordResetResponse(Guid UserId, IReadOnlyList<string> SentTo, DateTimeOffset ExpiresAt);
 
 public sealed record RoleListItem(Guid Id, string Name, string? Description, bool IsSystem, int PermissionCount, int UserCount);
 
@@ -115,6 +117,15 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
     }
 }
 
+public sealed class PasswordResetRequestValidator : AbstractValidator<PasswordResetRequest>
+{
+    public PasswordResetRequestValidator()
+    {
+        RuleFor(x => x.Email).EmailAddress().MaximumLength(256).When(x => !string.IsNullOrWhiteSpace(x.Email));
+        RuleFor(x => x.Phone).PhoneNumber();
+    }
+}
+
 public sealed class SaveRoleRequestValidator : AbstractValidator<SaveRoleRequest>
 {
     public SaveRoleRequestValidator()
@@ -137,7 +148,8 @@ internal static class AccessAdminEndpoints
         users.MapGet("/{id:guid}", GetUser).RequirePermission(PlatformPermissions.UsersRead);
         users.MapPost("/", CreateUser).RequirePermission(PlatformPermissions.UsersManage).WithValidation<CreateUserRequest>();
         users.MapPut("/{id:guid}", UpdateUser).RequirePermission(PlatformPermissions.UsersManage).WithValidation<UpdateUserRequest>();
-        users.MapPost("/{id:guid}/reset-password", ResetPassword).RequirePermission(PlatformPermissions.UsersManage);
+        users.MapPost("/{id:guid}/reset-password", ResetPassword).RequirePermission(PlatformPermissions.UsersManage)
+            .WithOptionalValidation<PasswordResetRequest>();
         users.MapPost("/{id:guid}/unlock", UnlockUser).RequirePermission(PlatformPermissions.UsersManage);
         users.MapPost("/{id:guid}/reset-mfa", ResetMfa).RequirePermission(PlatformPermissions.UsersManage);
         users.MapPost("/{id:guid}/revoke-sessions", RevokeSessions).RequirePermission(PlatformPermissions.UsersManage);
@@ -533,12 +545,15 @@ internal static class AccessAdminEndpoints
     }
 
     /// <summary>
-    /// A temporary password goes to the account's own mobile number and e-mail address, never to the administrator, who is
-    /// told where it went (masked). An account with neither waits for a second administrator, who is shown it once to give
-    /// in person (<see cref="AccountApprovals"/>).
+    /// A temporary password goes to the account's own mobile number and e-mail address, never to an administrator, who is
+    /// told where it went (masked). For an account with neither, the administrator gives the holder's own
+    /// (<see cref="PasswordResetRequest"/>), and the reset waits for a second administrator who checks them; approved, they
+    /// become the account's and the password goes there (<see cref="AccountApprovals"/>). A hospital that has never had two
+    /// administrators who may approve (setting up), or a Super Administrator's break-glass, makes it at once, audited.
     /// </summary>
     private static async Task<IResult> ResetPassword(
         Guid id,
+        PasswordResetRequest? request,
         HospitalDbContext db,
         PasswordHashing hashing,
         IAuditLogger audit,
@@ -565,44 +580,54 @@ internal static class AccessAdminEndpoints
         }
 
         var sendable = !string.IsNullOrWhiteSpace(user.Phone) || !string.IsNullOrWhiteSpace(user.Email);
-        var decision = GrantDecision.Ask;
+        var email = request?.Email is { } given && !string.IsNullOrWhiteSpace(given) ? given.Trim() : null;
+        var phone = Phone.Normalize(request?.Phone);
+        if (sendable && (email is not null || phone is not null))
+        {
+            return Error.Rule("user.reset_has_contact",
+                $"The temporary password goes to {user.DisplayName}'s own mobile number and e-mail address. To send it elsewhere, change them first: another administrator approves it.").ToProblem();
+        }
+
         if (!sendable)
         {
+            if (email is null && phone is null)
+            {
+                return Error.Field("phone", $"{user.DisplayName} has no mobile number or e-mail address. Enter their own: the temporary password goes there, and nobody is shown it.").ToProblem();
+            }
+
             var decided = await accounts.DecideAsync(user.Id, ct);
             if (decided.IsFailure)
             {
                 return decided.Error!.ToProblem();
             }
 
-            decision = decided.Value;
-            if (decision == GrantDecision.Ask)
+            if (decided.Value == GrantDecision.Ask)
             {
-                var asked = await accounts.AskPasswordResetAsync(user, ct);
+                var asked = await accounts.AskPasswordResetAsync(user, phone, email, ct);
                 return asked.IsFailure ? asked.Error!.ToProblem() : TypedResults.Accepted($"/api/v1/approvals/{asked.Value.Id}", asked.Value);
             }
+
+            // Nobody else may approve it: the holder's details become the account's at once, and the password goes there.
+            user.Phone = phone;
+            user.Email = email;
+            grants.AuditMadeAlone(decided.Value, nameof(User), user.Id, $"contact details of {user.UserName} given with a password reset, and the temporary password sent there");
         }
 
         var now = time.GetUtcNow();
         var (password, ended) = await AccountApprovals.ResetPasswordAsync(db, user, hashing, options, now, ct);
         var expiresAt = user.TemporaryPasswordExpiresAt!.Value;
-        IReadOnlyList<string> sentTo = sendable ? CredentialNotices.QueueTemporaryPassword(notifications, user, password, expiresAt, now) : [];
-        audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset",
-            sendable ? $"Password reset for {user.UserName}, the temporary password sent to their {string.Join(" and ", sentTo)}" : $"Password reset for {user.UserName}")
+        var sentTo = CredentialNotices.QueueTemporaryPassword(notifications, user, password, expiresAt, now);
+        audit.Add(new AuditEntry(AuditCategories.Security, "user.password_reset", $"Password reset for {user.UserName}, the temporary password sent to their {string.Join(" and ", sentTo)}")
         {
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
         });
-        if (!sendable)
-        {
-            grants.AuditMadeAlone(decision, nameof(User), user.Id, $"temporary password for {user.UserName} shown to the administrator who reset it");
-        }
-
         CredentialNotices.QueueEmail(notifications, user, CredentialNotices.PasswordReset, now);
         await db.SaveChangesAsync(ct);
         AccountApprovals.Invalidate(sessions, ended);
         await CredentialNotices.SendInAppAsync(notifications, user, CredentialNotices.PasswordReset, ct);
-        return TypedResults.Ok(new PasswordResetResponse(user.Id, sentTo, expiresAt, sendable ? null : password));
+        return TypedResults.Ok(new PasswordResetResponse(user.Id, sentTo, expiresAt));
     }
 
     private static async Task<IResult> UnlockUser(Guid id, HospitalDbContext db, IAuditLogger audit, ICurrentUser current, IPermissionService permissions, CancellationToken ct)

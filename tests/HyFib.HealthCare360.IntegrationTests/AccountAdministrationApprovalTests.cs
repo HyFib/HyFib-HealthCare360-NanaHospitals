@@ -20,8 +20,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// Nobody takes over a colleague's account alone (MAKER-CHECKER.md, slice 4). One administrator could change a nurse's
 /// e-mail address, reset her password and be shown it, reset her two-step verification, and sign in as her; link their own
 /// account to a consultant's practitioner record and sign as him; or enrol any PC as an administration desktop. Now a
-/// temporary password goes to the account's own mobile number, never to the administrator; an account with no mobile number
-/// or e-mail address waits for a second administrator, who hands it over; and a two-step verification reset, another user's
+/// temporary password goes to the account's own mobile number, never to an administrator; for an account with no mobile
+/// number or e-mail address the administrator gives the holder's own, and a second administrator checks them before the
+/// password goes there; and a two-step verification reset, another user's
 /// contact details, a practitioner link, a linked doctor's registration and another administration desktop wait for a second
 /// administrator. Here the hospital administrator asks and the Super Administrator approves, as in the production-style run.
 /// </summary>
@@ -48,7 +49,6 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK, body);
         var reset = JsonSerializer.Deserialize<PasswordResetResponse>(body, ApiClient.Json)!;
-        reset.TemporaryPassword.ShouldBeNull();
         reset.SentTo.ShouldBe([$"mobile {Phone.Mask(Phone.Normalize(mobile))}"]);
 
         // It went to her mobile by SMS, and only there: the administrator's answer does not hold it.
@@ -61,33 +61,44 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
     }
 
     [Fact]
-    public async Task A_password_reset_for_an_account_with_no_contact_waits_and_is_handed_to_the_approver_once()
+    public async Task A_password_reset_for_an_account_with_no_contact_goes_to_the_holders_own_mobile_once_approved_and_nobody_is_shown_it()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
-        var name = "it-reset-handover-" + Letters(6);
+        var name = "it-reset-no-contact-" + Letters(6);
         var created = await CreateUserAsync(admin, name, email: null, phone: null);
+        var path = $"{Users}/{created.UserId}/reset-password";
 
-        using var response = await admin.SendRawAsync(HttpMethod.Post, $"{Users}/{created.UserId}/reset-password");
+        // Nowhere to send it: the administrator is asked for the holder's own mobile number or e-mail address.
+        (await RefusalAsync(admin, path, new { })).ShouldBe((HttpStatusCode.BadRequest, "validation"));
+        var mobile = NewMobile();
+        using var response = await admin.SendRawAsync(HttpMethod.Post, path, new PasswordResetRequest(mobile, null));
         var body = await response.Content.ReadAsStringAsync(Ct);
 
-        // Nowhere to send it: it waits, and nothing changes; the password she was given still works.
+        // Given, it waits for a second administrator, who sees the number to check it is hers; nothing changes meanwhile.
         response.StatusCode.ShouldBe(HttpStatusCode.Accepted, body);
         var asked = JsonSerializer.Deserialize<ApprovalRequestDto>(body, ApiClient.Json)!;
         (asked.Kind, asked.Status, asked.SubjectId).ShouldBe((AccountApprovals.PasswordResetKind, ApprovalStatus.Pending, created.UserId));
+        asked.Details.ShouldContain(d => d.Label == "Send it to" && d.Value == $"mobile {Phone.Normalize(mobile)}");
+        (await UserAsync(created.UserId)).Phone.ShouldBeNull();
         using (var still = await LogInAsync(name, created.TemporaryPassword))
         {
             still.StatusCode.ShouldBe(HttpStatusCode.OK);
         }
 
-        // Never by the one who asked; the Super Administrator approves, and is shown it once, to hand over.
+        // Never by the one who asked. The Super Administrator approves: the number becomes the account's, the password goes
+        // there by SMS, and the answer says only where.
         (await RefusalAsync(admin, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, asked.Version))).ShouldBe((HttpStatusCode.Forbidden, "approval.self"));
-        var approved = await superAdmin.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest("Handed over at the nursing station.", asked.Version));
+        using var approving = await superAdmin.SendRawAsync(HttpMethod.Post, $"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest("Her own number, read out at the nursing station.", asked.Version));
+        var answer = await approving.Content.ReadAsStringAsync(Ct);
+        approving.StatusCode.ShouldBe(HttpStatusCode.OK, answer);
+        var approved = JsonSerializer.Deserialize<ApprovalRequestDto>(answer, ApiClient.Json)!;
         approved.Status.ShouldBe(ApprovalStatus.Approved);
-        var password = approved.Handover.ShouldNotBeNull().Secret;
-        approved.Outcome.ShouldNotBeNull().ShouldNotContain(password);
-        (await superAdmin.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}")).Handover.ShouldBeNull();
-        (await admin.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}")).Handover.ShouldBeNull();
+        approved.Outcome.ShouldNotBeNull().ShouldContain(Phone.Mask(Phone.Normalize(mobile))!);
+        (await UserAsync(created.UserId)).Phone.ShouldBe(Phone.Normalize(mobile));
+        var password = await server.TemporaryPasswordSentAsync(created.UserId);
+        answer.ShouldNotContain(password);
+        (await SmsAsync("auth.temporary_password", Phone.Normalize(mobile)!)).Count.ShouldBe(1);
 
         using (var old = await LogInAsync(name, created.TemporaryPassword))
         {
@@ -97,7 +108,18 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
         using var signedIn = await LogInAsync(name, password);
         signedIn.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await AuditAsync(created.UserId)).ShouldContain(e => e.Action == "user.password_reset"
-            && e.Summary != null && e.Summary.Contains("asked for by", StringComparison.Ordinal) && e.Summary.Contains("approved by", StringComparison.Ordinal));
+            && e.Summary != null && e.Summary.Contains("asked for by", StringComparison.Ordinal) && e.Summary.Contains("approved by", StringComparison.Ordinal)
+            && !e.Summary.Contains(password, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_password_reset_names_no_other_destination_for_an_account_that_has_its_own()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var created = await CreateUserAsync(admin, "it-reset-elsewhere-" + Letters(6), email: null, phone: NewMobile());
+
+        (await RefusalAsync(admin, $"{Users}/{created.UserId}/reset-password", new PasswordResetRequest(NewMobile(), null)))
+            .ShouldBe((HttpStatusCode.UnprocessableEntity, "user.reset_has_contact"));
     }
 
     [Fact]
@@ -292,7 +314,7 @@ public sealed class AccountAdministrationApprovalTests(HospitalServer server)
 
         // Approved, the code is shown once to the administrator who asked, and enrols the PC once.
         var approved = await hospitalAdmin.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{asked.Id}/approve", new ApproveRequest(null, asked.Version));
-        (approved.Status, approved.Handover).ShouldBe((ApprovalStatus.Approved, (ApprovalHandoverDto?)null));
+        approved.Status.ShouldBe(ApprovalStatus.Approved);
         (await superAdmin.GetAsync<List<EnrollmentCodeRequestDto>>($"{EnrollmentCodes}/requests")).ShouldContain(r => r.ApprovalId == asked.Id && r.Ready);
         var code = await superAdmin.PostAsync<EnrollmentCodeResponse>($"{EnrollmentCodes}/requests/{asked.Id}/code");
         code.ExpiresAt.ShouldBe(DateTimeOffset.UtcNow.AddMinutes(30), TimeSpan.FromMinutes(1));

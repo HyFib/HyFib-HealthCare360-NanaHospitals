@@ -36,8 +36,8 @@ export interface UserDetail {
   /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator. */
   pendingGrant?: PendingUserGrant | null;
   /**
-   * Changes to the account waiting for a second administrator: a temporary password to be handed over, a two-step
-   * verification reset, new contact details, a practitioner link.
+   * Changes to the account waiting for a second administrator: a temporary password to be sent to contact details given
+   * for it, a two-step verification reset, new contact details, a practitioner link.
    */
   pendingChanges?: PendingAccountChange[] | null;
 }
@@ -52,15 +52,14 @@ export interface PendingAccountChange {
 }
 
 /**
- * A password reset made (200): where the temporary password went, masked, never the password itself. Only an account
- * with nowhere to send it, reset while the hospital has one administrator who may approve, gets it back to hand over;
- * otherwise that reset waits for a second administrator (202, an approval request), who is shown it.
+ * A password reset made (200): where the temporary password went, masked, never the password itself: nobody is shown
+ * it. For an account with no mobile number or e-mail address, the reset gives the holder's own and waits for a second
+ * administrator (202, an approval request) who checks them; approved, the password goes there.
  */
 export interface PasswordResetResponse {
   userId: string;
   sentTo: string[];
   expiresAt: string;
-  temporaryPassword?: string | null;
 }
 
 /** Access asked for a user, waiting for a second administrator who may approve grants. */

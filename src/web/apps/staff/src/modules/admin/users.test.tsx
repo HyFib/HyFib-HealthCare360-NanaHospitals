@@ -250,6 +250,39 @@ describe("resetting a colleague's sign-in", SCREEN_TESTS, () => {
     expect(server.requests.filter((r) => r.method === 'POST')).toHaveLength(1);
   });
 
+  it("asks for the holder's own mobile number when the account has none, and says the reset waits for another administrator", async () => {
+    const porter = { ...NURSE, id: id('301'), userName: 'murugan.p', displayName: 'Murugan P', phone: null };
+    server = fakeServer({
+      'GET /api/v1/admin/users': paged([porter]),
+      'GET /api/v1/admin/roles': ROLES,
+      [`POST /api/v1/admin/users/${porter.id}/reset-password`]: {
+        id: id('904'),
+        kind: 'identity.password_reset',
+        summary: 'Temporary password for Murugan P (murugan.p), sent to the mobile number given for them',
+      },
+    });
+    const user = userEvent.setup();
+    openScreen('/admin/users');
+    await user.click(await screen.findByRole('button', { name: 'Actions for Murugan P' }, SLOW));
+    await user.click(await screen.findByRole('menuitem', { name: 'Reset password' }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: 'Reset password?' });
+    expect(within(dialog).getByText(/has no mobile number or e-mail address/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Continue' })).toBeDisabled();
+    await user.type(within(dialog).getByRole('textbox', { name: 'Their mobile number' }), '12');
+    expect(within(dialog).getByText('Enter a valid phone number.')).toBeInTheDocument();
+    await user.clear(within(dialog).getByRole('textbox', { name: 'Their mobile number' }));
+    await user.type(within(dialog).getByRole('textbox', { name: 'Their mobile number' }), '98400 54321');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+
+    expect(await screen.findByText('Asked for approval', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getAllByText(/nobody is shown it/).length).toBeGreaterThan(0);
+    const posts = server.requests.filter((r) => r.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(posts[0]?.body).toEqual({ phone: '98400 54321', email: null });
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+
   it('says a two-step verification reset was asked for, and that nothing changes until it is approved', async () => {
     serve('reset-mfa', {
       id: id('903'),

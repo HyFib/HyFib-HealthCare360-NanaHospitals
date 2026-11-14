@@ -247,6 +247,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddAuthorization(authorization =>
             authorization.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+        services.AddSingleton<PermissionGate>();
         services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddSingleton<IAdministrationDesktops, AdministrationDesktops>();
         DesktopRequiredResultHandler.Register(services);
@@ -284,7 +285,6 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<INotificationService, NotificationService>();
         services.AddScoped<ApprovalService>();
         services.AddScoped<IApprovals>(sp => sp.GetRequiredService<ApprovalService>());
-        services.AddScoped<ApprovalHandover>();
         services.AddScoped<RecordHistoryService>();
         services.AddScoped<AuditEntityIndex>();
         services.AddScoped<NotificationTemplateRenderer>();
