@@ -51026,9 +51026,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("recovery_key_id");
 
+                    b.Property<string>("RestoreTestNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("restore_test_note");
+
+                    b.Property<bool?>("RestoreTestPassed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("restore_test_passed");
+
+                    b.Property<DateTimeOffset?>("RestoreTestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("restore_tested_at");
+
                     b.Property<bool>("SecondaryCopied")
                         .HasColumnType("boolean")
                         .HasColumnName("secondary_copied");
+
+                    b.Property<string>("SecondaryCopies")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("secondary_copies");
 
                     b.Property<string>("Sha256")
                         .HasMaxLength(64)
