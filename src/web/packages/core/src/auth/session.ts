@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ApiError, CORRELATION_HEADER, LANGUAGE_HEADER, toApiError } from '../api/errors';
 import type { ClientType } from '../api/client';
+import { forgetRememberedKeys } from '../api/rememberedKeys';
 import { clearDrafts, openDrafts } from './drafts';
 
 export interface FacilityOption {
@@ -112,8 +113,11 @@ export const useSession = create<SessionState>((set, get) => ({
   },
   setUser: (user) => set({ user }),
   setLocked: (locked) => set({ locked }),
+  // Signing out, or the server ending the session, forgets the user's drafts and the keys of their writes whose outcome
+  // was not known: nothing of what they did stays behind for whoever uses the computer next.
   clear: () => {
     clearDrafts();
+    forgetRememberedKeys();
     set({ status: 'anonymous', accessToken: null, expiresAt: null, user: null, locked: false });
   },
 }));
