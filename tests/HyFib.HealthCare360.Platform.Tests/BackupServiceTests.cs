@@ -67,6 +67,7 @@ public sealed class BackupServiceTests : IDisposable
         contents.Manifest.IncludesDocuments.ShouldBeFalse();
         contents.Manifest.Migrations.ShouldBe(["20260928102924_InitialCreate"]);
         contents.Manifest.Database.ShouldBe("hc360_test");
+        contents.Manifest.RowCounts.ShouldBe(_postgres.Rows, "the rows counted in the dump's snapshot, for a test restore to check");
         contents.MasterKey.ShouldBe(_protector.ExportMasterKey());
 
         // No plaintext dump or unfinished file is left behind.
@@ -344,12 +345,16 @@ public sealed class BackupServiceTests : IDisposable
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(DatabaseSize);
 
-        public async Task DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
+        /// <summary>The key tables' rows in the dump's snapshot, as pg_dump's session counts them.</summary>
+        public Dictionary<string, long> Rows { get; } = new(StringComparer.Ordinal) { ["patients.patients"] = 12_480, ["audit.audit_events"] = 3_904_117 };
+
+        public async Task<IReadOnlyDictionary<string, long>> DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
         {
             LowPriority = lowPriority;
             DuringDump?.Invoke();
             Dumped = [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(4096)];
             await File.WriteAllBytesAsync(outputFile, Dumped, ct);
+            return Rows;
         }
 
         public async Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct)

@@ -11,12 +11,20 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 
 /// <summary>
 /// The backups' nightly upkeep (DED-16), on the server that runs the jobs, after the nightly backup
-/// (<see cref="BackupOptions.UpkeepSchedule"/>, 03:30). A USB disk that was unplugged, or the other of two disks that are
-/// swapped, comes back without the backups made while it was away: each backup copies only itself. So the upkeep copies to
-/// the second disk or NAS the backups it lacks, newest first and at most <see cref="MaxCatchUpCopies"/> a night, those
-/// retention would keep there (<see cref="BackupRetention"/>), each checked against the SHA-256 its backup was verified
-/// with as it is read, and read back once written. Then it removes there, and on the server, what retention no longer
-/// keeps, as a backup does: that also happens on a night without a backup.
+/// (<see cref="BackupOptions.UpkeepSchedule"/>, 03:30; <see cref="BackupUpkeepJob"/> runs its steps).
+/// <list type="bullet">
+/// <item>A USB disk that was unplugged, or the other of two disks that are swapped, comes back without the backups made
+/// while it was away: each backup copies only itself. So the upkeep copies to the second disk or NAS the backups it lacks,
+/// newest first and at most <see cref="MaxCatchUpCopies"/> a night, those retention would keep there
+/// (<see cref="BackupRetention"/>), each checked against the SHA-256 its backup was verified with as it is read, and read
+/// back once written. Then it removes there, and on the server, what retention no longer keeps, as a backup does: that
+/// also happens on a night without a backup (<see cref="CopyAsync"/>).</item>
+/// <item>A copy written once may not read back years later, as a disk wears or a NAS's own disks fail: each copy on the
+/// second disk or NAS is read back and hashed every <see cref="BackupOptions.CopyCheckDays"/>, the least recently checked
+/// first, for at most <see cref="CheckFor"/> a night. One that no longer matches its backup is copied again from the
+/// server when the server's own still matches; otherwise it is flagged, on the backup and on System health
+/// (<see cref="CheckCopiesAsync"/>).</item>
+/// </list>
 /// </summary>
 internal sealed class BackupUpkeep(
     IDbContextFactory<HospitalDbContext> contexts,
@@ -28,11 +36,21 @@ internal sealed class BackupUpkeep(
     /// <summary>The most backups copied to a disk that is back in one night: a week's, as a disk away for the weekly swap missed.</summary>
     public const int MaxCatchUpCopies = 7;
 
+    /// <summary>How long after the upkeep starts the copies' checks may start another: the night's quiet hours, 03:30 to 06:30.</summary>
+    public static readonly TimeSpan CheckFor = TimeSpan.FromHours(3);
+
+    /// <summary>
+    /// How much earlier than <see cref="BackupOptions.CopyCheckDays"/> a copy is due again: the upkeep runs once a night, so a
+    /// copy checked at 03:40 is due again at 03:30 a week later, not eight nights on.
+    /// </summary>
+    private static readonly TimeSpan NightlyMargin = TimeSpan.FromHours(12);
+
     private BackupOptions Settings => options.Value.Backup;
 
     private TimeZoneInfo Zone => PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone);
 
-    public async Task RunAsync(CancellationToken ct)
+    /// <summary>The copies the second disk or NAS missed, then retention on both copies; one backup at a time, as a backup's own copy.</summary>
+    public async Task CopyAsync(CancellationToken ct)
     {
         await BackupService.Gate.WaitAsync(ct);
         try
@@ -47,12 +65,128 @@ internal sealed class BackupUpkeep(
                 await CatchUpCopiesAsync(secondary, runs, token => db.SaveChangesAsync(token), ct);
             }
 
-            RemoveOld(directories.Backups);
+            if (Directory.Exists(directories.Backups))
+            {
+                RemoveOld(directories.Backups);
+            }
         }
         finally
         {
             BackupService.Gate.Release();
         }
+    }
+
+    /// <summary>The copies on the second disk or NAS read back, as the class says, until <paramref name="until"/>.</summary>
+    public async Task CheckAsync(DateTimeOffset until, CancellationToken ct)
+    {
+        if (Settings.SecondaryDirectory is not { Length: > 0 } secondary || !Directory.Exists(secondary))
+        {
+            return;
+        }
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var names = BackupFile.In(secondary).Select(f => Path.GetFileName(f.Path)).ToList();
+        var runs = await db.Set<BackupRun>()
+            .Where(r => r.Status == BackupStatus.Succeeded && r.FileName != null && names.Contains(r.FileName))
+            .ToListAsync(ct);
+        var checkedCopies = await CheckCopiesAsync(secondary, runs, token => db.SaveChangesAsync(token), until, ct);
+        if (checkedCopies > 0)
+        {
+            logger.LogInformation("Read back {Count} backup copies in {Directory}", checkedCopies, secondary);
+        }
+    }
+
+    /// <summary>
+    /// Reads back the copies in <paramref name="secondary"/> of <paramref name="runs"/> that are due (<see cref="BackupOptions.CopyCheckDays"/>),
+    /// the least recently checked first, starting none after <paramref name="until"/>, and records on each run what was found,
+    /// saved with <paramref name="save"/>: matched, copied again from the server, or why it no longer matches.
+    /// </summary>
+    /// <returns>How many copies were read back.</returns>
+    internal async Task<int> CheckCopiesAsync(string secondary, IReadOnlyList<BackupRun> runs, Func<CancellationToken, Task> save, DateTimeOffset until,
+        CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var disk = BackupDisk.Identify(secondary, now, logger);
+        var every = TimeSpan.FromDays(Math.Max(Settings.CopyCheckDays, 1)) - NightlyMargin;
+        var due = runs
+            .Where(r => r is { FileName: not null, Sha256: not null } && File.Exists(Path.Combine(secondary, r.FileName)))
+            .Select(r => (Run: r, Copy: BackupCopies.Read(r.SecondaryCopies).FirstOrDefault(c => c.Disk == disk)))
+            .Where(d => d.Copy?.CheckedAt is not { } checkedAt || now - checkedAt >= every)
+            .OrderBy(d => d.Copy?.CheckedAt ?? DateTimeOffset.MinValue)
+            .ThenByDescending(d => d.Run.StartedAt)
+            .ToList();
+
+        var count = 0;
+        foreach (var (run, copy) in due)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (time.GetUtcNow() >= until)
+            {
+                break;
+            }
+
+            var path = Path.Combine(secondary, run.FileName!);
+            string? problem;
+            try
+            {
+                problem = await CheckCopyAsync(path, run, ct);
+            }
+            catch (FileNotFoundException)
+            {
+                // Removed by retention meanwhile.
+                continue;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Taken away, or failing to read at all: the next night tries again.
+                logger.LogWarning(ex, "The copy {Path} could not be read back", path);
+                break;
+            }
+
+            var checkedAt = time.GetUtcNow();
+            run.SecondaryCopies = BackupCopies.With(run.SecondaryCopies,
+                (copy ?? new BackupCopy(disk, new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero))) with { CheckedAt = checkedAt, Problem = problem });
+            await save(CancellationToken.None);
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Reads a copy back: null while it matches its backup's SHA-256, or once copied again from the server's own file,
+    /// which must match it first; otherwise why it does not match.
+    /// </summary>
+    private async Task<string?> CheckCopyAsync(string path, BackupRun run, CancellationToken ct)
+    {
+        if (string.Equals(await Sha256Async(path, ct), run.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var own = Path.Combine(directories.Backups, run.FileName!);
+        if (!File.Exists(own) || !string.Equals(await Sha256Async(own, ct), run.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.LogError("The copy {Path} does not match its backup, and the server has no good copy to replace it with", path);
+            return "It no longer matches the SHA-256 the backup was verified with, and the server has no copy that does to replace it: the disk may be failing.";
+        }
+
+        try
+        {
+            File.Copy(own, path, overwrite: true);
+            if (string.Equals(await Sha256Async(path, ct), run.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning("The copy {Path} no longer matched its backup, and was copied again from the server", path);
+                return null;
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A share that refuses to overwrite (DEPLOYMENT.md section 8) keeps the damaged copy.
+            logger.LogWarning(ex, "The copy {Path} no longer matches its backup and could not be replaced", path);
+        }
+
+        return "It no longer matches the SHA-256 the backup was verified with, and copying it again from the server did not mend it: the disk may be failing.";
     }
 
     /// <summary>
@@ -205,19 +339,31 @@ internal sealed class BackupUpkeep(
     }
 }
 
-/// <summary>Runs the backups' nightly upkeep (<see cref="BackupUpkeep"/>) at <see cref="BackupOptions.UpkeepSchedule"/>.</summary>
+/// <summary>
+/// Runs the backups' nightly upkeep at <see cref="BackupOptions.UpkeepSchedule"/>, each step whatever became of the one
+/// before: the copies the second disk missed and retention (<see cref="BackupUpkeep.CopyAsync"/>), the test restore when
+/// one is due (<see cref="BackupRestoreTest"/>), then the copies read back with the time left (<see cref="BackupUpkeep.CheckAsync"/>).
+/// </summary>
 [DisallowConcurrentExecution]
-internal sealed class BackupUpkeepJob(BackupUpkeep upkeep, ILogger<BackupUpkeepJob> logger) : IJob
+internal sealed class BackupUpkeepJob(BackupUpkeep upkeep, BackupRestoreTest restoreTest, TimeProvider time, ILogger<BackupUpkeepJob> logger) : IJob
 {
     public async ValueTask Execute(IJobExecutionContext context, CancellationToken cancellationToken)
     {
+        var until = time.GetUtcNow() + BackupUpkeep.CheckFor;
+        await StepAsync("copying the backups the second disk missed", () => upkeep.CopyAsync(cancellationToken));
+        await StepAsync("the test restore", () => restoreTest.RunAsync(force: false, cancellationToken));
+        await StepAsync("reading back the copies on the second disk", () => upkeep.CheckAsync(until, cancellationToken));
+    }
+
+    private async Task StepAsync(string step, Func<Task> run)
+    {
         try
         {
-            await upkeep.RunAsync(cancellationToken);
+            await run();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "The backups' nightly upkeep failed");
+            logger.LogError(ex, "The backups' nightly upkeep failed at {Step}", step);
         }
     }
 }

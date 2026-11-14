@@ -469,14 +469,44 @@ public sealed class BackupOptions
 
     /// <summary>
     /// When the backups' nightly upkeep runs (Quartz cron, default 03:30 every day, after the nightly backup): it copies to
-    /// the second disk or NAS the backups it missed while it was away (<see cref="Jobs.BackupUpkeep"/>).
+    /// the second disk or NAS the backups it missed while it was away (<see cref="Jobs.BackupUpkeep"/>), test-restores the
+    /// newest backup when one is due (<see cref="TestRestore"/>), and reads back the copies on the second disk or NAS.
     /// </summary>
     public string UpkeepSchedule { get; set; } = "0 30 3 * * ?";
+
+    /// <summary>How often each copy on the second disk or NAS is read back and checked against its backup's SHA-256, in days.</summary>
+    public int CopyCheckDays { get; set; } = 7;
+
+    /// <summary>The test restores of the newest backup into a scratch database (<see cref="Jobs.BackupRestoreTest"/>).</summary>
+    public BackupTestRestoreOptions TestRestore { get; set; } = new();
 
     public string PgDumpPath { get; set; } = "pg_dump";
 
     /// <summary>pg_restore, used to verify each backup. By default the one next to pg_dump.</summary>
     public string? PgRestorePath { get; set; }
+}
+
+/// <summary>
+/// The test restores (<see cref="Jobs.BackupRestoreTest"/>): during the backups' nightly upkeep, when none has passed for
+/// <see cref="EveryDays"/>, the newest backup is restored into a scratch database on the hospital's PostgreSQL, its key
+/// tables' rows counted against those recorded when it was made, and the scratch database dropped.
+/// </summary>
+public sealed class BackupTestRestoreOptions
+{
+    /// <summary>Test-restore the backups (default on). Off, System health says so.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>How many days after one passes the next test restore is made (default 7: weekly). A failed one is made again the next night.</summary>
+    public int EveryDays { get; set; } = 7;
+
+    /// <summary>How many days without a test restore that passed before System health warns (default 14).</summary>
+    public int WarnAfterDays { get; set; } = 14;
+
+    /// <summary>
+    /// Check that PostgreSQL's disk has room for the restored copy before restoring (default on): a disk that fills up
+    /// stops the hospital's own database. Off only where the database is on another server, whose disk HC360 cannot see.
+    /// </summary>
+    public bool CheckRoom { get; set; } = true;
 }
 
 /// <summary>

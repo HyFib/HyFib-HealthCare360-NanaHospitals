@@ -15,7 +15,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
-import { adminQueries, backupContents, backupKeyText, formatBytes, offsiteText } from '@/modules/admin/api';
+import {
+  adminQueries,
+  backupContents,
+  backupKeyText,
+  copyDisksText,
+  damagedCopyText,
+  formatBytes,
+  offsiteText,
+  restoreTestText,
+} from '@/modules/admin/api';
 import { RecoveryKeyDialog } from '@/modules/admin/RecoveryKeyDialog';
 import { SettingsForm } from '@/modules/admin/SettingsForm';
 import { BACKUP_OFFSITE_SETTINGS } from '@/modules/admin/settingsForms';
@@ -112,16 +121,45 @@ function BackupsPage() {
             {
               key: 'checked',
               header: 'Checked',
-              width: 170,
+              width: 200,
               priority: 'low',
-              render: (b) => (b.verifiedAt ? formatDateTime(b.verifiedAt) : '—'),
+              render: (b) => (
+                <span>
+                  {b.verifiedAt ? formatDateTime(b.verifiedAt) : '—'}
+                  {/* Restored into a scratch database during the nightly upkeep, and its rows counted. */}
+                  {restoreTestText(b) && (
+                    <Caption1 block className={b.restoreTestPassed ? styles.muted : styles.error}>
+                      {restoreTestText(b)} {formatDateTime(b.restoreTestedAt)}
+                    </Caption1>
+                  )}
+                  {b.restoreTestPassed === false && b.restoreTestNote && (
+                    <Caption1 block className={styles.error}>
+                      {b.restoreTestNote}
+                    </Caption1>
+                  )}
+                </span>
+              ),
             },
             {
               key: 'copy',
               header: 'Second copy',
-              width: 120,
+              width: 150,
               priority: 'low',
-              render: (b) => (b.status === 'Succeeded' ? (b.secondaryCopied ? 'Yes' : 'No') : '—'),
+              render: (b) => (
+                <span>
+                  {b.status === 'Succeeded' ? (b.secondaryCopied ? 'Yes' : 'No') : '—'}
+                  {copyDisksText(b) && (
+                    <Caption1 block className={styles.muted}>
+                      {copyDisksText(b)}
+                    </Caption1>
+                  )}
+                  {damagedCopyText(b) && (
+                    <Caption1 block className={styles.error}>
+                      {damagedCopyText(b)}
+                    </Caption1>
+                  )}
+                </span>
+              ),
             },
             {
               key: 'offsite',

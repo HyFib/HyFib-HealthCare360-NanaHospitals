@@ -148,6 +148,59 @@ public sealed class BackupUpkeepTests : IDisposable
         Directory.EnumerateFiles(_disk, "*.hc360bak").Select(Path.GetFileName).ShouldBe(runs.Skip(1).Select(r => r.FileName), ignoreOrder: true);
     }
 
+    /// <summary>
+    /// Each copy on the disk is read back and hashed: those that match are recorded as checked; one that no longer matches
+    /// its backup (the disk wearing) is copied again from the server, whose own still matches, and is then whole.
+    /// </summary>
+    [Fact]
+    public async Task Copies_on_the_disk_are_read_back_and_a_damaged_one_mended_from_the_server()
+    {
+        var runs = Enumerable.Range(10, 3).Select(day => Backup(day, onDisk: true)).ToList();
+        var damaged = Path.Combine(_disk, runs[1].FileName!);
+        Damage(damaged);
+
+        var checkedCopies = await Upkeep().CheckCopiesAsync(_disk, runs, _ => Task.CompletedTask, Now.AddHours(3), Ct);
+
+        checkedCopies.ShouldBe(3);
+        File.ReadAllBytes(damaged).ShouldBe(File.ReadAllBytes(Path.Combine(_directories.Backups, runs[1].FileName!)));
+        var disk = BackupDisk.Identify(_disk, Now, NullLogger.Instance);
+        foreach (var run in runs)
+        {
+            BackupCopies.Read(run.SecondaryCopies).ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+                copy => copy.Disk.ShouldBe(disk),
+                copy => copy.CheckedAt.ShouldBe(Now),
+                copy => copy.Problem.ShouldBeNull());
+        }
+    }
+
+    /// <summary>A damaged copy the server can no longer mend (its own backup removed by retention) is flagged on its backup.</summary>
+    [Fact]
+    public async Task A_damaged_copy_the_server_cannot_mend_is_flagged_on_its_backup()
+    {
+        var runs = Enumerable.Range(10, 2).Select(day => Backup(day, onDisk: true)).ToList();
+        File.Delete(Path.Combine(_directories.Backups, runs[0].FileName!));
+        Damage(Path.Combine(_disk, runs[0].FileName!));
+
+        await Upkeep().CheckCopiesAsync(_disk, runs, _ => Task.CompletedTask, Now.AddHours(3), Ct);
+
+        BackupCopies.Read(runs[0].SecondaryCopies).ShouldHaveSingleItem().Problem.ShouldNotBeNull()
+            .ShouldContain("the server has no copy that does to replace it: the disk may be failing");
+        BackupCopies.Read(runs[1].SecondaryCopies).ShouldHaveSingleItem().Problem.ShouldBeNull();
+    }
+
+    /// <summary>A copy checked within the week is not read again; and none starts once the night's quiet hours are over.</summary>
+    [Fact]
+    public async Task Copies_checked_within_the_week_wait_and_none_starts_past_the_nights_end()
+    {
+        var runs = Enumerable.Range(10, 2).Select(day => Backup(day, onDisk: true)).ToList();
+        var disk = BackupDisk.Identify(_disk, Now, NullLogger.Instance);
+        runs[0].SecondaryCopies = BackupCopies.With(null, new BackupCopy(disk, runs[0].StartedAt, CheckedAt: Now.AddDays(-2)));
+
+        (await Upkeep().CheckCopiesAsync(_disk, runs, _ => Task.CompletedTask, until: Now, Ct)).ShouldBe(0, "the night's checks are over");
+        (await Upkeep().CheckCopiesAsync(_disk, runs, _ => Task.CompletedTask, Now.AddHours(3), Ct)).ShouldBe(1, "only the one never read back");
+        BackupCopies.Read(runs[0].SecondaryCopies).ShouldHaveSingleItem().CheckedAt.ShouldBe(Now.AddDays(-2));
+    }
+
     [Fact]
     public void The_note_of_a_copy_made_late_keeps_any_other_note() =>
         BackupUpkeep.CopiedLater("Checked without pg_restore: the database dump was not listed. " + Unplugged, Now, HospitalTimeZone.Zone)
@@ -182,6 +235,13 @@ public sealed class BackupUpkeepTests : IDisposable
             SecondaryCopied = onDisk,
             Error = onDisk ? null : Unplugged,
         };
+    }
+
+    private static void Damage(string path)
+    {
+        var bytes = File.ReadAllBytes(path);
+        bytes[^10] ^= 0xFF;
+        File.WriteAllBytes(path, bytes);
     }
 
     private static Task Saved(List<string> saved, IReadOnlyList<BackupRun> runs)

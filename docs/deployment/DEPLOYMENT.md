@@ -1388,10 +1388,17 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Keep the result with the go-live
   records.
 - Each backup holds the database, the stored documents, the field encryption keys and the audit seal key, all encrypted.
-  Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this.
-- **Restore test every quarter** on a spare machine. The restored copy holds its outgoing messages ("After a restore"
-  below): leave them held there, or patients get the test copy's messages. To check a copy on the NAS or a USB drive
-  without restoring it:
+  Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this, and the
+  **Checked** column also shows the backup's last test restore ("Test restores" below).
+- **The copies on the second disk or NAS are read back.** During the nightly upkeep, each copy there is read back
+  every 7 days (`Backup:CopyCheckDays`), the least recently checked first, for up to three hours a night, and checked
+  against the SHA-256 its backup was verified with. A copy that no longer matches is copied again from the server, if
+  the server's own still matches. Otherwise the **Second copy** column says that copy is damaged, and System health
+  warns (`backup.copy_damaged`): replace the disk, or check the NAS's own disks.
+- **Restore test every quarter** on a spare machine, as well as the weekly test restores below: only a restore on
+  other hardware checks the documents, the keys and the recovery key's copies too. The restored copy holds its outgoing
+  messages ("After a restore" below): leave them held there, or patients get the test copy's messages. To check a copy
+  on the NAS or a USB drive without restoring it:
 
   ```powershell
   & 'C:\Program Files\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe' backup verify --in '\\NAS\HC360-Backups\hc360-<date>.hc360bak'
@@ -1435,6 +1442,55 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   Backups whose recovery key is "Original key" open with the original key, which no screen shows any more. On the
   Server Node that made them, enter `original` when the script asks for the key; elsewhere, use the copy made when
   administrators could still display it.
+
+### Test restores
+
+Each backup is read back and its database dump listed by pg_restore as it is made, but that does not restore it. So
+once a week HC360 restores the newest backup into a scratch database on the hospital's PostgreSQL, and checks it.
+
+- **When.** During the backups' nightly upkeep at 03:30 (`Backup:UpkeepSchedule`), once no test restore has passed for
+  7 days (`Backup:TestRestore:EveryDays`). A test that fails is made again the next night, until one passes. One test
+  runs at a time for the whole hospital.
+- **What it checks.** The whole backup is read and checked as a restore reads it, with the server's recovery key.
+  pg_restore restores its database, and stops at the first error. Then the key tables must hold the rows the backup
+  counted when it was made: patients, visits, appointments, encounters, clinical notes, prescriptions, lab results,
+  admissions, bills, receipts, pharmacy sales, stored documents, staff accounts, the audit trail and the schema's
+  migrations. The rows are counted in the same snapshot pg_dump dumps, so records saved during the backup do not
+  count. A backup made before HC360 counted rows passes if it restores without error.
+- **Cleaned up.** The scratch database (`hc360_restore_test_…`) holds a full copy of every patient's record. It is
+  dropped as soon as the test ends, whether it passed or failed. One left by a power cut or a restart during a test
+  is dropped by the next test. The plain database dump in the temporary folder is deleted too.
+- **Shown.** The Backups screen's **Checked** column says "Test restore passed" or "Test restore failed", with the
+  time, and on a failure, why. A failure is told to the administrators in the app ("Backup test restore failed"), once
+  until a test passes again. System health warns (`backup.restore_test`) once no test restore has passed for 14 days
+  (`Backup:TestRestore:WarnAfterDays`), and says what the last test found.
+- **Room on PostgreSQL's disk.** The restored copy needs room beside the hospital's database: HC360 asks for twice the
+  database's size and 1 GB free, and refuses to start without it, since a full disk would stop the hospital's own
+  database. The restore also writes as much WAL as the database holds: with WAL archiving or a standby (section 9),
+  plan the archive's space for that each week.
+
+**Set up once: an account that may create databases.** The account the server works as (`hc360_app`) may not create
+databases, so until this is done each test fails with "may not create databases". Give the test restores an account of
+their own, which may create databases and read PostgreSQL's settings, and nothing else. It cannot connect to the
+hospital's database. On the Server Node, in psql as `postgres`:
+
+```sql
+CREATE ROLE hc360_restore LOGIN CREATEDB PASSWORD '<a long random password>';
+GRANT pg_read_all_settings TO hc360_restore;
+```
+
+Then add its connection string to `hc360.settings.json`, protect it as in section 3 ("Changing a protected setting"),
+and restart the `HC360Server` service:
+
+```json
+"ConnectionStrings": {
+  "BackupRestoreTest": "Host=localhost;Port=5432;Database=postgres;Username=hc360_restore;Password=<the password>"
+}
+```
+
+Where the database is on another server (section 10), HC360 cannot see that server's disk: check it has the room, and
+set `Backup:TestRestore:CheckRoom` to false. `Backup:TestRestore:Enabled` set to false stops the test restores, and
+System health warns while they are off.
 
 ### After a restore
 

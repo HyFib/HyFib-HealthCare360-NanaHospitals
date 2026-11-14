@@ -16,6 +16,10 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <param name="RingKeys">The ids of the keys rotations added to the ring (<see cref="FieldKeyRing"/>), escrowed too; none before the first rotation.</param>
 /// <param name="CurrentKey">Which key of the ring was current, or null for the original key.</param>
 /// <param name="AuditSealKey">The fingerprint of the escrowed audit seal key (<see cref="Auditing.AuditSealKey"/>); null in older backups.</param>
+/// <param name="RowCounts">
+/// The rows of the key tables in the dump, counted in the very snapshot pg_dump dumped (<see cref="BackupRowCounts"/>), which
+/// a test restore checks the restored database against; null in older backups.
+/// </param>
 public sealed record BackupManifest(
     int Format,
     string Kind,
@@ -29,7 +33,8 @@ public sealed record BackupManifest(
     string KeyFingerprint,
     IReadOnlyList<string>? RingKeys = null,
     string? CurrentKey = null,
-    string? AuditSealKey = null);
+    string? AuditSealKey = null,
+    IReadOnlyDictionary<string, long>? RowCounts = null);
 
 /// <summary>A stored document file, relative to the documents folder (forward slashes).</summary>
 public sealed record BackupDocument(string RelativePath, long Length);

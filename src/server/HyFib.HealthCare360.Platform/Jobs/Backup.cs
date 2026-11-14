@@ -90,10 +90,20 @@ public sealed class BackupRun
 
     /// <summary>
     /// Its copies on the second disk or NAS (JSON, a list of <see cref="BackupCopy"/>): the disk each is on, by the id it
-    /// was given on first use (<see cref="BackupDisk"/>), and when it was made. Two disks that are swapped each get their
-    /// copies; null before any copy, and for backups made before disks were told apart.
+    /// was given on first use (<see cref="BackupDisk"/>), when it was made, and when it was last read back and whether it
+    /// still matched. Two disks that are swapped each get their copies; null before any copy, and for backups made before
+    /// disks were told apart.
     /// </summary>
     public string? SecondaryCopies { get; set; }
+
+    /// <summary>When it was last restored into a scratch database to check it (<see cref="BackupRestoreTest"/>); null if never.</summary>
+    public DateTimeOffset? RestoreTestedAt { get; set; }
+
+    /// <summary>Whether that test restore passed: restored without error, its key tables holding the rows recorded when it was made.</summary>
+    public bool? RestoreTestPassed { get; set; }
+
+    /// <summary>What that test restore found: the rows it checked, or why it failed.</summary>
+    public string? RestoreTestNote { get; set; }
 }
 
 internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRun>
@@ -110,6 +120,7 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
         b.Property(x => x.OffsiteError).HasMaxLength(2000);
         b.Property(x => x.OffsiteUpload).HasColumnType("jsonb");
         b.Property(x => x.SecondaryCopies).HasColumnType("jsonb");
+        b.Property(x => x.RestoreTestNote).HasMaxLength(2000);
         b.HasIndex(x => x.StartedAt);
     }
 }
@@ -119,10 +130,13 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
 /// <param name="OffsiteAttempts">How many times its upload was tried.</param>
 /// <param name="OffsiteError">Why the last upload attempt failed.</param>
 /// <param name="SecondaryCopies">Its copies on the second disk or NAS, each with the disk it is on; empty when none is known.</param>
+/// <param name="RestoreTestedAt">When it was last restored into a scratch database to check it; null if never.</param>
+/// <param name="RestoreTestPassed">Whether that test restore passed.</param>
+/// <param name="RestoreTestNote">What that test restore found, or why it failed.</param>
 public sealed record BackupRunDto(Guid Id, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, BackupKind Kind, BackupStatus Status, string? FileName,
     long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt,
     string? RecoveryKeyId, DateTimeOffset? OffsiteUploadedAt = null, string? OffsiteKey = null, int OffsiteAttempts = 0, string? OffsiteError = null,
-    IReadOnlyList<BackupCopy>? SecondaryCopies = null);
+    IReadOnlyList<BackupCopy>? SecondaryCopies = null, DateTimeOffset? RestoreTestedAt = null, bool? RestoreTestPassed = null, string? RestoreTestNote = null);
 
 /// <summary>The backup start-up takes before it changes the schema (<see cref="Persistence.DatabaseInitializer"/>).</summary>
 internal interface IPreMigrationBackup
@@ -345,7 +359,8 @@ internal sealed class BackupService(
 
     internal static BackupRunDto ToDto(BackupRun r) =>
         new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt,
-            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError, BackupCopies.Read(r.SecondaryCopies));
+            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError, BackupCopies.Read(r.SecondaryCopies), r.RestoreTestedAt,
+            r.RestoreTestPassed, r.RestoreTestNote);
 
     internal Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct) =>
         CreateAsync(kind, startedAt, includeDocuments, migrations, lowPriority: false, ct);
@@ -366,7 +381,8 @@ internal sealed class BackupService(
         try
         {
             await EnsureRoomAsync(includeDocuments ? BackupArchive.ListDocuments(directories.Files).Sum(d => d.Length) : 0, ct);
-            await postgres.DumpAsync(dump, lowPriority, ct);
+            // The key tables' rows, counted in the snapshot the dump holds, for a test restore to check (BackupRestoreTest).
+            var rowCounts = await postgres.DumpAsync(dump, lowPriority, ct);
 
             // The documents are listed after the database snapshot. The file store writes a document in full before its row
             // is committed and never removes it, so every document the dump refers to is on disk by now. One saved since is
@@ -383,7 +399,8 @@ internal sealed class BackupService(
             var ring = keys.ExportRing();
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
                 includeDocuments, documents.Count, documents.Sum(d => d.Length), keys.Fingerprint,
-                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint);
+                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint,
+                rowCounts.Count == 0 ? null : rowCounts);
 
             string sha256;
             var masterKey = keys.ExportMasterKey();

@@ -328,6 +328,10 @@ const BACKUPS: BackupRunDto[] = [
     offsiteKey: 'hc360/hc360-20261024-0200.hc360bak',
     offsiteAttempts: 1,
     offsiteError: null,
+    secondaryCopies: [{ disk: '7F3A2C1D', copiedAt: hoursAgo(2.9), checkedAt: hoursAgo(1), problem: null }],
+    restoreTestedAt: hoursAgo(1.5),
+    restoreTestPassed: true,
+    restoreTestNote: 'Restored without error into a scratch database, in 4 minutes, and the scratch database dropped.',
   },
   {
     id: id('bk02'),
@@ -348,6 +352,10 @@ const BACKUPS: BackupRunDto[] = [
     offsiteKey: null,
     offsiteAttempts: 0,
     offsiteError: null,
+    secondaryCopies: [],
+    restoreTestedAt: null,
+    restoreTestPassed: null,
+    restoreTestNote: null,
   },
   {
     id: id('bk03'),
@@ -368,6 +376,10 @@ const BACKUPS: BackupRunDto[] = [
     offsiteKey: null,
     offsiteAttempts: 0,
     offsiteError: null,
+    secondaryCopies: [],
+    restoreTestedAt: null,
+    restoreTestPassed: null,
+    restoreTestNote: null,
   },
 ];
 

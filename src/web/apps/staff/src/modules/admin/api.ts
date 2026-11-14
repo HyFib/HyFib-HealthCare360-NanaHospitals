@@ -630,6 +630,53 @@ export interface BackupRunDto {
   offsiteAttempts: number;
   /** Why its last upload attempt failed. */
   offsiteError: string | null;
+  /** Its copies on the second disk or NAS, each with the disk it is on; empty when none is known. */
+  secondaryCopies: BackupCopy[] | null;
+  /** When it was last restored into a scratch database to check it; null if never. */
+  restoreTestedAt: string | null;
+  /** Whether that test restore passed: restored without error, its key tables holding the rows recorded when it was made. */
+  restoreTestPassed: boolean | null;
+  /** What that test restore found, or why it failed. */
+  restoreTestNote: string | null;
+}
+
+/** A copy of a backup on the second disk or NAS. */
+export interface BackupCopy {
+  /** The id HC360 gave the disk on its first copy (8 letters and digits, written on its label); null when unknown. */
+  disk: string | null;
+  copiedAt: string;
+  /** When it was last read back and checked against the backup; null before the first time. */
+  checkedAt: string | null;
+  /** Why it no longer matches the backup, as last read back; null while it matches. */
+  problem: string | null;
+}
+
+/** A backup's last test restore, in words for the backup list; null when it was never test-restored. */
+export function restoreTestText(run: Pick<BackupRunDto, 'restoreTestedAt' | 'restoreTestPassed'>): string | null {
+  if (!run.restoreTestedAt) {
+    return null;
+  }
+  return run.restoreTestPassed ? 'Test restore passed' : 'Test restore failed';
+}
+
+/** The disks a backup's copies are on, for the backup list; null when no disk is known. */
+export function copyDisksText(run: Pick<BackupRunDto, 'secondaryCopies'>): string | null {
+  const disks = [...new Set((run.secondaryCopies ?? []).map((c) => c.disk).filter((d): d is string => d !== null))];
+  if (disks.length === 0) {
+    return null;
+  }
+  return `${disks.length === 1 ? 'Disk' : 'Disks'} ${disks.join(', ')}`;
+}
+
+/** A copy of the backup that no longer reads back as made, in words for the backup list; null when none. */
+export function damagedCopyText(run: Pick<BackupRunDto, 'secondaryCopies'>): string | null {
+  const damaged = (run.secondaryCopies ?? []).find((c) => c.problem);
+  if (!damaged) {
+    return null;
+  }
+  return damaged.disk
+    ? `The copy on disk ${damaged.disk} is damaged: ${damaged.problem}`
+    : `A copy is damaged: ${damaged.problem}`;
 }
 
 /** Someone who has shown they hold the current recovery key by typing it in, and when they last did. */

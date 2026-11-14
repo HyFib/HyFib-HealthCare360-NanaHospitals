@@ -13,7 +13,9 @@ namespace HyFib.HealthCare360.Platform.Jobs;
 /// <summary>A copy of a backup on the second disk or NAS (<see cref="BackupRun.SecondaryCopies"/>).</summary>
 /// <param name="Disk">The id of the disk it is on (<see cref="BackupDisk"/>); null when the disk's marker could not be read or written.</param>
 /// <param name="CopiedAt">When it was copied there: by the backup, or later, once the disk was back (<see cref="BackupUpkeep"/>).</param>
-public sealed record BackupCopy(string? Disk, DateTimeOffset CopiedAt);
+/// <param name="CheckedAt">When it was last read back and hashed (<see cref="BackupUpkeep.CheckCopiesAsync"/>); null before the first time.</param>
+/// <param name="Problem">Why it no longer matches its backup, as last read back; null while it matches.</param>
+public sealed record BackupCopy(string? Disk, DateTimeOffset CopiedAt, DateTimeOffset? CheckedAt = null, string? Problem = null);
 
 /// <summary>
 /// The disks the copies go to, told apart (DED-16). Two USB disks swapped every week are mounted at the same drive letter,

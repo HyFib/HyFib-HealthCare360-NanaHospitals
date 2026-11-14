@@ -364,6 +364,7 @@ public static class PlatformServiceCollectionExtensions
         services.AddScoped<BackupService>();
         services.AddScoped<IPreMigrationBackup>(sp => sp.GetRequiredService<BackupService>());
         services.AddScoped<BackupUpkeep>();
+        services.AddScoped<BackupRestoreTest>();
         services.AddSingleton<RecoveryKeyStore>();
         services.AddScoped<RecoveryKeyService>();
         services.AddScoped<IRecoveryKeyCustodyWarnings, RecoveryKeyCustodyWarnings>();
@@ -378,6 +379,7 @@ public static class PlatformServiceCollectionExtensions
             })
             .ConfigurePrimaryHttpMessageHandler(OutboundHttp.CreateHandler);
         services.TryAddSingleton<IPostgresTools, PostgresTools>();
+        services.TryAddSingleton<IScratchDatabase, PostgresTools>();
         services.AddSingleton<WifiLinkState>();
         services.AddSingleton<ServedAddresses>();
 
@@ -458,7 +460,8 @@ public static class PlatformServiceCollectionExtensions
                         .WithIdentity("backup-catch-up")
                         .WithCronSchedule(BackupCatchUpJob.Schedule, cron => cron.InTimeZone(TimeZoneInfo.Utc)));
 
-                    // After the nightly backup: the copies the second disk missed, and retention on a night without a backup.
+                    // After the nightly backup: the copies the second disk missed, retention on a night without a backup, the
+                    // test restore when one is due, and the copies on the second disk read back.
                     quartz.ScheduleJob<BackupUpkeepJob>(trigger => trigger
                         .WithIdentity("backup-upkeep")
                         .WithCronSchedule(options.Backup.UpkeepSchedule, cron => cron.InTimeZone(ResolveTimeZone(options.TimeZone))));
