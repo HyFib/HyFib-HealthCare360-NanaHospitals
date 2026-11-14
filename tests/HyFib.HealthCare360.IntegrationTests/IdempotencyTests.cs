@@ -163,16 +163,30 @@ public sealed class IdempotencyTests(HospitalServer server)
             {
                 context.Request.Method = HttpMethods.Post;
                 context.Request.Path = Path;
-                context.Request.Headers.Authorization = client.Http.DefaultRequestHeaders.Authorization?.ToString();
-                context.Request.Headers["X-HC360-Client"] = "web";
+
+                // What the client sends with every request: its session, that it is the staff app, and the test's address.
+                foreach (var (name, values) in client.Http.DefaultRequestHeaders)
+                {
+                    context.Request.Headers[name] = values.ToArray();
+                }
+
                 context.Request.Headers[IdempotencyMiddleware.HeaderName] = key;
                 context.Request.ContentType = "application/json";
                 context.Request.ContentLength = body.Length;
                 context.Request.Body = new MemoryStream(body);
+
+                // The test server marks only a request sent through a client as having a body; one built here without this
+                // reaches the endpoint as having none, and the registration is refused as missing (400).
+                context.Features.Set<IHttpRequestBodyDetectionFeature>(new WithBody());
                 context.Features.Set<IHttpRequestLifetimeFeature>(new DroppingConnection(connection));
                 context.Features.Set<IHttpResponseBodyFeature>(new StreamResponseBodyFeature(new AnswerLostOnTheWay(connection)));
             },
             Ct);
+    }
+
+    private sealed class WithBody : IHttpRequestBodyDetectionFeature
+    {
+        public bool CanHaveBody => true;
     }
 
     /// <summary>Puts the key's record back to "in progress", as begun <paramref name="begunAgo"/> by the server's clock.</summary>
