@@ -1,10 +1,15 @@
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
+using HyFib.HealthCare360.Platform.Security;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using NSubstitute;
 
 namespace HyFib.HealthCare360.Platform.Tests;
 
@@ -143,6 +148,57 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// The whole chain with the real tools: the server's own backup of the database (pg_dump in its counted snapshot,
+    /// encrypted with the recovery key, read back and listed by pg_restore) passes its test restore, which opens it as a
+    /// restore does and restores it into a scratch database, as the test-restore account.
+    /// </summary>
+    [Fact]
+    public async Task A_backup_the_server_made_passes_its_test_restore()
+    {
+        var server = Server();
+        var root = Path.Combine(Path.GetTempPath(), "hc360-tests", "pt-" + _suffix);
+        var options = new PlatformOptions { DataDirectory = root };
+        options.Backup.TestRestore.CheckRoom = await DataDirectoryIsHereAsync(server);
+        var tools = Tools(As(On(server, Database), App), As(On(server, "postgres"), Restorer), options);
+        var directories = new DataDirectories(options);
+        directories.EnsureCreated();
+        try
+        {
+            var protection = new EphemeralDataProtectionProvider();
+            var protector = new FieldProtector(directories, protection);
+            var recoveryKeys = new RecoveryKeyStore(directories, protection, protector, TimeProvider.System);
+            var made = await new BackupService(Substitute.For<IDbContextFactory<HospitalDbContext>>(), Options.Create(options), directories, recoveryKeys, protector,
+                    new Auditing.AuditSealKey(directories, protection), new NoDocumentsLock(), tools, Substitute.For<INotificationService>(), TimeProvider.System,
+                    NullLogger<BackupService>.Instance)
+                .CreateAsync(BackupKind.Manual, DateTimeOffset.UtcNow, includeDocuments: true, [], Ct);
+            made.Warning.ShouldBeNull("pg_restore lists the dump as the backup is made");
+            var run = new BackupRun
+            {
+                StartedAt = made.StartedAt,
+                Kind = made.Kind,
+                Status = BackupStatus.Succeeded,
+                FileName = made.FileName,
+                Sha256 = made.Sha256,
+                VerifiedAt = made.VerifiedAt,
+                FormatVersion = BackupEncryption.KeyedVersion,
+                RecoveryKeyId = made.RecoveryKeyId,
+            };
+
+            var outcome = await new BackupRestoreTest(Substitute.For<IDbContextFactory<HospitalDbContext>>(), Options.Create(options), directories, recoveryKeys, tools,
+                    tools, Substitute.For<INotificationService>(), TimeProvider.System, NullLogger<BackupRestoreTest>.Instance)
+                .TestAsync(run, _ => Task.CompletedTask, Ct);
+
+            outcome.Passed.ShouldBeTrue(outcome.Note);
+            outcome.Note.ShouldContain("its 3 key tables hold the 3,000 rows recorded when the backup was made");
+            Directory.EnumerateFiles(directories.Temp).ShouldBeEmpty("no plain database dump is left behind");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     /// <summary>A scratch database left by a test that was cut off (a power cut, a restart) is dropped before the next is made.</summary>
     [Fact]
     public async Task A_scratch_database_left_by_an_earlier_test_is_dropped_first()
@@ -182,7 +238,14 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
         return _server!;
     }
 
-    private PostgresTools Tools(string hospital, string? restore, bool checkRoom)
+    private static PostgresTools Tools(string hospital, string? restore, bool checkRoom)
+    {
+        var options = new PlatformOptions();
+        options.Backup.TestRestore.CheckRoom = checkRoom;
+        return Tools(hospital, restore, options);
+    }
+
+    private static PostgresTools Tools(string hospital, string? restore, PlatformOptions options)
     {
         var settings = new Dictionary<string, string?> { ["ConnectionStrings:Hospital"] = hospital };
         if (restore is not null)
@@ -190,8 +253,6 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
             settings[$"ConnectionStrings:{BackupRestoreTest.ConnectionName}"] = restore;
         }
 
-        var options = new PlatformOptions();
-        options.Backup.TestRestore.CheckRoom = checkRoom;
         return new PostgresTools(new ConfigurationBuilder().AddInMemoryCollection(settings).Build(), new DatabaseCredentials(hospital), Options.Create(options),
             NullLogger<PostgresTools>.Instance);
     }
@@ -250,6 +311,16 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
         var builder = new NpgsqlConnectionStringBuilder(connectionString) { Username = role };
         builder.Password = role == Owner ? $"owner-{_suffix}" : role == App ? $"app-{_suffix}" : $"restore-{_suffix}";
         return builder.ConnectionString;
+    }
+
+    private sealed class NoDocumentsLock : IDocumentStoreLock
+    {
+        public Task<IAsyncDisposable> HoldSharedAsync(CancellationToken cancellationToken) => Task.FromResult<IAsyncDisposable>(new Released());
+
+        private sealed class Released : IAsyncDisposable
+        {
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 
     /// <summary>deploy/windows/hc360-database-roles.sql, found above the test's folder.</summary>
