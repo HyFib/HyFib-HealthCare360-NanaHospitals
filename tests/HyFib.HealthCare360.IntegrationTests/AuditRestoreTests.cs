@@ -43,6 +43,7 @@ public sealed class AuditRestoreTests(HospitalServer server)
 
             // The anchor file is kept outside the database and its backups: on the machine restored onto, it is the one the
             // server kept (or its copy, put back).
+            Directory.CreateDirectory(Path.GetDirectoryName(machine.AuditAnchors)!);
             File.Copy(server.Services.GetRequiredService<AuditAnchors>().Path, machine.AuditAnchors);
             var anchors = new AuditAnchors(machine, NullLogger<AuditAnchors>.Instance);
             var key = server.Services.GetRequiredService<AuditSealKey>();
