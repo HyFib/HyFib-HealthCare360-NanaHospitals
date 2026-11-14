@@ -124,11 +124,10 @@ public sealed class ErasureRestoreTests(HospitalServer server)
             carried.ShouldContain(e => e.RequestId == before.Request.Id);
             carried.ShouldNotContain(e => e.RequestId == after.Request.Id);
 
-            // What survives on the NAS: the backup's copy, and the ledger's copy beside it, as the server kept it up to date.
+            // What survives on the NAS: the backup's copy as the server makes it, with the documents it lists, and the ledger's
+            // copy beside it, as the server kept it up to date.
             var secondCopy = Path.Combine(root, "nas");
-            Directory.CreateDirectory(secondCopy);
-            var copied = Path.Combine(secondCopy, Path.GetFileName(backup));
-            File.Copy(backup, copied);
+            var copied = await SecondCopyAsync(backup, recoveryKey, secondCopy);
             var oldLedger = server.Services.GetRequiredService<ErasureLedger>();
             File.Copy(oldLedger.Path, Path.Combine(secondCopy, ErasureLedger.FileName));
             var erasures = oldLedger.Read().Entries.Select(e => e.Id).ToList();
@@ -185,6 +184,34 @@ public sealed class ErasureRestoreTests(HospitalServer server)
             .Select(line => JsonSerializer.Deserialize<ErasureLedgerEntry>(line, new JsonSerializerOptions(JsonSerializerDefaults.Web)))
             .OfType<ErasureLedgerEntry>()
             .Where(ledger.Verifies)];
+    }
+
+    /// <summary>
+    /// The backup's copy in <paramref name="folder"/>, made as a backup makes its copy on the second disk or NAS
+    /// (<see cref="BackupStore.CopyArchiveAsync"/>): the documents its index lists, from the server's backup folder, then their
+    /// list, then the archive. An archive keeps its documents beside it, not inside, so its file alone does not restore
+    /// (backup restore refuses it and changes nothing). Returns the archive's path there.
+    /// </summary>
+    private async Task<string> SecondCopyAsync(string backup, byte[] recoveryKey, string folder)
+    {
+        IReadOnlyList<string> ids;
+        await using (var input = File.OpenRead(backup))
+        await using (var payload = await BackupEncryption.OpenAsync(input, recoveryKey, Ct))
+        {
+            ids = [.. (await BackupArchive.ReadAsync(payload, new BackupReadTargets(), Ct)).Index.Select(d => d.BlobId).Distinct(StringComparer.Ordinal)];
+        }
+
+        var keys = server.Services.GetRequiredService<IFieldKeyEscrow>();
+        var referencesKey = BackupService.ReferencesKeyOf(keys);
+        var source = BackupStore.Open(BackupBlobs.FolderOf(backup), keys.Fingerprint, referencesKey, TimeProvider.System);
+        var copy = BackupStore.Open(folder, keys.Fingerprint, referencesKey, TimeProvider.System);
+        using (var held = copy.Lock())
+        {
+            (await copy.CopyArchiveAsync(held, source, backup, await BackupStore.HashFileAsync(backup, Ct), ids, referencesKey,
+                readBack: true, checkpoint: null, Ct)).ShouldBeNull();
+        }
+
+        return Path.Combine(folder, Path.GetFileName(backup));
     }
 
     /// <summary>The server CLI as the script runs it: the recovery key in HC360_RECOVERY_KEY for the call only.</summary>
