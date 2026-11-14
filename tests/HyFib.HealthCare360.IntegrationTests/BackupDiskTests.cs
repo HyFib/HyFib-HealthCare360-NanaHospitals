@@ -26,12 +26,13 @@ public sealed class BackupDiskTests(HospitalServer server)
         var diskB = Path.Combine(root, "disk-b", "HC360-Backups");
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);
         var since = DateTimeOffset.UtcNow;
+        var made = new List<Guid>();
         try
         {
             settings.SecondaryDirectory = diskA;
-            var first = await BackupAsync();
+            var first = await BackupAsync(made);
             settings.SecondaryDirectory = diskB;
-            var second = await BackupAsync();
+            var second = await BackupAsync(made);
 
             var listed = await admin.GetAsync<List<BackupRunDto>>("/api/v1/admin/backups");
             var onA = listed.Single(r => r.Id == first.Id).SecondaryCopies.ShouldNotBeNull().ShouldHaveSingleItem().Disk.ShouldNotBeNull();
@@ -50,17 +51,25 @@ public sealed class BackupDiskTests(HospitalServer server)
         }
         finally
         {
-            // The server is shared by every test of the run: as it was.
+            // The server is shared by every test of the run: as it was. The two disks go, and with them the copies these
+            // backups record; their records go too. Left, they would tell the tests after this one that a backup was copied
+            // minutes ago (SystemHealthAlertTests counts the nights since the last copy).
             settings.SecondaryDirectory = secondary;
+            await using (var scope = server.Services.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<BackupRun>().Where(r => made.Contains(r.Id)).ExecuteDeleteAsync(Ct);
+            }
+
             Directory.Delete(root, recursive: true);
         }
     }
 
-    /// <summary>A backup as Administration › Backups › Back up now makes it.</summary>
-    private async Task<BackupRunDto> BackupAsync()
+    /// <summary>A backup as Administration › Backups › Back up now makes it, its id added to <paramref name="made"/>.</summary>
+    private async Task<BackupRunDto> BackupAsync(List<Guid> made)
     {
         await using var scope = server.Services.CreateAsyncScope();
         var run = await scope.ServiceProvider.GetRequiredService<BackupService>().RunAsync(BackupKind.Manual, null, Ct);
+        made.Add(run.Id);
         run.Status.ShouldBe(BackupStatus.Succeeded, run.Error);
         run.SecondaryCopied.ShouldBeTrue(run.Error);
         return run;
