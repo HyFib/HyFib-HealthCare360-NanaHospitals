@@ -1388,8 +1388,9 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Keep the result with the go-live
   records.
 - Each backup holds the database, the stored documents (with the SHA-256 of each), the field encryption keys, the audit
-  seal key, the erasure ledger and the hospital CA, all encrypted. Every backup is read back and checked when it is made. The **Contents** and **Checked** columns show this, and the
-  **Checked** column also shows the backup's last test restore ("Test restores" below).
+  seal key, the erasure ledger and the hospital CA, all encrypted. Every backup is read back and checked when it is
+  made. The **Contents** and **Checked** columns show this, and the **Checked** column also shows the backup's last test
+  restore ("Test restores" below).
 - **The copies on the second disk or NAS are read back.** During the nightly upkeep, each copy there is read back
   every 7 days (`Backup:CopyCheckDays`), the least recently checked first, for up to three hours a night, and checked
   against the SHA-256 its backup was verified with. A copy that no longer matches is copied again from the server, if

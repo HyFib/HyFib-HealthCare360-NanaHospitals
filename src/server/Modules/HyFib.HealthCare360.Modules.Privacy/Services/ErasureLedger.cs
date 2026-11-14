@@ -21,9 +21,10 @@ public sealed record ErasureLedgerEntry(Guid Id, Guid RequestId, string RequestN
 /// <summary>
 /// The erasure ledger (DPDP Act 2023 s8(7) and s12(3)): every erasure is appended, as it is made, to a file outside the
 /// database, so that a database restored from a backup made before the erasure can have it applied again
-/// (<see cref="ErasureLedgerReplay"/>). Backups are kept for <c>HealthCare360:Backup:RetentionDays</c> (30 by default) and
-/// cannot be edited, so erased data stays in them until they expire; the ledger is what keeps an erasure from coming back
-/// with a restore in that time.
+/// (<see cref="ErasureLedgerReplay"/>). Backups are kept grandfather-father-son (<c>HealthCare360:Backup:Retention</c>: 14
+/// daily, 8 weekly and 12 monthly by default, so up to about 342 days, <see cref="BackupOptions.RetentionDays"/>) and cannot
+/// be edited, so erased data stays in them until they expire; the ledger, which every backup also carries, is what keeps an
+/// erasure from coming back with a restore in that time.
 /// <list type="bullet">
 /// <item>The file is beside the audit anchors, in the folder the servers share when there are several
 /// (<c>privacy/erasure-ledger.log</c>), and is copied, line by line as it is written, to the backups' second copy
