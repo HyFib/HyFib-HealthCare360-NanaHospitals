@@ -55,7 +55,7 @@ public sealed class PeakMixTests(HospitalServer server)
         // runner reads the first 100 the store can sell, and the other tests stock the same shelf.
         var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist, name: $"Aaa peak mix tablet {Letters(6)}");
         var sample = await ReceivedLabSampleAsync(frontOffice, doctor, billing, lab);
-        var (wardId, dose) = await DueDoseAsync(frontOffice, doctor, admin);
+        var (wardId, admissionId, dose) = await DueDoseAsync(frontOffice, doctor, admin);
         var portalPhone = "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10))));
         await RegisterAsync(frontOffice, portalPhone);
         var portal = await server.SignInToPortalAsync(portalPhone);
@@ -142,8 +142,22 @@ public sealed class PeakMixTests(HospitalServer server)
 
         // Ward: the due list holds the dose; a nurse gives it.
         var round = Context(5);
-        await TakeAsync(nurse, Step(PeakMix.MarDue), round);
-        fixtures.Doses.ShouldContain(d => d.EntryId == dose, "the dose is due and needs no witness");
+        var listed = await TakeAsync(nurse, Step(PeakMix.MarDue), round);
+        if (!fixtures.Doses.Any(d => d.EntryId == dose))
+        {
+            // Said in full, as the round is hard to see from here: what it listed of this dose, and what the dose's chart holds.
+            var rows = JsonDocument.Parse(listed).RootElement.EnumerateArray().ToList();
+            var row = rows.FirstOrDefault(r => r.GetProperty("entryId").GetGuid() == dose);
+            var entry = (await doctor.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar")).SingleOrDefault(e => e.Id == dose);
+            using var nurseChart = await nurse.SendRawAsync(HttpMethod.Get, $"/api/v1/nursing/admissions/{admissionId}/mar");
+            var nurseSees = nurseChart.IsSuccessStatusCode && (await nurseChart.Content.ReadAsStringAsync(Ct)).Contains(dose.ToString(), StringComparison.Ordinal);
+            Assert.Fail(
+                $"The ward's round (ward {fixtures.WardId}, the dose's ward {wardId}) kept no dose to give. It listed {rows.Count} doses, none of them "
+                + "given without a witness and not held, and " + (row.ValueKind == JsonValueKind.Undefined ? "not this test's" : $"this test's as {row.GetRawText()}")
+                + $". The dose's chart, read by the doctor: {entry?.Status} at {entry?.ScheduledAt:O}, witness {entry?.NeedsWitness}, held {entry?.HeldBecause ?? "no"}"
+                + $"; read by the nurse: {(int)nurseChart.StatusCode}, the dose {(nurseSees ? "on it" : "not on it")}. Now: {DateTimeOffset.UtcNow:O}.");
+        }
+
         while (fixtures.Doses.TryDequeue(out _))
         {
         }
@@ -160,14 +174,18 @@ public sealed class PeakMixTests(HospitalServer server)
         }
     }
 
-    /// <summary>Takes one step as <paramref name="client"/>'s account does, asserts it succeeded, and lets it keep what the next step needs.</summary>
-    private static async Task TakeAsync(ApiClient client, Operation operation, OperationContext context)
+    /// <summary>
+    /// Takes one step as <paramref name="client"/>'s account does, asserts it succeeded, and lets it keep what the next step
+    /// needs. Returns what the server answered.
+    /// </summary>
+    private static async Task<string> TakeAsync(ApiClient client, Operation operation, OperationContext context)
     {
         using var request = operation.Request(context);
         using var response = await client.Http.SendAsync(request, Ct);
         var text = await response.Content.ReadAsStringAsync(Ct);
         response.IsSuccessStatusCode.ShouldBeTrue($"{operation.Name}: {(int)response.StatusCode} {text}");
         operation.OnSuccess?.Invoke(context, text.Length == 0 ? default : JsonDocument.Parse(text).RootElement.Clone());
+        return text;
     }
 
     private async Task<(Guid Id, string Uhid)> RegisterAsync(ApiClient frontOffice, string phone)
@@ -223,7 +241,7 @@ public sealed class PeakMixTests(HospitalServer server)
     /// An admitted patient in the special ward with a dose due now that needs no witness (a drug neither controlled nor
     /// high-alert, ordered by the doctor so it is signed at once). Returns the ward and the dose's MAR entry.
     /// </summary>
-    private async Task<(Guid WardId, Guid DoseId)> DueDoseAsync(ApiClient frontOffice, ApiClient doctor, ApiClient admin)
+    private async Task<(Guid WardId, Guid AdmissionId, Guid DoseId)> DueDoseAsync(ApiClient frontOffice, ApiClient doctor, ApiClient admin)
     {
         var patient = await RegisterAsync(frontOffice, "9" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10)))));
         var consultantId = (await doctor.GetAsync<JsonElement>("/api/v1/auth/me")).GetProperty("practitionerId").GetGuid();
@@ -239,7 +257,7 @@ public sealed class PeakMixTests(HospitalServer server)
             DrugItemId: null, DrugName: "Paracetamol 500 mg Tablet", GenericName: null, Strength: null, Dose: "1 tablet", Route: "PO", Frequency: "STAT",
             DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
         var chart = await doctor.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
-        return (ward.Id, chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due).Id);
+        return (ward.Id, admission.Id, chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due).Id);
     }
 
     /// <summary>The version of a due dose, as the ward's due list shows it.</summary>
