@@ -13,7 +13,7 @@ import {
 import { gstStateName } from '../inventory/gst';
 import type { BillDetail, DayEndReport, ReceiptDto, ReceiptPaymentDto, RefundDto } from './api';
 import { deviceDetailsText } from './device';
-import type { EInvoiceStamp } from './einvoiceApi';
+import { missingIrnNotice, type EInvoiceStamp, type MissingIrn } from './einvoiceApi';
 import type { RunningBill } from './ipApi';
 import {
   PAYMENT_MODE_LABEL,
@@ -89,7 +89,8 @@ const RECEIPT80_STYLES = `
   .sum .strong td { font-weight: 800; font-size: 13px; border-top: 1px dashed #333; }
   .rule { border-top: 1px dashed #333; margin: 4px 0; }
   .words { font-size: 9.5px; font-style: italic; }
-  .stamp { text-align: center; font-weight: 800; font-size: 14px; border: 2px solid #000; margin: 4px 0; }`;
+  .stamp { text-align: center; font-weight: 800; font-size: 14px; border: 2px solid #000; margin: 4px 0; }
+  .einvoice-due { font-weight: 800; font-size: 10.5px; border: 1.5px solid #000; padding: 2px 4px; margin: 4px 0; }`;
 
 function watermark(bill: Pick<BillDetail, 'status'>): string {
   if (bill.status === 'Cancelled' || bill.status === 'Refunded') {
@@ -181,6 +182,11 @@ export function einvoiceBlock(stamp: EInvoiceStamp): string {
       <div class="small">Ack no. ${e(stamp.ackNo)} · ${e(formatDateTime(stamp.ackDate))}</div>`;
 }
 
+/** In place of the IRN, on an invoice due one that has none: it is not a valid tax invoice for the buyer (rule 48(5)). */
+export function missingIrnBlock(missing: MissingIrn): string {
+  return `<div class="einvoice-due">${e(missingIrnNotice(missing))}</div>`;
+}
+
 /** Compact bill for the counter's 80 mm receipt printer (the A4 bill is made by the server). */
 export function buildCounterBillHtml(bill: BillDetail, letterhead: Letterhead): string {
   const title = billTitle(bill);
@@ -206,7 +212,7 @@ export function buildCounterBillHtml(bill: BillDetail, letterhead: Letterhead): 
       <div class="rule"></div>
       <table class="sum">${sums}</table>
       <div class="words">${e(amountInWords(bill.patientAmount))}</div>
-      ${bill.eInvoice ? einvoiceBlock(bill.eInvoice) : ''}
+      ${bill.eInvoice ? einvoiceBlock(bill.eInvoice) : bill.missingIrn ? missingIrnBlock(bill.missingIrn) : ''}
       ${bill.receipts.length ? `<div class="rule"></div>${bill.receipts.map((r) => `<div class="small">${e(r.receiptNumber)} · ${e(modeSummaryLabel(r.modes))} · ${money(r.amount)}</div>`).join('')}` : ''}
       <div class="rule"></div>
       <div class="center small">Thank you. Get well soon.</div>`;

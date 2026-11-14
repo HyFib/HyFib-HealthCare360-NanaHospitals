@@ -91,6 +91,8 @@
   "doc.bill.ack_no": "Ack no.",
   "doc.bill.ack_date": "Ack date",
   "doc.bill.einvoice_qr": "Signed QR code of the e-invoice",
+  "doc.bill.einvoice_pending": "E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).",
+  "doc.bill.einvoice_irn_cancelled": "IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).",
   "doc.bill.cgst_rate": "CGST rate",
   "doc.bill.sgst_rate": "SGST rate",
   "doc.bill.payments_received": "Payments received",

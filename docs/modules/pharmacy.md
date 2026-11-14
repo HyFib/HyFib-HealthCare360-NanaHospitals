@@ -92,7 +92,9 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   supply, and the day book posts the IGST. The buyer's address with its PIN code is kept for the GST e-invoice: when
   the hospital e-invoices, the sale is listed in Billing's e-invoice register, and once its IRN is recorded the invoice
   prints the IRN and the signed QR code and can no longer be cancelled here (422 `einvoice.active`) until the IRN is
-  cancelled on the portal. A **return** of such a sale is a GST credit note (CGST Act s.34(1)(b), goods returned):
+  cancelled on the portal. Until then (or once the IRN is cancelled) the invoice prints, where the IRN goes, that it is
+  not a valid tax invoice for the buyer (GST rule 48(5); `missingIrn` on the sale's detail, billing.md *GST
+  e-invoicing*). A **return** of such a sale is a GST credit note (CGST Act s.34(1)(b), goods returned):
   it is listed in the register too, as a `CRN` naming the sale's invoice, each medicine at the quantity returned with
   the GST carved out of its refund at the sale line's rate (`PharmacyReturnEInvoiceSource`), the same split the day
   book posts. A return made after 30 November following the financial year of the sale (s.34(2)) takes back the value

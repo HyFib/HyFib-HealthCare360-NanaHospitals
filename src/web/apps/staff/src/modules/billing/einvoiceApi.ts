@@ -122,6 +122,23 @@ export interface EInvoiceStamp {
   qrCodeSvg: string;
 }
 
+/**
+ * Mirrors `MissingIrn`: why a document due an IRN has no live one, as the register says. `Pending` until its IRN is asked
+ * of the portal or recorded; `IrnCancelled` once its IRN was cancelled on the portal, which never registers the same
+ * number again.
+ */
+export type MissingIrn = 'Pending' | 'IrnCancelled';
+
+/**
+ * What a B2B tax invoice due an IRN prints in place of the IRN while it has none: it is not a valid tax invoice for the
+ * buyer (GST rule 48(5)). The same words as the server's A4 bill.
+ */
+export function missingIrnNotice(missing: MissingIrn): string {
+  return missing === 'IrnCancelled'
+    ? 'IRN cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5)).'
+    : 'E-invoice pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5)).';
+}
+
 export const EINVOICE_PERMISSION = 'billing.einvoice';
 
 /** Where each document comes from, as the register names it. */

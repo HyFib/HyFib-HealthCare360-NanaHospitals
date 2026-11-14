@@ -212,7 +212,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/?from&to&type&status&patientId&visitId&admissionId&payerId&withDueOnly&search` (paged, `sort=createdAt\|finalizedAt\|billNumber\|netAmount\|dueAmount`) | readers | → `PagedResult<BillListItem>` |
-| GET | `/{id}` | readers | → `BillDetail` (lines as `BillLineDto` with `isReturn`, receipts, refunds, credit notes, pending discount, the `package` it is priced at); PHI access guarded and audited |
+| GET | `/{id}` | readers | → `BillDetail` (lines as `BillLineDto` with `isReturn`, receipts, refunds, credit notes, pending discount, the `package` it is priced at; `eInvoice`, its live IRN, or `missingIrn`, `Pending` or `IrnCancelled` for a bill due an IRN without one, as every `BillDetail` answer has); PHI access guarded and audited |
 | GET | `/{id}/document` | readers | → `PrintableDocumentDto` (title, file name, page size `A4`, HTML): the [printed bill](#the-printed-bill) for the staff app to print, drafts included; guarded and audited ("Printed bill …") |
 | GET | `/{id}/pdf` | readers | → `application/pdf` attachment `bill-<number>.pdf` (a draft: `bill-draft-<UHID>-<yyyy-MM-dd>.pdf`), the same document; 503 `pdf.unavailable` when the server cannot make PDFs; guarded and audited ("Downloaded bill … as a PDF") |
 | POST | `/` | `billing.op.create` | `CreateBillRequest(visitId?, patientId?, chargeIds?)` → 201 `BillDetail`: OP draft from the visit's unbilled charges, or a patient-level draft from charges with no visit/admission |
@@ -227,7 +227,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
 | POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason, lines?)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. A credit note names the services it corrects (`lines`: `billLineId` and `amount`, GST included; `amount` is their sum, 400 otherwise), and must on a bill with GST (400 `lines`); 422 `billing.credit_exceeds_line` past what is left of a service after earlier credit notes, or on a return; a write-off names none (400 `lines`). The approver sees the GST each service gives back ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)). An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
 | POST | `/{id}/debit-notes` | `refunds.request` / `refunds.approve` | `IssueDebitNoteRequest(party, reason, lines)` → 202 `ApprovalRequestDto` (kind `billing.debit_note`): asks for a debit note ([Debit notes](#debit-notes)); `lines` are `billLineId` and the `taxableAmount` each service is raised by (GST at its rate is added); `party` `Patient` or `Payer`. 422 `billing.bill_not_debitable` (not finalized, or cancelled), `billing.no_payer`, `billing.debit_on_return`, `billing.debit_not_payer_payable`. An approver, never the person who asked, issues it (`{FAC}DB{YY}{SEQ:6}`), on the bill's version it was asked against (422 `approval.stale`) |
-| GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it; guarded and audited ("Printed credit note …") |
+| GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it (until then, for a note due one, a notice that it has none); guarded and audited ("Printed credit note …") |
 | GET | `/{id}/credit-notes/{noteId}/pdf` | readers | → `application/pdf` attachment `credit-note-<number>.pdf` (`write-off-<number>.pdf`), the same document; guarded and audited |
 | POST | `/{id}/adjust-advance` | `billing.payments.collect` | `AdjustAdvanceRequest(advanceId, amount?, version)` → 201 `ReceiptDto` (patient advance used on an OP bill) |
 
@@ -789,6 +789,9 @@ language*).
   and the balance due or the refund due; the patient's share in words (Indian system, "Rupees … Only").
 * On a tax invoice, the GST summary by SAC code and rate. Then the payments received (advances adjusted included), the
   bill's notes, signature lines for the patient and the authorised signatory, and the facility's letterhead note.
+* A B2B tax invoice of e-invoicing's time carries its IRN, acknowledgement and signed QR code below the patient's box;
+  while it has no IRN, a notice in their place says it is not yet a valid tax invoice for the buyer (GST rule 48(5)),
+  in the bill's language ([GST e-invoicing](#gst-e-invoicing)). The 80 mm bill says the same.
 * Every page's foot names the patient, UHID and bill number, with "Page X of Y".
 * The **Bills** print template (Hospital setup › Print templates) decides the rest: on pre-printed stationery the
   header keeps only the GSTIN and PAN line with the title, number and date, and the page leaves the blank space set for
@@ -949,7 +952,26 @@ is not set, nothing is listed and nothing can be recorded.
   acknowledgement number and the signed QR code it returns. The QR code's payload must name this invoice: supplier and
   buyer GSTIN, number, type, date, value and number of lines. Its signature is the IRP's; HC360 does not hold the IRP's
   key, and the code is verified by scanning it with the GST verification app. The IRN, the acknowledgement and the QR
-  code then print on the A4 bill, the 80 mm bill and the pharmacy invoice.
+  code then print on the A4 bill, the 80 mm bill, the pharmacy invoice and a bill's credit note.
+* **Until it has one, the print says so.** An invoice that should carry an IRN and does not is not an invoice (rule
+  48(5)). Connected to the portal, HC360 asks for the IRN as the document becomes final ([Automatic IRNs](#automatic-irns))
+  and it usually comes within seconds; but a copy printed before then, at the counter or as the patient's PDF, one at a
+  hospital that records its IRNs by hand, and one whose request the portal refused or has not answered, is printed
+  without it. Its print then carries a notice where the IRN goes:
+  * the A4 bill (and its PDF, in the language it is made in), the 80 mm bill and the pharmacy invoice: "E-invoice
+    pending: this is not yet a valid tax invoice for the buyer (GST rule 48(5))"; and, once its IRN was cancelled on
+    the portal (which never registers that number again: the invoice is cancelled here and issued again), "IRN
+    cancelled: this is not a valid tax invoice for the buyer (GST rule 48(5))";
+  * a bill's credit note: "E-invoice pending: this credit note has no IRN yet, which GST rule 48(4) requires" (or "IRN
+    cancelled: …"). Rule 48(5) speaks of invoices; a credit note comes under rule 48(4) through notification
+    13/2020-Central Tax ("invoice and other prescribed documents").
+
+  Due is the register's own test, asked through `IEInvoiceRegister.PrintAsync` ([its contract](#ieinvoiceregister-implemented-by-einvoiceregisterlookup)):
+  `gst.einvoice.from` is set for the document's facility on or before its date, its source finds it a B2B e-invoice,
+  it is not cancelled here, and it has no live IRN: the documents the register lists as `Pending` or `IrnCancelled`.
+  A live IRN always prints. A print is made when it is asked for: the next one after the IRN is
+  recorded carries the IRN, and a copy printed before keeps its notice, so the copy for the buyer is one printed
+  after. Debit notes and the pharmacy's returns have no print yet.
 * **Cancelling.** The IRP cancels an IRN only within 24 hours of its generation; the cancellation done there is
   recorded here with the portal's reason. Until then the invoice cannot be cancelled in HC360 (422 `einvoice.active`
   on a bill or a pharmacy sale). After 24 hours the IRN stays and a credit note undoes the invoice. The portal does not
@@ -1200,6 +1222,19 @@ Source keys in use: `inpatient.bed` / `inpatient.nursing` (`{admissionId}:{yyyy-
   The Patients and Inpatient modules, and Billing's stay payer change, decide with `PayerChoice.Refusal` from it
   ([a third party pays only on a second person's word](#a-third-party-pays-only-on-a-second-persons-word)). Without
   the Billing module there is no payer, and only the patient, staff and charity may be chosen.
+
+### `IEInvoiceRegister` (implemented by `EInvoiceRegisterLookup`)
+For the modules whose B2B documents are e-invoices ([GST e-invoicing](#gst-e-invoicing)), by `source` (the
+`IEInvoiceSource` key: `bill`, `creditnote`, `debitnote`, `pharmacy`, `pharmacyreturn`) and id:
+* `FindAsync` → the document's live IRN (`EInvoiceStamp`: IRN, acknowledgement, signed QR code and its SVG), or null.
+  The pharmacy does not cancel a sale while it has one (422 `einvoice.active`).
+* `PrintAsync` → `EInvoicePrint(stamp, missing)`, what the document's print says of its e-invoice: the live IRN,
+  whatever else holds; otherwise, for a document due one, why it has none (`MissingIrn.Pending`: not asked of the
+  portal or recorded yet; `MissingIrn.IrnCancelled`: its IRN cancelled on the portal); neither for any other document.
+  Due is the register's own test (`EInvoiceService.PrintOf`, the `StateOf` its list and detail use): `gst.einvoice.from`
+  set for the document's facility on or before its date, its source's `FindAsync` finding it a B2B e-invoice, and not
+  cancelled. Billing asks it for every `BillDetail` and for a credit note when it is printed; the pharmacy for a B2B
+  sale's detail (`PharmacySaleDetail.missingIrn`), which the invoice print reads.
 
 ## Events
 
@@ -1800,8 +1835,6 @@ bill line, restrict; unique number), `bills.debit_amount` and `payer_debit_amoun
 * **An e-way bill HC360 cannot read back is not recorded.** One generated on the e-way bill portal itself rather than
   from the IRN, or one the portal says exists but does not give back (4002 with 4005), cannot be put on the
   registration: there is no form to record an e-way bill by hand.
-* **A B2B document prints without its IRN while it waits for one**, with nothing on the print to say so; with the
-  portal connected, the IRN usually comes within seconds of the document becoming final.
 * **A payer credit note does not come from the settlement.** The claim desk records the deduction; the billing desk
   asks for the GST credit note on the bill afterwards. A deduction that is not a price reduction (a non-payable item
   the patient pays) needs none.

@@ -30,6 +30,7 @@ internal static class BillDocument
         .einvoice { display: flex; gap: 10px; align-items: center; margin: 6px 0; font-size: 10px; }
         .einvoice-qr { width: 32mm; height: 32mm; }
         .irn { font-family: monospace; word-break: break-all; }
+        .einvoice-due { border: 1.5px solid #333; border-radius: 4px; padding: 6px 8px; margin: 8px 0; font-weight: 700; }
         .hdr td { vertical-align: top; }
         .h-org { display: flex; gap: 10px; align-items: flex-start; }
         .h-logo { max-height: 18mm; max-width: 40mm; object-fit: contain; }
@@ -100,13 +101,20 @@ internal static class BillDocument
 
     /// <summary>
     /// The IRN the Invoice Registration Portal gave a B2B tax invoice, with its acknowledgement and the signed QR code
-    /// (GST rule 48(4)), which the invoice must carry. Nothing on an invoice without one.
+    /// (GST rule 48(4)), which the invoice must carry. In its place, a bill due an IRN that has none says it is not a valid
+    /// tax invoice for the buyer (rule 48(5)): not yet, while its IRN is to come; not at all, once its IRN was cancelled on
+    /// the portal. Nothing on a bill that is not an e-invoice.
     /// </summary>
     private static Html EInvoiceBox(BillDetail bill, DocumentText text)
     {
         if (bill.EInvoice is not { } e)
         {
-            return Html.Empty;
+            return bill.MissingIrn switch
+            {
+                MissingIrn.Pending => Html.Of($"<div class=\"einvoice-due keep\">{text["doc.bill.einvoice_pending"]}</div>"),
+                MissingIrn.IrnCancelled => Html.Of($"<div class=\"einvoice-due keep\">{text["doc.bill.einvoice_irn_cancelled"]}</div>"),
+                _ => Html.Empty,
+            };
         }
 
         return Html.Of($"""
