@@ -1,5 +1,7 @@
 using System.Text.Json;
 using HyFib.HealthCare360.LoadTest;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 
@@ -32,5 +34,24 @@ public sealed class PeakMixContractTests
         var item = sellable.ShouldHaveSingleItem();
         item.ItemId.ShouldBe(tablet.ItemId);
         item.Mrp.ShouldBe(3.2m);
+    }
+
+    [Fact]
+    public void The_lab_orders_only_tests_of_the_lab_test_list_that_can_be_ordered_on_their_own()
+    {
+        var sugar = new LabTestListItem(Guid.NewGuid(), "LAB-FBS", "Glucose, fasting", "FBS", LabSection.Hematology, SpecimenType.WholeBlood,
+            ContainerType.Edta, LabResultType.Numeric, "mg/dL", IsPanel: false, IsOrderable: true, IsProvisional: false, IsActive: true, TatHours: 4,
+            ServiceItemId: Guid.NewGuid(), Price: 80m, Preparation: null, ComponentCount: 0);
+        LabTestListItem[] rows =
+        [
+            sugar,
+            // A panel's component, or a value calculated from others: the server refuses to order it alone.
+            sugar with { Id = Guid.NewGuid(), Name = "Albumin/globulin ratio", IsOrderable = false },
+            sugar with { Id = Guid.NewGuid(), IsActive = false },
+        ];
+
+        var tests = FixtureDiscovery.OrderableTests(JsonSerializer.SerializeToElement(rows, ApiClient.Json));
+
+        tests.ShouldBe(new[] { sugar.Id });
     }
 }

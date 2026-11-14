@@ -656,12 +656,7 @@ internal static class FixtureDiscovery
 
         if (tokens.TryGetValue(Role.Lab, out var lab))
         {
-            fixtures.LabTestIds =
-            [
-                .. Answer.Rows(await ReadAsync(http, lab, "api/v1/lab/tests?pageSize=50", log, cancellationToken))
-                    .Where(r => Answer.Prop(r, "isActive") is not { ValueKind: JsonValueKind.False })
-                    .Select(r => Answer.Id(r)).Where(id => id is not null).Select(id => id!.Value).Take(20),
-            ];
+            fixtures.LabTestIds = OrderableTests(await ReadAsync(http, lab, "api/v1/lab/tests?pageSize=50&orderable=true", log, cancellationToken));
         }
 
         if (tokens.TryGetValue(Role.Ward, out var ward))
@@ -684,6 +679,18 @@ internal static class FixtureDiscovery
             .Select(r => (Id: Answer.Id(r, "itemId"), Mrp: Answer.Number(r, "mrp"), Units: (int)Math.Min(Answer.Number(r, "available"), 100_000)))
             .Where(r => r.Id is not null)
             .Select(r => new StockItem(r.Id!.Value, r.Mrp, r.Units)),
+    ];
+
+    /// <summary>
+    /// The tests of the lab's test list (LabTestListItem) that can be ordered on their own: active and orderable, not a
+    /// component of a panel or a calculated value, which the server refuses ("These tests cannot be ordered"). A row that
+    /// does not say it is orderable is left out.
+    /// </summary>
+    internal static IReadOnlyList<Guid> OrderableTests(JsonElement tests) =>
+    [
+        .. Answer.Rows(tests)
+            .Where(r => Answer.Prop(r, "isActive") is not { ValueKind: JsonValueKind.False } && Answer.Prop(r, "isOrderable") is { ValueKind: JsonValueKind.True })
+            .Select(r => Answer.Id(r)).Where(id => id is not null).Select(id => id!.Value).Take(20),
     ];
 
     /// <summary>
