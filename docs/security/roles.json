@@ -509,7 +509,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 224,
+      "endpoints": 225,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -1160,7 +1160,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 238,
+      "endpoints": 239,
       "mfa": "required-by-role",
       "canBeTurnedOff": true
     },
@@ -1625,7 +1625,7 @@
         "Pharmacist"
       ],
       "administrative": false,
-      "endpoints": 7
+      "endpoints": 8
     },
     {
       "name": "billing.gateway.reconcile",

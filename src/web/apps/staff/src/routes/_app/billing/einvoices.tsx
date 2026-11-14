@@ -35,8 +35,10 @@ import {
   einvoiceApi,
   einvoiceKeys,
   einvoiceQueries,
+  ewayBillProblems,
   irnAnswer,
   irnProblems,
+  localToIso,
   STATE_LABELS,
   type EInvoiceCancelReason,
   type EInvoiceRow,
@@ -270,6 +272,37 @@ function HandRecordFields({
   );
 }
 
+/** An e-way bill generated outside HC360, as its print shows it: the number, when it was generated, and its validity. */
+function EwayBillPrintFields({
+  ewbNo,
+  onEwbNo,
+  generatedAt,
+  onGeneratedAt,
+  validUntil,
+  onValidUntil,
+}: {
+  ewbNo: string;
+  onEwbNo: (value: string) => void;
+  generatedAt: string;
+  onGeneratedAt: (value: string) => void;
+  validUntil: string;
+  onValidUntil: (value: string) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+      <Field label="E-way bill number" required hint="12 digits as printed (14 from 1 January 2027)">
+        <Input value={ewbNo} maxLength={17} inputMode="numeric" onChange={(_, v) => onEwbNo(v.value)} />
+      </Field>
+      <Field label="Generated on" required>
+        <Input type="datetime-local" value={generatedAt} onChange={(_, v) => onGeneratedAt(v.value)} />
+      </Field>
+      <Field label="Valid until" hint="Blank while only Part-A is filled">
+        <Input type="datetime-local" value={validUntil} onChange={(_, v) => onValidUntil(v.value)} />
+      </Field>
+    </div>
+  );
+}
+
 function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => void }) {
   const notify = useNotify();
   const queryClient = useQueryClient();
@@ -331,6 +364,22 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
       refresh();
     },
   });
+  const [ewbNo, setEwbNo] = useState('');
+  const [ewbGeneratedAt, setEwbGeneratedAt] = useState('');
+  const [ewbValidUntil, setEwbValidUntil] = useState('');
+  const recordEwayBill = useMutation({
+    mutationFn: () =>
+      einvoiceApi.recordEwayBill(row.source, row.id, {
+        ewbNo: ewbNo.trim(),
+        generatedAt: localToIso(ewbGeneratedAt)!,
+        validUntil: ewbValidUntil ? localToIso(ewbValidUntil) : null,
+      }),
+    onSuccess: () => {
+      notify.success('E-way bill recorded', "It is kept with the invoice's IRN.");
+      refresh();
+    },
+    onError: refresh,
+  });
   const cancel = useMutation({
     mutationFn: (version: number) => einvoiceApi.cancel(row.source, row.id, reason, remark.trim(), version),
     onSuccess: () => {
@@ -356,6 +405,17 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
   const registration = d?.registration;
   const live = registration?.status === 'Registered';
   const problems = irnProblems(ackNo, qr);
+  const ewbProblems = d ? ewayBillProblems(ewbNo, ewbGeneratedAt, ewbValidUntil, d.date) : [];
+  const ewbFields = (
+    <EwayBillPrintFields
+      ewbNo={ewbNo}
+      onEwbNo={setEwbNo}
+      generatedAt={ewbGeneratedAt}
+      onGeneratedAt={setEwbGeneratedAt}
+      validUntil={ewbValidUntil}
+      onValidUntil={setEwbValidUntil}
+    />
+  );
 
   return (
     <Dialog open onOpenChange={(_, data) => !data.open && onClose()}>
@@ -455,7 +515,7 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                     </Disclosure>
                   </>
                 )}
-                {live && d.ewayBillNeeded && !registration.ewbNo && (
+                {live && d.ewayBillNeeded && !registration.ewbNo && d.portalConnected && (
                   <>
                     <Text weight="semibold">E-way bill</Text>
                     <div
@@ -483,6 +543,35 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                         </MessageBarBody>
                       </MessageBar>
                     )}
+                    {/* One generated on the e-way bill portal or by the transporter: folded away under the portal's way. */}
+                    <Disclosure label="Record an e-way bill generated elsewhere">
+                      <Caption1>
+                        When the e-way bill was generated on the e-way bill portal or by the transporter: enter it from
+                        its print. HC360 asks the e-invoice portal first, which confirms only one generated from the
+                        IRN.
+                      </Caption1>
+                      {ewbFields}
+                      {recordEwayBill.error && <IrnAnswerBar action="recordEwayBill" error={recordEwayBill.error} />}
+                      <Button
+                        disabled={ewbProblems.length > 0 || recordEwayBill.isPending}
+                        title={ewbProblems.join(' ')}
+                        onClick={() => recordEwayBill.mutate()}
+                        style={{ alignSelf: 'flex-start' }}
+                      >
+                        Record e-way bill
+                      </Button>
+                    </Disclosure>
+                  </>
+                )}
+                {live && d.ewayBillNeeded && !registration.ewbNo && !d.portalConnected && (
+                  <>
+                    <Text weight="semibold">E-way bill</Text>
+                    <Caption1>
+                      This facility is not connected to the e-invoice portal: generate the e-way bill on the e-way bill
+                      portal, then enter it here from its print.
+                    </Caption1>
+                    {ewbFields}
+                    {recordEwayBill.error && <IrnAnswerBar action="recordEwayBill" error={recordEwayBill.error} />}
                   </>
                 )}
                 {!live && d.state !== 'NotNeeded' && !d.portalConnected && (
@@ -550,12 +639,22 @@ function EInvoiceDialog({ row, onClose }: { row: EInvoiceRow; onClose: () => voi
                 Get IRN from the portal
               </Button>
             )}
-            {d && live && d.ewayBillNeeded && !registration.ewbNo && (
+            {d && live && d.ewayBillNeeded && !registration.ewbNo && d.portalConnected && (
               <Button
                 disabled={(!vehicle.trim() && !transporter.trim()) || ewayBill.isPending}
                 onClick={() => ewayBill.mutate()}
               >
                 Generate e-way bill
+              </Button>
+            )}
+            {d && live && d.ewayBillNeeded && !registration.ewbNo && !d.portalConnected && (
+              <Button
+                appearance="primary"
+                disabled={ewbProblems.length > 0 || recordEwayBill.isPending}
+                title={ewbProblems.join(' ')}
+                onClick={() => recordEwayBill.mutate()}
+              >
+                Record e-way bill
               </Button>
             )}
             {d && !live && d.state !== 'NotNeeded' && !d.portalConnected && (

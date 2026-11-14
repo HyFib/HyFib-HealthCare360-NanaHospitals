@@ -90,6 +90,9 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
 {
     private static readonly TimeSpan India = TimeSpan.FromHours(5.5);
 
+    /// <summary>From this day (IST) the portal gives e-way bills 14-digit numbers (GSTN advisory 687 of 4 November 2026), not 12.</summary>
+    private static readonly DateOnly FourteenDigitsFrom = new(2027, 1, 1);
+
     public IReadOnlyCollection<string> Keys { get; } = [ProviderKeys.Simulator];
 
     public Task<IrpResult<IrpIrn>> GenerateAsync(IrpContext context, JsonObject payload, CancellationToken cancellationToken) =>
@@ -204,7 +207,7 @@ internal sealed class SimulatorIrp(SimulatorIrpLedger ledger, IntegrationTrace t
         }
 
         var now = time.GetUtcNow().ToOffset(India);
-        var number = 100000000000L + ledger.Next();
+        var number = (DateOnly.FromDateTime(now.DateTime) >= FourteenDigitsFrom ? 10_000_000_000_000L : 100_000_000_000L) + ledger.Next();
         var days = (int)Math.Ceiling(distance / 200m);
         var validTill = new DateTimeOffset(now.Date.AddDays(days - 1).AddHours(23).AddMinutes(59), India);
         ledger.Entries[irn] = entry with { Irn = entry.Irn with { EwbNo = number, EwbDate = now, EwbValidTill = validTill } };

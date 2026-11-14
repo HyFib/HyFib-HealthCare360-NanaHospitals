@@ -8,8 +8,9 @@ import { api } from '@/lib/api';
  * credit notes; `pharmacyreturn`: returns of B2B sales) are downloaded as the portal's JSON, uploaded to the Invoice
  * Registration Portal, and the IRN it gives back is recorded with its signed QR code; a facility connected to the portal
  * (`integrations.irp`) asks for the IRN itself, cancels it there within 24 hours, and generates the e-way bill of a
- * pharmacy invoice of goods above the threshold. A credit note (`CRN`) or debit note (`DBN`, `debitnote`) names the
- * invoice it changes and goes after it. Permission `billing.einvoice`.
+ * pharmacy invoice of goods above the threshold; an e-way bill generated elsewhere (on the e-way bill portal, by the
+ * transporter) is recorded from its print. A credit note (`CRN`) or debit note (`DBN`, `debitnote`) names the invoice it
+ * changes and goes after it. Permission `billing.einvoice`.
  */
 
 export type EInvoiceSource = 'bill' | 'pharmacy' | 'creditnote' | 'debitnote' | 'pharmacyreturn';
@@ -113,6 +114,15 @@ export interface GenerateEwayBill {
   transportDocumentDate: string | null;
 }
 
+/** An e-way bill generated outside HC360, as its print (EWB-01) shows it. */
+export interface RecordEwayBill {
+  /** 12 digits, or 14 for one generated from 1 January 2027; spaces between groups of digits are allowed. */
+  ewbNo: string;
+  generatedAt: string;
+  /** Null while only Part-A is filled: the e-way bill has no validity until its Part-B is. */
+  validUntil: string | null;
+}
+
 /** The IRN printed on an invoice (`EInvoiceStamp`), on bills and pharmacy sales that have one. */
 export interface EInvoiceStamp {
   irn: string;
@@ -208,13 +218,17 @@ export const einvoiceApi = {
   generate: (source: EInvoiceSource, id: string) => api.post<EInvoiceDetail>(`${base}/${source}/${id}/irn/generate`),
   ewayBill: (source: EInvoiceSource, id: string, body: GenerateEwayBill) =>
     api.post<EInvoiceDetail>(`${base}/${source}/${id}/ewaybill`, body),
+  /** Records an e-way bill generated outside HC360, from its print; the server checks it with the portal when connected. */
+  recordEwayBill: (source: EInvoiceSource, id: string, body: RecordEwayBill) =>
+    api.post<EInvoiceDetail>(`${base}/${source}/${id}/ewaybill/record`, body),
 };
 
 /**
  * The calls that change a document's IRN: recording one by hand, asking the portal for one, cancelling it, and, past the
- * 24 hours, asking the portal whether a cancellation made in time went through (the same cancel request, read back).
+ * 24 hours, asking the portal whether a cancellation made in time went through (the same cancel request, read back);
+ * and recording an e-way bill generated elsewhere on its live IRN.
  */
-export type IrnAction = 'record' | 'generate' | 'cancel' | 'askCancelled';
+export type IrnAction = 'record' | 'generate' | 'cancel' | 'askCancelled' | 'recordEwayBill';
 
 /**
  * A refusal of one of those calls as the dialog shows it: `warning` when nothing is wrong with the document and trying
@@ -260,6 +274,13 @@ const HEADINGS: Record<IrnAction, Record<string, Heading>> = {
     'einvoice.irp_cancel_unknown': ['warning', 'Not known whether the portal cancelled the IRN'],
     'einvoice.cancel_window': ['error', 'Not cancelled on the portal: the IRN stays'],
   },
+  // The portal confirms only an e-way bill it generated from the IRN; one it holds none for is recorded on its print.
+  recordEwayBill: {
+    'einvoice.ewaybill_unconfirmed': ['error', 'Not recorded: the portal does not confirm this e-way bill'],
+    'einvoice.irp_ewaybill_cancelled': ['error', 'Cancelled on the portal: the goods need a new e-way bill'],
+    'einvoice.irp_unreachable': ['warning', 'Not recorded yet: the portal could not be asked'],
+    'einvoice.ewaybill_number_exists': ['error', 'Already recorded against an invoice'],
+  },
 };
 
 const UNEXPLAINED: Record<IrnAction, string> = {
@@ -267,6 +288,7 @@ const UNEXPLAINED: Record<IrnAction, string> = {
   generate: 'The portal gave no IRN',
   cancel: 'The cancellation was not recorded',
   askCancelled: 'No cancellation was recorded',
+  recordEwayBill: 'The e-way bill was not recorded',
 };
 
 /** The problem codes the dialog has words for, by call (each call's own and the common ones). */
@@ -292,6 +314,74 @@ export function irnProblems(ackNo: string, signedQrCode: string): string[] {
   }
   if (signedQrCode.trim().split('.').length !== 3) {
     problems.push('Paste the signed QR code exactly as the portal gave it (three parts separated by dots).');
+  }
+  return problems;
+}
+
+/** The first day (the hospital's) of 14-digit e-way bill numbers: GSTN advisory 687 of 4 November 2026. */
+export const FOURTEEN_DIGITS_FROM = '2027-01-01';
+
+/** A `datetime-local` value (the browser's local time) as the instant the server takes; null when incomplete. */
+export function localToIso(local: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) {
+    return null;
+  }
+  const at = new Date(local);
+  return Number.isNaN(at.getTime()) ? null : at.toISOString();
+}
+
+const DAY_MS = 86_400_000;
+
+/** Whole days from one `yyyy-mm-dd` date to another. */
+function daysBetween(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
+}
+
+/**
+ * What stops an e-way bill entered from its print from being recorded, as the server checks it (`EwayBillEntries`): its
+ * number is 12 digits, or 14 from 1 January 2027; it was generated on or after the invoice's date, within 180 days of it,
+ * and not later than now; it is valid until a time after that and within 360 days, or blank while only Part-A is filled.
+ * The times are the browser's local ones, as `datetime-local` gives them: the hospital's, as the print shows them.
+ */
+export function ewayBillProblems(
+  ewbNo: string,
+  generatedAt: string,
+  validUntil: string,
+  invoiceDate: string,
+  now: Date = new Date(),
+): string[] {
+  const problems: string[] = [];
+  const digits = ewbNo.replace(/ /g, '');
+  const generated = localToIso(generatedAt);
+  const day = generatedAt.slice(0, 10);
+  if (!/^[1-9](\d{11}|\d{13})$/.test(digits)) {
+    problems.push(
+      'Enter the e-way bill number: the 12 digits on its print (14 for one generated from 1 January 2027).',
+    );
+  } else if (digits.length === 14 && generated && day < FOURTEEN_DIGITS_FROM) {
+    problems.push('E-way bill numbers have 14 digits only from 1 January 2027.');
+  }
+  if (!generated) {
+    problems.push('Enter when the e-way bill was generated, as its print shows.');
+  } else {
+    if (Date.parse(generated) > now.getTime() + 10 * 60_000) {
+      problems.push('The e-way bill is dated in the future.');
+    }
+    if (day < invoiceDate) {
+      problems.push('The e-way bill is dated before the invoice it names.');
+    } else if (day >= '2025-01-01' && daysBetween(invoiceDate, day) > 180) {
+      problems.push('The portal generates an e-way bill only for an invoice at most 180 days old.');
+    }
+  }
+  if (validUntil) {
+    const until = localToIso(validUntil);
+    if (!until) {
+      problems.push('Enter the end of its validity in full, or leave it blank while only Part-A is filled.');
+    } else if (generated && Date.parse(until) <= Date.parse(generated)) {
+      problems.push('The e-way bill must be valid until a time after it was generated.');
+    } else if (generated && Date.parse(until) > Date.parse(generated) + 360 * DAY_MS) {
+      problems.push('The portal extends an e-way bill to at most 360 days after its generation.');
+    }
   }
   return problems;
 }

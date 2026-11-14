@@ -2,7 +2,15 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ApiError } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
-import { documentLabel, irnAnswer, irnAnswerCodes, irnProblems, type IrnAction } from './einvoiceApi';
+import {
+  documentLabel,
+  ewayBillProblems,
+  irnAnswer,
+  irnAnswerCodes,
+  irnProblems,
+  localToIso,
+  type IrnAction,
+} from './einvoiceApi';
 
 describe('irnProblems', () => {
   it('accepts the acknowledgement number and a signed QR code as the portal gives them', () => {
@@ -14,6 +22,59 @@ describe('irnProblems', () => {
       'Enter the acknowledgement number: the 10 to 20 digits the portal gave.',
       'Paste the signed QR code exactly as the portal gave it (three parts separated by dots).',
     ]);
+  });
+});
+
+describe('ewayBillProblems', () => {
+  // The browser's local times, as datetime-local gives them; the invoice of 10 Nov 2026, checked on 14 Nov 2026.
+  const now = new Date('2026-11-14T09:00');
+  const problems = (ewbNo: string, generatedAt: string, validUntil = '', invoiceDate = '2026-11-10', at = now) =>
+    ewayBillProblems(ewbNo, generatedAt, validUntil, invoiceDate, at);
+
+  it('accepts an e-way bill the portal could have generated for the invoice, as its print shows it', () => {
+    expect(problems('331000123456', '2026-11-12T10:15', '2026-11-14T23:59')).toEqual([]);
+    expect(problems('3310 0012 3456', '2026-11-12T10:15')).toEqual([]);
+  });
+
+  it('asks for 12 digits, or 14 for one generated from 1 January 2027', () => {
+    const digits =
+      'Enter the e-way bill number: the 12 digits on its print (14 for one generated from 1 January 2027).';
+    expect(problems('33100012345', '2026-11-12T10:15')).toEqual([digits]);
+    expect(problems('031000123456', '2026-11-12T10:15')).toEqual([digits]);
+    expect(problems('33100012345678', '2026-11-12T10:15')).toEqual([
+      'E-way bill numbers have 14 digits only from 1 January 2027.',
+    ]);
+    expect(problems('33100012345678', '2027-01-01T00:30', '', '2026-12-31', new Date('2027-01-02T09:00'))).toEqual([]);
+  });
+
+  it('asks for when it was generated: not before the invoice, not in the future, not 180 days after it', () => {
+    expect(problems('331000123456', '')).toEqual(['Enter when the e-way bill was generated, as its print shows.']);
+    expect(problems('331000123456', '2026-11-09T23:00')).toEqual([
+      'The e-way bill is dated before the invoice it names.',
+    ]);
+    expect(problems('331000123456', '2026-11-14T10:00')).toEqual(['The e-way bill is dated in the future.']);
+    expect(problems('331000123456', '2026-10-28T11:00', '', '2026-05-01')).toEqual([]);
+    expect(problems('331000123456', '2026-10-29T11:00', '', '2026-05-01')).toEqual([
+      'The portal generates an e-way bill only for an invoice at most 180 days old.',
+    ]);
+  });
+
+  it('takes its validity blank while only Part-A is filled, else after its generation and within 360 days', () => {
+    expect(problems('331000123456', '2026-11-12T10:15', '2026-11-12T10:15')).toEqual([
+      'The e-way bill must be valid until a time after it was generated.',
+    ]);
+    expect(problems('331000123456', '2026-11-12T10:15', '2027-11-07T10:15')).toEqual([]);
+    expect(problems('331000123456', '2026-11-12T10:15', '2027-11-07T10:16')).toEqual([
+      'The portal extends an e-way bill to at most 360 days after its generation.',
+    ]);
+    expect(problems('331000123456', '2026-11-12T10:15', '2026-11-14')).toEqual([
+      'Enter the end of its validity in full, or leave it blank while only Part-A is filled.',
+    ]);
+  });
+
+  it('sends the local times as instants', () => {
+    expect(localToIso('2026-11-12T10:15')).toBe(new Date('2026-11-12T10:15').toISOString());
+    expect(localToIso('2026-11-12')).toBeNull();
   });
 });
 
@@ -204,7 +265,7 @@ describe("the server's codes", () => {
     .map((entry) => readFileSync(join(entry.parentPath, entry.name), 'utf8'))
     .join('\n');
 
-  it.each<IrnAction>(['record', 'generate', 'cancel', 'askCancelled'])(
+  it.each<IrnAction>(['record', 'generate', 'cancel', 'askCancelled', 'recordEwayBill'])(
     '%s: every e-invoice code it explains is sent',
     (action) => {
       const codes = irnAnswerCodes(action).filter((code) => code.startsWith('einvoice.'));

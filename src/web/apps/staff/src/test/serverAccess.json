@@ -1945,6 +1945,7 @@
     "POST /api/v1/billing/disputes/{id:guid}/evidence billing.gateway.reconcile",
     "POST /api/v1/billing/disputes/{id:guid}/won billing.gateway.reconcile",
     "POST /api/v1/billing/einvoices/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/ewaybill billing.einvoice",
+    "POST /api/v1/billing/einvoices/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/ewaybill/record billing.einvoice",
     "POST /api/v1/billing/einvoices/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/irn billing.einvoice",
     "POST /api/v1/billing/einvoices/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/irn/cancel billing.einvoice",
     "POST /api/v1/billing/einvoices/{source:regex(^(bill|creditnote|debitnote|pharmacy|pharmacyreturn)$)}/{id:guid}/irn/generate billing.einvoice",
