@@ -1,0 +1,258 @@
+# Incremental document backup: measurements, failure model, design
+
+Status: **Step 0 (design), for review before implementation.** Nothing here is built yet.
+
+Problem: every nightly backup (`BackupService`, `src/server/HyFib.HealthCare360.Platform/Jobs/Backup.cs`) holds the
+database dump **and every stored document**, and 30 are kept in each location, so backup storage is about
+30 × (dump + all documents) per location. Stored documents almost never change, so they need to be copied once, not
+every night.
+
+Some of what follows corrects the plan as first proposed. The corrections are marked **Changed after reading the code**.
+
+---
+
+## 1. What the code does today (the facts the design rests on)
+
+| Fact | Where | Consequence for the design |
+|---|---|---|
+| Documents are stored **already encrypted**: `EncryptedFileStore.SaveAsync` writes `IFieldProtector.ProtectBytes(content, "files")` to `files/yyyy/MM/<file-id>.bin`. The format is a version byte, an 8-byte key id (not for the original key), a **random 96-bit nonce**, a 16-byte tag, then AES-256-GCM ciphertext. | `Platform/Files/FileStore.cs`, `Platform/Security/FieldProtection.cs:351` | A document file can go into the backup folder **as it is**. Without the field keys it is unreadable, and every archive escrows those keys under the recovery key. No second encryption layer is needed. |
+| The AAD is only the purpose string (`"files"`), not the file id. | `FieldProtection.cs:372` | GCM alone does not stop one document's file from being swapped for another's. The archive's index must bind each storage path to the SHA-256 of its file, and restore must check it. |
+| The ciphertext is randomized, so two uploads of the same PDF give different files. | same | Naming a blob by the SHA-256 of its **ciphertext** reveals nothing about the content. **Changed after reading the code:** an HMAC name is unnecessary. Duplicate uploads are not de-duplicated, which is fine because the gain comes from immutability, not de-duplication. |
+| A document file changes in one case: after a **data-key rotation**, `FieldKeyMover` rewrites it in place under the new key (temp file + `File.Move(overwrite)`). This happens under an exclusive advisory lock that the backup takes shared. | `Platform/Security/FieldKeyMover.cs:419-495` | A blob must be identified by its content hash, not its path. After a rotation every document gets a new blob once, so for 30 days the store holds about **2× the documents**. Sizing must allow for that. |
+| A field key is **retired** (deleted from the server) only once nothing is encrypted with it. Each archive escrows the whole ring as it was at backup time. The current code lists documents *before* exporting the ring. | `KeyRotation.cs:158`, `Backup.cs:245-248` | Invariant: every blob an archive references is encrypted under a key in **that archive's** ring. The key id can be read from the blob's first bytes without decrypting, so `verify` can check this. Keep the order: list documents, then export the ring. |
+| The **recovery key** encrypts only the archive (`HC360BK3` envelope). The server holds only the current recovery key (plus one pending confirmation). | `BackupEncryption.cs`, `BackupRecoveryKey.cs` | **Changed after reading the code:** blobs are not under the recovery key, so rotating it has no effect on blobs. No per-blob data keys or envelope encryption are needed. **But** after a rotation the server cannot decrypt older archives, so it cannot read *their* blob lists to know what is still referenced. See section 5.3. |
+| `IFieldProtector.DeriveKey(purpose)` gives a key derived from the **original** master key, which "does not change when the key is rotated" and is never retired. It is escrowed in every archive. | `FieldProtection.cs:63` | A stable key for authenticating plaintext metadata in the backup folder. A restored or failed-over server derives the same one. |
+| No code deletes the content of a kept document. `DeleteAsync` soft-deletes the row and keeps the file "for medico-legal retention". `Discard` removes files only for rows rolled back in the same transaction. Erasure (`ErasureService`) erases messages, feedback, nominee and portal account; **it does not touch stored files**. | `FileStore.cs`, `Privacy/Services/ErasureService.cs:49` | Document blobs leave the backups only when a file has left the `files` folder: today after a key-move rewrite or a rollback discard, later after a retention purge or a document erasure if one is added. The design handles this generically: a blob goes once no retained archive references it, within the same R+1 days that `ErasureService.BackupSentence` already promises. Tests have to create this case synthetically. |
+| Retention (`CleanupOld`) deletes archives by `File.GetCreationTimeUtc` and a 1-day rule for `.partial` files. | `Backup.cs:427` | File times are rewritten by copies and clocks. Retention must go by the date in the archive name or manifest, and must never delete the newest complete archive in a location. |
+| The secondary copy is a single `File.Copy` of the archive. `BackupRun.SecondaryCopied` is **one flag per run**, with no notion of *which* disk. | `Backup.cs:286-298` | With rotated USB disks, each disk holds a different set of archives. Copying blobs must compare against **the disk that is mounted now**, not against a flag. |
+| Two nodes can each run **Back up now** while the nightly job runs on the lease holder. `RunAsync` is not serialized across nodes, and DEPLOYMENT.md §8 asks for the same `SecondaryDirectory` on every node. | `Backup.cs:147`, `JobSlotClaim.cs` | Sweeping a shared folder needs a lock: a PostgreSQL advisory lock, plus a lock file for offline tools. |
+| `Restore-HC360.ps1` and the failover step pass the archive path straight to `backup decrypt` / `backup restore --in <path>`, which read it in place. | `deploy/windows/Restore-HC360.ps1:110,156`, DEPLOYMENT.md §9 step 3 | A `blobs\` folder next to the archive is found without changing the script's interface. Copying **only** the `.hc360bak` file elsewhere stops working, and the error must say so plainly. |
+| `BackupArchive.ReadAsync` refuses any tar entry it does not know ("Unexpected entry"). | `BackupArchive.cs:197` | An **older** server given a new-format archive refuses it rather than restoring it without documents, so it fails closed. **Changed after reading the code:** a new envelope (`HC360BK4`) is unnecessary. The change belongs in the archive payload (`BackupArchive.Format` 2 → 3), and the `HC360BK3` envelope stays. Downgrade consequence: see F17. |
+| CI runs the .NET tests on `windows-latest` (`.github/workflows/ci.yml:19,142`). This container has no .NET SDK. | | The NTFS-specific behaviour (rename, timestamps) gets exercised in CI. Implementation steps here need the SDK installed. |
+| `docs/deployment/NANA-THENI-HARDWARE.md`, cited in the brief for the sizing numbers, **does not exist** on this branch or on `main`. The hardware facts are in `NANA-THENI-READINESS.md` §2 (storage row, line 121) and §3 (the two USB disks, line 188). | | The doc updates go to `NANA-THENI-READINESS.md` (or a new hardware doc, if you prefer). The brief's 0.25 GB/day has no source in the repository. |
+
+---
+
+## 2. Measurements
+
+### 2.1 What can and cannot be measured from here
+
+This repository and container hold no hospital data. The real document volume at Nana Hospitals, Theni, can only be
+measured on their server. The brief's figure of **0.25 GB of documents a day is an assumption**, and its source document
+is missing (section 1). The queries in Appendix A measure what the sizing needs, from the database and from the
+`files` folder. **Run them on the Nana server (read-only) before go-live, and again after a month of use**, and put the
+results in section 2.3.
+
+### 2.2 Sizing model
+
+Let *R* be the retained archives in a location, *D* the dump size, *I* the archive's document index (about 60 bytes per
+document, see 5.2), *Docs* the size of the `files` folder now, and *Docs_R* the bytes of document files that changed or
+left in the last *R* days (after a data-key rotation that is all of *Docs*; otherwise about 0).
+
+- **Today:** `R × (D + Docs)`
+- **Proposed:** `R × (D + I) + Docs + Docs_R`
+
+Using the brief's assumptions (0.25 GB/day of documents). The dump sizes are **derived** by subtracting the documents
+from the brief's per-backup totals (96 GB year 1, 289 GB year 3), giving about 5 GB and 15 GB. They are assumptions,
+not measurements.
+
+| | Year 1 | Year 3 | Year 3, within 30 days of a data-key rotation |
+|---|---|---|---|
+| Documents (*Docs*) | 91 GB | 274 GB | 274 GB (+274 GB of old blobs) |
+| Server backup folder today, R = 30 | 2.9 TB | 8.7 TB | 8.7 TB |
+| Server backup folder proposed, R = 30 | 0.24 TB | 0.73 TB | 1.0 TB |
+| Each USB disk today (about 16 of the last 30 nights on each of two weekly-swapped disks) | 1.5 TB | 4.6 TB | 4.6 TB |
+| Each USB disk proposed | 0.17 TB | 0.51 TB | 0.79 TB |
+| Index *I* (assuming ~200 KB per document, which **must be measured**) | 28 MB/archive | 82 MB/archive | |
+
+(The brief's 9.5 TB and 6.4 TB count a few more archives per location than R = 30, such as pre-migration and manual
+backups. The ratio is the same.)
+
+What the model shows beyond the brief:
+
+1. **After this change the dump is the largest term:** 30 × 15 GB = 450 GB of the 0.73 TB in year 3. Fewer retained
+   dumps (for example 7 daily + 4 weekly) or PostgreSQL 17 incremental base backups are the next lever. That is out of
+   scope here, and it would change the "within *R*+1 days" erasure sentence (`ErasureService.BackupWindowDays`).
+2. **The 1 TB Windows disk is still too small at year 3 even with this change:** about 274 GB of live documents, plus
+   the database (probably 2–4× its compressed dump, about 30–60 GB), plus 0.73–1.0 TB of backups. The backup folder has
+   to be on another disk regardless (`HealthCare360:Backup:Directory`). This change moves the problem from "3 months"
+   to "about 2 years" on a shared 1 TB disk. It does not remove it.
+3. **USB disks:** 1 TB lasts beyond year 3 except in the month after a data-key rotation. **2 TB NTFS disks** cover
+   a 3-year horizon with margin.
+
+### 2.3 Measured at Nana Hospitals
+
+*To fill in from Appendix A:* document count, bytes, average and p50/p90/p99 size, by content type and category;
+documents and bytes per day over the last 30 days; dump size per night from `backup_runs`; filesystem and cluster size
+of the server disk and of each USB disk.
+
+---
+
+## 3. Failure model
+
+Every row becomes a test (section 7). "Location" means the primary backup folder, or whichever USB disk is mounted at
+`Backup:SecondaryDirectory` that night.
+
+| # | What happens | What must hold |
+|---|---|---|
+| F1 | Power cut or kill while blobs are being written | Each blob is written to `*.tmp`, flushed, then renamed, so a blob present under its final name is complete. The archive is written **after** all its blobs. A crash leaves only orphan blobs, which the next sweep removes under the lock. |
+| F2 | Crash after the archive is final, before the secondary copy | As today the run fails the copy. The next run copies its own archive and blobs. Nothing half-copied is ever referenced. |
+| F3 | A USB disk that was off site for a week comes back | That night's copy writes the blobs the new archive references and the disk lacks (about a week of documents), then the archive. **Every archive on every disk restores from that disk alone.** |
+| F4 | A disk comes back after more than R days | The new archive and its blobs are copied first. Only then does retention remove expired archives and sweep. The newest complete archive in a location is never deleted. |
+| F5 | Disk unplugged in the middle of a copy | The archive goes last, so the disk keeps only complete archives plus orphan blobs. The next copy skips blobs already there (same name and length) and resumes. |
+| F6 | Disk full | The copy fails with today's warnings (`backup.copy_failed`). The disk stays consistent (as F5). The space check on the primary counts only the new documents, not all of them. |
+| F7 | Bit rot or a damaged sector on a USB disk | `backup verify` re-hashes every referenced blob. A scheduled scrub checks the mounted disk's blobs over a rolling window. A bad blob is reported by archive and storage path. |
+| F8 | Data-key rotation (documents rewritten) during or between backups | The existing shared/exclusive document lock keeps documents still while they are listed and copied. Rewritten documents get new blob ids, so they are copied once more and the old blobs expire after R days. |
+| F9 | A field key is retired | Old archives keep it in their escrowed ring. A new archive never references a blob under it, because retirement requires zero use. `verify` checks each blob's key id (from its header) against the archive's ring. |
+| F10 | The recovery key is rotated | New archives use the new key. The server **cannot open** older archives any more, yet sweeping needs their blob lists, which is why each archive has an authenticated plaintext blob list beside it (5.3). Restoring an older archive needs its own recovery key, as today. |
+| F11 | Restore on new hardware, or failover to the standby | Blobs are restored **byte for byte**, so their ids do not change. The USB disk and NAS need no recopy. The first backup on the new server fills its own empty local folder with every document once, and the space check must expect that. |
+| F12 | Two nodes back up at once (nightly + Back up now) into one shared secondary folder | All writing to and sweeping of a location happens under a PostgreSQL advisory lock for "backup store", plus a lock file (`hc360-store.lock`) that offline tools honour. With no lock there is no sweep. |
+| F13 | Another installation (a training server, a restore drill) points at the same folder | A store marker (`hc360-store.json`: installation id from the original-key fingerprint, format version) is written on first use. A server whose fingerprint differs refuses to write or sweep there, and says why. |
+| F14 | A document's content leaves the `files` folder (erasure, retention purge, rollback discard, key-move rewrite) | Its blob goes at the first sweep after the last archive referencing it expires: within R+1 days, as `ErasureService.BackupSentence` already states. |
+| F15 | A blob list is tampered with, or a blob is deleted by hand | The blob lists carry an HMAC (5.3). One that does not verify, or an archive whose blob list is missing, means **no sweep** in that location and a warning. A missing blob is reported by `verify` and on the Backups screen. |
+| F16 | An operator copies only the `.hc360bak` file to the standby | `verify` and `restore` say how many documents are missing and which `blobs` folder they looked in, and change nothing. |
+| F17 | An older HC360 reads a new archive (rollback, DEPLOYMENT.md §7 "Going back") | It refuses ("Unexpected entry"). The older version's `CleanupOld` still deletes old archives by date but never sweeps `blobs\`, which only leaks space. The upgrade notes must say that backups made after the upgrade need this version or later to restore. |
+| F18 | The USB disk is exFAT | exFAT's default cluster on large disks is 128 KB, so about 64 KB is wasted per blob (about 90 GB at 1.4 million documents), and it has no journal. Disks should be **NTFS**. The preflight and the Backups screen should warn on exFAT. |
+| F19 | Clock change, or copies that reset file times | Retention reads the archive's date from its name or manifest. Sweeping goes by references only, never by file times. |
+| F20 | Pre-migration backups (database only) | They reference no blobs, and retention treats them as today. |
+
+**What a stolen USB disk reveals, compared with today.** Today one archive hides the number, sizes and dates of the
+documents. With loose blobs the disk shows the number of documents, each size (plaintext + 29 or 37 bytes) and, unless
+it is cleared, each file's write time. Content and file names stay unreadable without the recovery key (which unlocks
+the field keys). Proposed mitigation: set blob timestamps to a fixed value. Size padding is not recommended (it costs
+space for little gain). **Decision for you, section 6.**
+
+---
+
+## 4. Prior art: restic and borg
+
+| Their design | Taken? | Why |
+|---|---|---|
+| Snapshot (here: the archive) written **after** the data it references; a crash leaves only garbage | **Yes** | It is what makes F1, F2 and F5 safe without a journal. |
+| Content-addressed blobs named by SHA-256 | **Yes**, of the stored ciphertext | Ciphertext is randomized, so the name reveals nothing (section 1). |
+| Prune = mark (all retained snapshots) and sweep, under an **exclusive lock**, refusing if any snapshot is unreadable | **Yes** | F12, F15. This is restic's `prune` behaviour. |
+| `check --read-data`: re-read and re-hash everything | **Yes**, as `backup verify` plus a scheduled scrub | F7. |
+| Content-defined chunking (split files to deduplicate edits) | **No** | Stored documents are written whole and never edited. The whole file is the unit. |
+| Pack files (many blobs in one file) | **No** | Packs exist to save requests on cloud object stores and to hide sizes. On a local disk they make erasure require **repacking**. Loose files make "delete the blob" a single delete. The cost is the file count (about 1.4 million at year 3 under the 200 KB assumption), which NTFS handles in fan-out folders. The first copy to a new disk takes longer. |
+| A repository-wide index | **No** | Each archive carries its own index (5.2), so any archive plus the `blobs` folder is enough for a restore. There is no shared index to corrupt or rebuild. |
+| Repository key separate from data keys | **Not needed** | The field-key ring escrowed in each archive already plays this role (section 1). |
+| borg append-only mode | **No** (for now) | Retention and erasure must be able to delete. Ransomware resistance comes from the off-site disk. |
+
+---
+
+## 5. Design
+
+### 5.1 Layout in each location
+
+```
+<Backup:Directory or SecondaryDirectory>\
+  hc360-store.json                          store marker (F13)
+  hc360-store.lock                          held while writing or sweeping (F12)
+  hc360-20270114-013000-scheduled.hc360bak  archive: HC360BK3 envelope, payload format 3
+  hc360-20270114-013000-scheduled.refs      authenticated blob list (5.3)
+  blobs\ab\cd\abcd…(64 hex).blob            one stored document file, byte for byte
+  erasure-ledger.log                        unchanged; never touched by retention or sweeping
+```
+
+### 5.2 Archive payload, format 3
+
+The same tar inside the same `HC360BK3` envelope: manifest, keys, `database.dump`, as today. The `files/…` entries are
+replaced by **one** entry, `documents.idx`. It is a compact binary list, one record per document: storage path, SHA-256
+of the stored file, length. It is compressed before encryption. The manifest gains `"Format": 3`, `DocumentCount`,
+`DocumentBytes` (as now) and the SHA-256 of `documents.idx`. Readers keep format 2 (documents inside) and envelope
+versions 1, 2 and 3.
+
+### 5.3 Blob list beside each archive (`.refs`)
+
+The sorted blob ids the archive references, in plain text, plus an HMAC-SHA256 under
+`IFieldProtector.DeriveKey("backup-refs")`, which comes from the original master key and is the same on every server
+restored from these backups. The sweep reads only `.refs` files, so it needs no recovery key and keeps working across
+recovery-key rotations (F10). A missing or failed `.refs` file means no sweep (F15). Restore and verify **do not trust**
+`.refs`. They use the encrypted `documents.idx`.
+
+### 5.4 One run, in order
+
+1. Take the store lock. Check the store marker.
+2. Dump the database. Take the document lock (shared). List the documents, then export the ring (keep today's order).
+3. For each document: hash the stored file. If `blobs/<id>` is missing, copy it to `*.tmp`, flush and rename. The space
+   check counts only these new bytes.
+4. Write the archive (`.partial`, then verify it by reading it back, which **also re-hashes the blobs it references**,
+   then rename). Write `.refs`.
+5. Release the document lock.
+6. Secondary location (the disk mounted now): take its lock, check its marker, copy the blobs it lacks, then the archive
+   and `.refs`, then retention + sweep **on that disk only**, using its own `.refs` files.
+7. Retention + sweep on the primary.
+
+Retention: delete archives (and their `.refs`) older than *R* days by name or manifest date, keeping the newest
+complete one. Sweep: delete blobs no remaining `.refs` names, skipping `*.tmp` younger than a day.
+
+### 5.5 Restore, verify, failover
+
+`backup verify|restore|decrypt --in <archive>` finds `blobs\` beside the archive, or takes `--blobs <folder>`.
+Restore checks every document (present, length, SHA-256, and key id in the archive's ring) **before** changing
+anything, as today, then copies the blobs into `files\<storage path>`, keeping files already there. `Restore-HC360.ps1`
+and DEPLOYMENT.md §9 step 3 keep their commands. The documentation changes to "copy the whole backup folder, not one
+file".
+
+---
+
+## 6. Decisions needed from you
+
+1. **What a stolen USB disk reveals (section 3, end):** accept that document count and sizes are visible, with
+   timestamps cleared? Recommended: yes.
+2. **Where the sizing goes:** `NANA-THENI-HARDWARE.md` does not exist. Update `NANA-THENI-READINESS.md` §2–3, or create
+   the hardware doc? Recommended: update the readiness doc.
+3. **USB disks: require NTFS**, with a warning on exFAT (F18)? Recommended: yes.
+4. **Run Appendix A on the Nana server.** Someone with access has to run it. Until then the sizing in 2.2 stays marked
+   as assumed.
+
+## 7. Implementation plan (each step its own commit)
+
+1. `BackupStore`: layout, marker, lock, blob put/has/hash, `.refs` write/read with HMAC, retention, sweep. Unit tests
+   for F1, F5, F12, F13, F15, F19.
+2. Archive format 3 (`documents.idx`), with format 2 still read. Tests: round trip, a format 2 archive and a v1 file
+   still restore.
+3. `BackupService` uses the store: primary, then the mounted secondary disk (F3, F4, F6). The space check counts only
+   new documents.
+4. Restore, verify and decrypt with `--blobs`. Restore-from-secondary-alone and stale-disk tests (F3, F16). Key rotation:
+   data key (F8, F9) and recovery key (F10).
+5. A model-based test: seeded random sequences of {backup, add document, key-move rewrite, discard, rotate recovery key,
+   swap or unplug disk, crash at step *k*, advance a day}. Invariant after every step: every retained archive in every
+   location restores completely from that location alone, and no blob outlives R+1 days after its last reference
+   (F14). It uses a seeded random generator rather than adding FsCheck, unless you want the dependency.
+6. A growth benchmark over 60 simulated nights, asserting size ≈ `R × (D + I) + Docs + Docs_R`.
+7. Docs: DEPLOYMENT.md §7 (downgrade note), §8, §9 step 3, the readiness doc's sizing. A restore-drill script for a
+   clean Windows VM from one USB disk (row counts plus per-document hashes, timed).
+
+---
+
+## Appendix A. Measurements to run on the Nana server (read-only)
+
+In `psql` against the HC360 database:
+
+```sql
+-- Documents: count, bytes, and size distribution, by type (content is kept for soft-deleted rows, so all rows count)
+SELECT content_type, category, count(*) AS documents, round(sum(size_bytes) / 1e9, 2) AS gb,
+       round(avg(size_bytes) / 1e3) AS avg_kb,
+       percentile_cont(ARRAY[0.5, 0.9, 0.99]) WITHIN GROUP (ORDER BY size_bytes) AS p50_p90_p99_bytes
+FROM platform.stored_files GROUP BY ROLLUP (content_type, category) ORDER BY gb DESC NULLS FIRST;
+
+-- Growth: documents and GB a day, last 60 days (IST)
+SELECT (created_at AT TIME ZONE 'Asia/Kolkata')::date AS day, count(*) AS documents, round(sum(size_bytes) / 1e9, 3) AS gb
+FROM platform.stored_files WHERE created_at > now() - interval '60 days' GROUP BY 1 ORDER BY 1;
+
+-- Backups: size and document count per run (status 1 = Succeeded; kind 0 scheduled, 1 manual, 2 pre-migration)
+SELECT started_at, kind, round(size_bytes / 1e9, 2) AS gb, document_count, secondary_copied
+FROM platform.backup_runs WHERE status = 1 ORDER BY started_at DESC LIMIT 60;
+
+-- The database itself
+SELECT pg_size_pretty(pg_database_size(current_database()));
+```
+
+In PowerShell on the server, with each USB disk connected in turn:
+
+```powershell
+$files = Get-ChildItem "$env:ProgramData\HyFib\HealthCare360\files" -Recurse -File
+"{0:N0} files, {1:N1} GB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1GB)
+Get-Volume | Select-Object DriveLetter, FileSystem, AllocationUnitSize, Size, SizeRemaining
+```
