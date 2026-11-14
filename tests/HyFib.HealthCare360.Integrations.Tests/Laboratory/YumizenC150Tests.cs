@@ -239,7 +239,7 @@ public sealed class YumizenC150Tests
     [InlineData("yumizenc150", false)]
     [InlineData("Cobas", false)]
     public void A_connection_takes_only_a_known_dialect(string? dialect, bool valid) =>
-        (LabSamples.AstmInstrument with { AstmDialect = dialect }).Validate().ShouldBe(valid ? null : "the ASTM dialect must be one of YumizenC150, or none");
+        (LabSamples.AstmInstrument with { AstmDialect = dialect }).Validate().ShouldBe(valid ? null : "the ASTM dialect must be one of YumizenC150, YumizenH500, or none");
 
     [Fact]
     public void An_unknown_stored_dialect_reads_as_standard_astm() =>

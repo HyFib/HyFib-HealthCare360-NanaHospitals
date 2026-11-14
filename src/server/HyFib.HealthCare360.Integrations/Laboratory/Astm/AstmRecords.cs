@@ -15,7 +15,10 @@ internal sealed record AstmDelimiters(char Field, char Repeat, char Component, c
             ? new AstmDelimiters(headerRecord[1], headerRecord[2], headerRecord[3], headerRecord[4])
             : Default;
 
-    /// <summary>Decodes <c>&amp;F&amp; &amp;S&amp; &amp;R&amp; &amp;E&amp;</c> (with the message's escape character).</summary>
+    /// <summary>
+    /// Decodes <c>&amp;F&amp; &amp;S&amp; &amp;R&amp; &amp;E&amp;</c> and <c>&amp;Xhhhh&amp;</c> (a character by its
+    /// hexadecimal code, as HORIBA analysers escape control characters), with the message's escape character.
+    /// </summary>
     public string Unescape(string value)
     {
         if (value.IndexOf(Escape, StringComparison.Ordinal) < 0)
@@ -23,11 +26,40 @@ internal sealed record AstmDelimiters(char Field, char Repeat, char Component, c
             return value;
         }
 
-        return value
+        return DecodeHex(value)
             .Replace($"{Escape}F{Escape}", Field.ToString(), StringComparison.Ordinal)
             .Replace($"{Escape}S{Escape}", Component.ToString(), StringComparison.Ordinal)
             .Replace($"{Escape}R{Escape}", Repeat.ToString(), StringComparison.Ordinal)
             .Replace($"{Escape}E{Escape}", Escape.ToString(), StringComparison.Ordinal);
+    }
+
+    /// <summary><c>&amp;Xhhhh&amp;</c> (1 to 4 hexadecimal digits) to its character; anything else is left as it is.</summary>
+    private string DecodeHex(string value)
+    {
+        var marker = $"{Escape}X";
+        if (value.IndexOf(marker, StringComparison.Ordinal) < 0)
+        {
+            return value;
+        }
+
+        var builder = new StringBuilder(value.Length);
+        var i = 0;
+        while (i < value.Length)
+        {
+            var end = string.CompareOrdinal(value, i, marker, 0, marker.Length) == 0 ? value.IndexOf(Escape, i + 2) : -1;
+            if (end > i + 2 && end - i - 2 <= 4
+                && int.TryParse(value.AsSpan(i + 2, end - i - 2), System.Globalization.NumberStyles.AllowHexSpecifier, System.Globalization.CultureInfo.InvariantCulture, out var code))
+            {
+                builder.Append((char)code);
+                i = end + 1;
+                continue;
+            }
+
+            builder.Append(value[i]);
+            i++;
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>Escapes delimiters in free text (names, ids) and removes line breaks, which would end the record.</summary>

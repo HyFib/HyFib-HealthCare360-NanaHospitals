@@ -678,4 +678,28 @@ public sealed class AstmSessionTests
         records[2].ShouldStartWith("O|1|SMP-1||^^^GLU`^^^CREA|S|");
         records[3].ShouldBe("L|1|N");
     }
+
+    [Fact]
+    public async Task Answers_the_yumizen_h500_query_from_its_manual_with_an_empty_order_when_nothing_is_pending()
+    {
+        IReadOnlyList<InstrumentOrder> none = [];
+        _processor.QueryOrdersAsync(default!, default!, default!, Ct).ReturnsForAnyArgs(HostQueryAnswer.Answer(none));
+        var h500 = LabSamples.AstmInstrument with { Code = "H500", AstmDialect = AstmDialect.YumizenH500Name };
+        var run = Start(h500, LabRuntimeOptions.From(new LabGatewaySettings(), h500) with { Zone = LabSamples.India });
+
+        await OpenAsync();
+        // The query as the manual prints it (§3.6.1). The checksums of Q and L are the manual's; the header's printed one
+        // does not match its text (the line wraps in the manual), so it carries the computed one.
+        await SendAcknowledgedAsync(
+        [
+            [AstmControl.Stx, .. "1H|\\^&|||H500/H500E^112YADH47745^3.0.0.3a|||||||P|LIS2-A2|20210709175737\r"u8, AstmControl.Etx, .. "F2\r\n"u8],
+            [AstmControl.Stx, .. "2Q|1|^0124||ALL||||||||O\r"u8, AstmControl.Etx, .. "E1\r\n"u8],
+            [AstmControl.Stx, .. "3L|1|N\r"u8, AstmControl.Etx, .. "06\r\n"u8],
+        ]);
+        await SendAsync(AstmControl.Eot);
+        var records = await ReceiveTransferAsync();
+        await FinishAsync(run);
+
+        records.ShouldBe([@"H|\^&||||||||||P|LIS2-A2|20260925103000", "P|1|", "O|1|0124||^^^|||||||N||||||||||||||Y", "L|1|N"]);
+    }
 }

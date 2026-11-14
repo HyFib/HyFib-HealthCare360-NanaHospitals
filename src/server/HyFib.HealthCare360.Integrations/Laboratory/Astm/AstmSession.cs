@@ -275,9 +275,11 @@ internal sealed class AstmSession(LabInstrumentSettings instrument, LabRuntimeOp
             }
 
             // Answered in the analyser's own delimiters (its dialect may repeat with another character than its header says).
-            var delimiters = _dialect.Incoming(AstmDelimiters.FromHeader(records.FirstOrDefault(r => r.Type == 'H')?.Text));
+            var header = records.FirstOrDefault(r => r.Type == 'H');
+            var delimiters = _dialect.Incoming(AstmDelimiters.FromHeader(header?.Text));
             _outgoing.Enqueue(AstmMessageMapper.BuildOrderResponse(
-                answer.Orders, delimiters, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone, _dialect));
+                answer.Orders, delimiters, TimeZoneInfo.ConvertTime(time.GetUtcNow(), options.Zone), options.Zone, _dialect,
+                sampleIds, header?.Field(10)));
             return true;
         }
 

@@ -22,6 +22,12 @@ internal static class AstmMessageMapper
     {
         dialect ??= AstmDialect.Standard;
         var header = records.FirstOrDefault(r => r.Type == 'H');
+        if (!dialect.CarriesPatientResults(header?.Value(12)))
+        {
+            // A QC or technician run: not a patient's results, so nothing for the LIS to store on a tube.
+            return [];
+        }
+
         var messageTime = MessageTime(header, zone);
         var samples = new List<(string SampleId, InstrumentPatient? Patient, List<InstrumentResult> Results)>();
         InstrumentPatient? patient = null;
@@ -30,6 +36,9 @@ internal static class AstmMessageMapper
 
         // A comment record belongs to the result record it follows (its position in the sample's results), if any.
         var commented = -1;
+
+        // Under a control sample's order (O.16 CONTROL), whose results are QC, not a patient's.
+        var control = false;
         foreach (var record in records)
         {
             switch (record.Type)
@@ -37,13 +46,23 @@ internal static class AstmMessageMapper
                 case 'P':
                     // A new patient: results must be preceded by their own order record.
                     patient = Patient(record, dialect);
+                    control = false;
                     patientSampleId = dialect.SampleIdInPatientRecord && record.Component(3, 1).Trim() is { Length: > 0 } keyed ? keyed : null;
                     current = null;
                     commented = -1;
                     break;
+                case 'O' when dialect.PatientResultsOnly && record.Component(16, 1).Trim().Equals("CONTROL", StringComparison.OrdinalIgnoreCase):
+                    control = true;
+                    current = null;
+                    commented = -1;
+                    break;
                 case 'O':
+                    control = false;
                     current = [];
                     samples.Add((SampleId(record) ?? patientSampleId ?? string.Empty, patient, current));
+                    commented = -1;
+                    break;
+                case 'R' when control:
                     commented = -1;
                     break;
                 case 'R':
@@ -128,6 +147,14 @@ internal static class AstmMessageMapper
         var testId = record.Components(3);
         var code = testId.Count >= 4 && testId[3].Trim().Length > 0 ? testId[3] : testId.FirstOrDefault(c => c.Trim().Length > 0);
         var value = string.Join(" ", record.Components(4).Select(c => c.Trim()).Where(c => c.Length > 0));
+        string? note = null;
+        if (dialect?.DashValuesNotObtained == true && value is "---" or "+++")
+        {
+            // Not a number: the analyser could not give one (---) or it is beyond the range it reports (+++).
+            note = value == "+++" ? "Above the analyser's reportable range (+++)" : "No result from the analyser (---)";
+            kind = InstrumentResultKind.NotObtained;
+        }
+
         if (string.IsNullOrWhiteSpace(code) || (kind == InstrumentResultKind.Value && value.Length == 0))
         {
             return null;
@@ -140,6 +167,7 @@ internal static class AstmMessageMapper
         {
             Status = status.Length == 0 ? null : status,
             Kind = kind,
+            Comment = note,
         };
     }
 
@@ -176,17 +204,41 @@ internal static class AstmMessageMapper
     /// "response to query"), and a terminator with code F (query processed) or I (no information available); the dialect
     /// may ask for other codes (<see cref="AstmDialect.QueryAnswerReportType"/>, <see cref="AstmDialect.TerminatorAlwaysNormal"/>).
     /// </summary>
+    /// <param name="queriedSampleIds">The samples asked for; one HC360 has nothing for is answered with an empty order where the dialect wants it (<see cref="AstmDialect.AnswersUnknownSamples"/>).</param>
+    /// <param name="queryReceiver">The query's H.10 as sent, copied to the answer's H.5 where the dialect wants it.</param>
     public static IReadOnlyList<string> BuildOrderResponse(
-        IReadOnlyList<InstrumentOrder> orders, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone, AstmDialect? dialect = null)
+        IReadOnlyList<InstrumentOrder> orders, AstmDelimiters delimiters, DateTimeOffset localNow, TimeZoneInfo zone, AstmDialect? dialect = null,
+        IReadOnlyList<string>? queriedSampleIds = null, string? queryReceiver = null)
     {
         dialect ??= AstmDialect.Standard;
-        var records = new List<string> { Header(delimiters, localNow, dialect) };
+        var records = new List<string> { Header(delimiters, localNow, dialect, queryReceiver) };
         var sequence = 0;
-        foreach (var order in orders.Where(o => o.ChannelCodes.Count > 0))
+        var answered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var order in orders.Where(o => dialect.OrderedTests(o.ChannelCodes).Count > 0))
         {
             sequence++;
+            answered.Add(order.SampleBarcode);
             records.Add(PatientRecord(delimiters, sequence, order, dialect));
             records.Add(OrderRecord(delimiters, order, actionCode: "N", reportType: dialect.QueryAnswerReportType, zone, dialect));
+        }
+
+        if (dialect.AnswersUnknownSamples)
+        {
+            // "No test for this record" (O.26 Y), as the analyser's manual answers a sample the host has nothing for.
+            foreach (var id in (queriedSampleIds ?? []).Where(id => !answered.Contains(id)))
+            {
+                sequence++;
+                var empty = new string?[26];
+                empty[0] = "O";
+                empty[1] = "1";
+                empty[2] = delimiters.EscapeText(id);
+                empty[4] = $"{delimiters.Component}{delimiters.Component}{delimiters.Component}";
+                empty[11] = "N";
+                empty[25] = "Y";
+                // "P|1|" with its trailing delimiter, as the manual's answer writes the empty patient.
+                records.Add(AstmRecords.Build(delimiters, "P", sequence.ToString(CultureInfo.InvariantCulture)) + delimiters.Field);
+                records.Add(AstmRecords.Build(delimiters, empty));
+            }
         }
 
         records.Add(AstmRecords.Build(delimiters, "L", "1", dialect.TerminatorAlwaysNormal ? "N" : sequence == 0 ? "I" : "F"));
@@ -222,16 +274,12 @@ internal static class AstmMessageMapper
     };
 
     /// <summary>O.6 priority: S (stat), A (as soon as possible) or R (routine).</summary>
-    internal static string Priority(OrderPriority priority) => priority switch
-    {
-        OrderPriority.Stat => "S",
-        OrderPriority.Urgent => "A",
-        _ => "R",
-    };
+    internal static string Priority(OrderPriority priority) => AstmDialect.Standard.Priority(priority);
 
-    private static string Header(AstmDelimiters d, DateTimeOffset localNow, AstmDialect dialect) =>
-        AstmRecords.Build(d, "H", d.Definition, null, null, $"HC360{d.Component}1.0", null, null, null, null, null, null, "P", dialect.HeaderVersion,
-            localNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture));
+    /// <summary>H.5 is HC360 (or, where the dialect wants it, the query's H.10 as it came), H.12 P, H.13 the version, H.14 the time.</summary>
+    private static string Header(AstmDelimiters d, DateTimeOffset localNow, AstmDialect dialect, string? queryReceiver = null) =>
+        AstmRecords.Build(d, "H", d.Definition, null, null, dialect.HeaderSenderEchoesQuery ? queryReceiver : $"HC360{d.Component}1.0",
+            null, null, null, null, null, null, "P", dialect.HeaderVersion, localNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture));
 
     /// <summary>
     /// P.3 hospital patient id (UHID), P.6 name, P.8 date of birth, P.9 sex. An analyser that keys samples by P.3
@@ -255,13 +303,13 @@ internal static class AstmMessageMapper
     /// <summary>O.3 sample id, O.5 tests, O.6 priority, O.8 collected at, O.12 action, O.16 specimen, O.26 report type.</summary>
     private static string OrderRecord(AstmDelimiters d, InstrumentOrder order, string actionCode, string reportType, TimeZoneInfo zone, AstmDialect dialect)
     {
-        var tests = string.Join(d.Repeat, order.ChannelCodes.Select(code => $"{d.Component}{d.Component}{d.Component}{d.EscapeText(code)}"));
+        var tests = string.Join(d.Repeat, dialect.OrderedTests(order.ChannelCodes).Select(code => $"{d.Component}{d.Component}{d.Component}{d.EscapeText(code)}"));
         var fields = new string?[26];
         fields[0] = "O";
         fields[1] = "1";
         fields[2] = d.EscapeText(order.SampleBarcode);
         fields[4] = tests;
-        fields[5] = Priority(order.Priority);
+        fields[5] = dialect.Priority(order.Priority);
         fields[7] = order.CollectedAt is { } collected ? TimeZoneInfo.ConvertTime(collected, zone).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) : null;
         fields[11] = actionCode;
         fields[15] = dialect.Specimen(order.SpecimenType) is { } specimen ? d.EscapeText(specimen) : null;
