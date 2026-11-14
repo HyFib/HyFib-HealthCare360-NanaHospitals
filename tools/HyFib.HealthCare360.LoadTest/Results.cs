@@ -11,7 +11,7 @@ internal sealed record Sample(string Operation, OperationKind Kind, TimeSpan Ela
 
 /// <summary>An operation's figures over the measured part of the run, and whether they meet its target.</summary>
 internal sealed record OperationResult(
-    string Name, OperationKind Kind, int Count, int Failures, double P50, double P95, double P99, double Max, double TargetMs)
+    string Name, OperationKind Kind, int Count, int Failures, double P50, double P95, double P99, double Max, double TargetMs, string Area = "")
 {
     /// <summary>Within the target, with at least one request that worked: failures have no time to be fast in.</summary>
     public bool Met => Count > Failures && P95 <= TargetMs;
@@ -38,7 +38,8 @@ internal sealed record LoadTestResult(
     IReadOnlyList<ListSize> Lists,
     int Requests,
     int Failures,
-    IReadOnlyDictionary<int, int> FailuresByStatus)
+    IReadOnlyDictionary<int, int> FailuresByStatus,
+    IReadOnlyList<string>? NotRun = null)
 {
     /// <summary>More than this share of failed requests fails the run, whatever the timings.</summary>
     public const double MaxFailureRate = 0.01;
@@ -89,7 +90,7 @@ internal static class Results
                 return new OperationResult(
                     operation.Name, operation.Kind, mine.Count, mine.Count(s => s.Failed),
                     Percentile(times, 50), Percentile(times, 95), Percentile(times, 99), times.Count > 0 ? times[^1] : 0,
-                    Operation.TargetOf(operation.Kind).TotalMilliseconds);
+                    Operation.TargetOf(operation.Kind).TotalMilliseconds, operation.Area);
             }),
         ];
     }
@@ -112,6 +113,31 @@ internal static class Results
         {
             text.AppendLine(invariant,
                 $"| {o.Name} | {Ms(o.TargetMs)} ms ({Operation.RequirementOf(o.Kind)}) | {o.Count:N0} | {o.Failures:N0} | {Ms(o.P50)} | {Ms(o.P95)} | {Ms(o.P99)} | {Ms(o.Max)} | {(o.Met ? "yes" : "**no**")} |");
+        }
+
+        // The peak mix (PeakMix): each area's share of the requests, and its slowest step, so a slow desk shows at a glance.
+        var areas = result.Operations.Where(o => o.Area.Length > 0).GroupBy(o => o.Area).ToList();
+        if (areas.Count > 1)
+        {
+            text.AppendLine();
+            text.AppendLine("| Area | Requests | Failed | Slowest step (p95 ms) |");
+            text.AppendLine("|---|--:|--:|---|");
+            foreach (var area in areas)
+            {
+                var slowest = area.Where(o => o.Count > o.Failures).OrderByDescending(o => o.P95).FirstOrDefault();
+                text.AppendLine(invariant,
+                    $"| {area.Key} | {area.Sum(o => o.Count):N0} | {area.Sum(o => o.Failures):N0} | {(slowest is null ? "none succeeded" : $"{slowest.Name} ({Ms(slowest.P95)})")} |");
+            }
+        }
+
+        if (result.NotRun is { Count: > 0 })
+        {
+            text.AppendLine();
+            text.AppendLine("Not run in this run:");
+            foreach (var line in result.NotRun)
+            {
+                text.AppendLine($"- {line}");
+            }
         }
 
         text.AppendLine();

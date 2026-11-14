@@ -21,6 +21,19 @@ if (options is null)
     return 2;
 }
 
+if (options.PortalTokensPath is { } tokensPath)
+{
+    try
+    {
+        options = options with { PortalTokens = [.. (await File.ReadAllLinesAsync(tokensPath)).Select(l => l.Trim()).Where(l => l.Length > 0)] };
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+        await Console.Error.WriteLineAsync($"The portal tokens could not be read from {tokensPath}: {ex.Message}");
+        return 2;
+    }
+}
+
 using var cancel = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
 {

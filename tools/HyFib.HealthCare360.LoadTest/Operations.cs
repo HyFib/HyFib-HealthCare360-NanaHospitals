@@ -17,8 +17,22 @@ internal enum OperationKind
     Write,
 }
 
-/// <summary>One step a front-office or clinical user takes, and how often, among the others.</summary>
-internal sealed record Operation(string Name, OperationKind Kind, int Weight, Func<OperationContext, HttpRequestMessage> Request)
+/// <summary>
+/// One step a member of staff or a patient takes, and how often, among the others of their role.
+/// <paramref name="Role"/>: who takes it (<see cref="PeakMix"/> gives each virtual user one role, as a hospital's staff keep to
+/// their desks). <paramref name="IsAvailable"/>: when the step makes sense for this user now (a receipt only after a bill);
+/// always, when null. <paramref name="OnSuccess"/>: reads the answer of a step that worked, to keep what the next step of
+/// this user (or of others) needs.
+/// </summary>
+internal sealed record Operation(
+    string Name,
+    OperationKind Kind,
+    int Weight,
+    Func<OperationContext, HttpRequestMessage> Request,
+    Role Role = Role.FrontOffice,
+    string Area = "Front office",
+    Func<OperationContext, bool>? IsAvailable = null,
+    Action<OperationContext, JsonElement>? OnSuccess = null)
 {
     public static TimeSpan TargetOf(OperationKind kind) => kind switch
     {
@@ -31,9 +45,15 @@ internal sealed record Operation(string Name, OperationKind Kind, int Weight, Fu
 }
 
 /// <summary>What a virtual user's next request may use: patients the server has, and a source of chance.</summary>
-internal sealed class OperationContext(IReadOnlyList<Guid> patients, Random random, Func<long> nextNumber)
+internal sealed class OperationContext(IReadOnlyList<Guid> patients, Random random, Func<long> nextNumber, Fixtures? fixtures = null)
 {
     public Random Random => random;
+
+    /// <summary>What the server has to work with (departments, stock, wards) and the doses and samples waiting, shared by every user.</summary>
+    public Fixtures Fixtures { get; } = fixtures ?? new Fixtures();
+
+    /// <summary>What this user is in the middle of: the bill being made, the result sheet open. Only this user's own requests touch it.</summary>
+    public Dictionary<string, object> State { get; } = [];
 
     public Guid AnyPatient() => patients[random.Next(patients.Count)];
 
@@ -97,6 +117,13 @@ internal static class Operations
         }
 
         return operations[^1];
+    }
+
+    /// <summary>An operation chosen by weight among those available to <paramref name="context"/>'s user now.</summary>
+    public static Operation Choose(IReadOnlyList<Operation> operations, OperationContext context)
+    {
+        var available = operations.Where(o => o.IsAvailable is null || o.IsAvailable(context)).ToList();
+        return Choose(available.Count > 0 ? available : operations, context.Random);
     }
 
     /// <summary>A new patient as the registration screen sends one, with a phone number no one else has.</summary>
