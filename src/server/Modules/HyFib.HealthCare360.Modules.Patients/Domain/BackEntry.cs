@@ -30,6 +30,9 @@ public enum BackEntryRecord
 
     /// <summary>Nursing notes and intake/output charted for a time in the past.</summary>
     NursingChart,
+
+    /// <summary>A pharmacy sale written on paper at the counter under a downtime pharmacy sale number.</summary>
+    PharmacySale,
 }
 
 /// <summary>
@@ -68,6 +71,7 @@ public static class BackEntryWindows
         new(BackEntryRecord.Transfer, "Bed transfer time", 24, MaxHours),
         new(BackEntryRecord.ConsultantVisit, "Consultant's ward visit time", 48, MaxHours),
         new(BackEntryRecord.NursingChart, "Nursing notes and intake/output", 24, MaxHours),
+        new(BackEntryRecord.PharmacySale, "Pharmacy sale from paper", 72, MaxHours),
     ];
 
     public static BackEntryWindow For(BackEntryRecord record) => All.First(w => w.Record == record);
@@ -82,6 +86,7 @@ public static class BackEntryWindows
         BackEntryRecord.Transfer => "transfer",
         BackEntryRecord.ConsultantVisit => "consultantVisit",
         BackEntryRecord.NursingChart => "nursingChart",
+        BackEntryRecord.PharmacySale => "pharmacySale",
         _ => throw new ArgumentOutOfRangeException(nameof(record)),
     };
 }
