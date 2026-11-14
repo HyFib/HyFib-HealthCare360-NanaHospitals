@@ -9,8 +9,9 @@ import { create } from 'zustand';
  * PBKDF2-HMAC-SHA512 of the PIN or password (210,000 rounds, as the server hashes them, with a random salt kept beside
  * it), sealed with HMAC-SHA-256 under a key derived (HKDF) from the key the server gives the user with the session
  * (AuthResult.draftKey). That key is held in memory only, never stored, so the verifier on the computer cannot be tried
- * against guesses away from a live session of its user, where a PIN would fall in a few thousand. One user's verifiers
- * are kept at a time: another user's key wipes them, and so do five wrong tries, as five wrong PINs end the session.
+ * against guesses away from a live session of its user: only salted and hashed, a PIN, a few thousand guesses at most,
+ * would fall at once. One user's verifiers are kept at a time: another user's key wipes them, and so do five wrong
+ * tries, as five wrong PINs end the session.
  */
 
 export type OfflineSecret = 'pin' | 'password';

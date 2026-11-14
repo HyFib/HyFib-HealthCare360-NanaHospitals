@@ -198,13 +198,13 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     computer. What it checks against is kept at the user's last sign-in or unlock there that the server accepted, never
     the secret: PBKDF2-HMAC-SHA512 (210,000 rounds, as the server hashes PINs, with a random 16-byte salt each time),
     sealed with HMAC-SHA-256 under a key derived (HKDF) from the user's session key (`AuthResult.draftKey`), which is held
-    in memory only. So what is on the disk cannot be tried against guesses away from a live session of its user, where a
-    PIN of 4 to 6 digits would fall in seconds. One user's verifiers are kept at a time: another user's sign-in wipes them,
-    as do signing out, a session ending while the server can be reached, and five wrong tries. Known limits: someone
-    who opens the browser's developer tools on that computer during the session (HC360 Desktop keeps them off unless IT
-    allows them) can take the session key from memory and guess a PIN offline, as they can read the copy itself; and
-    after a PIN or password is changed on another computer, the old one still opens the copy on this one until its user
-    next signs in or unlocks here.
+    in memory only. So what is on the disk cannot be tried against guesses away from a live session of its user; only
+    salted and hashed, a PIN of 4 to 6 digits would fall to them in seconds. One user's verifiers are kept at a time:
+    another user's sign-in wipes them, as do signing out, a session ending while the server can be reached, and five
+    wrong tries. Known limits: someone who opens the browser's developer tools on that computer during the session
+    (HC360 Desktop keeps them off unless IT allows them) can take the session key from memory and guess a PIN offline,
+    as they can read the copy itself; and after a PIN or password is changed on another computer, the old one still
+    opens the copy on this one until its user next signs in or unlocks here.
   - **Quick unlock with Windows Hello or a fingerprint** (SRS UX-11): where the hospital has turned it on, staff can
     set up a device under My account › Lock screen and then unlock with its Windows Hello (face, fingerprint or the
     Windows Hello PIN), or Touch ID and the like elsewhere. It is WebAuthn with the device's built-in authenticator, checked by fido2-net-lib (MIT); no
