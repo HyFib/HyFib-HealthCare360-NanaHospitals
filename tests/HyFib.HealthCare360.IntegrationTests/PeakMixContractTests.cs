@@ -4,6 +4,8 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Platform.Http;
+using Microsoft.AspNetCore.Http;
 
 namespace HyFib.HealthCare360.IntegrationTests;
 
@@ -53,5 +55,21 @@ public sealed class PeakMixContractTests
         var tests = FixtureDiscovery.OrderableTests(JsonSerializer.SerializeToElement(rows, ApiClient.Json));
 
         tests.ShouldBe(new[] { sugar.Id });
+    }
+
+    [Fact]
+    public void Every_portal_step_is_one_the_portals_address_serves()
+    {
+        // The load test sends the portal's steps to the portal's address (--portal-server), which answers only the portal's own
+        // API, the endpoints it shares with the staff app and outside services' callbacks: a staff endpoint there is a 404.
+        var context = new OperationContext([Guid.NewGuid()], new Random(1), () => 1, new Fixtures());
+        var portalSteps = PeakMix.Extra().Where(o => o.Role == Role.Portal).ToList();
+        portalSteps.ShouldNotBeEmpty();
+        foreach (var step in portalSteps)
+        {
+            using var request = step.Request(context);
+            var path = "/" + request.RequestUri!.OriginalString.Split('?')[0];
+            ListenerPaths.Decide(Listener.Portal, new PathString(path)).ShouldBe(ListenerRoute.Serve, $"{step.Name}: {path}");
+        }
     }
 }

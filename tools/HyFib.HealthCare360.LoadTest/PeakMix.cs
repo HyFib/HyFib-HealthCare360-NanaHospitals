@@ -377,7 +377,9 @@ internal static class PeakMix
         new(MarDue, OperationKind.Read, Defaults[MarDue], c => Get($"api/v1/nursing/wards/{c.Fixtures.WardId}/mar/due?withinMinutes=240"), Role.Ward, "Ward", null, OnMarDue),
         new(MarGiven, OperationKind.Write, Defaults[MarGiven], MarGivenRequest, Role.Ward, "Ward", c => !c.Fixtures.Doses.IsEmpty),
 
-        new(PortalMe, OperationKind.Read, Defaults[PortalMe], _ => Get("api/v1/auth/me"), Role.Portal, "Patient portal"),
+        // The portal's address serves only the portal's own API (no staff endpoint answers there, /api/v1/auth/me included): the
+        // portal asks who is signed in with the profiles of the verified number, as its app does.
+        new(PortalMe, OperationKind.Read, Defaults[PortalMe], _ => Get("api/v1/portal/profiles"), Role.Portal, "Patient portal"),
         new(PortalRecords, OperationKind.Read, Defaults[PortalRecords], _ => Get("api/v1/portal/health-records"), Role.Portal, "Patient portal"),
         new(PortalReports, OperationKind.Read, Defaults[PortalReports], _ => Get("api/v1/portal/reports"), Role.Portal, "Patient portal"),
         new(PortalBills, OperationKind.Read, Defaults[PortalBills], _ => Get("api/v1/portal/bills"), Role.Portal, "Patient portal"),
