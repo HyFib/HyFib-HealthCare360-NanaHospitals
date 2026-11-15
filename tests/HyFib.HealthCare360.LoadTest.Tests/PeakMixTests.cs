@@ -372,6 +372,24 @@ public sealed class PeakMixTests
     }
 
     [Fact]
+    public void The_portal_reads_the_health_record_of_its_first_profile_once_it_knows_its_profiles()
+    {
+        var context = ContextFor(FullFixtures());
+        var profiles = Step(PeakMix.Extra(), PeakMix.PortalMe);
+        var record = Step(PeakMix.Extra(), PeakMix.PortalRecords);
+        record.IsAvailable!(context).ShouldBeFalse("the health record is one profile's, and none is known yet");
+
+        // The signed-in number's profiles, as GET /api/v1/portal/profiles answers (a family shares a number).
+        var first = Guid.NewGuid();
+        using var answer = JsonDocument.Parse($$"""[{ "id": "{{first}}", "fullName": "Asha" }, { "id": "{{Guid.NewGuid()}}", "fullName": "Ravi" }]""");
+        profiles.OnSuccess!(context, answer.RootElement.Clone());
+
+        record.IsAvailable!(context).ShouldBeTrue();
+        using var request = record.Request(context);
+        request.RequestUri!.OriginalString.ShouldBe($"api/v1/portal/health-records?patientId={first}");
+    }
+
+    [Fact]
     public void The_report_shows_each_area_and_what_was_not_run()
     {
         OperationResult[] operations =

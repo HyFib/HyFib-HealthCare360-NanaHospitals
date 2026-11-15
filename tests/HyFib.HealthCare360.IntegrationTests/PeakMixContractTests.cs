@@ -64,6 +64,7 @@ public sealed class PeakMixContractTests
         // API, the endpoints it shares with the staff app and outside services' callbacks: a staff endpoint there is a 404.
         var context = new OperationContext([Guid.NewGuid()], new Random(1), () => 1, new Fixtures());
         var portalSteps = PeakMix.Extra().Where(o => o.Role == Role.Portal).ToList();
+        portalSteps.Single(o => o.Name == PeakMix.PortalMe).OnSuccess!(context, JsonSerializer.SerializeToElement(new[] { new { id = Guid.NewGuid() } }));
         portalSteps.ShouldNotBeEmpty();
         foreach (var step in portalSteps)
         {

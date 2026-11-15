@@ -378,15 +378,29 @@ internal static class PeakMix
         new(MarGiven, OperationKind.Write, Defaults[MarGiven], MarGivenRequest, Role.Ward, "Ward", c => !c.Fixtures.Doses.IsEmpty),
 
         // The portal's address serves only the portal's own API (no staff endpoint answers there, /api/v1/auth/me included): the
-        // portal asks who is signed in with the profiles of the verified number, as its app does.
-        new(PortalMe, OperationKind.Read, Defaults[PortalMe], _ => Get("api/v1/portal/profiles"), Role.Portal, "Patient portal"),
-        new(PortalRecords, OperationKind.Read, Defaults[PortalRecords], _ => Get("api/v1/portal/health-records"), Role.Portal, "Patient portal"),
+        // portal asks who is signed in with the profiles of the verified number, as its app does. The health record is one
+        // profile's (a number may hold a family), so the first profile is kept for it, and it is read once one is known.
+        new(PortalMe, OperationKind.Read, Defaults[PortalMe], _ => Get("api/v1/portal/profiles"), Role.Portal, "Patient portal", null, OnProfiles),
+        new(PortalRecords, OperationKind.Read, Defaults[PortalRecords], c => Get($"api/v1/portal/health-records?patientId={c.State[PortalProfile]}"),
+            Role.Portal, "Patient portal", c => c.State.ContainsKey(PortalProfile)),
         new(PortalReports, OperationKind.Read, Defaults[PortalReports], _ => Get("api/v1/portal/reports"), Role.Portal, "Patient portal"),
         new(PortalBills, OperationKind.Read, Defaults[PortalBills], _ => Get("api/v1/portal/bills"), Role.Portal, "Patient portal"),
         new(PortalAppointments, OperationKind.Read, Defaults[PortalAppointments], _ => Get("api/v1/portal/appointments"), Role.Portal, "Patient portal"),
     ];
 
     private static bool ShiftIsOpen(OperationContext c) => c.State.ContainsKey("shiftOpen");
+
+    /// <summary>The portal profile a user's health record is read for: the first of the verified number's.</summary>
+    private const string PortalProfile = "portalProfile";
+
+    /// <summary>The profiles of the signed-in number (PatientSummary): the first is kept for the health record.</summary>
+    private static void OnProfiles(OperationContext c, JsonElement profiles)
+    {
+        if (Answer.Rows(profiles).Select(r => Answer.Id(r)).FirstOrDefault(id => id is not null) is { } profile)
+        {
+            c.State[PortalProfile] = profile;
+        }
+    }
 
     /// <summary>The shift as the server answers: a shift when one is open, no content when none is.</summary>
     private static void OnShiftChecked(OperationContext c, JsonElement shift)
