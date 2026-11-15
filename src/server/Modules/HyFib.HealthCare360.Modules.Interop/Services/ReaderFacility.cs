@@ -18,8 +18,8 @@ internal static class ReaderFacility
     public static Guid Of(HospitalDbContext db) => db.CurrentFacilityId ?? Guid.Empty;
 
     /// <summary>
-    /// Whether the account reads for the facility of its session because it is assigned to it. An account with no
-    /// facility assignment may sign in to any facility, so it is not a partner of any one of them.
+    /// Whether the account reads for the facility of its session because it is assigned to it. An account given all
+    /// facilities is assigned to none of them, so it is not a partner of any one of them.
     /// </summary>
     public static async Task<bool> IsAssignedAsync(HospitalDbContext db, Guid? userId, CancellationToken ct) =>
         userId is { } user && db.CurrentFacilityId is { } facility

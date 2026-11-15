@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Adr;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Dashboard;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Inpatient;
@@ -77,6 +78,10 @@ public sealed class PharmacyModule : IModule
     {
         PharmacyRealtimeTopics.Register(services);
         services.AddScoped<DispensingService>();
+
+        // Pharmacy sales written on paper during a downtime take their numbers from the invoice series, reserved ahead in
+        // blocks (the Patients module issues, prints and checks them like the visit, bill and receipt numbers).
+        services.AddSingleton(new DowntimeNumberSeries(DowntimeNumberKind.PharmacySale, PharmacyNumberSeries.Invoice, BackEntryRecord.PharmacySale, "pharmacy sale"));
         services.AddScoped<SaleAdjustmentService>();
         services.AddScoped<InpatientPharmacyService>();
         services.AddScoped<ControlledDrugRegisterService>();

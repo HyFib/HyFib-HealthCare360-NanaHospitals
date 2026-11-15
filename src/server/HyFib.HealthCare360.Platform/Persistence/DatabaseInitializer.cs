@@ -67,14 +67,16 @@ public sealed class DatabaseInitializer(
 
     /// <summary>
     /// Why start-up stops on a database that a newer version of HC360 has changed ({0}: the database changes this version
-    /// does not know). It would run against tables it does not expect, and write rows the newer version reads differently.
-    /// The way back from an upgrade is the backup taken before it, restored first: never the previous version alone.
+    /// does not know, and was not told to start beside). It would run against tables it does not expect. The way back to the
+    /// release just before is that release with the newer changes named (<see cref="DatabaseOptions.AcceptNewerMigrations"/>);
+    /// further back, the backup taken before the update, restored first.
     /// </summary>
     public const string NewerDatabaseMessage =
         "The database was changed by a newer version of HC360 (database changes this version does not know: {0}). This " +
         "version would run against tables it does not expect, so it changes nothing and stops. Start the newer version " +
-        "again, or, to go back to this one, first restore the backup taken before the update with Restore-HC360.ps1 " +
-        "(docs/deployment/DEPLOYMENT.md, section 7, \"Going back\").";
+        "again. To go back to this version from the release just after it, name those changes in " +
+        "HealthCare360:Database:AcceptNewerMigrations; from a later release, first restore the backup taken before the update " +
+        "with Restore-HC360.ps1 (docs/deployment/DEPLOYMENT.md, section 7, \"Going back\").";
 
     /// <summary>No limit (0) on a migration's statements: see where the migrations are applied.</summary>
     internal const int MigrationCommandTimeout = 0;
@@ -108,6 +110,10 @@ public sealed class DatabaseInitializer(
             throw new DatabaseUpgradeException(StandbyMessage);
         }
 
+        // Nor on an old primary a failover replaced: it would take patient data beside the promoted standby (SRS DED-20). A host
+        // without the server's data folders (the start-up run on its own) reads only the record beside the backups' second copy.
+        await PrimaryFence.CheckAsync(db, options.Value, scope.ServiceProvider.GetService<DataDirectories>(), cancellationToken);
+
         // The schema is changed as its owner where that is an account of its own (DatabaseOwner): the account the server
         // works as cannot. The seeders write rows, as the server does.
         await using var owner = scope.ServiceProvider.GetService<DatabaseOwner>()?.CreateContext();
@@ -123,8 +129,13 @@ public sealed class DatabaseInitializer(
         }
 
         // Before anything is changed, and whether or not this server applies migrations: a version older than the database
-        // would run against tables it does not expect.
-        await RefuseNewerDatabaseAsync(schema, cancellationToken);
+        // would run against tables it does not expect, unless the hospital named them, going back a release.
+        if (await RefuseNewerDatabaseAsync(schema, options.Value.Database.AcceptNewerMigrations, cancellationToken) is { Count: > 0 } beside)
+        {
+            logger.LogWarning(
+                "This version runs on a database a newer version changed, beside the changes HealthCare360:Database:AcceptNewerMigrations " +
+                "names: {Migrations}. Remove the setting once the newer version is installed again", string.Join(", ", beside));
+        }
 
         if (options.Value.AutoMigrate)
         {
@@ -143,21 +154,32 @@ public sealed class DatabaseInitializer(
     }
 
     /// <summary>
-    /// Stops start-up (<see cref="NewerDatabaseMessage"/>) when the database has migrations this build does not know: a newer
-    /// version applied them. A database with no migration history yet (new, or created before migrations existed) has none.
+    /// Stops start-up (<see cref="NewerDatabaseMessage"/>) when the database has migrations this build does not know (a newer
+    /// version applied them) that <paramref name="accepted"/> does not name (<see cref="DatabaseOptions.AcceptNewerMigrations"/>).
+    /// A database with no migration history yet (new, or created before migrations existed) has none. The newer migrations
+    /// it was told to start beside.
     /// </summary>
-    internal static async Task RefuseNewerDatabaseAsync(HospitalDbContext db, CancellationToken ct)
+    internal static async Task<IReadOnlyList<string>> RefuseNewerDatabaseAsync(HospitalDbContext db, IReadOnlyCollection<string> accepted, CancellationToken ct)
     {
         if (!await MigrationBaseline.HistoryExistsAsync(db, ct))
         {
-            return;
+            return [];
         }
 
         var unknown = UnknownMigrations(await db.Database.GetAppliedMigrationsAsync(ct), db.Database.GetMigrations());
-        if (unknown.Count > 0)
+        if (NotAccepted(unknown, accepted) is { Count: > 0 } refused)
         {
-            throw new DatabaseUpgradeException(string.Format(CultureInfo.InvariantCulture, NewerDatabaseMessage, string.Join(", ", unknown)));
+            throw new DatabaseUpgradeException(string.Format(CultureInfo.InvariantCulture, NewerDatabaseMessage, string.Join(", ", refused)));
         }
+
+        return unknown;
+    }
+
+    /// <summary>The migrations of <paramref name="unknown"/> that <paramref name="accepted"/> does not name, in their order. Names are compared exactly.</summary>
+    internal static IReadOnlyList<string> NotAccepted(IReadOnlyList<string> unknown, IEnumerable<string> accepted)
+    {
+        var named = accepted.ToHashSet(StringComparer.Ordinal);
+        return [.. unknown.Where(migration => !named.Contains(migration))];
     }
 
     /// <summary>The migrations <paramref name="applied"/> to a database that are not among this build's (<paramref name="known"/>), in their order.</summary>

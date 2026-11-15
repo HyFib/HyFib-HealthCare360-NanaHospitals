@@ -31,10 +31,12 @@ public sealed class NumberSeriesStartupStatus
 /// <para>
 /// After Restore-HC360.ps1, whose marker (<see cref="RestoreMarker"/>) is in the data directory, it also holds outgoing
 /// messages (<see cref="OutboxHoldSetting"/>): messages queued in the backup may have been sent since, and would go again.
-/// System health then says so, critically, until they are released (<see cref="RestoreHealthWarnings"/>). The raises, the
-/// hold and the record of the restore are saved in one transaction, then the marker is renamed: it is acted on once. If
-/// any of that fails after a restore, start-up stops rather than issue numbers or send messages twice; otherwise the
-/// failure is logged and System health says so.
+/// System health then says so, critically, until they are released (<see cref="RestoreHealthWarnings"/>). And it records
+/// the restore in the audit trail and the anchor file, before anything is sealed on the restored database, so the audit
+/// chain's check accepts the one break the restore makes, and no other (<see cref="AuditRestores"/>). The raises, the hold
+/// and the records of the restore are saved in one transaction, then the marker is renamed: it is acted on once. If any of
+/// that fails after a restore, start-up stops rather than issue numbers or send messages twice; otherwise the failure is
+/// logged and System health says so.
 /// </para>
 /// </summary>
 internal sealed class NumberSeriesStartupCheck(
@@ -44,6 +46,7 @@ internal sealed class NumberSeriesStartupCheck(
     NumberSeriesCatalog catalog,
     ISettingsService settings,
     IAuditLogger audit,
+    AuditRestores auditRestores,
     TimeProvider time,
     ILogger<NumberSeriesStartupCheck> logger) : ISeeder
 {
@@ -91,7 +94,7 @@ internal sealed class NumberSeriesStartupCheck(
             if (restore is not null)
             {
                 throw new DatabaseUpgradeException(
-                    $"HC360 was restored from a backup, and start-up could not move the number series past the numbers issued before it, or hold the outgoing messages ({ex.Message}). It stops rather than issue those numbers or send those messages again. Fix the cause and start HC360 again: the restore marker {marker.Path} is kept until then.",
+                    $"HC360 was restored from a backup, and start-up could not move the number series past the numbers issued before it, hold the outgoing messages, or record the restore in the audit trail and its anchor file ({ex.Message}). It stops rather than issue those numbers or send those messages again. Fix the cause and start HC360 again: the restore marker {marker.Path} is kept until then.",
                     ex);
             }
 
@@ -131,6 +134,10 @@ internal sealed class NumberSeriesStartupCheck(
                         cancellationToken: cancellationToken);
                     await settings.SetAsync(RestoreSetting, new ServerRestore(restore.RestoredAt, restore.BackupFile, restore.BackupTakenAt, now, mark?.WrittenAt, raised),
                         cancellationToken: cancellationToken);
+
+                    // The audit chain goes on from the backup's end: recorded, before anything is sealed, outside the database
+                    // and in the audit trail, so the chain's check accepts the break at that point and no other.
+                    await auditRestores.RecordAsync(db, restore.RestoredAt, restore.BackupFile, restore.BackupTakenAt, now, cancellationToken);
                 }
 
                 await transaction.CommitAsync(cancellationToken);

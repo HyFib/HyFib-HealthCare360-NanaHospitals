@@ -75,6 +75,33 @@ public sealed class PortalScopeVerificationTests
         PortalPatientScope.Shown([confirmed]).ShouldBe([confirmed.Id]);
     }
 
+    [Fact]
+    public void A_sole_verified_patient_on_the_number_is_identified_by_the_sign_in()
+    {
+        var record = Own(verified: true);
+
+        PortalPatientScope.Identifies([record], record.Id).ShouldBeTrue();
+        PortalPatientScope.Identifies([record], Guid.CreateVersion7()).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_sole_patient_whose_number_is_not_verified_is_not_identified()
+    {
+        var record = Own(verified: false);
+
+        PortalPatientScope.Identifies([record], record.Id).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void On_a_number_a_family_shares_no_patient_is_identified_even_when_every_record_is_verified()
+    {
+        var father = Own(verified: true);
+        var son = Own(verified: true);
+
+        PortalPatientScope.Identifies([father, son], father.Id).ShouldBeFalse();
+        PortalPatientScope.Identifies([father, son], son.Id).ShouldBeFalse();
+    }
+
     private static Reached Own(bool verified, SensitiveCategory categories = SensitiveCategory.None) =>
         new(Guid.CreateVersion7(), OwnNumber: true, Linked: false, verified, categories);
 }

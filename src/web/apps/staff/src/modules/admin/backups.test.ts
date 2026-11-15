@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { backupContents, backupKeyText, custodyAdvice, offsiteText } from './api';
+import {
+  backupContents,
+  backupKeyText,
+  copyDisksText,
+  custodyAdvice,
+  damagedCopyText,
+  offsiteText,
+  restoreTestText,
+} from './api';
 
 describe('backupContents', () => {
   it('describes a full backup with its documents', () => {
@@ -84,5 +92,47 @@ describe('custodyAdvice', () => {
   it('asks for the quarterly check once nobody has typed it in for 90 days', () => {
     expect(custodyAdvice({ custodians: [holder('director', 91), holder('itadmin', 120)] }, now)).toMatch(/for 90 days/);
     expect(custodyAdvice({ custodians: [holder('director', 89), holder('itadmin', 120)] }, now)).toBeNull();
+  });
+});
+
+describe('restoreTestText', () => {
+  it('says whether the backup passed its last test restore', () => {
+    expect(restoreTestText({ restoreTestedAt: '2026-11-14T22:12:00Z', restoreTestPassed: true })).toBe(
+      'Test restore passed',
+    );
+    expect(restoreTestText({ restoreTestedAt: '2026-11-14T22:12:00Z', restoreTestPassed: false })).toBe(
+      'Test restore failed',
+    );
+  });
+
+  it('says nothing of a backup never test-restored, as older ones were not', () => {
+    expect(restoreTestText({ restoreTestedAt: null, restoreTestPassed: null })).toBeNull();
+  });
+});
+
+describe('copyDisksText', () => {
+  const copy = (disk: string | null, problem: string | null = null) => ({
+    disk,
+    copiedAt: '2026-11-13T20:10:00Z',
+    checkedAt: null,
+    problem,
+  });
+
+  it('names the disk each copy is on, as its label does', () => {
+    expect(copyDisksText({ secondaryCopies: [copy('7F3A2C1D')] })).toBe('Disk 7F3A2C1D');
+    expect(copyDisksText({ secondaryCopies: [copy('7F3A2C1D'), copy('B21E9C40')] })).toBe('Disks 7F3A2C1D, B21E9C40');
+  });
+
+  it('names no disk when none is known', () => {
+    expect(copyDisksText({ secondaryCopies: [copy(null)] })).toBeNull();
+    expect(copyDisksText({ secondaryCopies: [] })).toBeNull();
+    expect(copyDisksText({ secondaryCopies: null })).toBeNull();
+  });
+
+  it('says which copy no longer reads back as made, and why', () => {
+    expect(
+      damagedCopyText({ secondaryCopies: [copy('7F3A2C1D'), copy('B21E9C40', 'It no longer matches the SHA-256.')] }),
+    ).toBe('The copy on disk B21E9C40 is damaged: It no longer matches the SHA-256.');
+    expect(damagedCopyText({ secondaryCopies: [copy('7F3A2C1D')] })).toBeNull();
   });
 });

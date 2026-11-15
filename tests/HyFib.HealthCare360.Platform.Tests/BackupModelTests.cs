@@ -52,7 +52,7 @@ public sealed class BackupModelTests : IDisposable
     public BackupModelTests()
     {
         _options = new PlatformOptions { DataDirectory = Path.Combine(_root, "data") };
-        _options.Backup.RetentionDays = RetentionDays;
+        _options.Backup.Retention = new BackupRetentionOptions { Daily = RetentionDays, Weekly = 0, Monthly = 0 };
         _directories = new DataDirectories(_options);
         _directories.EnsureCreated();
         var protection = new EphemeralDataProtectionProvider();
@@ -288,8 +288,8 @@ public sealed class BackupModelTests : IDisposable
     {
         var archives = Directory.EnumerateFiles(folder, "*" + BackupService.FileExtension).Select(Path.GetFileName).OfType<string>().ToList();
         var cutoff = _clock.Now - TimeSpan.FromDays(RetentionDays);
-        var newest = archives.Max(a => BackupStore.ArchiveDate(a));
-        var expired = archives.Where(a => BackupStore.ArchiveDate(a) < cutoff && BackupStore.ArchiveDate(a) != newest).ToList();
+        var newest = archives.Max(a => BackupFile.From(a)?.StartedAt);
+        var expired = archives.Where(a => BackupFile.From(a)?.StartedAt < cutoff && BackupFile.From(a)?.StartedAt != newest).ToList();
         if (expired.Count > 0)
         {
             throw new ModelFailure($"{Path.GetFileName(folder)} still has {string.Join(", ", expired)}, past the backup period");
@@ -432,8 +432,11 @@ public sealed class BackupModelTests : IDisposable
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(1024L);
 
-        public Task DumpAsync(string outputFile, CancellationToken ct) =>
-            File.WriteAllBytesAsync(outputFile, [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(512)], ct);
+        public async Task<IReadOnlyDictionary<string, long>> DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
+        {
+            await File.WriteAllBytesAsync(outputFile, [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(512)], ct);
+            return new Dictionary<string, long>(StringComparer.Ordinal);
+        }
 
         public Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct) => Task.FromResult(true);
     }

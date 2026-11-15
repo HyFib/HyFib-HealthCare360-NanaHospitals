@@ -41,7 +41,9 @@ public sealed class BackupGrowthBenchmarkTests : IDisposable
     public BackupGrowthBenchmarkTests()
     {
         _options = new PlatformOptions { DataDirectory = Path.Combine(_root, "data") };
-        _options.Backup.RetentionDays = RetentionDays;
+        // Every backup of the newest 31 nights that have one (tonight's and the 30 before), and nothing older:
+        // grandfather-father-son with no weekly or monthly backups, the period this benchmark was measured with.
+        _options.Backup.Retention = new BackupRetentionOptions { Daily = RetentionDays + 1, Weekly = 0, Monthly = 0 };
         _options.Backup.SecondaryDirectory = Path.Combine(_root, "usb");
         _directories = new DataDirectories(_options);
         _directories.EnsureCreated();
@@ -87,7 +89,7 @@ public sealed class BackupGrowthBenchmarkTests : IDisposable
                 var measured = Measure(folder);
 
                 // Exactly what the kept backups need: their archives and lists, one copy of each document version they
-                // list, and the folder's marker, lock and (on the server) hash cache. Nothing left over.
+                // list, and the folder's marker, lock, (on the server) hash cache and (on the disk) the disk's id. Nothing left over.
                 measured.Total.ShouldBe(measured.Archives + measured.NeededDocuments + measured.Overhead,
                     $"night {night}, {Path.GetFileName(folder)}: the folder holds something no kept backup needs");
 
@@ -131,7 +133,7 @@ public sealed class BackupGrowthBenchmarkTests : IDisposable
         var archiveBytes = archives.Sum(a => new FileInfo(Path.Combine(folder, a)).Length + new FileInfo(Path.Combine(folder, Path.ChangeExtension(a, ".refs"))).Length);
         var needed = archives.SelectMany(a => _made[a]).GroupBy(d => d.Key, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Value, StringComparer.Ordinal);
         var now = CurrentDocuments();
-        var overhead = new[] { BackupStore.MarkerFileName, BackupStore.LockFileName, BackupHashCache.FileName }
+        var overhead = new[] { BackupStore.MarkerFileName, BackupStore.LockFileName, BackupHashCache.FileName, BackupDisk.MarkerFileName }
             .Select(f => Path.Combine(folder, f)).Where(File.Exists).Sum(f => new FileInfo(f).Length);
         var total = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length);
         return (total, archiveBytes, archives.Count, needed.Values.Sum(), now.Values.Sum(),
@@ -192,8 +194,11 @@ public sealed class BackupGrowthBenchmarkTests : IDisposable
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(1024L);
 
-        public Task DumpAsync(string outputFile, CancellationToken ct) =>
-            File.WriteAllBytesAsync(outputFile, [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(8_192)], ct);
+        public async Task<IReadOnlyDictionary<string, long>> DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
+        {
+            await File.WriteAllBytesAsync(outputFile, [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(8_192)], ct);
+            return new Dictionary<string, long>(StringComparer.Ordinal);
+        }
 
         public Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct) => Task.FromResult(true);
     }

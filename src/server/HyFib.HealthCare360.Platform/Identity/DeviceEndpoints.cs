@@ -282,7 +282,8 @@ internal static class DeviceEndpoints
         return TypedResults.Ok(new EnrollDeviceResponse(device.Id, secret, Environment.MachineName, certificates.CaFingerprint));
     }
 
-    private static async Task<IResult> Heartbeat(DeviceHeartbeatRequest request, HospitalDbContext db, HttpContext http, TimeProvider time, CancellationToken ct)
+    private static async Task<IResult> Heartbeat(
+        DeviceHeartbeatRequest request, HospitalDbContext db, HttpContext http, IOptions<PlatformOptions> options, TimeProvider time, CancellationToken ct)
     {
         var device = await db.Set<Device>().FirstOrDefaultAsync(d => d.Id == request.DeviceId, ct);
         // The desktop heartbeat is for HC360 Desktop only; lab agents call their own (LabAgentProtocol.HeartbeatPath).
@@ -304,6 +305,8 @@ internal static class DeviceEndpoints
         }
 
         await db.SaveChangesAsync(ct);
+        // Below the minimum version: the desktop is told to update, and works on meanwhile (OutdatedClients).
+        OutdatedClients.ApplyHeader(http.Response, device.Kind, device.AppVersion, options.Value.Clients, SystemHealthService.ProductVersion);
         return TypedResults.NoContent();
     }
 

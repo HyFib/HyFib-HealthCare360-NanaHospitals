@@ -177,8 +177,10 @@ public sealed class AuditAnchorMirror
                     $"The copy of the audit anchors in {mirror} holds an anchor at chain position {changed.ChainIndex:N0} (hash {changed.Hash}, anchored {changed.AnchoredAt:yyyy-MM-dd HH:mm} UTC) that this server's anchor file {(here.ContainsKey(changed.ChainIndex) ? "holds with another hash" : "no longer has")}.");
         }
 
-        var have = copied.Select(a => (a.ChainIndex, a.Hash)).ToHashSet();
-        var missing = anchors.Where(a => have.Add((a.ChainIndex, a.Hash))).ToList();
+        // A restore's anchor names a position, with its hash, that may be anchored already: it is copied all the same, so the
+        // copy off the server shows the restore that sets the anchors after it aside (AuditRestores).
+        var have = copied.Select(a => (a.ChainIndex, a.Hash, a.Restore is not null)).ToHashSet();
+        var missing = anchors.Where(a => have.Add((a.ChainIndex, a.Hash, a.Restore is not null))).ToList();
         if (missing.Count > 0)
         {
             AuditAnchors.AppendTo(mirror, missing);

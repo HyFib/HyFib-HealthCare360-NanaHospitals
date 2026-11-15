@@ -11,7 +11,8 @@ using Microsoft.EntityFrameworkCore;
 namespace HyFib.HealthCare360.Platform.Identity;
 
 /// <summary>Roles and facilities given to a user, and the user reactivated, as asked for.</summary>
-public sealed record UserGrantPayload(Guid UserId, IReadOnlyList<Guid> RoleIds, IReadOnlyList<Guid> FacilityIds, bool Activate);
+/// <param name="AllFacilities">Every facility given, those added later included (<see cref="User.AllFacilities"/>).</param>
+public sealed record UserGrantPayload(Guid UserId, IReadOnlyList<Guid> RoleIds, IReadOnlyList<Guid> FacilityIds, bool Activate, bool AllFacilities = false);
 
 /// <summary>Permissions added to a role, as asked for.</summary>
 public sealed record RoleGrantPayload(Guid RoleId, IReadOnlyList<string> Permissions);
@@ -24,7 +25,8 @@ public sealed record PendingRoleActivation(Guid ApprovalId, string RequestedBy, 
 
 /// <summary>Access asked for a user, waiting for a second administrator: what it gives, who asked and when.</summary>
 public sealed record PendingUserGrant(
-    Guid ApprovalId, IReadOnlyList<Guid> RoleIds, IReadOnlyList<Guid> FacilityIds, bool Activate, string RequestedBy, DateTimeOffset RequestedAt);
+    Guid ApprovalId, IReadOnlyList<Guid> RoleIds, IReadOnlyList<Guid> FacilityIds, bool Activate, string RequestedBy, DateTimeOffset RequestedAt,
+    bool AllFacilities = false);
 
 /// <summary>Permissions asked for a role, waiting for a second administrator.</summary>
 public sealed record PendingRoleGrant(Guid ApprovalId, IReadOnlyList<string> Permissions, string RequestedBy, DateTimeOffset RequestedAt);
@@ -49,10 +51,10 @@ internal sealed class GrantLatch
 }
 
 /// <summary>
-/// Access is given by two people. Whatever widens someone's access, roles or facilities added to a user, a user
-/// reactivated, permissions added to a role, a role turned back on, waits for a second person who holds
-/// <see cref="PlatformPermissions.GrantsApprove"/>. What narrows it (roles, facilities or permissions taken away, a user
-/// deactivated, a role turned off) applies at once. A hospital setting up has
+/// Access is given by two people. Whatever widens someone's access, roles or facilities added to a user (all facilities
+/// among them), a user reactivated, permissions added to a role, a role turned back on, waits for a second person who
+/// holds <see cref="PlatformPermissions.GrantsApprove"/>. What narrows it (roles, facilities or permissions taken away, a
+/// user deactivated, a role turned off) applies at once. A hospital setting up has
 /// one such person: until it has had two, grants are given at once and audited so. Once it has had two (a one-way latch,
 /// <see cref="LatchAction"/> in the audit trail), a grant nobody else can approve is refused, except to a Super
 /// Administrator, whose grant is given at once as a break-glass and audited as critical. Nobody approves access given to
@@ -164,9 +166,12 @@ internal sealed class GrantApprovals(
             Details = new { breakGlass = decision == GrantDecision.GiveBreakGlass },
         });
 
-    /// <summary>Asks a second person to give <paramref name="user"/> these roles and facilities, or to reactivate them.</summary>
+    /// <summary>
+    /// Asks a second person to give <paramref name="user"/> these roles and facilities, or all facilities
+    /// (<paramref name="allFacilities"/>), or to reactivate them.
+    /// </summary>
     public async Task<Result<ApprovalRequestDto>> AskForUserAsync(
-        User user, IReadOnlyList<Guid> roleIds, IReadOnlyList<Guid> facilityIds, bool activate, string? reason, CancellationToken ct)
+        User user, IReadOnlyList<Guid> roleIds, IReadOnlyList<Guid> facilityIds, bool allFacilities, bool activate, string? reason, CancellationToken ct)
     {
         var roleNames = await db.Set<Role>().IgnoreQueryFilters().Where(r => roleIds.Contains(r.Id)).OrderBy(r => r.Name).Select(r => r.Name).ToListAsync(ct);
         var facilityNames = await db.Set<Facility>().IgnoreQueryFilters().Where(f => facilityIds.Contains(f.Id)).OrderBy(f => f.Name).Select(f => f.Name).ToListAsync(ct);
@@ -181,7 +186,12 @@ internal sealed class GrantApprovals(
             details.Add(new("Roles to give", string.Join(", ", roleNames)));
         }
 
-        if (facilityNames.Count > 0)
+        if (allFacilities)
+        {
+            parts.Add("all facilities");
+            details.Add(new("Facilities to give", "All facilities, those added later included"));
+        }
+        else if (facilityNames.Count > 0)
         {
             parts.Add($"facilities {string.Join(", ", facilityNames)}");
             details.Add(new("Facilities to give", string.Join(", ", facilityNames)));
@@ -203,7 +213,7 @@ internal sealed class GrantApprovals(
         return await approvals.RequestAsync(
             UserGrantKind,
             new ApprovalSubject(nameof(User), user.Id, user.Version, facility, null),
-            new UserGrantPayload(user.Id, [.. roleIds.Distinct()], [.. facilityIds.Distinct()], activate),
+            new UserGrantPayload(user.Id, [.. roleIds.Distinct()], allFacilities ? [] : [.. facilityIds.Distinct()], activate, allFacilities),
             $"Access for {user.DisplayName}: {string.Join("; ", parts)}",
             details,
             string.IsNullOrWhiteSpace(reason) ? NoReason : reason,
@@ -264,7 +274,7 @@ internal sealed class GrantApprovals(
         }
 
         var asked = ApprovalPayload.Read<UserGrantPayload>(request.Payload);
-        return new PendingUserGrant(request.Id, asked.RoleIds, asked.FacilityIds, asked.Activate, request.RequestedByName, request.RequestedAt);
+        return new PendingUserGrant(request.Id, asked.RoleIds, asked.FacilityIds, asked.Activate, request.RequestedByName, request.RequestedAt, asked.AllFacilities);
     }
 
     /// <summary>The permissions waiting to be added to this role, if any.</summary>
@@ -323,9 +333,17 @@ internal sealed class GrantApprovals(
         }
 
         var roles = asked.RoleIds.Where(r => user.Roles.All(x => x.RoleId != r)).Distinct().ToList();
-        var added = facilities.Where(f => user.Facilities.All(x => x.FacilityId != f)).ToList();
+        var added = user.AllFacilities ? [] : facilities.Where(f => user.Facilities.All(x => x.FacilityId != f)).ToList();
         user.Roles.AddRange(roles.Select(r => new UserRole { UserId = user.Id, RoleId = r }));
         user.Facilities.AddRange(added.Select(f => new UserFacility { UserId = user.Id, FacilityId = f }));
+        var allFacilities = asked.AllFacilities && !user.AllFacilities;
+        if (asked.AllFacilities)
+        {
+            // Every facility, those added later included: the list it replaces goes.
+            user.AllFacilities = true;
+            user.Facilities.Clear();
+        }
+
         var reactivated = asked.Activate && !user.IsActive;
         user.IsActive = user.IsActive || asked.Activate;
         audit.Add(new AuditEntry(AuditCategories.Admin, "user.access_granted",
@@ -334,10 +352,11 @@ internal sealed class GrantApprovals(
             EntityType = nameof(User),
             EntityId = user.Id.ToString(),
             Severity = AuditSeverity.Warning,
-            Details = new { roles, facilities = added, reactivated, approval = request.Id, requestedBy = request.RequestedBy },
+            Details = new { roles, facilities = added, allFacilities, reactivated, approval = request.Id, requestedBy = request.RequestedBy },
         });
         db.AfterCommit(() => permissions.Invalidate(user.Id));
-        return $"{Count(roles.Count, "role")}, {Count(added.Count, "facility", "facilities")}{(reactivated ? ", reactivated" : string.Empty)}";
+        var facilitiesGiven = allFacilities ? "all facilities" : Count(added.Count, "facility", "facilities");
+        return $"{Count(roles.Count, "role")}, {facilitiesGiven}{(reactivated ? ", reactivated" : string.Empty)}";
     }
 
     /// <summary>

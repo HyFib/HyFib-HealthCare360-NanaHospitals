@@ -147,10 +147,37 @@ describe('ConnectionIndicator', () => {
     expect(screen.getByText('NH-Staff · 82% signal')).toBeInTheDocument();
     expect(screen.queryByText(/^Cable/)).not.toBeInTheDocument();
   });
+
+  it('says the database is down when the server answers without it, not that all is connected', () => {
+    useConnection.setState({ wifi: cabled(), databaseDown: true });
+    renderShell(<ConnectionIndicator />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connection: HealthCare360 database down' }));
+
+    expect(screen.getByText('Answering, but its database is not')).toBeInTheDocument();
+    act(() => useConnection.setState({ databaseDown: false }));
+  });
 });
 
 describe('OfflineBanner', () => {
-  beforeEach(() => useConnection.setState({ browserOnline: true, serverReachable: false, realtime: 'disconnected' }));
+  beforeEach(() =>
+    useConnection.setState({
+      browserOnline: true,
+      serverReachable: false,
+      databaseDown: false,
+      realtime: 'disconnected',
+    }),
+  );
+
+  it('speaks of the database, not the network, when the server answers but its database is down', () => {
+    useConnection.setState({ serverReachable: true, databaseDown: true, wifi: null });
+    renderShell(<OfflineBanner />);
+
+    expect(screen.getByText('HealthCare360 cannot reach its database')).toBeInTheDocument();
+    expect(screen.getByText(/nothing can be opened or saved until it is back: tell IT/)).toBeInTheDocument();
+    expect(screen.queryByText(/Check this computer's network cable or WiFi/)).not.toBeInTheDocument();
+    act(() => useConnection.setState({ databaseDown: false }));
+  });
 
   it("does not send a cabled workstation's user to its WiFi: the fault is beyond this computer", () => {
     useConnection.setState({ wifi: cabled() });

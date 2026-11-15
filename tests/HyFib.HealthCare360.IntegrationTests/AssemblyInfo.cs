@@ -4,6 +4,7 @@ using HyFib.HealthCare360.IntegrationTests;
 [assembly: AssemblyFixture(typeof(HospitalServer))]
 [assembly: CollectionBehavior(CollectionBehavior.CollectionPerAssembly)]
 
-// No test starts near midnight in India, where the hospital's day turns.
+// No test on the real clock starts near midnight in India, where the hospital's day turns: the tests of the turn itself run
+// on a clock of their own (MidnightInIndiaTests).
 [assembly: AwayFromMidnightInIndia]
 [assembly: LongRunningTestWatch]

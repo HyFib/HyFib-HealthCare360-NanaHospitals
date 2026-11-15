@@ -216,14 +216,20 @@ public sealed class SystemHealthService(
         else if (await ReadReplicationAsync(ct) is { } replication)
         {
             // A warm standby and WAL archiving are optional (SRS DED-20, REL-02): nothing shows until they are set up.
-            databaseWarnings.AddRange(StandbyReplication.Warnings(replication));
+            databaseWarnings.AddRange(StandbyReplication.Warnings(replication, now));
+            databaseWarnings.AddRange(await SystemHealthStandby.WarningsAsync(db, replication, directories, options.Value, ct));
         }
 
+        databaseWarnings.AddRange(await SystemHealthArchive.WarningsAsync(db, directories, options.Value, now, ct));
+
         var backupWarnings = new List<HealthWarning>();
-        if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > TimeSpan.FromHours(36)))
+        if (backup.Enabled && (backup.LastSuccessAt is null || now - backup.LastSuccessAt > BackupService.StaleAfter))
         {
             backupWarnings.Add(new("backup.stale", "critical", "No successful backup in the last 36 hours."));
         }
+
+        // How the backups are set up: switched off, no second disk or NAS, a disk left in place past its swap.
+        backupWarnings.AddRange(await SystemHealthBackups.WarningsAsync(db, options.Value, now, ct));
 
         // Whether the backups leave the server's own disk: the copy to the USB disk or NAS share.
         if (await BackupCopies.WarningAsync(db, options.Value, now, ct) is { } notCopied)
@@ -281,6 +287,12 @@ public sealed class SystemHealthService(
         if (await CaRolloverDevices.WarningAsync(db, certificates, now, ct) is { } devicesNotReady)
         {
             keyWarnings.Add(devicesNotReady);
+        }
+
+        // Workstations and lab agents older than the minimum version supported (told to update, never locked out).
+        if (await OutdatedClients.WarningAsync(db, options.Value.Clients, ProductVersion, now, ct) is { } outdatedClients)
+        {
+            keyWarnings.Add(outdatedClients);
         }
 
         if (signingKey.KeyCreatedAt is { } signedSince && now - signedSince > SigningKeyPeriod)

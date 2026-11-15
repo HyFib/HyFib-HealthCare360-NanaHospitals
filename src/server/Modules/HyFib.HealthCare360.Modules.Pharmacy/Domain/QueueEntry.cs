@@ -59,6 +59,15 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
     /// <summary>The account that signed the prescription: it never acknowledges its own override at the counter.</summary>
     public Guid? SignedByUserId { get; set; }
 
+    /// <summary>
+    /// When the prescription was handed over on paper during a downtime (the time on the paper), so the queue does not offer
+    /// it again; <c>null</c> for one dispensed on the screen. Set by <see cref="MarkDispensedOnPaper"/>.
+    /// </summary>
+    public DateTimeOffset? DispensedOnPaperAt { get; private set; }
+
+    /// <summary>The invoice number the paper sale was entered under, when it has been entered.</summary>
+    public string? PaperSaleNumber { get; private set; }
+
     public List<PharmacyQueueLine> Lines { get; set; } = [];
 
     /// <summary>A line signed over a blocking alert that no pharmacist has acknowledged yet.</summary>
@@ -212,6 +221,36 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
         CloseReason = reason;
         ClosedAt = now;
         Status = Lines.Any(l => l.DispensedQuantity > 0) ? QueueEntryStatus.Dispensed : QueueEntryStatus.Cancelled;
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// The prescription was dispensed on paper during a downtime: the sale is written in the paper sale book and entered
+    /// afterwards, and the prescription, which reaches the queue when HC360 is back, is closed as dispensed so it is not
+    /// dispensed twice. What was handed over is on the paper sale (and so in the stock and the invoice), not on the queue
+    /// lines, so the lines are marked dispensed without a quantity.
+    /// </summary>
+    /// <param name="saleNumber">The invoice number the paper sale was entered under, if it has been entered.</param>
+    /// <param name="at">The time on the paper.</param>
+    public Result MarkDispensedOnPaper(string? saleNumber, DateTimeOffset at, string? note, DateTimeOffset now)
+    {
+        if (!IsOpen)
+        {
+            return Error.Rule("queue.closed", $"Prescription {PrescriptionNumber} is already {Status}.");
+        }
+
+        foreach (var line in Lines)
+        {
+            line.MarkDispensedOnPaper();
+        }
+
+        DispensedOnPaperAt = at;
+        PaperSaleNumber = saleNumber;
+        CloseReason = Fit(string.IsNullOrWhiteSpace(note)
+            ? $"Dispensed on paper during a downtime (sale {saleNumber})"
+            : $"Dispensed on paper during a downtime: {note.Trim()}", 300);
+        ClosedAt = now;
+        Status = QueueEntryStatus.Dispensed;
         return Result.Success();
     }
 
@@ -421,6 +460,15 @@ public sealed class PharmacyQueueLine : Entity
         if (Status is QueueLineStatus.Pending or QueueLineStatus.PartiallyDispensed)
         {
             Status = DispensedQuantity > 0 ? QueueLineStatus.Dispensed : QueueLineStatus.Cancelled;
+        }
+    }
+
+    /// <summary>Handed over on paper: what is outstanding counts as dispensed, with the quantity left to the paper sale.</summary>
+    internal void MarkDispensedOnPaper()
+    {
+        if (Status is QueueLineStatus.Pending or QueueLineStatus.PartiallyDispensed)
+        {
+            Status = QueueLineStatus.Dispensed;
         }
     }
 

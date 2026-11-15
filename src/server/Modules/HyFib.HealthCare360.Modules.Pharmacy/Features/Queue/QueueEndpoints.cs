@@ -22,6 +22,9 @@ internal static class QueueEndpoints
             .RequirePermission(PharmacyPermissions.Dispense).WithValidation<DispenseRequest>();
         group.MapPost("/{id:guid}/lines/{lineId:guid}/acknowledge-override", AcknowledgeOverride)
             .RequirePermission(PharmacyPermissions.Dispense).WithValidation<AcknowledgeOverrideRequest>();
+        group.MapPost("/{id:guid}/dispensed-on-paper", async (Guid id, DispensedOnPaperRequest r, DispensingService dispensing, CancellationToken ct) =>
+                (await dispensing.MarkDispensedOnPaperAsync(id, r, ct)).ToNoContent())
+            .RequirePermission(PharmacyPermissions.Dispense).WithValidation<DispensedOnPaperRequest>();
         group.MapPost("/{id:guid}/close", Close)
             .RequireAnyPermission(PharmacyPermissions.Dispense, PharmacyPermissions.IpIssue).WithValidation<PharmacyReasonRequest>();
         group.MapPost("/{id:guid}/refills", async (Guid id, AuthorizeRefillsRequest r, RefillService refills, CancellationToken ct) =>
@@ -154,7 +157,9 @@ internal static class QueueEndpoints
             }).ToList(),
             entry.Version,
             await DispensingService.FreeTreatmentAsync(db, entry.VisitId, ct),
-            entry.SafetyOverrideReason));
+            entry.SafetyOverrideReason,
+            entry.DispensedOnPaperAt,
+            entry.PaperSaleNumber));
     }
 
     /// <summary>

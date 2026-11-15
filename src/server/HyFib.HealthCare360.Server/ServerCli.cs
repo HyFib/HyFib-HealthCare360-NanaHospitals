@@ -50,11 +50,29 @@ internal static class ServerCli
 
           backup restore --in <backup.hc360bak> [--blobs <folder>] [--data-dir <folder>] [--database-out <database.dump>] [--key <recovery-key>]
               Puts back the stored documents and then the backup's field encryption keys (the original key and any added by
-              rotations) on this Server Node, with the HC360 service stopped. A different key already here is kept under a
-              new name. The whole backup is checked first,
+              rotations) on this Server Node, with the HC360 service stopped. The documents come from the backup's folder
+              (or --blobs), each checked against the SHA-256 the backup lists. A document already here whose bytes are not
+              those the backup records is replaced, and the file that was there kept in a folder of its own. The erasures in
+              the backup's erasure ledger, and in the ledger's copy beside the backup file, are added to this server's
+              ledger, which HC360 applies as it starts. A different key already here is kept under a new name. Last, the
+              hospital CA the backup carries is installed, so the devices trust this server, unless this server's own CA
+              took its place after the backup was made (a rollover, or new-ca); a different CA here is kept under a new
+              name. The whole backup is checked first,
               so nothing changes if it is damaged. Run it only after the backup's database is restored: from then on this
               machine uses the backup's key. Restore-HC360.ps1 runs both steps in that order. A machine without a recovery
               key of its own, such as new hardware, goes on backing up with the key the backup was opened with.
+
+          backup decrypt-base --in <hc360-base-....hc360base> --out <new folder> [--key <recovery-key>]
+              Checks a base backup in full and writes the files pg_basebackup made (base.tar.gz, pg_wal.tar.gz,
+              backup_manifest) into a new folder, for a restore to a point in time with the WAL archived since
+              (docs/deployment/DEPLOYMENT.md, "A restore to a point in time"). Nothing else changes. It opens with the
+              recovery key that was current when it was made, as the nightly backups of the time do.
+
+          backup decrypt-wal --in <folder of .hc360wal files> --out <folder> [--key <recovery-key>]
+              Decrypts the WAL HC360 archived, encrypted, for one cluster (backups\wal\<system identifier>, or its copy
+              in the secondary directory), checking each file, into a folder PostgreSQL's restore_command then reads. A file
+              already in the folder is left as it is. Files encrypted with another recovery key are named by that key and
+              left (exit code 3): run it again with that key, into the same folder.
 
         The recovery key that opens a backup is the one that was current when the backup was made. A new key is shown once,
         when it is made in Administration > Backups > Recovery key, as 14 groups of 4 letters and digits; keep each one
@@ -186,6 +204,10 @@ internal static class ServerCli
                 ["backup", "restore", ..] when options.ContainsKey("in") => await RestoreAsync(options),
                 ["backup", "decrypt", ..] when options.ContainsKey("in") && options.ContainsKey("out") => await DecryptAsync(options),
                 ["backup", "check-documents", ..] => await CheckDocumentsAsync(),
+                ["backup", "decrypt-base", ..] when options.ContainsKey("in") && options.ContainsKey("out") =>
+                    await PointInTimeCli.DecryptBaseAsync(options["in"], options["out"], () => ReadRecoveryKey(options)),
+                ["backup", "decrypt-wal", ..] when options.ContainsKey("in") && options.ContainsKey("out") =>
+                    await PointInTimeCli.DecryptWalAsync(options["in"], options["out"], () => ReadRecoveryKey(options)),
                 ["audit", "verify-export", ..] when options.ContainsKey("in") => AuditCli.VerifyExport(options["in"], options.GetValueOrDefault("anchors")),
                 ["catalogue", "import", ..] when options.ContainsKey("file") => await CatalogueCli.ImportAsync(options["file"], dryRun),
                 ["loadtest", "patients", ..] when options.ContainsKey("count") => await LoadTestCli.AddPatientsAsync(options["count"]),
@@ -259,6 +281,7 @@ internal static class ServerCli
 
         var contents = await BackupArchive.ReadAsync(payload, new BackupReadTargets(), CancellationToken.None);
         CryptographicOperations.ZeroMemory(contents.MasterKey);
+        CryptographicOperations.ZeroMemory(contents.HospitalCa);
         Describe(contents.Manifest);
         if (contents.Index.Count > 0)
         {
@@ -293,7 +316,8 @@ internal static class ServerCli
 
         var databaseOut = options.GetValueOrDefault("database-out");
         var result = await BackupRestore.RestoreAsync(options["in"], key, databaseOut, directories,
-            HospitalDataProtection.CreateProvider(directories), TimeProvider.System, CancellationToken.None, options.GetValueOrDefault("blobs"));
+            HospitalDataProtection.CreateProvider(directories), HospitalDataProtection.CreateNodeProvider(directories), TimeProvider.System, CancellationToken.None,
+            options.GetValueOrDefault("blobs"));
         if (result.Manifest is null)
         {
             Console.WriteLine(databaseOut is null
@@ -304,7 +328,26 @@ internal static class ServerCli
         }
 
         Describe(result.Manifest);
-        Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present.");
+        Console.WriteLine($"Documents: {result.DocumentsRestored} restored, {result.DocumentsAlreadyPresent} already present as the backup has them, " +
+            $"{result.DocumentsReplaced} replaced because they were not.");
+        if (result.ReplacedDocumentsKeptIn is { } replacedIn)
+        {
+            Console.WriteLine($"The files the backup's documents replaced (damaged, or encrypted again since the backup was made) are kept in {replacedIn}.");
+            Console.WriteLine("Delete that folder once the restored server is checked.");
+        }
+
+        var ledgerFrom = (result.ErasureLedgerCarried, result.ErasureLedgerCopy) switch
+        {
+            (true, { } copy) => $"the backup's erasure ledger and the copy beside it ({copy})",
+            (true, null) => "the backup's erasure ledger",
+            (false, { } copy) => $"the erasure ledger's copy beside the backup ({copy}); the backup itself is older and carries none",
+            (false, null) => null,
+        };
+        Console.WriteLine(ledgerFrom is null
+            ? "This backup carries no erasure ledger (it is older), and none was found beside it."
+            : $"Erasures: {result.ErasureLedgerLinesAdded} added to this server's erasure ledger from {ledgerFrom}.");
+        Console.WriteLine("As HC360 starts, it carries out again every erasure in this server's ledger that the restored database does not have.");
+
         Console.WriteLine(result.RingKeysInstalled == 0
             ? $"Installed the backup's field encryption key in {directories.Keys}."
             : $"Installed the backup's field encryption key and the {result.RingKeysInstalled} key(s) its rotations added in {directories.Keys}.");
@@ -315,6 +358,8 @@ internal static class ServerCli
         {
             Console.WriteLine($"The different key that was here is kept as {keptAs}.");
         }
+
+        DescribeHospitalCa(result);
 
         if (result.RecoveryKeyKept)
         {
@@ -332,6 +377,36 @@ internal static class ServerCli
         }
 
         return 0;
+    }
+
+    /// <summary>What became of the hospital CA the backup carries, which every device pinned: its fingerprint, to compare with theirs.</summary>
+    private static void DescribeHospitalCa(BackupRestoreResult result)
+    {
+        if (result.HospitalCa is { KeptFingerprint: { } kept } own)
+        {
+            Console.WriteLine($"This server keeps its own hospital CA, {GroupFingerprint(kept)}: it took the place of the backup's ({GroupFingerprint(own.Fingerprint)})");
+            Console.WriteLine("after the backup was made, and the devices trust it now.");
+        }
+        else if (result.HospitalCa is { Installed: true } installed)
+        {
+            Console.WriteLine($"Installed the backup's hospital CA, {GroupFingerprint(installed.Fingerprint)} (valid until {installed.ExpiresAt:dd MMM yyyy}), protected for this machine.");
+            Console.WriteLine("HC360 Desktop, the lab agents, tablets and browsers trust this server as they trusted the one the backup came from.");
+            if (installed.PreviousKeptAs is { } previous)
+            {
+                Console.WriteLine($"The different CA that was here is kept as {previous}.");
+            }
+        }
+        else if (result.HospitalCa is { } same)
+        {
+            Console.WriteLine($"This server already has the backup's hospital CA, {GroupFingerprint(same.Fingerprint)}.");
+        }
+        else
+        {
+            Console.WriteLine(result.HospitalCaProblem is { } problem
+                ? $"The backup's hospital CA could not be installed ({problem})."
+                : "This backup carries no hospital CA (it is older, or its server had none).");
+            Console.WriteLine("Install the CA exported from the old server with 'certificates import-ca', or set every device up again.");
+        }
     }
 
     /// <summary>Protects the settings file's plain-text secrets with DPAPI for this machine (SRS SEC-07).</summary>
@@ -1094,6 +1169,7 @@ internal static class ServerCli
             finally
             {
                 CryptographicOperations.ZeroMemory(contents.MasterKey);
+                CryptographicOperations.ZeroMemory(contents.HospitalCa);
             }
 
             Console.WriteLine("Only the database was written. After it is restored, 'backup restore' puts back the encryption key and documents.");

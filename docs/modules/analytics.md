@@ -181,7 +181,7 @@ Money is in rupees, including GST unless stated. "Period" = named or custom peri
 | `alos` | Average length of stay (ALOS) | Period, Facility, Show by (department/consultant), Department, Consultant | Length of stay = IST calendar days from admission to discharge, at least one. **ALOS = total length of stay ÷ discharges** (all outcomes). Drill: department → consultants |
 | `ward-census` | Census by ward (now) | Facility, Ward | Active beds by current status. Occupancy now = occupied ÷ beds in service (blocked and maintenance beds are out of service) |
 | `discharge-outcomes` | Discharge outcomes, LAMA/DAMA and mortality | Period, Facility, Department | LAMA % and DAMA % = those discharges ÷ discharges. **Gross death rate = deaths ÷ discharges × 100. Net death rate = (deaths − deaths within 48 h of admission) ÷ (discharges − deaths within 48 h) × 100.** Drill (clinical users): → register |
-| `adverse-discharges` | Deaths, LAMA and DAMA register *(patient list)* | Period, Facility, Department, Outcome | Stays ended in the period with the chosen outcomes; LOS in IST days; within 48 h flag. Audited per patient |
+| `adverse-discharges` | Deaths, LAMA and DAMA register *(patient list)* | Period, Facility, Department, Outcome | Stays ended in the period with the chosen outcomes; LOS in IST days; within 48 h flag. A restricted (VIP) patient is named by initials, and the department, consultant, outcome and MLC columns of a VIP or sensitive-category patient (HIV, mental health, MTP, sexual violence) are withheld from a viewer who may not open the record (`PatientView`, as the OT register). Audited per patient |
 
 ### Revenue and collections (finance)
 Revenue rule: *net amount (after discounts, including GST) of bill lines on bills finalized in the period; cancelled
@@ -205,7 +205,7 @@ bills are excluded and returns reduce revenue.*
 |---|---|---|---|
 | `lab-volume-tat` | Laboratory volume and turnaround | Period (last 30 days), Facility, Show by (section/test), Lab section, TAT target (minutes) | Tests ordered in the period. Total TAT = order → release; in-lab TAT = sample received → release. **Median and 90th percentile by the nearest-rank method.** Within target % = released tests with TAT ≤ target. Drill: section → tests |
 | `radiology-volume-tat` | Radiology volume and turnaround | Period (last 30 days), Facility, Show by (modality/study), Modality, TAT target | Studies ordered in the period; reported = reported, verified or released; TAT = order → first report; reporting time = images acquired → report. Drill: modality → studies |
-| `critical-values` | Critical values register *(patient list)* | Period (last 7 days, max 93 days), Facility | Critical lab results (by result entry time) with their critical-call record, plus documented critical imaging and cardiology calls; minutes to inform = result → documented call. Audited per patient |
+| `critical-values` | Critical values register *(patient list)* | Period (last 7 days, max 93 days), Facility | Critical lab results (by result entry time) with their critical-call record, plus documented critical imaging and cardiology calls; minutes to inform = result → documented call. A restricted (VIP) patient is named by initials, and the test and result of a VIP or sensitive-category patient are withheld from a viewer who may not open the record (`PatientView`, as the OT register); a scheduled run, which has no viewer, withholds both. Audited per patient |
 
 ### Pharmacy and stores
 | Id | Title | Inputs | Definition |

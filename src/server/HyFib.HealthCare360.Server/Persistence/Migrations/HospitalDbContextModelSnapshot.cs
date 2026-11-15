@@ -31225,6 +31225,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<DateTimeOffset?>("DispensedOnPaperAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("dispensed_on_paper_at");
+
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
@@ -31248,6 +31252,11 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("LastRefillReminderAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_refill_reminder_at");
+
+                    b.Property<string>("PaperSaleNumber")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("paper_sale_number");
 
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uuid")
@@ -31558,6 +31567,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("due_amount");
+
+                    b.Property<DateTimeOffset?>("EnteredFromPaperAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("entered_from_paper_at");
 
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
@@ -50439,6 +50452,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("AllFacilities")
+                        .HasColumnType("boolean")
+                        .HasColumnName("all_facilities");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -51010,9 +51027,26 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("recovery_key_id");
 
+                    b.Property<string>("RestoreTestNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("restore_test_note");
+
+                    b.Property<bool?>("RestoreTestPassed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("restore_test_passed");
+
+                    b.Property<DateTimeOffset?>("RestoreTestedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("restore_tested_at");
+
                     b.Property<bool>("SecondaryCopied")
                         .HasColumnType("boolean")
                         .HasColumnName("secondary_copied");
+
+                    b.Property<string>("SecondaryCopies")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("secondary_copies");
 
                     b.Property<string>("Sha256")
                         .HasMaxLength(64)

@@ -95,8 +95,9 @@ public sealed class AbdmLinkingTests(HospitalServer server)
             asked.GetProperty("yearOfBirth").GetInt32().ShouldBe(registration.DateOfBirth!.Value.Year);
             asked.GetProperty("name").GetString().ShouldNotBeNull().ShouldContain(registration.LastName!);
 
-            // A callback the gateway did not sign is refused, and changes nothing.
-            var gatewayCaller = server.Anonymous(ownAddress: true);
+            // A callback the gateway did not sign is refused, and changes nothing. The gateway calls from the internet, on the
+            // address the hospital opens to it: the patient portal's (ListenerPaths), never the staff app's.
+            var gatewayCaller = server.AnonymousOnPortal(ownAddress: true);
             var linkToken = "it-link-token-" + AbdmExportTests.Letters(12);
             var onToken = new { abhaAddress = address, linkToken, response = new { requestId = tokenCall.Header("REQUEST-ID") } };
             using (var forged = await CallBackAsync(gatewayCaller, AbdmGatewayCallbackEndpoints.OnGenerateTokenPath, onToken, FakeAbdmGateway.ForgedToken()))

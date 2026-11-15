@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.Net.WebSockets;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Networking;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace HyFib.HealthCare360.Integrations.Laboratory.Relay;
 
@@ -61,7 +63,7 @@ internal static class LabAgentEndpoints
 
     private static async Task<IResult> Heartbeat(
         LabAgentHeartbeatRequest request, HttpContext http, LabAgentAuthenticator authenticator, HospitalDbContext db, IntegrationSettingsReader settings,
-        LabGatewayState state, LabRelayRegistry relays, TimeProvider time, CancellationToken ct)
+        LabGatewayState state, LabRelayRegistry relays, IOptions<PlatformOptions> platform, TimeProvider time, CancellationToken ct)
     {
         if (await authenticator.AuthenticateAsync(http, ct) is not { } device)
         {
@@ -88,6 +90,8 @@ internal static class LabAgentEndpoints
         }
 
         relays.EndForAgent(device.Id, code => assigned.Any(i => string.Equals(i.Code, code, StringComparison.OrdinalIgnoreCase)));
+        // Below the minimum version: the agent is told to update, and keeps relaying meanwhile (OutdatedClients).
+        OutdatedClients.ApplyHeader(http.Response, DeviceKind.LabAgent, version, platform.Value.Clients, SystemHealthService.ProductVersion);
         return TypedResults.Ok(new LabAgentAssignments(device.Id, device.Name, gateway.Enabled, LabAgentProtocol.HeartbeatSeconds, assigned.Select(ToAssignment).ToList()));
     }
 

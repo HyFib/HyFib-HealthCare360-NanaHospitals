@@ -13,7 +13,7 @@ namespace HyFib.HealthCare360.LoadTest;
 internal sealed class LoadTestException(string message) : Exception(message);
 
 /// <summary>A staff account the virtual users share, signed in again before its access token runs out.</summary>
-internal sealed class Account(string userName)
+internal sealed class Account(string userName, string? fixedToken = null)
 {
     /// <summary>Access tokens last 10 minutes unless the server is set otherwise; renewing earlier keeps every request signed in.</summary>
     public static readonly TimeSpan RenewAfter = TimeSpan.FromMinutes(8);
@@ -27,6 +27,12 @@ internal sealed class Account(string userName)
     /// <summary>A token to send now, signing in first when there is none or it is old.</summary>
     public async Task<string> TokenAsync(Func<Account, Task<string>> signIn, Stopwatch clock)
     {
+        // A portal session is made by a code sent to the patient's phone: the run is given its token, and cannot renew it.
+        if (fixedToken is not null)
+        {
+            return fixedToken;
+        }
+
         if (_token is { } current && clock.Elapsed - _signedInAt < RenewAfter)
         {
             return current;
@@ -69,31 +75,71 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
     {
         using var http = new HttpClient(handler(true), disposeHandler: true) { BaseAddress = options.Server, Timeout = TimeSpan.FromSeconds(30) };
 
-        log.WriteLine($"Signing in {options.Accounts.Count} account(s) at {options.Server}");
-        var accounts = options.Accounts.Select(name => new Account(name)).ToList();
+        // The registration desk's accounts first (--accounts), then the other roles' (the peak mix, PeakMix).
+        var accountsByRole = new Dictionary<Role, List<Account>> { [Role.FrontOffice] = [.. options.Accounts.Select(name => new Account(name))] };
+        foreach (var (role, names) in options.RoleAccounts)
+        {
+            accountsByRole[role] = [.. names.Select(name => new Account(name))];
+        }
+
+        if (options.PortalTokens.Count > 0)
+        {
+            accountsByRole[Role.Portal] = [.. options.PortalTokens.Select((token, i) => new Account($"portal {i + 1}", token))];
+        }
+
+        var staff = accountsByRole.Where(p => p.Key != Role.Portal).SelectMany(p => p.Value).ToList();
+        log.WriteLine($"Signing in {staff.Count} account(s) at {options.Server}");
         Task<string> SignIn(Account account) => SignInAsync(http, account.UserName, cancellationToken);
-        foreach (var account in accounts)
+        foreach (var account in staff)
         {
             await account.TokenAsync(SignIn, _clock);
         }
 
-        var patients = await PatientsAsync(http, await accounts[0].TokenAsync(SignIn, _clock), cancellationToken);
+        var frontOffice = accountsByRole[Role.FrontOffice][0];
+        var patients = await PatientsAsync(http, await frontOffice.TokenAsync(SignIn, _clock), cancellationToken);
         log.WriteLine($"{patients.Count} patients to open; measuring the lists (PERF-05)");
-        var lists = await ListSizesAsync(await accounts[0].TokenAsync(SignIn, _clock), cancellationToken);
+        var lists = await ListSizesAsync(await frontOffice.TokenAsync(SignIn, _clock), cancellationToken);
+
+        var tokens = new Dictionary<Role, string>();
+        foreach (var (role, roleAccounts) in accountsByRole.Where(p => p.Key != Role.Portal))
+        {
+            tokens[role] = await roleAccounts[0].TokenAsync(SignIn, _clock);
+        }
+
+        foreach (var clerk in accountsByRole.GetValueOrDefault(Role.Billing) ?? [])
+        {
+            await FixtureDiscovery.EnsureShiftAsync(http, await clerk.TokenAsync(SignIn, _clock), log, cancellationToken);
+        }
+
+        var fixtures = await FixtureDiscovery.DiscoverAsync(http, tokens, options, log, cancellationToken);
+        var mix = PeakMix.Build(accountsByRole.Keys.ToHashSet(), fixtures, options.Weights, out var notRun);
+        var split = PeakMix.Split(mix, options.Users);
+        foreach (var line in notRun)
+        {
+            log.WriteLine($"  not run: {line}");
+        }
+
+        if (split.Count == 0)
+        {
+            throw new LoadTestException("There is nothing to run: no step is left in the mix (see the lines above).");
+        }
 
         log.WriteLine(string.Create(CultureInfo.InvariantCulture,
-            $"Starting {options.Users} users over {options.Ramp.TotalSeconds:0} s, then measuring for {options.Duration.TotalSeconds:0} s"));
+            $"Starting {options.Users} users ({string.Join(", ", split.Select(p => $"{p.Value} {PeakMix.AreaOf(p.Key).ToLowerInvariant()}"))}) over {options.Ramp.TotalSeconds:0} s, then measuring for {options.Duration.TotalSeconds:0} s"));
         var samples = new ConcurrentQueue<Sample>();
         var start = _clock.Elapsed;
         var measureFrom = start + options.Ramp;
         var end = measureFrom + options.Duration;
         var numbers = Random.Shared.NextInt64(1, 500_000_000);
-        var users = Enumerable.Range(0, options.Users).Select(i =>
+        var roleOf = split.SelectMany(p => Enumerable.Range(0, p.Value).Select(n => (Role: p.Key, N: n))).ToList();
+        var users = roleOf.Select((user, i) =>
         {
-            var account = accounts[i % accounts.Count];
+            var roleAccounts = accountsByRole[user.Role];
+            var account = roleAccounts[user.N % roleAccounts.Count];
+            var operations = mix.Where(o => o.Role == user.Role).ToList();
             var startsAt = start + (options.Users == 1 ? TimeSpan.Zero : options.Ramp * i / options.Users);
-            var context = new OperationContext(patients, new Random(unchecked(Environment.TickCount + (i * 7919))), () => Interlocked.Increment(ref numbers));
-            return UserAsync(http, account, SignIn, context, startsAt, measureFrom, end, samples, cancellationToken);
+            var context = new OperationContext(patients, new Random(unchecked(Environment.TickCount + (i * 7919))), () => Interlocked.Increment(ref numbers), fixtures);
+            return UserAsync(http, account, SignIn, context, operations, startsAt, measureFrom, end, samples, cancellationToken);
         }).ToList();
 
         using var reporting = new CancellationTokenSource();
@@ -104,28 +150,41 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
 
         var measured = samples.ToList();
         return new LoadTestResult(
-            options.Server, options.Users, options.Duration, Results.Summarize(Operations.All, measured), lists,
+            options.Server, options.Users, options.Duration, Results.Summarize(mix, measured), lists,
             measured.Count, measured.Count(s => s.Failed),
-            measured.Where(s => s.Failed).GroupBy(s => s.Status).ToDictionary(g => g.Key, g => g.Count()));
+            measured.Where(s => s.Failed).GroupBy(s => s.Status).ToDictionary(g => g.Key, g => g.Count()), notRun);
     }
 
     private async Task UserAsync(
-        HttpClient http, Account account, Func<Account, Task<string>> signIn, OperationContext context, TimeSpan startsAt, TimeSpan measureFrom,
-        TimeSpan end, ConcurrentQueue<Sample> samples, CancellationToken cancellationToken)
+        HttpClient http, Account account, Func<Account, Task<string>> signIn, OperationContext context, IReadOnlyList<Operation> operations,
+        TimeSpan startsAt, TimeSpan measureFrom, TimeSpan end, ConcurrentQueue<Sample> samples, CancellationToken cancellationToken)
     {
         await DelayUntilAsync(startsAt, cancellationToken);
         while (_clock.Elapsed < end && !cancellationToken.IsCancellationRequested)
         {
-            var operation = Operations.Choose(Operations.All, context.Random);
+            var operation = Operations.Choose(operations, context);
             var token = await account.TokenAsync(signIn, _clock);
             using var request = operation.Request(context);
+            // The patient portal has a port of its own, away from the staff app's.
+            if (operation.Role == Role.Portal && options.PortalServer is not null && request.RequestUri is { IsAbsoluteUri: false } relative)
+            {
+                request.RequestUri = new Uri(options.PortalServer, relative);
+            }
+
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             var sentAt = _clock.Elapsed;
             var status = 0;
+            var elapsed = TimeSpan.Zero;
             try
             {
                 using var response = await http.SendAsync(request, cancellationToken);
                 status = (int)response.StatusCode;
+                elapsed = _clock.Elapsed - sentAt;
+                if (response.IsSuccessStatusCode && operation.OnSuccess is { } keep)
+                {
+                    // What the next step needs from this one's answer; an empty or odd answer leaves the step with nothing to keep.
+                    keep(context, await ReadBodyAsync(response, cancellationToken));
+                }
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
             {
@@ -134,7 +193,7 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
 
             if (sentAt >= measureFrom)
             {
-                samples.Enqueue(new Sample(operation.Name, operation.Kind, _clock.Elapsed - sentAt, status));
+                samples.Enqueue(new Sample(operation.Name, operation.Kind, status == 0 ? _clock.Elapsed - sentAt : elapsed, status));
             }
 
             if (status == (int)HttpStatusCode.Unauthorized)
@@ -145,6 +204,19 @@ internal sealed class LoadRunner(LoadTestOptions options, Func<bool, HttpMessage
             // A person reads the screen before the next step: half to one and a half times the mean pause.
             var pause = options.Think * (0.5 + context.Random.NextDouble());
             await DelayUntilAsync(TimeSpan.FromTicks(Math.Min((_clock.Elapsed + pause).Ticks, end.Ticks)), cancellationToken);
+        }
+    }
+
+    private static async Task<JsonElement> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            return text.Length == 0 ? default : JsonDocument.Parse(text).RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return default;
         }
     }
 

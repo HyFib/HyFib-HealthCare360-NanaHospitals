@@ -64,6 +64,12 @@ try {
             -p:DebugType=None -p:DebugSymbols=false
     }
 
+    # The developer's settings (backups and MFA off, demonstration data on) must not reach a hospital: the project leaves
+    # them out of a publish, and this stops the release if that ever stops being true.
+    if (Test-Path (Join-Path $serverOut 'appsettings.Development.json')) {
+        throw 'The server publish contains appsettings.Development.json (developer settings: backups and MFA off). Remove it from the publish before packaging.'
+    }
+
     Write-Step 'Publishing HC360 Desktop'
     $desktopOut = Join-Path $OutputDir 'desktop'
     Invoke-Checked 'Desktop publish' {

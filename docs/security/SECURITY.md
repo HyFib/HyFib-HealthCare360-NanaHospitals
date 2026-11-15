@@ -146,10 +146,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     reset sends it to the account's own mobile number by SMS and to its e-mail address (`auth.temporary_password`; the
     outbox drops a message not sent before the password expires), and tells the administrator only where it went,
     masked ("mobile +91******3210").
-  - An account with neither waits for a second administrator who holds `admin.grants.approve`
-    (`identity.password_reset`); nothing changes until then. Approving makes the password and shows it to that
-    administrator once, in the answer to the approval, to give in person (`ApprovalHandover`): it is kept nowhere, not
-    in the request, its outcome, the audit trail or the notice to the one who asked. The audit names both.
+  - For an account with neither, the administrator enters the holder's own mobile number or e-mail address with the
+    reset, and it waits for a second administrator who holds `admin.grants.approve` (`identity.password_reset`), who
+    sees them in full to check they are the holder's; nothing changes until then. Approving makes them the account's
+    and sends the password there the same way. Nobody is shown it, the approver included: the answer to the approval and
+    its outcome say only where it went, masked. The audit names both administrators. A hospital still setting up, with
+    one administrator who may approve, makes it at once, as other account changes.
   - Either way the sessions end, the PIN and the quick-unlock devices go, and the password must be changed at the next
     sign-in. Enter a mobile number for every member of staff, so a reset does not wait.
 - **Notices** (ASVS V6.4.3): when a password is changed or reset, or two-step verification is turned on, off or reset,
@@ -193,6 +195,18 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     locked waits, and is answered once unlocked. The app's windows on one computer (browser tabs, HC360 Desktop's
     second windows) share the session: use in any of them keeps all unlocked, and locking or unlocking one does the
     same to the others.
+  - **The offline copy from a locked screen** (docs/modules/downtime.md): during an outage nothing can unlock the
+    screen, so it opens the read-only offline copy over the lock, which stays, after checking the PIN or password on the
+    computer. What it checks against is kept at the user's last sign-in or unlock there that the server accepted, never
+    the secret: PBKDF2-HMAC-SHA512 (210,000 rounds, as the server hashes PINs, with a random 16-byte salt each time),
+    sealed with HMAC-SHA-256 under a key derived (HKDF) from the user's session key (`AuthResult.draftKey`), which is held
+    in memory only. So what is on the disk cannot be tried against guesses away from a live session of its user; only
+    salted and hashed, a PIN of 4 to 6 digits would fall to them in seconds. One user's verifiers are kept at a time:
+    another user's sign-in wipes them, as do signing out, a session ending while the server can be reached, and five
+    wrong tries. Known limits: someone who opens the browser's developer tools on that computer during the session
+    (HC360 Desktop keeps them off unless IT allows them) can take the session key from memory and guess a PIN offline,
+    as they can read the copy itself; and after a PIN or password is changed on another computer, the old one still
+    opens the copy on this one until its user next signs in or unlocks here.
   - **Quick unlock with Windows Hello or a fingerprint** (SRS UX-11): where the hospital has turned it on, staff can
     set up a device under My account › Lock screen and then unlock with its Windows Hello (face, fingerprint or the
     Windows Hello PIN), or Touch ID and the like elsewhere. It is WebAuthn with the device's built-in authenticator, checked by fido2-net-lib (MIT); no
@@ -244,6 +258,12 @@ do, and how to report a problem. Requirement IDs refer to `docs/requirements/SRS
     credential. Any
     other permission the endpoint takes is enough anywhere. The app is given the permissions the session can use, so it
     shows no administration there, and says where it is.
+  - **Approving administration obeys the same rule** (`PermissionGate`): the approvals inbox reads the permission a
+    decision needs from the kind of change, and checks it as an endpoint needing it would. A kind only an administrative
+    permission approves (access given, an account's password or two-step verification, contact details, a practitioner
+    link, another desktop, a guarded setting, the audit trail's purge) is listed, opened and decided only on an enrolled
+    workstation or tablet; elsewhere opening or deciding it is refused (403 `auth.device_required`), and a restricted
+    session decides nothing.
   - Revoking a desktop ends its sessions at once; its credential then signs in as a browser does, without administration.
   - While no workstation or tablet is enrolled (a new installation, or one whose desktops are kiosks and queue displays
     only), a browser may still list the devices and make an enrolment code, and nothing else, so the first workstation
@@ -349,6 +369,13 @@ and grants nothing.
     requires of its holders (two-step verification, an enrolled workstation, its idle lock, the protection of accounts
     that hold it) still applies. The Super Administrator and Patient roles are never off, and nobody turns off a role they
     hold ([ROLES.md](ROLES.md)).
+  - **All facilities is a grant of its own** (`User.AllFacilities`). A user works in every facility, those added later
+    included, only when given all facilities, which waits for a second person like any widening; an empty list of
+    facilities is none. Taking every facility away applies at once, and the user then cannot sign in (403
+    `auth.no_facility`): a session without a facility is not limited to one. Taking all facilities back to some keeps
+    those, at once. Before, an empty list meant every facility, so removing a user's last facility gave them all of
+    them with nobody's approval; the upgrade gives all facilities to the users whose list was empty, so nobody loses
+    access then (migration `UserAllFacilities`).
   - Only someone who holds an administrative permission approves a grant of it, as only they may give it.
   - Nobody approves their own request (`approval.self`), nor access given to themselves (`access.self_grant`): roles or
     facilities given to their own account, or permissions added to or the turning back on of a role they hold. A grant to
@@ -454,12 +481,12 @@ and grants nothing.
   - access given to a user or a role (see "Access is given by two people" above): one administrator asks, another who
     holds `admin.grants.approve`, and any administrative permission it gives, approves;
   - changes that would let one administrator take over an account (see "Nobody takes over a colleague's account alone"
-    above): a temporary password for an account with nowhere to send it (`identity.password_reset`, shown once to the
-    approver), a two-step verification reset (`identity.mfa_reset`), another user's e-mail address or mobile number
+    above): a temporary password for an account with nowhere to send it (`identity.password_reset`, sent to the
+    contact details given for its holder, shown to nobody), a two-step verification reset (`identity.mfa_reset`), another user's e-mail address or mobile number
     (`identity.contact_change`), an account linked to a practitioner (`identity.practitioner_link`) and a linked
     practitioner's registration number, HPR ID or signature (`masters.practitioner_identity`): one administrator asks,
-    another who holds `admin.grants.approve` approves. A temporary password otherwise goes to the account's own mobile
-    number and e-mail address, never to the administrator;
+    another who holds `admin.grants.approve` approves, on an enrolled desktop. A temporary password otherwise goes to the
+    account's own mobile number and e-mail address, never to an administrator;
   - another workstation or tablet enrolled once one is (`devices.enrollment`, see "Administration needs an enrolled
     device"): one administrator asks, another who holds `admin.grants.approve` approves, and the code is shown once to
     the one who asked;
@@ -1226,11 +1253,14 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     automatically.
   - Every period is on one screen, and none can be set below its legal minimum.
 - **Erasure and backups.**
-  - Erased data stays in the encrypted backups until they are deleted: at most the backup period and a day (31 days by
-    default). The erasure answer and the privacy notice say so. It is not crypto-shredded: the field keys are per
+  - Erased data stays in the encrypted backups until they are deleted: at most the longest a backup is kept and a day
+    (343 days by default, as a backup of each month is kept a year). The erasure answer and the privacy notice say so. It is not crypto-shredded: the field keys are per
     purpose, not per patient, and every backup escrows every key so it restores on new hardware.
   - Every erasure is appended to the erasure ledger outside the database (`privacy/erasure-ledger.log`, beside the audit
     anchors, and beside the backups' second copy when one is set), by id only, each line sealed with the audit seal key.
+  - Every nightly or manual backup carries the ledger inside its encryption, so the off-site copy has it too, and a restore adds its
+    erasures, and those of the ledger's copy beside the backup file, to the ledger of the server it restores onto. So
+    an erasure is applied again whichever copy the hospital recovers from, on new hardware too.
   - A database restored from a backup made before an erasure has it applied again as the server starts on it, before
     anyone uses the data, once, with a critical audit entry. A line whose seal does not verify is never applied, so
     write access to the folder alone cannot make the server erase someone's data. Keep the ledger with the audit
@@ -1274,6 +1304,17 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     point it at storage the database's administrators cannot write) and to the server log. Every anchor's position
     must hold that hash, and the chain must reach the last anchor, so a chain cut short, or made again from an earlier
     point, is found even by someone who holds the key.
+  - *A restore* takes the chain back to its backup's end, while the anchors written since name later positions. As HC360
+    first starts after Restore-HC360.ps1, before anything is sealed (under the sealer's lock), it records the restore
+    twice: an anchor of the restored chain's end carrying a restore mark sealed with the audit seal key, and a critical
+    entry in the audit trail naming that point (`audit.restored`). The check then sets aside the anchors written before
+    that anchor at later positions (they were of the chain the restore left behind) and checks everything else as
+    before: a record changed or removed, before or after the restore, or an anchor written since that the chain does not
+    match, still fails it. A restore mark counts only with both its seal and its entry, so whoever can write only the
+    database, or only the anchor file, cannot pass a chain cut short for a restore; someone who holds the key and the
+    database could, but only by adding a critical entry anyone reviewing the trail sees, and the copy of the anchors off
+    the server keeps the anchors set aside. An auditor's export holds only the anchors in force. Tests:
+    `AuditRestoreAnchorTests`, `AuditRestoreTests` (a real backup restored, on PostgreSQL).
   - Copies of the anchors off the server (`AuditAnchorMirror`): each anchor is appended, as it is written, to a second
     anchor file on another machine (`HealthCare360:Audit:AnchorMirrorFile`, a UNC path to a share the service may read
     and append to but not change) and/or sent to the syslog collector (`HealthCare360:Audit:AnchorsToSyslog`: facility
@@ -1432,6 +1473,12 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
     (renewing and ending a session, public links, report and prescription checks, the server's name and switches,
     video consultations, health probes and provider webhooks). Nothing else answers there: no staff sign-in, page or
     endpoint. An architecture test fails if an endpoint needing a staff permission ever does.
+  - It is the one address a hospital opens to the internet, so what services outside the hospital call answers there
+    too: provider webhooks, the ABDM gateway's callbacks and the records other providers push (`/api/v3`), and consent
+    managers' events (`/api/v1/consent-managers`). Each is anonymous and proves its sender with a signature or the
+    gateway's token. The FHIR API and SMART on FHIR's OAuth endpoints stay on the staff app's address: an app's
+    authorization hands the browser to the staff sign-in, and the FHIR API reads as a staff account. Partners outside
+    the hospital reach them over a VPN (DEPLOYMENT.md, "Network checklist").
   - The staff app's address sends `/portal/...` to the same page on the portal's address, so links in messages sent,
     and QR codes printed, before the portal moved keep working. It does not serve the portal's own API or sign-in.
   - The API reference, while it is on: port 7362 (`HealthCare360:ApiReferencePort`), listening on the server machine
@@ -1624,9 +1671,39 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   when; the key is never shown again. System health warns until two different people have, and when nobody has for 90
   days: the quarterly check of the copies. Typing a key in is open to holders of the backups permission; it changes
   nothing and is audited, without the key.
-- Each backup is one archive holding the database, the stored documents (already encrypted) and escrow copies of the
-  field encryption keys. So one backup file and its recovery key restore everything on replacement hardware, including
-  identifiers such as Aadhaar and ABHA, which are unreadable without that key.
+- Each backup is an archive holding the database, escrow copies of the field encryption keys, the hospital CA, the erasure
+  ledger and the list of the stored documents it needs; the documents themselves (already encrypted) are kept once in
+  the backup folder beside it (docs/design/incremental-backup.md). So a backup folder and its recovery key restore
+  everything on replacement hardware, including identifiers such as Aadhaar and ABHA, which are unreadable without that
+  key. The backup taken before an update holds the database and the keys only, for the version updated from.
+- The archive records the SHA-256 of each document (in its document index, which names each copy by it; an older backup
+  that holds its documents, as each was copied), and a restore checks every document against it. A
+  document already on the disk restored onto whose bytes differ (damaged, or encrypted again since the backup) is
+  replaced by the backup's copy, so the documents always match the restored database; the file it replaced is kept
+  beside the documents folder, never deleted, and put back if the restore fails after it.
+- **The hospital CA travels with the backups**, so a server restored on new hardware, from the second disk or the
+  off-site copy, serves a certificate every workstation, tablet, HC360 Desktop and lab agent already trusts, and none
+  has to be set up again in a disaster.
+  - Every full backup carries the CA with its private key (after a switch, also the CA it replaced and the certificate that
+    CA signed for it), as a PKCS#12 file inside the archive, beside the database and the field keys. It has no
+    password of its own: the archive's encryption protects it exactly as it protects the database (AES-256-GCM under
+    the recovery key, every chunk authenticated), which is the protection the CA's key must have, no weaker. The
+    archive's manifest names the CA's fingerprint, and reading a backup checks that the file holds that CA with its key.
+    A restore reads it in memory, never onto the disk, and installs it protected for the new machine with Data
+    Protection, as `certificates import-ca` does.
+  - *The trade-off, accepted.* Whoever holds a backup and its recovery key can now issue certificates the devices trust,
+    as well as read every patient's record: the CA's key is exactly as safe as the database. The alternative, a
+    password-protected export kept in the safe as a go-live step, adds a second secret to keep and goes stale at every
+    rollover, and it is missing the day nobody made it, when every device must be set up again during a disaster; a
+    recovery key and backup in the wrong hands already mean every patient's data exposed, the graver loss. So a backup
+    and recovery key that may have been exposed now also mean the CA exposed: make a new CA with the new recovery key
+    (Key policy, below).
+  - A restore never puts back a CA the hospital has moved off: a server whose CA took the backup's place after the
+    backup was made, by a rollover's switch or by `certificates new-ca` (whose CA it replaced may have been seen), keeps
+    its own, which the devices trust now. Any other CA there, such as the one new hardware made as it first started, is
+    kept under a new name, never deleted. A failure to install the CA is reported, and leaves the rest of the restore
+    in place. A next CA prepared for a rollover is not carried. `certificates export-ca` and `import-ca` remain how a
+    warm standby gets the CA.
 - Every backup is read back in full and its database dump listed by pg_restore before it counts. A backup that fails
   this check is discarded and reported.
 - A restore does not make HC360 issue a number twice (UHIDs, bills, receipts, GST invoices) or send a message twice. A
@@ -1692,7 +1769,8 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
   Server Node leaves. Retire an earlier data key once System health shows nothing is encrypted with it; the backups
   made before keep their copy of it until they are deleted. Make a new backup recovery key when someone who has seen
   the current one leaves or a copy may have been exposed, and keep each one offline as long as backups made with it are
-  kept.
+  kept. A backup and its recovery key that may both have been exposed carry the hospital CA's key too: make a new CA
+  as well (`certificates new-ca`, every device set up again, docs/deployment/CA-ROLLOVER.md).
 
 #### Keys and certificates
 
@@ -1700,14 +1778,14 @@ Protection Act 2023 and the DPDP Rules 2025 (in force for hospitals from May 202
 |---|---|---|---|---|
 | Data encryption keys (field master key ring) | `keys\field-master.key` (original) and `keys\field-keys\` (one per rotation, and which is current) | Data Protection (machine DPAPI) | AES-256-GCM, a key per purpose (HKDF): ABHA and policy numbers, staff PAN and bank details, two-step verification secrets, secret settings, stored documents, scheduled report files, stored responses | System health, every 2 years or on exposure; an earlier key retired there once nothing is encrypted with it, the original never |
 | Blind-index keys | Derived from each data key | As above | HMAC-SHA256 lookups of ABHA, policy, PAN and bank account numbers (the current data key's), and of Aadhaar numbers (the original key's) | With the data key, indexes computed again in the background; the Aadhaar index stays on the original key (it cannot be rebuilt) |
-| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; two people keep a copy each offline, one of them outside the building, and type it in every quarter | Every backup file (chunked AES-256-GCM), which carries all the data keys and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed or lost; each key kept as long as backups made with it |
+| Backup recovery key | `keys\backup-recovery.key` (until the first new key, derived from the original data key); shown once, when it is made | Data Protection on the Server Node; two people keep a copy each offline, one of them outside the building, and type it in every quarter | Every backup file (chunked AES-256-GCM), which carries all the data keys and the hospital CA, and names its recovery key | Administration › Backups, by holders of `admin.system.manage` who give their password again, when someone who saw it leaves or a copy may be exposed or lost; each key kept as long as backups made with it |
 | Off-site upload key | The secret setting `backup.offsite.secret`; the store's console | The data encryption key, as every secret setting | Uploads to the off-site bucket, which its policy limits to adding copies and reading them back: no delete, and each copy locked | In the store's console, then entered under Administration › Backups (a second administrator approves), when someone who saw it leaves or it may be exposed |
 | Token signing key | `keys\jwt-signing.key`, and the previous one for minutes after a rotation | Data Protection | ES256 access tokens (10 minutes) | System health, every year or on exposure |
 | Anti-automation key | `keys\anti-automation.key`, 256 random bits made on first start | Data Protection | HMAC-SHA256 of the portal's proof-of-work challenges (5 minutes; Application hardening, above), and, through keys derived from it, of the addresses and mobile numbers whose failures are counted (in memory, or in the database with several servers) | Delete the file and restart: challenges issued before stop working and browsers ask for new ones; not from System health, an accepted exception (above). Several API servers share it from the shared folder's `keys` |
 | Data Protection key ring | `keys\dataprotection` | Machine DPAPI; with several servers, the ring in the shared folder is protected with the cluster key certificate (RSA, in each server's Local Computer store), and each server keeps its own DPAPI ring for its LAN certificates | The keys above and the LAN certificates' private keys | Automatic (library default, 90 days) |
 | Cluster key certificate (several servers only) | The Local Computer's Personal store of each server; the PFX and its password offline, in the hospital's password safe | Windows (the private key readable by `NT SERVICE\HC360Server` and Administrators) | The shared Data Protection key ring, hence every key in the shared folder | Not rotated in place; to replace it, copy the documents and restore the latest backup into a new, empty shared folder named with the new certificate (DEPLOYMENT.md section 10, steps 2 to 4) |
-| Hospital CA and server certificate | `certs\*.pfx.protected` | Data Protection | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires |
-| Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby or replacement hardware; kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
+| Hospital CA and server certificate | `certs\*.pfx.protected`; the CA also inside every backup | Data Protection; in a backup, the backup's own encryption under the recovery key, as the database (Backups and keys, above) | HTTPS on the hospital LAN; HC360 Desktop pins the CA | Server certificate re-issued 30 days before expiry; CA valid 10 years, never re-made by itself. System health warns 30 days before either expires. A backup and recovery key that may have been exposed are a CA exposed: make a new CA |
+| Exported hospital CA | A `.pfx` file made by `certificates export-ca`, for a warm standby (replacement hardware takes the CA from the backup it is restored from); kept offline, or deleted once imported | A password of 16 characters or more (AES-256-CBC, PBKDF2-SHA256, 200,000 rounds), kept apart from the file | Issuing certificates that workstations trust | With the CA. A file and password that may have been exposed are a CA exposed: make a new CA (every workstation set up again) |
 | PostgreSQL TLS certificate (warm standby) | `hc360-server.key` in PostgreSQL's data folder, copied to the standby with the database | File permissions: PostgreSQL's service account and Administrators | The replication stream between the Server Nodes | Made by `Enable-HC360Replication.ps1`, valid 10 years; made again when it is within 30 days of expiry (copy the new `hc360-server.crt` to the standby) |
 | Replication password (warm standby) | On the primary, only its SCRAM verifier, in PostgreSQL; on the standby, `hc360-standby\replication.pgpass` beside the data folder; the hospital's password safe | File permissions on the standby: PostgreSQL's service account and Administrators | Streaming the database to the standby's address | Run `Enable-HC360Replication.ps1` with a new password, then `New-HC360Standby.ps1` with it |
 | Database sign-in | None: the service's Windows account (`NT SERVICE\HC360Server`, SSPI), which `pg_hba.conf` and `pg_ident.conf` allow from this machine only | Windows | The server's PostgreSQL account | Nothing to rotate. Where the server signs in with a password instead (PostgreSQL on another machine), the password is in `config\hc360.settings.json` under machine DPAPI, and changed from System health every year or when someone who knew it leaves |
@@ -1916,6 +1994,7 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 |---|---|---|
 | Clear-text storage of sensitive information (high) | `IdentitySeeder.CreateInitialAdministratorAsync` | False positive: what it flags is the log line giving the path of `initial-admin-password.txt`, which CodeQL takes for a password because the file's name contains the word. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive". The file itself does hold the first administrator's one-time password, so the installer can show it. That is an accepted risk: the data directory is open only to administrators and the service, and HC360 deletes the file as soon as `admin` sets a new password (and at start-up if that already happened) |
 | Clear-text storage of sensitive information (high) | Portal `lib/payments.ts` `rememberPendingPayment` | False positive: before the gateway's own payment page opens, the tab keeps which bill or appointment it pays, so the page can confirm the payment when the patient comes back. That is a random id and an order row id, no personal or clinical data, in `sessionStorage`, which ends with the tab; CodeQL takes the word "appointment" for health data. Marked with a `codeql[...]` comment there; with Code Security on, also dismiss as "false positive" |
+| Clear-text storage of sensitive information (high) | Staff `lib/offline/offlineUnlock.ts` `write`, and its test | False positive: to open the offline copy from a locked screen during an outage, the app keeps a verifier of the PIN or password, never the secret: a random salt and an HMAC of PBKDF2-SHA512 of it (210,000 rounds, as the server hashes), keyed by a key derived from the session's key, which is non-extractable and held only in memory. A copy of the stored entry can neither be reversed nor test a guess away from the live session, and five wrong tries wipe it. CodeQL does not take WebCrypto's PBKDF2 and HMAC for hashing. Marked with a `codeql[...]` comment there (and in the test, which puts the sealed entry back to show this); with Code Security on, also dismiss as "false positive" (the test's as "used in tests") |
 | User-controlled bypass of sensitive method (high) | `AadhaarAuthRouter.AuthenticateAsync` (Integrations) | Fixed in the code. The router decided whether to ask UIDAI on a consent flag taken from the request. The flag is the staff member's statement that the patient agreed, which UIDAI's request carries the same way (`rc="Y"`), so the router's check was no credential. Consent is now part of the check itself: `AadhaarFingerprintCheck` cannot be made without it, and the endpoint refuses a request without it (400) |
 | Missing XML validation (medium) | `RdService.Load` (WindowsInterop, HC360 Desktop's fingerprint reader) | False positive: UIDAI publishes no schema for an RD service's answers, so there is none to validate against. The parser refuses DTDs and external entities, caps the size, and checks the root element. Numbers are parsed and range-checked, the paths the service names must be plain local paths, and the rest is carried as text. With Code Security on, dismiss as "false positive" |
 | Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
@@ -1928,6 +2007,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | CA5350, HMAC-SHA1 | `Signatures.*HmacSha1Base64` (Integrations) | Twilio signs its webhooks with HMAC-SHA1 |
 | CA5351, MD5 | `S3Client.Md5` (Platform, the off-site backup copies) | S3's `Content-MD5` header and its ETags are MD5 by the protocol, and Object Lock requires the header: a check against damage on the way, beside the SHA-256 every request is signed with. Nothing secret depends on it |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
+| CA2100, SQL from text | `BackupRowCounts.CountAsync` (Platform, the key tables' rows a backup records and a test restore checks) | A table name cannot be a parameter. The names are HC360's fixed list, or a backup's manifest that recorded them; each must be `schema.table` in lower-case letters, digits and underscores, and is quoted. Nothing comes from a request |
+| CA2100, SQL from text | `PostgresTools.CreateAsync` (Platform, the test restores' scratch database) | `CREATE DATABASE` takes no parameters. The name is HC360's own (`hc360_restore_test_` and 12 random hex digits); the encoding and locale are the hospital database's, read from `pg_database` and quoted as literals |
+| CA2100, SQL from text | `PostgresTools.DropAsync` (Platform, the same) | `DROP DATABASE` takes no parameters. It drops only a name that matches the scratch databases' pattern (`hc360_restore_test_` and 12 hex digits), checked first, and never the hospital's database |
 | CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
 
 ## 3. What the hospital must do

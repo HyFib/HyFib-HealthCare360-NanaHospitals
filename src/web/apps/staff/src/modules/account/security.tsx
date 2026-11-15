@@ -21,6 +21,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { api } from '@/lib/api';
+import { rememberOfflineSecret } from '@/lib/offline/offlineUnlock';
 
 const useStyles = makeStyles({
   form: { display: 'flex', flexDirection: 'column', gap: '12px', maxWidth: '420px' },
@@ -70,8 +71,12 @@ export function ChangePasswordForm({ onDone }: { onDone?: () => void }) {
         currentPassword: values.currentPassword,
         newPassword: values.newPassword,
       }),
-    onSuccess: (result) => {
+    onSuccess: (result, values) => {
       auth.apply(result);
+      // The old password must not open the offline copy on this computer any more; the new one does.
+      if (result.user) {
+        void rememberOfflineSecret(result.user.id, 'password', values.newPassword);
+      }
       form.reset();
       notify.success('Password changed', 'Other devices signed in with your account have been signed out.');
       onDone?.();
@@ -244,7 +249,12 @@ export function PinForm() {
 
   const save = useMutation({
     mutationFn: (values: PinForm) => api.post('/api/v1/auth/pin', { pin: values.pin, password: values.password }),
-    onSuccess: async () => {
+    onSuccess: async (_, values) => {
+      // The old PIN must not open the offline copy on this computer any more; the new one does.
+      const userId = useSession.getState().user?.id;
+      if (userId) {
+        void rememberOfflineSecret(userId, 'pin', values.pin);
+      }
       form.reset();
       await reloadCurrentUser();
       notify.success(hasPin ? 'PIN changed' : 'PIN set', 'Use it to unlock this screen after a break.');

@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using HyFib.HealthCare360.Platform.Hosting;
 
 namespace HyFib.HealthCare360.Platform.Jobs;
 
@@ -31,6 +32,8 @@ public sealed class BackupStoreException(string message) : IOException(message);
 /// <item>A run copies the documents, then writes the list, then renames the archive into place: an archive in the folder
 /// always has its documents and its list.</item>
 /// <item>Unused documents are looked for only when every archive's list is there and verifies; otherwise none is removed.</item>
+/// <item>Archives go by grandfather-father-son retention (<see cref="BackupRetention"/>), and a document goes only once no
+/// archive kept in the folder lists it (<see cref="Prune"/>).</item>
 /// </list>
 /// </summary>
 internal sealed partial class BackupStore
@@ -327,6 +330,70 @@ internal sealed partial class BackupStore
     }
 
     /// <summary>
+    /// Whether the folder has a copy of the document not marked bad, of whatever length: under <c>blobs\</c>, or in an
+    /// append-only folder in any generation. Its content is checked by reading it back (<see cref="CopiesInShare"/>).
+    /// </summary>
+    public bool HasCopy(string id) =>
+        AppendOnly ? BackupBlobs.Candidates(Directory, id).Any(path => !File.Exists(path + BadExtension)) : File.Exists(PathOf(id));
+
+    /// <summary>
+    /// The copies of documents in the folder, in every generation, whose names start with two hex digits that fall in share
+    /// <paramref name="share"/> of <paramref name="shares"/>: read back one share a night, every copy is read back once every
+    /// <paramref name="shares"/> nights. Copies marked bad, and unfinished ones, are left out.
+    /// </summary>
+    public IEnumerable<(string Id, string Path)> CopiesInShare(int share, int shares)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(shares);
+        var roots = new List<string> { Path.Combine(Directory, BlobsFolder) };
+        roots.AddRange(System.IO.Directory.EnumerateDirectories(Directory, GenerationPrefix + "*").Order(StringComparer.Ordinal)
+            .Select(generation => Path.Combine(generation, BlobsFolder)));
+        foreach (var root in roots.Where(System.IO.Directory.Exists))
+        {
+            foreach (var first in System.IO.Directory.EnumerateDirectories(root).Order(StringComparer.Ordinal))
+            {
+                var name = Path.GetFileName(first);
+                if (name.Length != 2 || !byte.TryParse(name, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var value) || value % shares != share)
+                {
+                    continue;
+                }
+
+                foreach (var path in System.IO.Directory.EnumerateFiles(first, "*" + BlobExtension, SearchOption.AllDirectories).Order(StringComparer.Ordinal))
+                {
+                    // <id>.blob, or <id>.<n>.blob beside a copy cut short in an append-only folder.
+                    var id = Path.GetFileName(path).Split('.')[0];
+                    if (IsBlobId(id) && id.StartsWith(name, StringComparison.Ordinal) && !File.Exists(path + BadExtension))
+                    {
+                        yield return (id, path);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes a copy of a document out of use, once reading it back found it damaged: deleted from a folder HC360 may delete
+    /// from; marked bad in an append-only folder, which keeps it, so it is never taken for a good copy (<see cref="FindCopy"/>).
+    /// </summary>
+    public void Discard(BackupStoreLock held, string path)
+    {
+        RequireLock(held);
+        if (!Path.GetFullPath(path).StartsWith(Directory + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || !Path.GetFileName(path).EndsWith(BlobExtension, StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"'{path}' is not a copy of a document in {Directory}.", nameof(path));
+        }
+
+        if (!AppendOnly)
+        {
+            File.Delete(path);
+        }
+        else if (!File.Exists(path + BadExtension))
+        {
+            WriteDurably(path + BadExtension, []);
+        }
+    }
+
+    /// <summary>
     /// Copies a document in unless it is here already. It is written beside its place, flushed to the disk and then renamed,
     /// so a document under its own name is always complete; a copy cut short (a power cut, an unplugged disk) is replaced.
     /// </summary>
@@ -446,6 +513,81 @@ internal sealed partial class BackupStore
         }
     }
 
+    /// <summary>
+    /// Copies an archive of another backup folder here, with what a restore from this folder alone needs: the documents it
+    /// lists that are not here yet, from <paramref name="source"/> (each hashed as it is read, so a copy damaged there is
+    /// refused), then its list, then the archive itself, which must hash to <paramref name="sha256"/> as it is read. The
+    /// archive is written beside its place and renamed in once complete, so an archive here always has its documents and its
+    /// list; in an append-only folder it is written once under its name.
+    /// </summary>
+    /// <param name="readBack">Read the archive's copy back too, so one the disk did not write as it was sent is not counted.</param>
+    /// <param name="checkpoint">Called at each step, for the tests that stop a backup as a crash would.</param>
+    /// <returns>Why the archive was not copied (its copy removed where the folder allows); null once it is copied.</returns>
+    /// <exception cref="InvalidDataException">A document's copy in <paramref name="source"/> is not the document it is named for.</exception>
+    public async Task<string?> CopyArchiveAsync(BackupStoreLock held, BackupStore source, string archive, string sha256, IReadOnlyList<string> ids, byte[] key,
+        bool readBack, Action<string>? checkpoint, CancellationToken ct)
+    {
+        RequireLock(held);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(ids);
+        foreach (var id in ids.Distinct(StringComparer.Ordinal))
+        {
+            await AddAsync(held, source.PathOf(id), id, ct);
+            checkpoint?.Invoke("secondary document copied");
+        }
+
+        var name = CheckArchiveName(Path.GetFileName(archive));
+        WriteReferences(held, name, ids, key);
+        checkpoint?.Invoke("secondary list written");
+
+        var target = Path.Combine(Directory, name);
+        var temp = AppendOnly ? target : target + PartialExtension;
+        if (!AppendOnly)
+        {
+            // Left by a copy that stopped: this one holds the lock, so it is nobody's.
+            File.Delete(temp);
+        }
+
+        string read;
+        await using (var input = new FileStream(archive, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+        {
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[1 << 20];
+            int count;
+            while ((count = await input.ReadAsync(buffer, ct)) > 0)
+            {
+                hash.AppendData(buffer, 0, count);
+                await output.WriteAsync(buffer.AsMemory(0, count), ct);
+            }
+
+            output.Flush(flushToDisk: true);
+            read = Convert.ToHexString(hash.GetHashAndReset());
+        }
+
+        var problem = !string.Equals(read, sha256, StringComparison.OrdinalIgnoreCase)
+            ? $"{name} on the server no longer matches the SHA-256 it was checked with when it was made: the server's disk may be failing."
+            : readBack && !string.Equals(await HashFileAsync(temp, ct), sha256, StringComparison.OrdinalIgnoreCase)
+                ? $"The copy of {name} does not read back as it was written: the disk may be failing."
+                : null;
+        if (problem is not null)
+        {
+            if (!AppendOnly)
+            {
+                File.Delete(temp);
+            }
+
+            return problem;
+        }
+
+        if (!AppendOnly)
+        {
+            File.Move(temp, target, overwrite: true);
+        }
+
+        return null;
+    }
+
     private static void StampTimes(string path)
     {
         if (OperatingSystem.IsWindows())
@@ -553,15 +695,19 @@ internal sealed partial class BackupStore
     }
 
     /// <summary>
-    /// Deletes the archives older than <paramref name="retentionDays"/> (by the date in their name, never the file's times),
-    /// always keeping the newest; removes what a crashed run left; then removes the documents no remaining archive's list
-    /// names, unless an archive has no list or its list does not verify, when none is removed.
+    /// Deletes, with their lists, the archives grandfather-father-son retention no longer keeps (<see cref="BackupRetention"/>:
+    /// by the date in their names, never the files' times, and never the newest full backup); removes what a crashed run
+    /// left; then removes the documents no remaining archive's list names, unless an archive has no list or its list does
+    /// not verify, when none is removed. A document a kept weekly or monthly backup needs stays as long as that backup.
     /// </summary>
+    /// <param name="zone">The hospital's time zone, whose days, weeks and months retention counts.</param>
     /// <exception cref="InvalidOperationException">The folder is append-only: nothing is removed from it by HC360.</exception>
     /// <exception cref="UnauthorizedAccessException">A delete was refused: the folder is then recorded as append-only (F24).</exception>
-    public BackupPruneResult Prune(BackupStoreLock held, int retentionDays, ReadOnlySpan<byte> key)
+    public BackupPruneResult Prune(BackupStoreLock held, BackupRetentionOptions retention, TimeZoneInfo zone, ReadOnlySpan<byte> key)
     {
         RequireLock(held);
+        ArgumentNullException.ThrowIfNull(retention);
+        ArgumentNullException.ThrowIfNull(zone);
         if (AppendOnly)
         {
             throw new InvalidOperationException($"{Directory} is append-only: HC360 removes nothing from it.");
@@ -569,7 +715,7 @@ internal sealed partial class BackupStore
 
         try
         {
-            return PruneDeletable(retentionDays, key);
+            return PruneDeletable(retention, zone, key);
         }
         catch (UnauthorizedAccessException)
         {
@@ -580,17 +726,14 @@ internal sealed partial class BackupStore
         }
     }
 
-    private BackupPruneResult PruneDeletable(int retentionDays, ReadOnlySpan<byte> key)
+    private BackupPruneResult PruneDeletable(BackupRetentionOptions retention, TimeZoneInfo zone, ReadOnlySpan<byte> key)
     {
-        var cutoff = _time.GetUtcNow() - TimeSpan.FromDays(Math.Max(retentionDays, 1));
-
-        // Archives older than the cutoff, by their name, except the newest: a disk that was away longer than the backup
-        // period keeps its last archive until a newer one is on it.
-        var dated = ArchiveNames().Select(name => (Name: name, Date: ArchiveDate(name))).Where(a => a.Date is not null).ToList();
-        var newest = dated.Count == 0 ? (DateTimeOffset?)null : dated.Max(a => a.Date);
+        // The archives retention no longer keeps, by their names (other names are never deleted). The newest full backup is
+        // always kept: a disk that was away longer than the longest period keeps its last one until a newer one is on it.
         var archivesDeleted = 0;
-        foreach (var (name, date) in dated.Where(a => a.Date < cutoff && a.Date != newest))
+        foreach (var expired in BackupRetention.ToRemove(BackupFile.In(Directory), retention, zone, _time.GetUtcNow()))
         {
+            var name = Path.GetFileName(expired.Path);
             File.Delete(Path.Combine(Directory, name));
             File.Delete(ReferencesPath(name));
             archivesDeleted++;
@@ -689,16 +832,6 @@ internal sealed partial class BackupStore
     public IEnumerable<string> ArchiveNames() =>
         System.IO.Directory.EnumerateFiles(Directory, "*" + BackupService.FileExtension).Select(Path.GetFileName).OfType<string>();
 
-    /// <summary>When an archive was made, from its name (<c>hc360-yyyyMMdd-HHmmss-kind.hc360bak</c>, UTC); null for another name.</summary>
-    public static DateTimeOffset? ArchiveDate(string archiveName)
-    {
-        var match = ArchiveNamePattern().Match(archiveName);
-        return match.Success && DateTime.TryParseExact(match.Groups[1].Value, "yyyyMMdd-HHmmss", CultureInfo.InvariantCulture,
-            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var date)
-            ? new DateTimeOffset(date, TimeSpan.Zero)
-            : null;
-    }
-
     private static string CheckArchiveName(string archiveName)
     {
         // The same rule on every system: '\' and ':' are separators on Windows even where this runs on Linux.
@@ -721,9 +854,6 @@ internal sealed partial class BackupStore
 
     [GeneratedRegex("^[0-9a-f]{64}$")]
     private static partial Regex BlobIdPattern();
-
-    [GeneratedRegex(@"^hc360-(\d{8}-\d{6})-[a-z]+\.hc360bak$")]
-    private static partial Regex ArchiveNamePattern();
 }
 
 /// <summary>The hold on a backup folder (<see cref="BackupStore.Lock"/>); released when disposed.</summary>

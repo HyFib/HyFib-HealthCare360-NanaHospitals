@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -75,6 +76,36 @@ public sealed class AdministrationDesktopTests(HospitalServer server)
         me.AdministrationNeedsDesktop.ShouldBeTrue();
         await RefusedAsync(browser, HttpMethod.Get, "/api/v1/admin/system/health");
         (await browser.GetAsync<PagedResult<JsonElement>>("/api/v1/patients?pageSize=1")).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Access_given_is_approved_on_an_enrolled_desktop_and_not_in_a_browser_as_giving_it_is()
+    {
+        // The hospital administrator gives a new account a role: it waits for a second administrator who may approve grants.
+        var hospitalAdmin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var nurse = (await hospitalAdmin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == SystemRoles.Nurse).Id;
+        var name = "it-desk-grant-" + Guid.NewGuid().ToString("N")[..8];
+        var created = await hospitalAdmin.PostAsync<TemporaryPasswordResponse>("/api/v1/admin/users",
+            new CreateUserRequest(name, name, Email: null, Phone: null, [nurse], FacilityIds: [], DefaultFacilityId: null, PractitionerId: null, TemporaryPassword: null));
+        var approvalId = created.ApprovalId.ShouldNotBeNull();
+        var version = (await hospitalAdmin.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}")).Version;
+
+        // The Super Administrator in a browser: it is not among the requests to decide, opening it says where it is decided,
+        // and approving or rejecting it is refused alike. Nothing is given.
+        var (browser, _) = await server.SignInFromBrowserAsync(HospitalServer.Users.Admin);
+        (await browser.GetAsync<PagedResult<ApprovalRequestDto>>("/api/v1/approvals?pageSize=100")).Items.ShouldNotContain(r => r.Id == approvalId);
+        await RefusedAsync(browser, HttpMethod.Get, $"/api/v1/approvals/{approvalId}");
+        await RefusedAsync(browser, HttpMethod.Post, $"/api/v1/approvals/{approvalId}/approve", new ApproveRequest(null, version));
+        await RefusedAsync(browser, HttpMethod.Post, $"/api/v1/approvals/{approvalId}/reject", new RejectApprovalRequest("Decided from a browser.", version));
+        (await hospitalAdmin.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}")).Status.ShouldBe(ApprovalStatus.Pending);
+
+        // In HC360 Desktop on the enrolled workstation, it is theirs to decide, and approving it gives the role.
+        var desktop = await server.SignInAsync(HospitalServer.Users.Admin);
+        var waiting = await desktop.GetAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}");
+        waiting.CanDecide.ShouldBeTrue();
+        (await desktop.PostAsync<ApprovalRequestDto>($"/api/v1/approvals/{approvalId}/approve", new ApproveRequest(null, waiting.Version)))
+            .Status.ShouldBe(ApprovalStatus.Approved);
+        (await desktop.GetAsync<UserDetail>($"/api/v1/admin/users/{created.UserId}")).RoleIds.ShouldBe([nurse]);
     }
 
     [Fact]

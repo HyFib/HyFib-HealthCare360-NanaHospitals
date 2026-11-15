@@ -471,44 +471,6 @@ internal static class BackupOffsite
         TimeZoneInfo.ConvertTime(at, zone).ToString("dd MMM yyyy HH:mm", CultureInfo.InvariantCulture);
 }
 
-/// <summary>
-/// How many days a backup is kept, wherever HC360 puts it: on the server and its second copy for
-/// <c>HealthCare360:Backup:RetentionDays</c>; and, while the off-site copy is on, in the bucket until its lock
-/// (<see cref="BackupOffsiteSettings.RetainDays"/>) has passed and the bucket's lifecycle removes it the day after
-/// (DEPLOYMENT.md section 8). What the privacy notice and the erasure answer say of erased data in backups is counted
-/// from it (DPDP Act s8(7)), so it never says less than the copies off site are kept.
-/// </summary>
-public static class BackupRetention
-{
-    public static async Task<int> DaysAsync(ISettingsService settings, PlatformOptions options, CancellationToken ct)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(options);
-        var days = Math.Max(options.Backup.RetentionDays, 1);
-
-        // An append-only secondary keeps its documents in weekly generations, which its own retention removes a generation
-        // after the backup period (docs/design/incremental-backup.md, section 5.6).
-        if (options.Backup.SecondaryAppendOnly && options.Backup.SecondaryDirectory is { Length: > 0 })
-        {
-            days += BackupStore.GenerationDays;
-        }
-
-        BackupOffsiteSettings? offsite;
-        try
-        {
-            offsite = await settings.GetAsync<BackupOffsiteSettings>(BackupOffsite.SettingKey, cancellationToken: ct);
-        }
-        catch (JsonException)
-        {
-            return days;
-        }
-
-        // The bucket's documents are in generations too: a copy stays until its generation's last backup has expired, a
-        // generation after the lock of the backup that first needed it, and the lifecycle removes it the day after.
-        return offsite is { Enabled: true, RetainDays: > 0 } ? Math.Max(days, offsite.RetainDays + BackupStore.GenerationDays + 1) : days;
-    }
-}
-
 /// <summary>A part of a multipart upload that the store holds: its number, the ETag it gave, and the MD5 of what was sent.</summary>
 internal sealed record OffsiteUploadPart(int Number, string ETag, string Md5);
 

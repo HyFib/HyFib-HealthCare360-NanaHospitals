@@ -48,20 +48,29 @@ internal static class SaleEndpoints
     }
 
     /// <summary>
-    /// Counter picker: sellable stock of matching items in a pharmacy store, with MRP and the prescription flag. A
-    /// scanned pharmacy tag finds its item and says which of the store's batches it names.
+    /// Counter picker: sellable stock of matching items in a pharmacy store, with MRP and the prescription flag. In stock
+    /// only, it lists the first items by name the store can sell. A scanned pharmacy tag finds its item and says which of
+    /// the store's batches it names.
     /// </summary>
     private static async Task<IResult> Stock(
         Guid storeId, string? search, bool? inStockOnly, int? take, HospitalDbContext db, StockService stock, TimeProvider time, CancellationToken ct)
     {
-        var items = await db.Set<Item>().AsNoTracking()
-            .Where(i => i.IsActive)
-            .Search(search)
+        var today = time.Today();
+        var matching = db.Set<Item>().AsNoTracking().Where(i => i.IsActive).Search(search);
+        if (inStockOnly == true)
+        {
+            // Before the list is cut short: else the first items by name, with none in this store, fill it and leave it
+            // short or empty however much the store holds.
+            var inStock = InventoryQueries.InStock(db, storeId, today);
+            matching = matching.Where(i => inStock.Contains(i.Id));
+        }
+
+        var items = await matching
             .OrderBy(i => i.Name)
             .Take(Math.Clamp(take ?? 30, 1, 100))
             .Select(i => new { i.Id, i.Code, i.Barcode, i.Name, i.GenericName, i.Strength, i.Schedule, i.IsControlled, i.IsColdChain, i.BaseUnit })
             .ToListAsync(ct);
-        var availability = await InventoryQueries.AvailabilityAsync(db, storeId, items.Select(i => i.Id).ToList(), time.Today(), ct);
+        var availability = await InventoryQueries.AvailabilityAsync(db, storeId, items.Select(i => i.Id).ToList(), today, ct);
 
         var rows = items.Select(i =>
             {
@@ -203,7 +212,8 @@ internal static class SaleEndpoints
             sale.PrescriptionDate,
             await adjustments.PendingAsync(sale.Id, ct),
             sale.HandledBy(currentUser.UserId),
-            einvoice.Missing));
+            einvoice.Missing,
+            sale.EnteredFromPaperAt));
     }
 
     private static async Task<IResult> Returns(Guid id, HospitalDbContext db, CancellationToken ct)

@@ -330,7 +330,8 @@ public sealed class ErasureService(
 
     /// <summary>The line recorded on the request (and shown to the principal) for what was erased and what is kept.</summary>
     /// <param name="backupDays">
-    /// How long backups are kept (<c>HealthCare360:Backup:RetentionDays</c>): when given, the line also says that copies in
+    /// How long backups are kept at most (<see cref="BackupOptions.RetentionDays"/>, from <c>HealthCare360:Backup:Retention</c>):
+    /// when given, the line also says that copies in
     /// backups go within that many days, and that a restore before then applies the erasure again (the erasure ledger).
     /// </param>
     internal static string Describe(IReadOnlyList<string> erased, IReadOnlyList<ErasureHoldItem> holds, int? backupDays = null)

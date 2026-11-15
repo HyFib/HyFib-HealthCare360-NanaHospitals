@@ -5,15 +5,17 @@ using HyFib.HealthCare360.Modules.Interop.Abdm;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Notifications;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Interop.Services;
 
 /// <summary>
 /// A record to link to its patient's ABHA without staff: the outbox job's payload, and how many times it has waited
-/// (<see cref="AbdmAutoLinking.WaitAfter"/>).
+/// (<see cref="AbdmAutoLinking.WaitAfter"/>), and how many times the gateway could not be reached
+/// (<see cref="AbdmAutoLinking.MaxTries"/>).
 /// </summary>
-internal sealed record AbdmAutoLinkJob(AbdmRecordType Type, Guid RecordId, Guid PatientId, int Waits = 0);
+internal sealed record AbdmAutoLinkJob(AbdmRecordType Type, Guid RecordId, Guid PatientId, int Waits = 0, int Unreachable = 0);
 
 /// <summary>What became of one automatic link.</summary>
 internal enum AbdmAutoLinkOutcome
@@ -26,6 +28,9 @@ internal enum AbdmAutoLinkOutcome
 
     /// <summary>Not yet: try again after <see cref="AbdmAutoLinkResult.RetryAfter"/>.</summary>
     Wait,
+
+    /// <summary>The gateway could not be reached (an internet outage): the request is marked failed, and the job tries again later.</summary>
+    Unreachable,
 }
 
 /// <param name="FirstWait">For a wait, how long the first is; each after it twice as long, up to <paramref name="LongestWait"/>.</param>
@@ -34,6 +39,8 @@ internal sealed record AbdmAutoLinkResult(AbdmAutoLinkOutcome Outcome, string Re
     public static AbdmAutoLinkResult Requested(AbdmLinkView view) => new(AbdmAutoLinkOutcome.Requested, $"Request {view.Id:D}: {view.Status}.");
 
     public static AbdmAutoLinkResult Nothing(string reason) => new(AbdmAutoLinkOutcome.NothingToDo, reason);
+
+    public static AbdmAutoLinkResult GatewayUnreachable(string reason) => new(AbdmAutoLinkOutcome.Unreachable, reason);
 
     public static AbdmAutoLinkResult Wait(TimeSpan first, TimeSpan longest, string reason) => new(AbdmAutoLinkOutcome.Wait, reason, first, longest);
 }
@@ -85,6 +92,19 @@ internal static class AbdmAutoLinking
     public static readonly TimeSpan LongestSignatureWait = TimeSpan.FromHours(2);
 
     /// <summary>
+    /// How many times the gateway is tried for a record, the first included, before the people who handle ABDM are told.
+    /// With <see cref="FirstRetry"/> doubling to <see cref="LongestRetry"/> the last try is some four hours after the first:
+    /// longer than a power cut or a router restart, short enough that the alert reaches staff the same day.
+    /// </summary>
+    public const int MaxTries = 8;
+
+    /// <summary>The first wait after the gateway could not be reached; each after it twice as long.</summary>
+    public static readonly TimeSpan FirstRetry = TimeSpan.FromMinutes(2);
+
+    /// <summary>The longest wait between two tries of an unreachable gateway.</summary>
+    public static readonly TimeSpan LongestRetry = TimeSpan.FromHours(2);
+
+    /// <summary>
     /// How long a job waits after it has waited <paramref name="waits"/> times: <paramref name="first"/>, then twice as long
     /// each time, up to <paramref name="longest"/>. Each wait is a new outbox message, kept as the outbox keeps every
     /// message, so a prescription whose DSC never comes leaves some thirty of them in its two days rather than hundreds.
@@ -107,6 +127,17 @@ internal static class AbdmAutoLinking
         _ => null,
     };
 
+    /// <summary>The kind of record as staff read it in an alert.</summary>
+    public static string Describe(AbdmRecordType type) => type switch
+    {
+        AbdmRecordType.OpConsultation => "consultation note",
+        AbdmRecordType.DischargeSummary => "discharge summary",
+        AbdmRecordType.LabReport => "lab report",
+        AbdmRecordType.RadiologyReport => "radiology report",
+        AbdmRecordType.Prescription => "prescription",
+        _ => type.ToString(),
+    };
+
     /// <summary>Why a patient's records are not linked automatically, or null when they are.</summary>
     public static string? NotLinkedAutomatically(string? abhaAddress, DateOnly? dateOfBirth, Guid? mergedInto, bool isVip, SensitiveCategory categories) =>
         string.IsNullOrWhiteSpace(abhaAddress) ? "The patient has no ABHA address."
@@ -126,6 +157,12 @@ internal static class AbdmAutoLinking
         var (settings, _, _) = await configuration.ReadAsync(ct);
         return settings.AutoLink ? null : $"Automatic linking is switched off (\"autoLink\" in the {AbdmGatewaySettingKeys.Gateway} setting).";
     }
+}
+
+/// <summary>What <see cref="AbdmAutoLinkHandler"/> asks of the linking service, so that its retries can be tested without a database.</summary>
+internal interface IAbdmAutoLinker
+{
+    Task<AbdmAutoLinkResult> LinkAutomaticallyAsync(AbdmRecordType type, Guid id, CancellationToken ct);
 }
 
 /// <summary>
@@ -225,6 +262,13 @@ internal sealed class AbdmAutoLinkTriggers(
 /// nothing. A wait queues the record again
 /// for later, within the message's lifetime; anything else ends the job. A refusal is not retried here: the request
 /// shows it, and staff link the record again (the gateway may have acted on a call whose answer was lost).
+/// <para>
+/// A gateway that cannot be reached (the hospital's internet is down) is different: nothing reached it, so nothing was
+/// done there, and the record is tried again with doubling waits (<see cref="AbdmAutoLinking.MaxTries"/> tries in all).
+/// Each failed try leaves its request marked failed, as staff see it. When the last fails, or the job's lifetime ends
+/// first, the holders of <see cref="InteropPermissions.AbdmExport"/> are told once, with a link to the patient's chart
+/// where the failed request is and can be sent again.
+/// </para>
 /// </summary>
 internal sealed class AbdmAutoLinkHandler(
     IServiceScopeFactory scopes,
@@ -250,7 +294,7 @@ internal sealed class AbdmAutoLinkHandler(
         await using (var scope = scopes.CreateAsyncScope())
         using (IntegrationTrace.ForFacility(message.FacilityId))
         {
-            result = await scope.ServiceProvider.GetRequiredService<AbdmLinkingService>().LinkAutomaticallyAsync(job.Type, job.RecordId, cancellationToken);
+            result = await scope.ServiceProvider.GetRequiredService<IAbdmAutoLinker>().LinkAutomaticallyAsync(job.Type, job.RecordId, cancellationToken);
         }
 
         var wait = AbdmAutoLinking.WaitAfter(job.Waits, result.FirstWait, result.LongestWait);
@@ -263,6 +307,9 @@ internal sealed class AbdmAutoLinkHandler(
             case AbdmAutoLinkOutcome.Wait:
                 log.LogWarning("Gave up linking {Type} {RecordId} to the patient's ABHA automatically: {Reason}", job.Type, job.RecordId, result.Reason);
                 break;
+            case AbdmAutoLinkOutcome.Unreachable:
+                await RetryOrAlertAsync(message, job, result, cancellationToken);
+                break;
             case AbdmAutoLinkOutcome.Requested:
                 log.LogInformation("Linking {Type} {RecordId} to the patient's ABHA automatically: {Reason}", job.Type, job.RecordId, result.Reason);
                 break;
@@ -270,5 +317,33 @@ internal sealed class AbdmAutoLinkHandler(
                 log.LogDebug("{Type} {RecordId} is not linked automatically: {Reason}", job.Type, job.RecordId, result.Reason);
                 break;
         }
+    }
+
+    /// <summary>The gateway could not be reached: try again after a longer wait, or, out of tries or time, tell staff once.</summary>
+    private async Task RetryOrAlertAsync(OutboxMessage message, AbdmAutoLinkJob job, AbdmAutoLinkResult result, CancellationToken ct)
+    {
+        var tries = job.Unreachable + 1;
+        var wait = AbdmAutoLinking.WaitAfter(job.Unreachable, AbdmAutoLinking.FirstRetry, AbdmAutoLinking.LongestRetry);
+        var left = OutboxRetryPolicy.ExpiryOf(message) - time.GetUtcNow();
+        if (tries < AbdmAutoLinking.MaxTries && left > wait)
+        {
+            outbox.Enqueue(Type, job with { Unreachable = tries }, message.FacilityId, delay: wait, expiresIn: left);
+            log.LogWarning("The ABDM gateway could not be reached to link {Type} {RecordId} (try {Tries} of {Max}); trying again in {Wait}",
+                job.Type, job.RecordId, tries, AbdmAutoLinking.MaxTries, wait);
+            return;
+        }
+
+        log.LogError("Gave up linking {Type} {RecordId} to the patient's ABHA after {Tries} tries: {Reason}", job.Type, job.RecordId, tries, result.Reason);
+        await using var scope = scopes.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<INotificationService>().NotifyPermissionHoldersAsync(
+            InteropPermissions.AbdmExport,
+            message.FacilityId,
+            "A record was not linked to the patient's ABHA",
+            $"The hospital could not reach ABDM after {tries} tries over several hours, so a {AbdmAutoLinking.Describe(job.Type)} was not linked to the patient's ABHA. "
+            + "Open the patient's chart, then ABDM linking, and send the failed request again once the internet is back.",
+            $"/patients/{job.PatientId:D}",
+            "abdm",
+            "warning",
+            ct);
     }
 }

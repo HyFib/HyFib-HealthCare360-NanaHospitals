@@ -47,7 +47,7 @@ public sealed class WindowsDatabaseSignInTests
         var dump = Path.Combine(Path.GetTempPath(), $"hc360-windows-sign-in-{Guid.NewGuid():N}.dump");
         try
         {
-            await tools.DumpAsync(dump, Ct);
+            await tools.DumpAsync(dump, lowPriority: false, Ct);
 
             new FileInfo(dump).Length.ShouldBeGreaterThan(0);
             (await tools.TryValidateDumpAsync(dump, Ct)).ShouldBeTrue("pg_restore reads the whole dump");

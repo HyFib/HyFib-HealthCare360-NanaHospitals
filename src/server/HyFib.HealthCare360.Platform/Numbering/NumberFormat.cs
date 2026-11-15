@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using HyFib.HealthCare360.SharedKernel;
 
 namespace HyFib.HealthCare360.Platform.Numbering;
 
@@ -47,20 +48,11 @@ public readonly record struct NumberFormatPart(NumberFormatPartKind Kind, string
 /// </summary>
 public static class NumberFormat
 {
-    private static readonly Lazy<TimeZoneInfo> HospitalZone = new(() =>
-    {
-        try
-        {
-            return TimeZoneInfo.FindSystemTimeZoneById("Asia/Kolkata");
-        }
-        catch (TimeZoneNotFoundException)
-        {
-            return TimeZoneInfo.Utc;
-        }
-    });
-
-    /// <summary>The hospital's wall-clock time at <paramref name="instant"/>.</summary>
-    public static DateTimeOffset ToHospitalTime(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, HospitalZone.Value);
+    /// <summary>
+    /// The hospital's wall-clock time at <paramref name="instant"/>, in <see cref="HospitalTimeZone"/>: India Standard Time
+    /// even on a machine that does not know "Asia/Kolkata", where UTC would start the daily and yearly series again at 05:30.
+    /// </summary>
+    public static DateTimeOffset ToHospitalTime(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, HospitalTimeZone.Zone);
 
     /// <summary>Splits a format into fixed text and parts in braces. Never fails: what is wrong comes back as a part.</summary>
     public static IReadOnlyList<NumberFormatPart> Parse(string format)

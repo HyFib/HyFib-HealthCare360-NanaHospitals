@@ -5,6 +5,7 @@ using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Http;
 using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Security;
@@ -88,6 +89,23 @@ public sealed class BackupRun
     /// taken, so a large backup on a slow uplink goes on where it stopped, across failures and restarts. Null otherwise.
     /// </summary>
     public string? OffsiteUpload { get; set; }
+
+    /// <summary>
+    /// Its copies on the second disk or NAS (JSON, a list of <see cref="BackupCopy"/>): the disk each is on, by the id it
+    /// was given on first use (<see cref="BackupDisk"/>), when it was made, and when it was last read back and whether it,
+    /// and the documents it needs there, still matched. Two disks that are swapped each get their copies; null before any
+    /// copy, and for backups made before disks were told apart.
+    /// </summary>
+    public string? SecondaryCopies { get; set; }
+
+    /// <summary>When it was last restored into a scratch database to check it (<see cref="BackupRestoreTest"/>); null if never.</summary>
+    public DateTimeOffset? RestoreTestedAt { get; set; }
+
+    /// <summary>Whether that test restore passed: restored without error, its key tables holding the rows recorded when it was made.</summary>
+    public bool? RestoreTestPassed { get; set; }
+
+    /// <summary>What that test restore found: the rows it checked, or why it failed.</summary>
+    public string? RestoreTestNote { get; set; }
 }
 
 internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRun>
@@ -103,6 +121,8 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
         b.Property(x => x.OffsiteKey).HasMaxLength(1024);
         b.Property(x => x.OffsiteError).HasMaxLength(2000);
         b.Property(x => x.OffsiteUpload).HasColumnType("jsonb");
+        b.Property(x => x.SecondaryCopies).HasColumnType("jsonb");
+        b.Property(x => x.RestoreTestNote).HasMaxLength(2000);
         b.HasIndex(x => x.StartedAt);
     }
 }
@@ -111,9 +131,14 @@ internal sealed class BackupRunConfiguration : IEntityTypeConfiguration<BackupRu
 /// <param name="OffsiteKey">Its object key in the off-site bucket, once an upload was tried.</param>
 /// <param name="OffsiteAttempts">How many times its upload was tried.</param>
 /// <param name="OffsiteError">Why the last upload attempt failed.</param>
+/// <param name="SecondaryCopies">Its copies on the second disk or NAS, each with the disk it is on; empty when none is known.</param>
+/// <param name="RestoreTestedAt">When it was last restored into a scratch database to check it; null if never.</param>
+/// <param name="RestoreTestPassed">Whether that test restore passed.</param>
+/// <param name="RestoreTestNote">What that test restore found, or why it failed.</param>
 public sealed record BackupRunDto(Guid Id, DateTimeOffset StartedAt, DateTimeOffset? CompletedAt, BackupKind Kind, BackupStatus Status, string? FileName,
     long? SizeBytes, string? Sha256, bool SecondaryCopied, string? Error, int FormatVersion, int? DocumentCount, DateTimeOffset? VerifiedAt,
-    string? RecoveryKeyId, DateTimeOffset? OffsiteUploadedAt = null, string? OffsiteKey = null, int OffsiteAttempts = 0, string? OffsiteError = null);
+    string? RecoveryKeyId, DateTimeOffset? OffsiteUploadedAt = null, string? OffsiteKey = null, int OffsiteAttempts = 0, string? OffsiteError = null,
+    IReadOnlyList<BackupCopy>? SecondaryCopies = null, DateTimeOffset? RestoreTestedAt = null, bool? RestoreTestPassed = null, string? RestoreTestNote = null);
 
 /// <summary>The backup start-up takes before it changes the schema (<see cref="Persistence.DatabaseInitializer"/>).</summary>
 internal interface IPreMigrationBackup
@@ -126,6 +151,7 @@ internal interface IPreMigrationBackup
 }
 
 /// <summary>A finished, verified backup file.</summary>
+/// <param name="SecondaryDisk">The id of the disk it was copied to (<see cref="BackupDisk"/>), when it was copied and the disk is known.</param>
 internal sealed record BackupResult(
     BackupKind Kind,
     DateTimeOffset StartedAt,
@@ -137,16 +163,18 @@ internal sealed record BackupResult(
     DateTimeOffset VerifiedAt,
     bool SecondaryCopied,
     string? Warning,
-    string RecoveryKeyId);
+    string RecoveryKeyId,
+    string? SecondaryDisk = null);
 
 /// <summary>
-/// Encrypted backups (DED-16). Each one is a single <see cref="BackupArchive"/> with the pg_dump of the database, an escrow
-/// copy of the field encryption key and the stored documents, encrypted with the current recovery key, which
-/// administrators keep offline (<see cref="RecoveryKeyStore"/>) and the file names. The file is written under a temporary
-/// name, then read back in full and its database dump listed by pg_restore; only a backup that passes becomes the finished
-/// file, is copied to the secondary location (USB/NAS), is uploaded to the off-site bucket when one is set up
-/// (<see cref="BackupOffsiteUploader"/>, within 15 minutes) and counts for retention. Restore with Restore-HC360.ps1, which
-/// runs the Server CLI's <c>backup restore</c>.
+/// Encrypted backups (DED-16). Each one is a <see cref="BackupArchive"/> with the pg_dump of the database, an escrow copy of
+/// the field encryption keys, the hospital CA, the erasure ledger and the index of the stored documents, encrypted with the
+/// current recovery key, which administrators keep offline (<see cref="RecoveryKeyStore"/>) and the file names. The
+/// documents themselves are kept once in the backup folder beside it (<see cref="BackupStore"/>). The file is written under
+/// a temporary name, then read back in full and its database dump listed by pg_restore; only a backup that passes becomes
+/// the finished file, is copied with the documents it needs to the secondary location (USB/NAS), is uploaded to the
+/// off-site bucket when one is set up (<see cref="BackupOffsiteUploader"/>, within 15 minutes) and counts for retention
+/// (<see cref="BackupRetention"/>). Restore with Restore-HC360.ps1, which runs the Server CLI's <c>backup restore</c>.
 /// </summary>
 internal sealed class BackupService(
     IDbContextFactory<HospitalDbContext> contextFactory,
@@ -159,10 +187,11 @@ internal sealed class BackupService(
     IPostgresTools postgres,
     INotificationService notifications,
     TimeProvider time,
-    ILogger<BackupService> logger) : IPreMigrationBackup
+    ILogger<BackupService> logger,
+    LanCertificateManager? certificates = null) : IPreMigrationBackup
 {
     public const string FileExtension = ".hc360bak";
-    private const string PartialExtension = ".partial";
+    internal const string PartialExtension = ".partial";
 
     /// <summary>
     /// Starts the part of a backup's note (<see cref="BackupRun.Error"/>) that says why its copy to the secondary directory
@@ -183,6 +212,26 @@ internal sealed class BackupService(
     internal const string UnusedKeptNote = "Unused documents were kept: ";
 
     /// <summary>
+    /// Replaces the failed copy's note once the copy is made later, when the second disk or NAS is back
+    /// (<see cref="BackupUpkeep"/>).
+    /// </summary>
+    internal const string CopiedLaterNote = "Copied to the secondary directory later, once it was back: ";
+
+    /// <summary>
+    /// How old the newest good backup may be before System health says no backup succeeded (<c>backup.stale</c>, critical):
+    /// a night's backup missed, and the half day after it. A missed backup is caught up at once past it, even in the day
+    /// (<see cref="BackupCatchUpJob"/>).
+    /// </summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromHours(36);
+
+    /// <summary>
+    /// One backup at a time on this server: the nightly one, one taken by hand, the one before an update and a missed one
+    /// caught up each run a pg_dump and read the whole database, so the one that comes second waits for the first. The
+    /// backup folders' own lock (<see cref="BackupStore.Lock"/>) keeps out another server's backup.
+    /// </summary>
+    internal static readonly SemaphoreSlim Gate = new(1, 1);
+
+    /// <summary>
     /// Called at each step of a backup with the step's name, for the tests that stop a backup at every step as a crash would
     /// (BackupModelTests). Null in the server.
     /// </summary>
@@ -192,7 +241,28 @@ internal sealed class BackupService(
         typeof(BackupService).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
 
     /// <summary>A full backup (nightly or on demand), recorded in the backup history as it runs.</summary>
-    public async Task<BackupRunDto> RunAsync(BackupKind kind, Guid? triggeredBy, CancellationToken cancellationToken)
+    public Task<BackupRunDto> RunAsync(BackupKind kind, Guid? triggeredBy, CancellationToken cancellationToken) =>
+        RunAsync(kind, triggeredBy, lowPriority: false, cancellationToken);
+
+    /// <summary>A full backup, recorded in the backup history as it runs.</summary>
+    /// <param name="lowPriority">
+    /// Gently, for a missed backup caught up while the hospital works (<see cref="BackupCatchUpJob"/>): pg_dump below
+    /// normal priority, so the server's requests come first.
+    /// </param>
+    public async Task<BackupRunDto> RunAsync(BackupKind kind, Guid? triggeredBy, bool lowPriority, CancellationToken cancellationToken)
+    {
+        await Gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RunHeldAsync(kind, triggeredBy, lowPriority, cancellationToken);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    private async Task<BackupRunDto> RunHeldAsync(BackupKind kind, Guid? triggeredBy, bool lowPriority, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var run = new BackupRun { StartedAt = time.GetUtcNow(), Kind = kind, Status = BackupStatus.Running, TriggeredBy = triggeredBy };
@@ -202,7 +272,9 @@ internal sealed class BackupService(
         try
         {
             var migrations = (await db.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
-            Apply(run, await CreateAsync(kind, run.StartedAt, includeDocuments: true, migrations, cancellationToken));
+            var result = await CreateAsync(kind, run.StartedAt, includeDocuments: true, migrations, lowPriority, cancellationToken);
+            Apply(run, result);
+            await NoteDiskSwapAsync(db, run, result.SecondaryDisk, cancellationToken);
             logger.LogInformation("Backup {File} completed and verified ({Size:N0} bytes, {Documents} documents)", run.FileName, run.SizeBytes, run.DocumentCount);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -247,24 +319,71 @@ internal sealed class BackupService(
     /// never touch them), written and verified without using the tables that are about to change. It is added to the
     /// backup history with <see cref="RecordAsync"/> once the migrations are applied.
     /// </summary>
-    public Task<BackupResult> CreatePreMigrationAsync(IReadOnlyList<string> appliedMigrations, CancellationToken cancellationToken) =>
-        CreateAsync(BackupKind.PreMigration, time.GetUtcNow(), includeDocuments: false, appliedMigrations, cancellationToken);
+    public async Task<BackupResult> CreatePreMigrationAsync(IReadOnlyList<string> appliedMigrations, CancellationToken cancellationToken)
+    {
+        await Gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await CreateAsync(BackupKind.PreMigration, time.GetUtcNow(), includeDocuments: false, appliedMigrations, cancellationToken);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
 
     public async Task RecordAsync(BackupResult result, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var run = new BackupRun { StartedAt = result.StartedAt, Kind = result.Kind };
         Apply(run, result);
+        await NoteDiskSwapAsync(db, run, result.SecondaryDisk, cancellationToken);
         db.Add(run);
         db.Add(AuditEventFor(run));
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// A copy made to another disk than the copy before it: the disks were swapped, which the audit trail records
+    /// (<c>backup.disk_swapped</c>), and System health counts each disk's time in place from (<see cref="BackupDisk"/>).
+    /// </summary>
+    private async Task NoteDiskSwapAsync(HospitalDbContext db, BackupRun run, string? disk, CancellationToken ct)
+    {
+        if (disk is null)
+        {
+            return;
+        }
+
+        var before = await db.Set<BackupRun>().AsNoTracking()
+            .Where(r => r.Id != run.Id && r.SecondaryCopies != null && r.StartedAt < run.StartedAt)
+            .OrderByDescending(r => r.StartedAt)
+            .Select(r => r.SecondaryCopies)
+            .FirstOrDefaultAsync(ct);
+        if (BackupCopies.Read(before).OrderBy(c => c.CopiedAt).LastOrDefault() is { Disk: { } previous } && previous != disk)
+        {
+            db.Add(new AuditEvent
+            {
+                OccurredAt = time.GetUtcNow(),
+                Category = AuditCategories.Admin,
+                Action = BackupDisk.SwappedAction,
+                Severity = AuditSeverity.Info,
+                Summary = $"Backup disk {disk} in place of {previous}: {run.FileName} was copied to it",
+                UserId = run.TriggeredBy,
+            });
+            logger.LogInformation("The backup disk was swapped: {Disk} in place of {Previous}", disk, previous);
+        }
+    }
+
     internal static BackupRunDto ToDto(BackupRun r) =>
         new(r.Id, r.StartedAt, r.CompletedAt, r.Kind, r.Status, r.FileName, r.SizeBytes, r.Sha256, r.SecondaryCopied, r.Error, r.FormatVersion, r.DocumentCount, r.VerifiedAt,
-            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError);
+            r.RecoveryKeyId, r.OffsiteUploadedAt, r.OffsiteKey, r.OffsiteAttempts, r.OffsiteError, BackupCopies.Read(r.SecondaryCopies), r.RestoreTestedAt,
+            r.RestoreTestPassed, r.RestoreTestNote);
 
-    internal async Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct)
+    internal Task<BackupResult> CreateAsync(BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, CancellationToken ct) =>
+        CreateAsync(kind, startedAt, includeDocuments, migrations, lowPriority: false, ct);
+
+    internal async Task<BackupResult> CreateAsync(
+        BackupKind kind, DateTimeOffset startedAt, bool includeDocuments, IReadOnlyList<string> migrations, bool lowPriority, CancellationToken ct)
     {
         Directory.CreateDirectory(directories.Temp);
         Directory.CreateDirectory(directories.Backups);
@@ -287,7 +406,9 @@ internal sealed class BackupService(
             var hashes = includeDocuments ? BackupHashCache.Load(hashesPath) : BackupHashCache.Empty();
 
             await EnsureRoomAsync(includeDocuments ? NewDocumentBytes(store, hashes) : 0, ct);
-            await postgres.DumpAsync(dump, ct);
+
+            // The key tables' rows, counted in the snapshot the dump holds, for a test restore to check (BackupRestoreTest).
+            var rowCounts = await postgres.DumpAsync(dump, lowPriority, ct);
             Checkpoint?.Invoke("dumped");
 
             // The documents are listed after the database snapshot. The file store writes a document in full before its row
@@ -321,13 +442,22 @@ internal sealed class BackupService(
                 index = listed;
             }
 
+            // The erasure ledger after the dump: an erasure committed since is in the ledger and not the dump, and a restore
+            // of this backup carries it out again. And the hospital CA the devices trust. The backup before an update
+            // carries neither: it is for going back on this machine, whose ledger and CA the update leaves as they are, and
+            // is written for the version updated from (below), which may know neither.
+            var extras = includeDocuments
+                ? new BackupExtras(ErasureLedgerFiles.ReadForBackup(directories, options.Value.Backup), ExportHospitalCa())
+                : new BackupExtras();
+
             // Every key of the ring is escrowed, and listed in the manifest, so data encrypted with any of them restores. The
             // ring is exported after the documents are listed: a key a rotation adds meanwhile is in it, and a document
             // listed is never encrypted with a key retired since (retiring needs nothing left on it).
             var ring = keys.ExportRing();
             var manifest = new BackupManifest(BackupArchive.Format, kind.ToString(), startedAt, ServerVersion, postgres.DatabaseName, migrations,
                 includeDocuments, 0, 0, keys.Fingerprint,
-                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint);
+                ring.Keys.Count == 0 ? null : ring.Keys.Select(FieldMasterKey.Fingerprint).ToList(), ring.Current, auditSealKey.Fingerprint,
+                RowCounts: rowCounts.Count == 0 ? null : rowCounts);
 
             string sha256;
             var masterKey = keys.ExportMasterKey();
@@ -338,7 +468,7 @@ internal sealed class BackupService(
                 await using var encryptor = BackupEncryption.CreateEncryptor(file, backupKey);
                 if (includeDocuments)
                 {
-                    await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, ct);
+                    await BackupArchive.WriteIndexedAsync(encryptor, manifest, masterKey, ring.Keys, sealKey, dump, index, extras, ct);
                 }
                 else
                 {
@@ -356,6 +486,11 @@ internal sealed class BackupService(
             {
                 CryptographicOperations.ZeroMemory(masterKey);
                 CryptographicOperations.ZeroMemory(sealKey);
+                if (extras.HospitalCa is { } ca)
+                {
+                    CryptographicOperations.ZeroMemory(ca.Pkcs12);
+                }
+
                 foreach (var key in ring.Keys)
                 {
                     CryptographicOperations.ZeroMemory(key);
@@ -388,9 +523,10 @@ internal sealed class BackupService(
             }
 
             var secondaryCopied = false;
+            string? disk = null;
             if (options.Value.Backup.SecondaryDirectory is { Length: > 0 } secondary)
             {
-                (secondaryCopied, var note) = await CopyToSecondaryAsync(store, target, index ?? [], secondary, referencesKey, ct);
+                (secondaryCopied, var note, disk) = await CopyToSecondaryAsync(store, target, sha256, index ?? [], secondary, referencesKey, ct);
                 if (note is not null)
                 {
                     warning = Join(warning, note);
@@ -398,15 +534,23 @@ internal sealed class BackupService(
             }
 
             Checkpoint?.Invoke("before prune");
-            var pruned = store.Prune(held, options.Value.Backup.RetentionDays, referencesKey);
-            if (pruned.SweepSkipped is { } skipped)
+            try
             {
-                logger.LogWarning("Unused documents were not removed from {Directory}: {Reason}", directories.Backups, skipped);
-                warning = Join(warning, UnusedKeptNote + skipped);
+                var pruned = store.Prune(held, options.Value.Backup.Retention, Zone, referencesKey);
+                if (pruned.SweepSkipped is { } skipped)
+                {
+                    logger.LogWarning("Unused documents were not removed from {Directory}: {Reason}", directories.Backups, skipped);
+                    warning = Join(warning, UnusedKeptNote + skipped);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The backup is made all the same; the next one, or the night's upkeep, tries again.
+                logger.LogWarning(ex, "Backups that retention no longer keeps could not all be removed from {Directory}", directories.Backups);
             }
 
             return new BackupResult(kind, startedAt, time.GetUtcNow(), fileName, new FileInfo(target).Length, sha256,
-                includeDocuments ? ids.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId);
+                includeDocuments ? ids.Count : null, verifiedAt, secondaryCopied, warning, recoveryKey.KeyId, disk);
         }
         finally
         {
@@ -422,12 +566,36 @@ internal sealed class BackupService(
         }
     }
 
+    private TimeZoneInfo Zone => PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone);
+
+    /// <summary>
+    /// The hospital CA for the backup to carry, inside its encryption, so a server restored from it on new hardware serves a
+    /// certificate the devices already trust (docs/security/SECURITY.md, "Backups and keys"); null when this server has
+    /// none. One that cannot be read is left out, and said in the log: the backup of the database matters more.
+    /// </summary>
+    private ExportedHospitalCa? ExportHospitalCa()
+    {
+        try
+        {
+            return certificates?.ExportForBackup();
+        }
+        catch (Exception ex) when (ex is CryptographicException or IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "The hospital CA could not be read, so this backup does not carry it");
+            return null;
+        }
+    }
+
     /// <summary>
     /// The key that seals each archive's list of documents (<see cref="BackupStore.ReferencesKeyPurpose"/>): derived from
     /// the original field key, which is never retired, so it is the same on every server restored from these backups.
     /// </summary>
-    private byte[] ReferencesKey()
+    private byte[] ReferencesKey() => ReferencesKeyOf(keys);
+
+    /// <inheritdoc cref="ReferencesKey"/>
+    internal static byte[] ReferencesKeyOf(IFieldKeyEscrow keys)
     {
+        ArgumentNullException.ThrowIfNull(keys);
         var masterKey = keys.ExportMasterKey();
         try
         {
@@ -459,12 +627,14 @@ internal sealed class BackupService(
     }
 
     /// <summary>
-    /// Copies a finished backup to the secondary directory: the documents it needs that are not there yet (from the primary
-    /// folder, hashed again as they are copied), then its list, then the archive, under a temporary name until complete.
-    /// Then the archives there past their time, and the documents none of the remaining ones needs, are removed.
+    /// Copies a finished backup to the secondary directory (<see cref="BackupStore.CopyArchiveAsync"/>): the documents it
+    /// needs that are not there yet (from the primary folder, hashed again as they are copied), then its list, then the
+    /// archive, hashed as it is read and under a temporary name until complete. Then the archives there that retention no
+    /// longer keeps, and the documents none of the remaining ones needs, are removed.
     /// </summary>
-    private async Task<(bool Copied, string? Note)> CopyToSecondaryAsync(
-        BackupStore primary, string archive, IReadOnlyList<BackupIndexedDocument> index, string secondary, byte[] referencesKey, CancellationToken ct)
+    /// <returns>Whether it was copied, the backup's note about it, and the id of the disk it went to (<see cref="BackupDisk"/>).</returns>
+    private async Task<(bool Copied, string? Note, string? Disk)> CopyToSecondaryAsync(
+        BackupStore primary, string archive, string sha256, IReadOnlyList<BackupIndexedDocument> index, string secondary, byte[] referencesKey, CancellationToken ct)
     {
         BackupStore? store = null;
         BackupStoreLock? held = null;
@@ -476,33 +646,23 @@ internal sealed class BackupService(
                     store = BackupStore.Open(secondary, keys.Fingerprint, referencesKey, time, options.Value.Backup.SecondaryAppendOnly);
                     held = store.Lock();
                     var ids = index.Select(d => d.BlobId).Distinct(StringComparer.Ordinal).ToList();
-                    foreach (var id in ids)
-                    {
-                        await store.AddAsync(held, primary.PathOf(id), id, ct);
-                        Checkpoint?.Invoke("secondary document copied");
-                    }
 
-                    var name = Path.GetFileName(archive);
-                    store.WriteReferences(held, name, ids, referencesKey);
-                    Checkpoint?.Invoke("secondary list written");
-                    var copy = Path.Combine(store.Directory, name);
-                    if (store.AppendOnly)
+                    // The night's upkeep reads the copy back (BackupUpkeep), as it does every copy not read back yet.
+                    if (await store.CopyArchiveAsync(held, primary, archive, sha256, ids, referencesKey, readBack: false, Checkpoint, ct) is { } problem)
                     {
-                        // Written once under its name: an append-only share refuses the rename.
-                        File.Copy(archive, copy, overwrite: false);
-                    }
-                    else
-                    {
-                        File.Copy(archive, copy + PartialExtension, overwrite: true);
-                        File.Move(copy + PartialExtension, copy, overwrite: true);
+                        throw new IOException(problem);
                     }
                 },
                 () => store!.AppendOnly
                     ? throw new UnauthorizedAccessException(AppendOnlyReason(store.Generation!))
-                    : store.Prune(held!, options.Value.Backup.RetentionDays, referencesKey),
+                    : store.Prune(held!, options.Value.Backup.Retention, Zone, referencesKey),
                 secondary,
                 logger);
-            return store is not null && FileSystemNote(store.Directory) is { } fileSystem ? (outcome.Copied, Join(outcome.Note, fileSystem)) : outcome;
+
+            // Each disk is given an id on its first copy, so swapped disks are told apart.
+            var disk = outcome.Copied ? BackupDisk.Identify(secondary, time.GetUtcNow(), logger) : null;
+            var note = store is not null && FileSystemNote(store.Directory) is { } fileSystem ? Join(outcome.Note, fileSystem) : outcome.Note;
+            return (outcome.Copied, note, disk);
         }
         finally
         {
@@ -543,7 +703,7 @@ internal sealed class BackupService(
 
     /// <summary>Why nothing is removed from an append-only secondary folder, in the backup's note.</summary>
     private string AppendOnlyReason(string generation) => string.Create(CultureInfo.InvariantCulture,
-        $"the folder only lets HC360 add files, so its own retention removes old copies (keep it at {Math.Max(options.Value.Backup.RetentionDays, 1) + BackupStore.GenerationDays} days or more); tonight's documents went into {generation}.");
+        $"the folder only lets HC360 add files, so its own retention removes old copies (keep each file {BackupRetention.AppendOnlyMinimumDays(options.Value.Backup.Retention)} days or more); tonight's documents went into {generation}.");
 
     /// <summary>A note when the secondary disk is FAT or exFAT, which suit a backup folder badly; null otherwise.</summary>
     private string? FileSystemNote(string directory)
@@ -660,6 +820,7 @@ internal sealed class BackupService(
         run.DocumentCount = result.DocumentCount;
         run.VerifiedAt = result.VerifiedAt;
         run.RecoveryKeyId = result.RecoveryKeyId;
+        run.SecondaryCopies = result.SecondaryCopied ? BackupCopies.With(null, new BackupCopy(result.SecondaryDisk, result.CompletedAt)) : null;
     }
 
     private static AuditEvent AuditEventFor(BackupRun run) => new()
@@ -675,7 +836,6 @@ internal sealed class BackupService(
     private static string Truncate(string text) => text.Length > 2000 ? text[..2000] : text;
 
     private static string Join(string? first, string second) => first is null ? second : first + " " + second;
-
 }
 
 [DisallowConcurrentExecution]
@@ -685,12 +845,31 @@ internal sealed class BackupJob(BackupService backups) : IJob
         await backups.RunAsync(BackupKind.Scheduled, null, cancellationToken);
 }
 
+/// <summary>When a missed nightly backup is taken (<see cref="BackupCatchUpJob.Decide"/>).</summary>
+internal enum BackupCatchUp
+{
+    /// <summary>Not now: nothing was missed, or the next window's nightly backup takes it.</summary>
+    None,
+
+    /// <summary>Now, inside a backup window, when the hospital is quiet.</summary>
+    Now,
+
+    /// <summary>Now, outside the window, as the newest good backup is stale: gently, one pg_dump below normal priority.</summary>
+    NowGently,
+}
+
 /// <summary>
 /// The nightly backup the server was off for: the job scheduler keeps its schedule in memory, so a run missed while the
-/// server was stopped (a power cut, an update, a reboot at the wrong hour) is never fired late. Shortly after start-up this
-/// checks whether the schedule fell due since the last full backup was attempted and, if so, takes it now. A new
-/// installation that has never attempted one waits for its schedule.
+/// server was stopped (a power cut, an update, a reboot at the wrong hour) is never fired late. Every quarter of an hour
+/// this checks whether the schedule fell due since the last full backup was attempted and, if so, whether to take it now
+/// (<see cref="Decide"/>): inside the backup window that follows each scheduled time (<see cref="Window"/>, 01:30 to
+/// 05:30 by default), at once; outside it, a backup at 10:00 would load the server while the hospital works, so the next
+/// window's nightly backup takes it, unless the newest good backup is older than <see cref="BackupService.StaleAfter"/>,
+/// when it is taken at once all the same, gently: one pg_dump at a time, below normal priority. A new installation that
+/// has never attempted one waits for its schedule. The checks are on the clock, so every server that may run the jobs
+/// names the same times and each is claimed once for the hospital (<see cref="JobSlotClaim"/>).
 /// </summary>
+[DisallowConcurrentExecution]
 internal sealed class BackupCatchUpJob(
     BackupService backups,
     IDbContextFactory<HospitalDbContext> contexts,
@@ -698,42 +877,85 @@ internal sealed class BackupCatchUpJob(
     TimeProvider time,
     ILogger<BackupCatchUpJob> logger) : IJob
 {
-    /// <summary>How long after start-up the check is made, so the server is serving before a backup loads the disk.</summary>
-    public static readonly TimeSpan Delay = TimeSpan.FromMinutes(2);
+    /// <summary>Every quarter of an hour, at 7, 22, 37 and 52 minutes past: clear of a nightly backup set on the hour or half hour.</summary>
+    public const string Schedule = "0 7/15 * * * ?";
+
+    /// <summary>The backup window: the hours after each scheduled backup, when the hospital is quietest.</summary>
+    public static readonly TimeSpan Window = TimeSpan.FromHours(4);
+
+    /// <summary>
+    /// How late a scheduled backup is before it counts as missed: the night's own backup starts on the minute and is in the
+    /// backup history at once, so a check just after it never takes it a second time.
+    /// </summary>
+    public static readonly TimeSpan MissedAfter = TimeSpan.FromMinutes(10);
 
     public async ValueTask Execute(IJobExecutionContext context, CancellationToken cancellationToken)
     {
         var now = time.GetUtcNow();
+        BackupCatchUp decision;
         await using (var db = await contexts.CreateDbContextAsync(cancellationToken))
         {
-            // A backup this server started is under way (and is the backup); one still marked as running from before it
-            // started was cut off with its server, by the power cut or update that made the nightly backup missed.
+            // A backup started since the jobs started here is under way (and is the backup); one still marked as running
+            // from before was cut off with its server, by the power cut or update that made the nightly backup missed.
             var full = db.Set<BackupRun>().Where(r => r.Kind == BackupKind.Scheduled || r.Kind == BackupKind.Manual);
-            var serverStarted = context.Trigger.StartTimeUtc - Delay;
-            if (await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt >= serverStarted, cancellationToken))
+            var jobsStarted = (await context.Scheduler.GetMetadata(cancellationToken)).RunningSince ?? now;
+            if (BackupService.Gate.CurrentCount == 0
+                || await full.AnyAsync(r => r.Status == BackupStatus.Running && r.StartedAt >= jobsStarted, cancellationToken))
             {
                 return;
             }
 
             var lastAttempt = await full.MaxAsync(r => (DateTimeOffset?)r.StartedAt, cancellationToken);
+            var lastGood = await db.Set<BackupRun>().Where(r => r.Status == BackupStatus.Succeeded).MaxAsync(r => r.CompletedAt, cancellationToken);
             var zone = PlatformServiceCollectionExtensions.ResolveTimeZone(options.Value.TimeZone);
-            if (!Missed(options.Value.Backup.Schedule, zone, lastAttempt, now))
+            decision = Decide(options.Value.Backup.Schedule, zone, lastAttempt, lastGood, now);
+            if (decision == BackupCatchUp.None)
             {
                 return;
             }
 
-            logger.LogWarning("The scheduled backup was missed while the server was stopped (last attempted {LastAttempt}); taking it now", lastAttempt);
+            if (decision == BackupCatchUp.Now)
+            {
+                logger.LogWarning("The scheduled backup was missed while the server was stopped (last attempted {LastAttempt}); taking it now", lastAttempt);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "The scheduled backup was missed (last attempted {LastAttempt}) and the newest good backup, of {LastGood}, is over {Hours} hours old; taking it now, at low priority",
+                    lastAttempt, lastGood, BackupService.StaleAfter.TotalHours);
+            }
         }
 
-        await backups.RunAsync(BackupKind.Scheduled, null, cancellationToken);
+        await backups.RunAsync(BackupKind.Scheduled, null, lowPriority: decision == BackupCatchUp.NowGently, cancellationToken);
     }
 
-    /// <summary>Whether <paramref name="schedule"/> fell due after <paramref name="lastAttempt"/> and before <paramref name="now"/>.</summary>
+    /// <summary>
+    /// Whether, and how, to take the backup <paramref name="schedule"/> missed: not at all when it did not fall due at least
+    /// <see cref="MissedAfter"/> after <paramref name="lastAttempt"/>; now when <paramref name="now"/> is inside the
+    /// <see cref="Window"/> after a scheduled time; now, gently, when the newest good backup (<paramref name="lastGood"/>,
+    /// when it finished) is older than <see cref="BackupService.StaleAfter"/>, or there is none; otherwise not yet: the next
+    /// window's nightly backup takes it, or a later check once the newest good backup turns stale.
+    /// </summary>
+    public static BackupCatchUp Decide(string schedule, TimeZoneInfo zone, DateTimeOffset? lastAttempt, DateTimeOffset? lastGood, DateTimeOffset now)
+    {
+        if (!Missed(schedule, zone, lastAttempt, now))
+        {
+            return BackupCatchUp.None;
+        }
+
+        if (new CronExpression(schedule, zone).GetNextValidTimeAfter(now - Window) is { } scheduled && scheduled <= now)
+        {
+            return BackupCatchUp.Now;
+        }
+
+        return lastGood is null || now - lastGood > BackupService.StaleAfter ? BackupCatchUp.NowGently : BackupCatchUp.None;
+    }
+
+    /// <summary>Whether <paramref name="schedule"/> fell due after <paramref name="lastAttempt"/>, and at least <see cref="MissedAfter"/> before <paramref name="now"/>.</summary>
     public static bool Missed(string schedule, TimeZoneInfo zone, DateTimeOffset? lastAttempt, DateTimeOffset now) =>
         lastAttempt is { } last
-        && ((ICronTrigger)Quartz.TriggerBuilder.Create().WithCronSchedule(schedule, cron => cron.InTimeZone(zone)).StartAt(last).Build())
-            .GetFireTimeAfter(last) is { } due
-        && due <= now;
+        && new CronExpression(schedule, zone).GetNextValidTimeAfter(last) is { } due
+        && due <= now - MissedAfter;
 }
 
 internal static class BackupEndpoints

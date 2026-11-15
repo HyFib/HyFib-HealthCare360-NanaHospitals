@@ -187,13 +187,16 @@ public sealed class NumberSeriesRestoreTests(HospitalServer server)
 
     /// <summary>
     /// What start-up does as the database is brought up to date, with the test's mark and data folder, on the test server's
-    /// database or on <paramref name="database"/>: the settings service and the audit trail in the scope write there too.
+    /// database or on <paramref name="database"/>: the settings service and the audit trail in the scope write there too, and
+    /// a restore is anchored in the test folder's anchor file, not the test server's.
     /// </summary>
     private async Task StartAsync(NumberSeriesHighWaterMark mark, DataDirectories machine, string? database = null)
     {
         await using var scope = database is null ? server.Services.CreateAsyncScope() : OnDatabase(database);
         var check = ActivatorUtilities.CreateInstance<NumberSeriesStartupCheck>(scope.ServiceProvider, mark,
-            new RestoreMarker(machine, TimeProvider.System, NullLogger<RestoreMarker>.Instance));
+            new RestoreMarker(machine, TimeProvider.System, NullLogger<RestoreMarker>.Instance),
+            new AuditRestores(new AuditAnchors(machine, NullLogger<AuditAnchors>.Instance), server.Services.GetRequiredService<AuditSealKey>(),
+                NullLogger<AuditRestores>.Instance));
         await check.SeedAsync(scope.ServiceProvider.GetRequiredService<HospitalDbContext>(), Ct);
         scope.ServiceProvider.GetRequiredService<NumberSeriesStartupStatus>().Failure.ShouldBeNull();
     }

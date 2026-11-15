@@ -31,13 +31,16 @@ export interface UserDetail {
   practitionerId: string | null;
   defaultFacilityId: string | null;
   roleIds: string[];
+  /** Every facility, those added later included; `facilityIds` is then empty. */
+  allFacilities: boolean;
+  /** The facilities the user works in, when not all of them; none means none. */
   facilityIds: string[];
   version: number;
   /** Roles and facilities asked for the user, or their reactivation, waiting for a second administrator. */
   pendingGrant?: PendingUserGrant | null;
   /**
-   * Changes to the account waiting for a second administrator: a temporary password to be handed over, a two-step
-   * verification reset, new contact details, a practitioner link.
+   * Changes to the account waiting for a second administrator: a temporary password to be sent to contact details given
+   * for it, a two-step verification reset, new contact details, a practitioner link.
    */
   pendingChanges?: PendingAccountChange[] | null;
 }
@@ -52,21 +55,22 @@ export interface PendingAccountChange {
 }
 
 /**
- * A password reset made (200): where the temporary password went, masked, never the password itself. Only an account
- * with nowhere to send it, reset while the hospital has one administrator who may approve, gets it back to hand over;
- * otherwise that reset waits for a second administrator (202, an approval request), who is shown it.
+ * A password reset made (200): where the temporary password went, masked, never the password itself: nobody is shown
+ * it. For an account with no mobile number or e-mail address, the reset gives the holder's own and waits for a second
+ * administrator (202, an approval request) who checks them; approved, the password goes there.
  */
 export interface PasswordResetResponse {
   userId: string;
   sentTo: string[];
   expiresAt: string;
-  temporaryPassword?: string | null;
 }
 
 /** Access asked for a user, waiting for a second administrator who may approve grants. */
 export interface PendingUserGrant {
   approvalId: string;
   roleIds: string[];
+  /** Every facility asked for the user, those added later included. */
+  allFacilities: boolean;
   facilityIds: string[];
   activate: boolean;
   requestedBy: string;
@@ -102,7 +106,10 @@ export interface SaveUserRequest {
   email: string | null;
   phone: string | null;
   roleIds: string[];
-  facilityIds: string[] | null;
+  /** Every facility, those added later included: a widening, which waits for a second administrator. */
+  allFacilities: boolean;
+  /** The facilities, when not all; an empty list gives none. */
+  facilityIds: string[];
   defaultFacilityId: string | null;
   practitionerId: string | null;
   temporaryPassword?: string | null;
@@ -702,6 +709,53 @@ export interface BackupRunDto {
   offsiteAttempts: number;
   /** Why its last upload attempt failed. */
   offsiteError: string | null;
+  /** Its copies on the second disk or NAS, each with the disk it is on; empty when none is known. */
+  secondaryCopies: BackupCopy[] | null;
+  /** When it was last restored into a scratch database to check it; null if never. */
+  restoreTestedAt: string | null;
+  /** Whether that test restore passed: restored without error, its key tables holding the rows recorded when it was made. */
+  restoreTestPassed: boolean | null;
+  /** What that test restore found, or why it failed. */
+  restoreTestNote: string | null;
+}
+
+/** A copy of a backup on the second disk or NAS. */
+export interface BackupCopy {
+  /** The id HC360 gave the disk on its first copy (8 letters and digits, written on its label); null when unknown. */
+  disk: string | null;
+  copiedAt: string;
+  /** When it was last read back and checked against the backup; null before the first time. */
+  checkedAt: string | null;
+  /** Why it no longer matches the backup, as last read back; null while it matches. */
+  problem: string | null;
+}
+
+/** A backup's last test restore, in words for the backup list; null when it was never test-restored. */
+export function restoreTestText(run: Pick<BackupRunDto, 'restoreTestedAt' | 'restoreTestPassed'>): string | null {
+  if (!run.restoreTestedAt) {
+    return null;
+  }
+  return run.restoreTestPassed ? 'Test restore passed' : 'Test restore failed';
+}
+
+/** The disks a backup's copies are on, for the backup list; null when no disk is known. */
+export function copyDisksText(run: Pick<BackupRunDto, 'secondaryCopies'>): string | null {
+  const disks = [...new Set((run.secondaryCopies ?? []).map((c) => c.disk).filter((d): d is string => d !== null))];
+  if (disks.length === 0) {
+    return null;
+  }
+  return `${disks.length === 1 ? 'Disk' : 'Disks'} ${disks.join(', ')}`;
+}
+
+/** A copy of the backup that no longer reads back as made, in words for the backup list; null when none. */
+export function damagedCopyText(run: Pick<BackupRunDto, 'secondaryCopies'>): string | null {
+  const damaged = (run.secondaryCopies ?? []).find((c) => c.problem);
+  if (!damaged) {
+    return null;
+  }
+  return damaged.disk
+    ? `The copy on disk ${damaged.disk} is damaged: ${damaged.problem}`
+    : `A copy is damaged: ${damaged.problem}`;
 }
 
 /** Someone who has shown they hold the current recovery key by typing it in, and when they last did. */

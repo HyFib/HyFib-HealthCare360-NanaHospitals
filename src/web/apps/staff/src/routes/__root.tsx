@@ -3,6 +3,7 @@ import { TOASTER_ID } from '@hc360/ui';
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 import type { RouterContext } from '@/router';
 import { LeaveGuard } from '@/shell/LeaveGuard';
+import { PrintQueuedNotice } from '@/shell/PrintQueuedNotice';
 import { NotFound, RouteError } from '@/shell/RouteError';
 
 export const Route = createRootRouteWithContext<RouterContext>()({
@@ -16,6 +17,7 @@ function Root() {
     <>
       <Outlet />
       <LeaveGuard />
+      <PrintQueuedNotice />
       <Toaster toasterId={TOASTER_ID} position="bottom-end" pauseOnHover pauseOnWindowBlur />
     </>
   );

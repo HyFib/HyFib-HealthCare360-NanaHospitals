@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DowntimePack } from '@/modules/downtime/continuityApi';
 import {
   ageText,
   clearOfflineCopy,
   columnsOf,
   columnTitle,
+  copyOf,
   openOfflineCopy,
   PACK_SLOT,
   readKeptCopy,
@@ -59,6 +60,7 @@ function server(answers: Record<string, unknown>) {
 beforeEach(async () => {
   await clearOfflineCopy(null);
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 describe('the sealed record', () => {
@@ -77,7 +79,7 @@ describe('the sealed record', () => {
 describe('the offline copy', () => {
   it('is taken while online, kept encrypted, and read back after the tab reloads', async () => {
     const backend = memoryBackend();
-    await openOfflineCopy('u1', SERVER_KEY);
+    await openOfflineCopy('u1', SERVER_KEY, backend);
     const taken = await takeOfflineCopy({
       backend,
       now: () => 1000,
@@ -91,7 +93,7 @@ describe('the offline copy', () => {
     expect(JSON.stringify([...backend.records.values()])).not.toContain('Asha');
 
     // The tab reloads: memory is empty, the key kept for the tab opens the copy on the computer.
-    useOfflineCopy.setState({ takenAt: null, pack: null, worklists: [] });
+    useOfflineCopy.setState({ userId: null, takenAt: null, pack: null, worklists: [] });
     expect(await readKeptCopy('u1', backend)).toBe(true);
     expect(useOfflineCopy.getState().pack?.sections[0]?.tables[0]?.rows[0]).toEqual(['A-1', 'Asha Rao (NH26000001)']);
     expect(useOfflineCopy.getState().worklists.map((w) => w.title)).toEqual(['Laboratory worklist']);
@@ -99,15 +101,15 @@ describe('the offline copy', () => {
 
   it('is not readable as another user', async () => {
     const backend = memoryBackend();
-    await openOfflineCopy('u1', SERVER_KEY);
+    await openOfflineCopy('u1', SERVER_KEY, backend);
     await takeOfflineCopy({ backend, fetchJson: server({ '/api/v1/downtime/pack/latest': PACK }) });
-    useOfflineCopy.setState({ takenAt: null, pack: null, worklists: [] });
+    useOfflineCopy.setState({ userId: null, takenAt: null, pack: null, worklists: [] });
     expect(await readKeptCopy('u2', backend)).toBe(false);
   });
 
   it('is wiped at sign-out, with the key kept for the tab', async () => {
     const backend = memoryBackend();
-    await openOfflineCopy('u1', SERVER_KEY);
+    await openOfflineCopy('u1', SERVER_KEY, backend);
     await takeOfflineCopy({ backend, fetchJson: server({ '/api/v1/downtime/pack/latest': PACK }) });
     expect(backend.records.has(PACK_SLOT)).toBe(true);
     await clearOfflineCopy(backend);
@@ -121,6 +123,47 @@ describe('the offline copy', () => {
     const backend = memoryBackend();
     expect(await takeOfflineCopy({ backend, fetchJson: server({ '/api/v1/downtime/pack/latest': PACK }) })).toBe(false);
     expect(backend.records.size).toBe(0);
+  });
+
+  it('is wiped, from memory and from the computer, when another user signs in here', async () => {
+    const backend = memoryBackend();
+    await openOfflineCopy('u1', SERVER_KEY, backend);
+    await takeOfflineCopy({ backend, fetchJson: server({ '/api/v1/downtime/pack/latest': PACK }) });
+    expect(useOfflineCopy.getState().userId).toBe('u1');
+
+    // Another nurse signs in on the same computer (the first one's session ended unseen, say, during an outage).
+    await openOfflineCopy('u2', OTHER_KEY, backend);
+
+    expect(backend.records.size).toBe(0);
+    expect(useOfflineCopy.getState().takenAt).toBeNull();
+    expect(await readKeptCopy('u2', backend)).toBe(false);
+  });
+
+  it('is wiped when another user signs in after the app started again, from what the computer kept', async () => {
+    const backend = memoryBackend();
+    await openOfflineCopy('u1', SERVER_KEY, backend);
+    await takeOfflineCopy({ backend, fetchJson: server({ '/api/v1/downtime/pack/latest': PACK }) });
+    // HC360 Desktop starts again: nothing of the first nurse is in memory, but her copy is on the computer.
+    useOfflineCopy.setState({ userId: null, takenAt: null, pack: null, worklists: [] });
+    vi.resetModules();
+    const fresh = await import('./offlineCopy');
+
+    await fresh.openOfflineCopy('u2', OTHER_KEY, backend);
+
+    expect(backend.records.size).toBe(0);
+  });
+
+  it('in memory is shown to its own user only', async () => {
+    const backend = memoryBackend();
+    await openOfflineCopy('u1', SERVER_KEY, backend);
+    await takeOfflineCopy({ backend, fetchJson: server({ '/api/v1/downtime/pack/latest': PACK }) });
+
+    expect(copyOf(useOfflineCopy.getState(), 'u1')?.pack?.id).toBe('p1');
+    expect(copyOf(useOfflineCopy.getState(), 'u2')).toBeNull();
+    expect(copyOf(useOfflineCopy.getState(), null)).toBeNull();
+    // Asked for by another user, the copy in memory is put away, not handed over.
+    expect(await readKeptCopy('u2', backend)).toBe(false);
+    expect(useOfflineCopy.getState().pack).toBeNull();
   });
 });
 

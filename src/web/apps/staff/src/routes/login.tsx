@@ -21,10 +21,11 @@ import {
   ShieldCheckmarkRegular,
   WifiWarningRegular,
 } from '@fluentui/react-icons';
-import { auth, bridge, isApiError, useConnection, useSession } from '@hc360/core';
+import { auth, bridge, isApiError, useConnection, useSession, type AuthResult } from '@hc360/core';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { keepOfflineSecret, prepareOfflineSecret } from '@/lib/offline/offlineUnlock';
 import { safeRedirect } from '@/lib/redirect';
 import { BrandMark, LogoMark } from '@/shell/BrandMark';
 
@@ -130,8 +131,17 @@ function LoginPage() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The verifier of the password the server accepted, while the second step is still to come; never the password.
+  const passwordVerifier = useRef<ReturnType<typeof prepareOfflineSecret> | null>(null);
 
   const finish = () => void navigate({ href: safeRedirect(target), replace: true });
+
+  /** Signed in: the password opens the offline copy from the locked screen should HC360 be down later on. */
+  const keepPasswordVerifier = (result: AuthResult, prepared: ReturnType<typeof prepareOfflineSecret> | null) => {
+    if (result.user && prepared) {
+      void keepOfflineSecret(result.user.id, prepared);
+    }
+  };
 
   const onSignIn = async (event: FormEvent) => {
     event.preventDefault();
@@ -148,9 +158,11 @@ function LoginPage() {
         deviceSecret: device?.deviceSecret ?? undefined,
       });
       if (result.mfaRequired && result.challengeId) {
+        passwordVerifier.current = prepareOfflineSecret('password', password);
         setChallengeId(result.challengeId);
         setPassword('');
       } else {
+        keepPasswordVerifier(result, prepareOfflineSecret('password', password));
         finish();
       }
     } catch (err) {
@@ -169,7 +181,8 @@ function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await auth.verifyMfa(challengeId, code);
+      keepPasswordVerifier(await auth.verifyMfa(challengeId, code), passwordVerifier.current);
+      passwordVerifier.current = null;
       finish();
     } catch (err) {
       setError(isApiError(err) ? err.userMessage : 'Verification failed. Try again.');

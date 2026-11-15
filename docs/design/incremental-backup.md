@@ -235,12 +235,13 @@ is impossible. These destinations use **generations** instead (agreed 2026-11-14
 - **Expiry.** A copy written at a generation's start is needed until the generation's last archive (made up to G − 1
   days later) expires, `retainDays` after that. In the bucket each copy is locked until generation start + G +
   `retainDays`. The lifecycle needs a second rule for `<prefix>gen-` with `Days` = `retainDays` + G (42); the archives'
-  rule stays at `retainDays`. A NAS's own retention must be at least `RetentionDays` + G days (37).
+  rule stays at `retainDays`. A NAS's own retention must be at least `Retention:Daily` + G days (21; 5.7).
 - **Storage there:** about (`retainDays` + G) / G ≈ 6 copies of the documents, plus one dump per archive, instead of
   35 full backups. At year 3 under the brief's assumptions: about 1.6 TB + 0.5 TB in the bucket, instead of about 10 TB.
-- **Erasure window.** An erased document's copy can stay until its generation expires, so the promise becomes
-  `retainDays` + G + 2 days (44) while the off-site copy is on (`BackupRetention.DaysAsync`, the erasure answer and the
-  privacy notice). No scheme does better without a key that can delete. The last archive before an erasure must stay
+- **Erasure window.** An erased document's copy can stay until its generation expires, so the off-site copy's part of
+  the promise becomes `retainDays` + G + 2 days (44) while it is on (`BackupRetention.DaysAsync`, the erasure answer and
+  the privacy notice; the promise is the longest copy's, 343 days by default, 5.7). No scheme does better without a key
+  that can delete. The last archive before an erasure must stay
   restorable for `retainDays`, and its generation's copies expire on a fixed date.
 - **Restore** does not need to know the layout. A blob is found by its id in `blobs\`, or in any `gen-*\blobs\` beside
   the archive, and checked against the SHA-256 the archive's index gives. For the bucket, download the archive and the
@@ -265,6 +266,57 @@ Failure rows for these destinations:
 | F24 | A WORM share that allowed deletes during a grace period, with the setting forgotten | Copies were written as for a deletable folder. A later delete refused at prune switches the folder to append-only and warns; the next run starts a generation there. Until then the share's own retention may remove copies, which verify reports by archive. DEPLOYMENT.md tells administrators to set the setting. |
 | F25 | Off-site copy on, then off, then on again | A new generation starts whenever the current one is older than G days or its folder or prefix changed. A generation is never resumed after a gap longer than G. |
 
+### 5.7 Retention, the upkeep and restores with grandfather-father-son (added when main was merged into the fix-next branch)
+
+The fix-next branch replaced "every backup for 30 days" with grandfather-father-son retention (`BackupRetention`,
+`HealthCare360:Backup:Retention`: every backup of the newest 14 days that have one, then the last full backup of each of
+the newest 8 weeks and 12 months, nothing past `LongestDays` (342) but the newest full backup), and added a nightly upkeep
+(copies a returning disk missed, copies read back) and a weekly test restore. Merged with this design, there is one
+retention policy, with two kinds of place:
+
+- **Where HC360 deletes** (the server's folder, a deletable second disk or NAS): `BackupStore.Prune` removes the archives
+  grandfather-father-son no longer keeps, by the dates in their names (F19), with their `.refs`, then sweeps the documents
+  no remaining list names. Retention counts the backups each folder holds, so a USB disk that is away keeps its newest
+  backups, and each of two swapped disks keeps about as many archives as the server (about 30 a year on), not half.
+  *R* in 2.2 is that count. A document a kept weekly or monthly archive lists stays as long as that archive: after a
+  data-key rotation, an erasure or a purge, *Docs_R* lasts up to `LongestDays`, not 30 days. "Never delete the newest
+  complete archive" (F4) became "never delete the newest full archive": the database-only backup taken before an update
+  restores no documents.
+- **Where something else deletes by age** (the off-site bucket, an append-only share): every file is kept a fixed number
+  of days, and the documents are in generations (5.6), so each archive there restores on its own for that long. Such a
+  place cannot thin its backups to a week's or a month's last, so grandfather-father-son does not apply there. The bucket
+  keeps `retainDays` (35); a share's own retention must keep each file at least `Retention:Daily` + G days
+  (`BackupRetention.AppendOnlyMinimumDays`, 21), so every backup of the daily window restores from it alone, and at most
+  `LongestDays`. Longer history there costs a full copy of the documents a week.
+- **The backup period the erasure answer counts** (`BackupRetention.DaysAsync`) is the longest of these: `LongestDays`,
+  the share's minimum while it is append-only, and the bucket's `retainDays` + G + 1 while it is on. 342 days by
+  default, an erasure window of 343.
+
+The other features of that branch, on this design:
+
+- **The upkeep's catch-up** copies a backup a returning disk missed as a backup copies itself
+  (`BackupStore.CopyArchiveAsync`): the documents it lists that the disk lacks, from the server's folder, each hashed as it
+  is read, then its list, then the archive, hashed against the SHA-256 it was verified with and read back. Only backups
+  retention would keep there are copied; to an append-only share, only those of the daily window.
+- **Reading copies back** covers what a restore from the disk needs: each archive every `CopyCheckDays` (repaired from the
+  server's archive when that still matches), with every document its list names present on the disk (put back from the
+  server's folder when missing); and every document copy on the disk is re-hashed once in `CopyCheckDays` nights, the
+  copies whose first byte falls in that night's share (`BackupStore.CopiesInShare`). A copy that does not match its name
+  is taken out of use (`BackupStore.Discard`: deleted, or marked `.bad` on an append-only share) and copied again from the
+  server's folder; when the server has no good copy either, every backup on the disk that lists it is flagged
+  (`backup.copy_damaged`). On an append-only share only backups of the daily window are checked for missing documents:
+  older ones lose theirs to the share's retention by design.
+- **The test restore** restores the archive's database into a scratch database and counts its rows, and also requires
+  every document the index lists to have a copy of its length in the archive's folder.
+- **Damaged documents at restore.** A restore compares each document already on disk with the SHA-256 the backup
+  records, replaces one that differs (keeping the file it replaces, and putting it back if a later step fails), and puts
+  back one missing. Format 3 takes that SHA-256 from its index, which names each copy by it: no second list is written.
+  Format 2 archives that carry `documents.sha256` are still read with it; older ones by the hash of their own copy.
+- **The erasure ledger and the hospital CA** travel inside every format 3 archive (`privacy/erasure-ledger.log`,
+  `keys/hospital-ca.pfx`, each named in the manifest by its hash or fingerprint) and are restored from it. The backup
+  taken before an update is still format 2 with nothing else in it (F17): it is restored by the version updated from,
+  on the same machine, whose ledger and CA the update does not touch.
+
 ---
 
 ## 6. Decisions (agreed 2026-11-14)
@@ -278,6 +330,9 @@ Failure rows for these destinations:
    assumed.
 5. **The off-site bucket and append-only shares use generations** (5.6), G = 7 days. The off-site erasure window
    becomes `retainDays` + G + 2 (44 days by default).
+6. **Retention is grandfather-father-son where HC360 deletes, and a fixed age where something else does** (5.7, when the
+   fix-next branch was merged): an append-only share keeps each file at least `Retention:Daily` + G days (21), and the
+   backup period the erasure answer counts is the longest copy's, 342 days by default (a window of 343).
 
 ## 7. Implementation plan (each step its own commit)
 
@@ -305,7 +360,8 @@ Failure rows for these destinations:
    their length (3 of 8 append-only sequences fail; `BackupStoreTests` covers it directly).
 6. A growth benchmark (`BackupGrowthBenchmarkTests`, done). It runs 60 nights of real backup runs: 2 to 4 documents of 5
    to 40 kB added each night, the data key rotated on night 20 (every document written again), and the 30-day backup
-   period reached on night 31. Every night, in both the server's folder and the USB disk, the folder's size equals
+   period reached on night 31 (since the merge, retention keeping every backup of the newest 31 nights and no weekly or
+   monthly one, which is the same). Every night, in both the server's folder and the USB disk, the folder's size equals
    exactly the kept archives and their lists, plus one copy of each document version they list, plus the folder's
    marker, lock and hash cache. It also matches `R × (D + I) + Docs + Docs_R` within 2%. Measured on the server folder:
 

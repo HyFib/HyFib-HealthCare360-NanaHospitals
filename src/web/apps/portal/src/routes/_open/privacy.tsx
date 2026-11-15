@@ -93,9 +93,13 @@ function PrivacyPage() {
           {t('privacy.myPrivacy')}
         </ButtonLink>
       )}
-      <ReportCard title={t('privacy.backups.title')}>
-        <p className={styles.text}>{t('privacy.backups.body', { days: info.data?.backupWindowDays ?? 31 })}</p>
-      </ReportCard>
+      {/* How long erased data stays in backups is the server's to say (its retention settings): until it has said, the
+          notice states no number rather than one that may be wrong. */}
+      {info.data?.backupWindowDays != null && (
+        <ReportCard title={t('privacy.backups.title')}>
+          <p className={styles.text}>{t('privacy.backups.body', { days: info.data.backupWindowDays })}</p>
+        </ReportCard>
+      )}
       <ReportCard title={t('privacy.children.title')}>
         <p className={styles.text}>{t('privacy.children.body')}</p>
       </ReportCard>

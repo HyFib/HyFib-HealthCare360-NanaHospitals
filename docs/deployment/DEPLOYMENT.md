@@ -79,6 +79,15 @@ use the report for one hospital.
 - The server gets a **DHCP reservation** (fixed IP) and keeps a fixed computer name, e.g. `HC360-SRV`.
 - The network profile on the server must be **Private**; the installer warns if it is Public.
 - Guest / patient WiFi must not be able to reach the server.
+- **From the internet, forward only the patient portal's port (7361)**, and only once patients or outside services need
+  it. Besides the portal, that address answers what services outside the hospital call: the payment gateway's, SMS and
+  WhatsApp webhooks, the ABDM gateway's callbacks and the records other providers push (`/api/v3/...`), consent
+  managers' events (`/api/v1/consent-managers/...`), and the readings home monitoring devices upload from patients' homes
+  (`/api/v1/rpm/ingest`, each with its own device key). Register its public https address with each: with NHA as the HIP's
+  callback URL, as `dataPushUrl` in `abdm.gateway`, with each consent manager, and in each home device or its gateway. **Never forward the staff app's port
+  (7360)**: it serves staff sign-in and the staff API. Partners that read the FHIR API (SMART on FHIR apps and backend
+  services) use it from the hospital network or over a VPN to 7360, limited to their addresses: an app's authorization
+  signs a staff member in on the staff app, which the portal's address never serves.
 - Multicast DNS (UDP 5353) should pass between the hospital's switches and access points so HC360 Desktop can find the
   server automatically. If it can't, staff type the server name once, or IT pre-configures it (step 5).
 
@@ -256,6 +265,14 @@ limit of zero or a window of zero. Change one and restart the `HC360Server` serv
 Raise the sign-in limit when many workstations reach the server through one address (a NAT router), the partner limit
 when a campaign sends more than 1,200 messages a minute through one provider, and the per-user limits for a load test. Lowering them below the defaults is rarely needed: the per-account lockout and the portal's proof
 of work already stop guessing.
+
+### The server never runs as Development
+
+`appsettings.Development.json` is a developer's file (backups and MFA off, demonstration data on). It is not in the server
+package, and the server refuses to start as the Windows service if `ASPNETCORE_ENVIRONMENT` or `DOTNET_ENVIRONMENT` is set to
+`Development`: the service stops with "HC360 cannot start: the HC360 service is set to the Development environment" in the
+Windows Application log. Remove that variable (from the service's environment and from System Properties › Environment
+Variables) and start the service again.
 
 ### Reading the server log
 
@@ -448,8 +465,9 @@ showed the original key on screen; System health says when backups still use tha
    so a key nobody wrote down never becomes the one they need. A mistake in the copy is caught here.
 
 The Backups list names the key that opens each backup. Keep every key until the backups made with it, and their copies
-on a NAS or USB drive and off site, are deleted: 30 days by default, 35 in the off-site bucket. Both steps are recorded
-in the audit log, without the key.
+on a NAS or USB drive and off site, are deleted: up to 342 days by default, as the last backup of each month is kept
+for 12 months (section 8), and 35 days in the off-site bucket. Both steps are recorded in the audit log, without the
+key.
 
 **Two people hold the key.** A key one person holds is lost with them. Give a copy to a second administrator (the
 medical director, or the hospital administrator), who keeps it outside the building, at home or in a bank locker, so a
@@ -1189,6 +1207,14 @@ sent and on QR codes already printed, keep working: the staff app's address send
   for the portal: an analyser or worklist set to it is not listened for, and shows as failing with the reason.
   Move it to another port, in HC360 and on the analyser or the modalities, or run the installer with
   `-PortalHttpsPort` and a free port, and use that port wherever this section says 7361.
+The ABDM gateway's callbacks, the records other providers push and consent managers' events answer on the portal's
+address too (section 1, "Network checklist"). A hospital that forwarded the staff app's port (7360) to the internet for
+them registers the portal's public address instead (with NHA as the HIP's callback URL, as `dataPushUrl` in
+`abdm.gateway`, and with each consent manager), then stops forwarding 7360.
+A user with no facility chosen worked in every facility; now every facility is a choice of its own (SECURITY.md, "Access
+is given by two people"), and an empty list is none. The upgrade gives **All facilities** to each user whose list was
+empty, so nobody loses access. Afterwards check them in Administration › Users and choose the facilities each works in:
+taking all facilities back to some applies at once, while giving all facilities waits for a second administrator.
 Before the new version changes the database schema, it backs up the database and checks the backup (Administration ›
 Backups lists it as "before an update"). If that backup fails, for example because the disk is full, HC360 does not
 start and the database is not changed. The reason is in the log and in Windows Event Viewer.
@@ -1207,11 +1233,58 @@ any installed before self-update or with `-NoAutoUpdate`, with `Install-HC360Des
 distribution tool). Self-update replaces the program files only: run the installer again when a release's notes ask for
 it.
 
+### Desktops and lab agents left on an old version
+
+An update is offered to workstations and lab agents, not forced, so some stay behind. System health lists, as a warning
+(`clients.outdated`), every HC360 Desktop and lab agent seen in the last 30 days that runs a version below the minimum, or
+reports none, and the answer to each one's heartbeat carries the header `X-HC360-Update-Required` with the version to update
+to. They keep working: nothing is refused, so no ward is locked out mid-shift. By default the minimum is the server's release
+(major and minor: a 1.1.x server asks for 1.1.0); to set one, put `HealthCare360:Clients:MinimumDesktopVersion` and
+`HealthCare360:Clients:MinimumLabAgentVersion` (such as `1.0.5`) in `hc360.settings.json`.
+
+### What an upgrade changes in the database
+
+After 1.0.0, a release's database changes only add to the database: tables, columns (a required one with a default),
+longer text, NULL allowed where it was not. They take away nothing the release before it reads or writes, so that
+release still runs on the upgraded database (an *expand* step). A change that takes something away (drops or renames a
+table or a column, shortens a column or gives it another type, makes it NOT NULL, or drops a default that the release
+before inserts by) waits until the code has stopped using what it takes away for a whole release. It then comes as a
+reviewed *contract* step, which the release notes name with the release whose code stopped using it. HyFib's build
+refuses any other change that takes something away (`MigrationPolicyTests`, which lists the contract steps), and upgrades
+a database full of records from the previous release's schema to the new one, checking that no record is lost and the
+server works on it (`UpgradeTests`). So an upgrade loses nothing the release before still uses, and that release, though
+not an older one, can run on the upgraded database.
+
 ### Going back
 
-The way back from an upgrade is the previous version **and** the backup HC360 took just before the update changed the
-database. Never the previous version alone: on a database a newer version changed, it stops, says so in its log and in
-Windows Event Viewer, and names the database changes it does not know. It changes nothing.
+On a database a newer version changed, the previous version stops, says so in its log and in Windows Event Viewer, and
+names the database changes it does not know. It changes nothing. There are two ways back from there.
+
+**To the release just before, without a restore.** That release runs on the upgraded database (*What an upgrade changes
+in the database*), so going back to it keeps everything entered since the upgrade. It needs the previous release to be
+1.0.0 or later, and to be told the newer release's database changes by name:
+
+1. **Put the previous version back, stopped.** From the previous release's `deploy` folder, checked and unblocked as in
+   section 1, run `.\Install-HC360Server.ps1 -NoStart`. It replaces the program files and keeps the configuration and
+   data.
+2. **Name the newer changes.** Start the `HC360Server` service once: it stops, and its log names the database changes it
+   does not know. Add exactly those names to `hc360.settings.json`, keeping the rest of the file, for example:
+
+   ```json
+   "HealthCare360": { "Database": { "AcceptNewerMigrations": [ "20270112093000_WardRoundNotes", "20270120101500_LabCriticalCalls" ] } }
+   ```
+
+   A change it is not told of still stops it, so the setting cannot carry over to another going back unnoticed.
+3. **Run the previous version's `.\Install-HC360Server.ps1` again**, without `-NoStart`. *Check:* Administration › System
+   health shows the previous version and nothing red. Its log warns at each start that it runs beside the named changes.
+4. **Workstations** as in step 5 below.
+5. **Once the fixed version is installed**, remove `AcceptNewerMigrations`: the newer version knows its own changes.
+
+With several servers, do it on each. Never go further back this way than the release just before: a newer release's
+contract step may take away what an older release still uses.
+
+**Further back, or to the database as it was before the update:** the previous version **and** the backup HC360 took
+just before the update changed the database.
 
 Restoring that backup loses everything entered since the upgrade. So upgrade at the quietest hour with the downtime kit
 out (docs/modules/downtime.md), decide within about half an hour whether the upgrade stands, and keep on paper what is
@@ -1251,11 +1324,44 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
 ## 8. Backups and disaster recovery
 
-- An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST and is kept for 30 days. With
-  `-SecondaryBackupDir`, each backup is also copied to the second disk or NAS, and once the off-site copy is set up
-  (below), it is uploaded to a bucket outside the building within 15 minutes.
+- An **encrypted** backup (AES-256-GCM) runs every night at 01:30 IST. With `-SecondaryBackupDir`, each backup is
+  also copied to the second disk or NAS, and once the off-site copy is set up (below), it is uploaded to a bucket
+  outside the building within 15 minutes.
+- **How long backups are kept.** On the server and on the second disk or NAS, grandfather-father-son: every backup of
+  the last 14 days, then the last backup of each week (Monday to Sunday) for 8 weeks, and of each month for 12 months.
+  So a problem found weeks or months late still has a backup from before it. A week's or month's backup is a full one,
+  never the database-only backup taken before an update. HC360 counts days, weeks and months that have a backup, so
+  if backups stop, the newest are not removed while nothing replaces them. Nothing is kept past the longest period,
+  342 days with these numbers, except the newest full backup, which is never removed. Each backup removes what is past
+  its time, on the server and on the second copy, and so does the nightly upkeep at 03:30. Change the numbers in
+  `hc360.settings.json` and restart HC360:
+
+  ```json
+  "HealthCare360": { "Backup": { "Retention": { "Daily": 14, "Weekly": 8, "Monthly": 12 } } }
+  ```
+
+  The longest period is what the privacy notice tells patients of erased data in backups (docs/modules/privacy.md),
+  so it changes with these numbers. Plan the disk space for about 34 backups on each copy, and for the documents once
+  (twice for up to the longest period after a data-key rotation, while the backups made before it are kept).
+  `Backup:RetentionDays`, which kept every backup 30 days, is no longer read. Grandfather-father-son applies where HC360
+  removes backups: on the server, and on a USB disk or a NAS share it may delete from. Where something else removes
+  them by age, the copies are kept a fixed number of days instead, every backup alike, with the documents in weekly
+  generations so that each backup there restores on its own for those days: the off-site bucket by its lock and
+  lifecycle ("The off-site copy" below), and an append-only share by its own retention ("A second copy the server
+  cannot delete" below).
 - Check **Administration › Backups** weekly for green "Succeeded" rows. A failure is also told to the administrators in
   the app, and System health warns once no backup has succeeded for 36 hours.
+- **Backups switched off, or no second copy.** With `Backup:Enabled` false in `hc360.settings.json`, no backup is made
+  each night and none of the backup warnings below shows, so System health says so as a critical warning
+  (`backup.disabled`), told to IT on-call. With no `Backup:SecondaryDirectory` (installed without
+  `-SecondaryBackupDir`), every backup is on the server's own disk, and System health warns (`backup.no_second_copy`).
+  Run `Install-HC360Server.ps1` again with `-SecondaryBackupDir` to set it. Neither shows on a training server
+  (`SeedDemoData`).
+- **A backup missed while the server was off** (a power cut, an update, a restart over 01:30) is caught up. HC360
+  looks every quarter of an hour. Back inside the backup window, the four hours after the scheduled time (01:30 to
+  05:30), it takes the backup at once. Back in the day, it leaves it to tonight's backup rather than load the server
+  while the hospital works, unless the newest good backup is over 36 hours old, the age at which System health turns
+  critical. Then it takes it at once all the same, gently: one pg_dump at a time, below normal priority.
 - **The copy to the second disk or NAS** is what survives if the server's own disk fails. The number series'
   high-water mark is copied there too, every minute while numbers are issued ("After a restore" below). When a copy
   fails (the USB disk is unplugged or has another drive letter, the NAS is down), the backup is kept on the server and:
@@ -1267,35 +1373,63 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
     and not put back is told on the Monday afternoon.
 
   Plug the disk back in, or bring the NAS back, then **Back up now**: the warning clears once a backup is copied.
-  Only full backups count, so a failed copy of the backup taken before an update raises nothing. With several servers
+  Only full backups count, so a failed copy of the backup taken before an update raises nothing.
+
+  **A disk that comes back gets the backups it missed.** Each night at 03:30 (`Backup:UpkeepSchedule`) HC360 copies
+  to the second disk or NAS the backups on the server that it lacks and that retention keeps there: those made while
+  it was unplugged, or while the other of two swapped disks was in. It copies the newest first, at most 7 a night, and
+  the rest the nights after. Each is checked against the SHA-256 it was verified with as it is read, so a backup
+  damaged on the server's disk is not spread to the second, and read back once written. Its **File / error** column
+  then says it was copied later, and the failed copy's warning clears.
+
+  **Each disk is known by an id.** On its first copy, HC360 writes `hc360-backup-disk.json` to the folder, with an id
+  of 8 letters and digits, such as `7F3A2C1D`. The Backups list's **Second copy** column names the disk each backup was
+  copied to: write each disk's id on its label. A copy to another disk than the one before is a swap, and is recorded
+  in the audit log (`backup.disk_swapped`, Administration › Audit). Where two or more disks take turns, System health
+  warns (`backup.disk_not_swapped`) once the disk in place has taken every backup for more than 7 days
+  (`Backup:DiskRotationDays`; 0 turns this off), naming it and since when: swap it for the other disk, and keep that
+  one away from the server. A NAS share is given an id too. As the only disk, it is never asked to be swapped. Do not
+  delete or edit the file: a disk without it is given a new id, which counts as a swap. With several servers
   (section 10), give every node the same `Backup:SecondaryDirectory`, since **Back up now** runs on the node that
   answers it.
 - **At go-live, test the copy warning.** Unplug the backup disk (or point a NAS path at a share that is off) and press
   **Back up now**: check that the Second copy column says "No", the in-app notice arrives, and System health shows
   `backup.copy_failed`. Plug the disk back in and back up again: the warning clears. Keep the result with the go-live
   records.
-- Each backup holds the database, the field encryption keys and the audit seal key, encrypted, and the list of the
-  stored documents it needs. Every backup is read back and checked when it is made. The **Contents** and **Checked**
-  columns show this.
+- Each backup holds the database, the field encryption keys, the audit seal key, the erasure ledger and the hospital CA,
+  encrypted, and the list of the stored documents it needs, with the SHA-256 of each. Every backup is read back and
+  checked when it is made. The **Contents** and **Checked** columns show this, and the **Checked** column also shows the
+  backup's last test restore ("Test restores" below). The backup taken before an update holds the database and the keys
+  only, written so that the version updated from can restore it (section 7, "Going back").
 - **The documents are kept once, beside the backups.** A stored document never changes, so the backup folder keeps one
   copy of each, under `blobs\`, and each night's backup copies only the documents added that day. The backup folder
   therefore grows by about the day's new documents and one database dump each night, not by every document each night
-  (docs/design/incremental-backup.md). Each backup has a `.refs` list beside it. When a backup is past its 30 days, the
-  documents no remaining backup needs are removed from `blobs\` too, on the server and on the second disk. A document
-  copy is the stored file byte for byte, already encrypted with the field keys, so it is unreadable without the
-  recovery key.
+  (docs/design/incremental-backup.md). Each backup has a `.refs` list beside it. When retention removes a backup (above),
+  the documents no remaining backup needs are removed from `blobs\` too, on the server and on the second disk: a
+  document a kept weekly or monthly backup needs stays as long as that backup, so an erased document, or one written
+  again under a new key, stays until the last backup that lists it goes, up to 342 days. A document copy is the stored
+  file byte for byte, already encrypted with the field keys, so it is unreadable without the recovery key.
   - **Copy the whole backup folder, never only a `.hc360bak` file.** A backup without the `blobs\` folder beside it
     cannot put the documents back. `backup verify` and `Restore-HC360.ps1` say so, and change nothing.
   - **Format the USB disks NTFS.** exFAT has no journal and wastes up to 128 KB on every document. A backup's note says
     so when the second disk is exFAT or FAT.
   - **Each USB disk is complete on its own.** When a disk that was off site comes back, the night's backup copies the
-    documents it missed while it was away, then the backup. Every backup on a disk restores from that disk alone.
+    documents it missed while it was away, then the backup, and the upkeep copies each backup it missed with the
+    documents that backup needs (above). Every backup on a disk restores from that disk alone.
   - Don't edit, rename or delete anything under `blobs\`, `gen-*\` or `offsite\`, or the `.refs` files, by hand. If a
     `.refs` file is lost, HC360 stops removing documents from that folder, and the backup's note says which file is
     missing, until the backup it belongs to is deleted.
-- **Restore drill every quarter** on a spare machine, with HC360 and PostgreSQL installed as for new hardware (step 1
-  below) and one USB disk or the NAS attached. Right after a night's backup, on the live server, count the rows to
-  compare with. That only reads, so it changes nothing:
+- **The copies on the second disk or NAS are read back.** During the nightly upkeep, each backup there is read back
+  every 7 days (`Backup:CopyCheckDays`), the least recently checked first, for up to three hours a night, and checked
+  against the SHA-256 it was verified with; every document it needs must be on the disk. Every copy of a document there
+  is read back too, a seventh of them each night, so each once in those 7 days, and checked against its own SHA-256. A
+  backup or a document whose copy no longer matches, or a document missing from the disk, is copied again from the
+  server, if the server's own still matches. Otherwise the **Second copy** column says that copy is damaged, and System
+  health warns (`backup.copy_damaged`): replace the disk, or check the NAS's own disks.
+- **Restore drill every quarter** on a spare machine, as well as the weekly test restores below: only a restore on
+  other hardware checks every document end to end, the keys and the recovery key's copies too. Install HC360 and
+  PostgreSQL as for new hardware (step 1 below) and attach one USB disk or the NAS. Right after a night's backup, on the
+  live server, count the rows to compare with. That only reads, so it changes nothing:
 
   ```powershell
   .\Invoke-HC360RestoreDrill.ps1 -ExportReference -ReportPath E:\drill-reference.json
@@ -1325,7 +1459,7 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
 - To restore after a disk failure on new hardware:
   1. Install PostgreSQL and HC360 as above, with the old server's `-SecondaryBackupDir`: HC360 finds the copy of the
-     number series' high-water mark there ("After a restore" below).
+     number series' high-water mark there, and the erasure ledger's copy ("After a restore" below).
   2. Run:
 
      ```powershell
@@ -1339,6 +1473,20 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
      encryption key. If a step fails, the previous database is put back and HC360 starts again on it. On new hardware,
      later backups open with the key entered here; make a new key if that one should be retired.
 
+     Every backup records the SHA-256 of each document it holds. A document already on the machine whose bytes are not
+     those the backup recorded (damaged on disk, or encrypted again with a newer key since the backup was made, which
+     the restored database does not know) is replaced by the backup's copy; one that matches is left. The script says
+     how many it restored, left and replaced ("Documents: …"), and keeps each file it replaced in
+     `files-replaced-<time>` beside the documents folder: delete that folder once the restored server is checked.
+
+     Erased data must not come back with a restore (DPDP Act 2023 s8(7)). Every nightly or manual backup carries the erasure ledger inside
+     its encryption, and the script adds its erasures, with those of the ledger's copy beside the backup file on the
+     second disk or NAS, to the new server's ledger ("Erasures: … added to this server's erasure ledger …"). As HC360
+     starts, it carries out again each one the restored database does not have ("After a restore" below). So restore
+     from the backup's own folder on the second disk or NAS, where the ledger's copy is kept: an erasure made after the
+     backup is only there once the server's disk is gone. From the off-site copy, restore the newest backup: the ledger
+     it carries holds every erasure made before it.
+
      A backup holds no server's part of System health, the heartbeat of the machines that made it: each server here
      writes its own as it starts, so System health shows the servers that run here, not the old ones. A backup made
      before HC360 left those out holds them: the script clears them after restoring the database, and names them
@@ -1347,10 +1495,15 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
 
      Last, before it starts HC360, it leaves `restored.json` in the data folder. What HC360 then does, and what to check
      before the hospital works on the restored server, is under "After a restore" below.
-  3. Workstations see a new server certificate. If the hospital CA was exported from the old server and kept (section
-     9, step 3), install it with step 1's installer run: `.\Install-HC360Server.ps1 -HospitalCaFile <the .pfx>`, before
-     the restore. Workstations then trust the new server as they trusted the old one, and find it on the network.
-     Otherwise re-run HC360 Desktop setup on each (Change server…) and compare the new fingerprint.
+  3. Every nightly or manual backup carries the hospital CA, inside its encryption, and the script installs it with the database
+     ("Installed the backup's hospital CA …", with its fingerprint): HC360 Desktop, the lab agents, tablets and browsers
+     trust the new server as they trusted the old one, and find it on the network, without being set up again. The CA
+     the new hardware made as it first started is kept under a new name. Restore the newest backup you have: one made
+     before a `certificates new-ca` carries the CA it replaced, which the devices no longer trust. A next CA prepared for
+     a rollover is not in the backups: prepare it again (CA-ROLLOVER.md). A backup made before HC360 carried the CA says
+     so ("This backup carries no hospital CA …"): then install the CA exported from the old server (section 9, step 3)
+     with `certificates import-ca` (or the installer's `-HospitalCaFile`), or re-run HC360 Desktop setup on each
+     workstation (Change server…) and compare the new fingerprint.
   4. Where doctors sign prescriptions with their DSC, copy the CCA India root certificates back into
      `%ProgramData%\HyFib\HealthCare360\certs\dsc-trust` (section 4, step 9): they are not in the backup. Until then
      DSC signing is refused and DSC-signed prescriptions are not printed as such (where the DSC is required, not at all);
@@ -1362,6 +1515,64 @@ Rehearse these steps once, on a copy restored on a spare PC, before the first up
   Backups whose recovery key is "Original key" open with the original key, which no screen shows any more. On the
   Server Node that made them, enter `original` when the script asks for the key; elsewhere, use the copy made when
   administrators could still display it.
+
+### Test restores
+
+Each backup is read back and its database dump listed by pg_restore as it is made, but that does not restore it. So
+once a week HC360 restores the newest backup into a scratch database on the hospital's PostgreSQL, and checks it.
+
+- **When.** During the backups' nightly upkeep at 03:30 (`Backup:UpkeepSchedule`), once no test restore has passed for
+  7 days (`Backup:TestRestore:EveryDays`). A test that fails is made again the next night, until one passes. One test
+  runs at a time for the whole hospital.
+- **What it checks.** The whole backup is read and checked as a restore reads it, with the server's recovery key.
+  pg_restore restores its database, and stops at the first error. Then the key tables must hold the rows the backup
+  counted when it was made: patients, visits, appointments, encounters, clinical notes, prescriptions, lab results,
+  admissions, bills, receipts, pharmacy sales, stored documents, staff accounts, the audit trail and the schema's
+  migrations. The rows are counted in the same snapshot pg_dump dumps, so records saved during the backup do not
+  count. A backup made before HC360 counted rows passes if it restores without error. Every document the backup lists
+  must also have its copy in the backup folder, as a restore from that folder needs; one missing fails the test, and
+  is named.
+- **Cleaned up.** The scratch database (`hc360_restore_test_…`) holds a full copy of every patient's record. It is
+  dropped as soon as the test ends, whether it passed or failed. One left by a power cut or a restart during a test
+  is dropped by the next test. The plain database dump in the temporary folder is deleted too.
+- **Shown.** The Backups screen's **Checked** column says "Test restore passed" or "Test restore failed", with the
+  time, and on a failure, why. A failure is told to the administrators in the app ("Backup test restore failed"), once
+  until a test passes again. System health warns (`backup.restore_test`) once no test restore has passed for 14 days
+  (`Backup:TestRestore:WarnAfterDays`), and says what the last test found.
+- **Room on PostgreSQL's disk.** The restored copy needs room beside the hospital's database: HC360 asks for twice the
+  database's size and 1 GB free, and refuses to start without it, since a full disk would stop the hospital's own
+  database. The restore also writes as much WAL as the database holds: with WAL archiving or a standby (section 9),
+  plan the archive's space for that each week.
+
+**The account the test restores sign in as.** The account the server works as (`hc360_app`) may not create databases,
+so the test restores sign in as an account of their own, `hc360_restore`, which may create databases and read
+PostgreSQL's settings (to check the room), and nothing else. It cannot connect to the hospital's database. Where
+PostgreSQL is on the Server Node, the installer makes it with a random password, and writes its connection string,
+`ConnectionStrings:BackupRestoreTest`, protected like the others: with `-CreateDatabase`, or on an upgrade run once with
+`-PostgresSuperuserPassword (Read-Host -AsSecureString)`. Until then the installer warns, and each test fails with "may
+not create databases". Every run after keeps the account, its setting and its password; one given the superuser's
+password also checks that the account is still there, and makes it again, with a new password, if it is not.
+
+**Where the database is on another server** (section 10), the installer leaves the account to you, and says so: HC360
+cannot see that server's disk to check the room. Check it has the room, and set `Backup:TestRestore:CheckRoom` to
+false. Then make the account on that server, in psql as `postgres`; without the room check it needs no
+`pg_read_all_settings`:
+
+```sql
+CREATE ROLE hc360_restore LOGIN CREATEDB PASSWORD '<a long random password>';
+```
+
+Add its connection string to `hc360.settings.json` on each server that may run the background jobs, with the host and
+TLS settings of `ConnectionStrings:Hospital` (section 3, "The database over TLS"), protect it as in section 3
+("Changing a protected setting"), and restart the `HC360Server` service:
+
+```json
+"ConnectionStrings": {
+  "BackupRestoreTest": "Host=<the database server>;Port=5432;Database=postgres;Username=hc360_restore;Password=<the password>;SSL Mode=VerifyFull;Root Certificate=<as in Hospital>"
+}
+```
+
+`Backup:TestRestore:Enabled` set to false stops the test restores, and System health warns while they are off.
 
 ### After a restore
 
@@ -1384,6 +1595,18 @@ can sign in, it:
    tells IT on-call of the restore.
 3. **Says so in System health**, as a critical warning (`system.restored`): the backup it was restored from, the series
    it moved with their next numbers, and that the messages are held. It lasts until the messages are released.
+4. **Carries out again every erasure the restored database does not have**, from the erasure ledger, which the restore
+   brought up to date with the ledger the backup carries and the ledger's copy beside the backup file. Each one is a
+   critical entry in the audit trail (`privacy.erasure_reapplied`), is told to the grievance officers, and is listed in
+   Privacy › Retention. This happens at every start, and every hour on the server that runs the jobs.
+5. **Records the restore in the audit trail.** A restore takes the audit chain back to where the backup's ended, while
+   the anchor file outside the database names later positions, of the chain before the restore. So start-up writes a
+   critical entry (`audit.restored`) naming the point restored to and the backup, and anchors that point in the anchor
+   file with this server's seal. The audit trail's check (Administration › Audit log, and the daily one) then accepts
+   that one break, and still fails on any other: before, every restore left the trail "broken", with a critical alert
+   every day for good. Keep the anchor file, and its copy off the server, as they are: the restore only adds to them.
+   Like steps 2 and 3, this needs the script's `restored.json`: after a restore made by hand, the check reports the
+   chain broken where the restored database ends.
 
 Before the hospital works on the restored server:
 - Sign in, check the records entered last before the failure, and enter again from paper what is missing.
@@ -1469,8 +1692,8 @@ never has that key.
    `hc360-lifecycle.json` removes each copy as its lock passes, and the parts of uploads that never finished. Keep the
    backups' `Days` equal to `retainDays`, and the documents' (`hc360/gen-`) at `retainDays` + 7. A document uploaded
    at the start of a generation is still needed by that generation's last backup 6 days later, so a shorter rule
-   would hide it while that backup is kept. The privacy notice tells patients that erased data leaves the backups
-   within `retainDays` + 9 days (44) while the off-site copy is on, and counts on these rules (docs/modules/privacy.md).
+   would hide it while that backup is kept. The privacy notice counts on these rules: erased data leaves the off-site
+   copy within `retainDays` + 9 days (44), inside the 343 days it gives patients by default (docs/modules/privacy.md).
 
    ```json
    {
@@ -1602,10 +1825,15 @@ server, and ransomware on it, can add copies there but not remove or change them
   remove any. HC360 also finds by itself a share that refuses to rename or delete when it first uses it, and records
   it in `hc360-append-only`, but a WORM folder that allows deleting for a while after each write looks like an ordinary
   folder until then: set the setting for those.
-- Let the NAS's own retention remove the copies after 37 days or more (`RetentionDays` + 7), counted from when each
-  file was created. A shorter retention removes a generation's documents while its last backup is still kept. HC360
-  cannot remove them: each backup's note then says it was copied and that the older copies there were not removed.
-  That note is not a failed copy, and raises no warning.
+- Let the NAS's own retention remove each file a fixed number of days after it was created: at least 21 days
+  (`Backup:Retention:Daily` + 7), and no more than the longest period the privacy notice counts (342 days by default).
+  A shorter retention removes a generation's documents while a backup of the last 14 days still needs them. HC360 cannot
+  remove the copies itself: each backup's note then says it was copied and that the older copies there were not
+  removed. That note is not a failed copy, and raises no warning.
+- Such a share cannot keep only the last backup of each week and month, as HC360 does on the server: it keeps every
+  backup for its retention, and every generation's documents for as long. Each further week kept costs a full copy of
+  the documents. The weekly and monthly backups stay on the server's own disk; keep them on the share too only by giving
+  it the room for a longer retention.
 - Keep the NAS's administrator account off the Server Node.
 
 ## 9. Warm standby and failover (optional)
@@ -1614,7 +1842,9 @@ A second Server Node can keep a copy of the database that follows every change w
 streaming replication: a **warm standby** (SRS DED-20). When the primary Server Node fails for good, an administrator
 **fails over**: promotes the standby, puts the keys back and starts HC360 there, in about half an hour. Only the changes
 the standby had not received yet are lost, normally under a second's worth. Without a standby, recovery is a restore of
-the last nightly backup on new hardware (section 8): up to a day of data lost, and hours of work (SRS REL-02).
+the last nightly backup on new hardware (section 8): up to a day of data lost, and hours of work (SRS REL-02). WAL
+archiving (below), which needs no standby, brings the data lost down to minutes: HC360 copies the database's changes,
+encrypted, to the second disk or NAS every minute.
 
 What the standby has, and what comes from elsewhere on a failover:
 
@@ -1627,8 +1857,9 @@ What the standby has, and what comes from elsewhere on a failover:
 | The DSC trust folder (`certs\dsc-trust`: the CCA India roots, section 4 step 8) | Not copied: it is not in the database or the backups | Copy the roots there at set-up (step 6), so they are already there |
 
 Documents uploaded after the latest backup are only on the old primary: copy them from its disk if it can still be read
-(below). After rotating the data encryption key, make a backup at once (Administration › Backups › **Back up now**): the
-standby can read data encrypted with a key only once a backup has carried it there.
+(below). The standby can read data encrypted with a key only once a backup has carried the key there, so HC360 takes a
+full backup by itself within five minutes of a rotation of the data encryption key (`Back up now` is not needed), and
+the same on a promoted standby, which has no backup of its own.
 
 **You need** a second machine like the first (section 1: Windows with BitLocker, a UPS, the same PostgreSQL version) on
 the same network, with a DHCP reservation; a password for the replication account, 16 characters or more, kept in the
@@ -1659,8 +1890,11 @@ machine only. The standby holds every patient record: protect it as the primary 
    (`hc360-server.crt` in PostgreSQL's data folder; its key is readable only by PostgreSQL's service account and
    Administrators); the rules in `pg_hba.conf`, between `# BEGIN HC360 replication` and `# END HC360 replication`, which
    take the account from the standby's address over TLS for replication and refuse it every database; and the firewall
-   rule. PostgreSQL restarts once, and HC360 is unavailable for those seconds. It prints the
-   certificate's fingerprint. Run it again whenever you like: it writes the same settings.
+   rule; and, in the hospital database (`-DatabaseName`, `hc360` by default), the function
+   `public.hc360_replication_status()`, through which HC360's own account reads how far behind the standby is, which
+   that account may not read in `pg_stat_replication` itself, and nothing else. PostgreSQL restarts once, and HC360 is
+   unavailable for those seconds. It prints the certificate's fingerprint. Run it again whenever you like: it writes
+   the same settings.
 
 3. On the primary, export the hospital CA, which HC360 Desktop and the lab agents trust:
 
@@ -1714,69 +1948,132 @@ machine only. The standby holds every patient record: protect it as the primary 
 PostgreSQL itself to a new version, set the standby up again (steps 1, 2, 5).
 
 **System health on the primary** says, in its warnings:
-- *The warm standby … is not connected*: it is off, its PostgreSQL is stopped, or the network between them is down. The
-  primary keeps the changes it needs, up to `-StandbyWalLimitGB`, and it catches up once it is back.
+- *The warm standby … is not connected* (`replication.standby_disconnected`): it is off, its PostgreSQL is stopped, or
+  the network between them is down. The primary keeps the changes it needs, up to `-StandbyWalLimitGB`, and it catches
+  up once it is back. Once it has been away for 15 minutes (PostgreSQL 17 records since when), the warning turns
+  critical, which the alerts tell IT on-call: a failover then would lose every change since.
+- *… is … minutes behind* (`replication.standby_lagging`): connected, but it has not applied the last minute's changes,
+  which a failover now would lose; critical from 15 minutes, the recovery point WAL archiving allows. It is measured as
+  `pg_stat_replication`'s `replay_lag`. Check the network between the two, and the standby's disk and log.
 - *… is … MB behind*: connected, but more than 1 GB behind. Check the network between the two.
 - *… is about to remove WAL it still needs* or *… cannot catch up* (critical): it has been away too long. Set it up
   again with `New-HC360Standby.ps1` (step 5); it replaces the copy.
+- *How far behind the warm standby … is in time cannot be measured* (`replication.lag_unknown`): HC360's account may
+  not read it, because the function above is missing, or was restored from a dump (it then belongs to the database's
+  owner). Run `Enable-HC360Replication.ps1 -StandbyAddress <the standby's address>` again.
 - *WAL archiving is failing* (critical), with WAL archiving on (below).
 
-HC360 reads the slot with its own database account, which every account may read. How far behind the standby is in
-time (`replay_lag` above) is visible only to `postgres` and the `pg_read_all_stats` role, which HC360's account is not
-given.
+HC360 reads the slot with its own database account, which every account may read, and the standby's lag through the
+function above.
 
 To stop streaming to the standby: `.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -Remove` on the primary. It
-removes the slot, the account, the `pg_hba.conf` rule, the firewall rule, the address it listened on, TLS, and WAL
-archiving if it set that up.
+removes the slot, the account, the `pg_hba.conf` rule, the firewall rule, the address it listened on, and TLS. WAL
+archiving (below) stays, as it needs no standby: add `-NoWalArchive` to end it too.
 
-### WAL archiving: a recovery point within 15 minutes
+### WAL archiving: a restore to any moment
 
-Optional, and off by default. With it, PostgreSQL copies each finished WAL file (its record of every change) to a
-folder on another disk or a share, at least every 15 minutes, so a restore can replay changes up to a chosen moment:
-at most 15 minutes are lost even when the primary's disk is lost and there is no standby, or when a mistake must be
-undone (SRS REL-02). On the primary:
+Optional, and off by default, and it needs no standby. With it, PostgreSQL copies each finished WAL file (its record of
+every change) to a folder on the server's own disk, at least every 15 minutes; HC360 encrypts each one within a minute
+and copies it, encrypted, to the second disk or NAS (`-SecondaryBackupDir`); and HC360 takes a **base backup**, a copy of
+PostgreSQL's whole data folder, at once and then every Sunday at 03:30. From the newest base backup and the WAL archived
+since, the database can be restored to any moment: a mistake undone to the minute before it, not to last night's backup,
+and after a disk failure, to within minutes of it (SRS REL-02). It reaches back `Backup:PointInTimeDays` (30 by default):
+older base backups go, all but the newest, and the WAL older than the oldest kept with them. The nightly backups keep the
+long-term copies (section 8). On the Server Node, or on the primary:
 
 ```powershell
-.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -WalArchiveDirectory D:\HC360-WAL
+.\Enable-HC360Replication.ps1 -WalArchive
 ```
 
-`-NoWalArchive` turns it off again. For a local folder, the script lets PostgreSQL's service account write there. A
-share must let the primary's computer account (`HOSPITAL\HC360-SRV$`) write, which needs a domain; in a workgroup, use
-a second disk. The script archives one file at once to check, and System health warns while archiving fails: PostgreSQL
-then keeps every WAL file until it is archived, and its disk fills. The archive holds the database's changes: limit the
-share to the Server Nodes and administrators. Each file never replaces one already archived; a file with the same name
+It asks for the `postgres` password, and PostgreSQL restarts once (HC360 is unavailable for those seconds). It:
+- archives to `%ProgramData%\HyFib\HealthCare360\wal-archive` (`-WalArchiveDirectory` names another folder on the
+  server's own disk; a share is refused), which only PostgreSQL's and HC360's service accounts, Administrators and SYSTEM
+  can open: the WAL holds patient data. It archives one file at once to check;
+- creates the account `hc360_basebackup`, which may only stream the database and opens none of it, and which signs in
+  only as the HC360 service's Windows account, from this machine, with no password (SSPI): one more block in
+  `pg_hba.conf` and one in `pg_ident.conf`, each between `# BEGIN HC360 replication` and `# END HC360 replication`.
+
+With a standby too, give both: `.\Enable-HC360Replication.ps1 -StandbyAddress 10.0.5.12 -WalArchive`. Run it again
+whenever you like: it leaves archiving on. `-NoWalArchive` turns it off and removes the account; the base backups made
+stay. System health warns while archiving fails (*WAL archiving is failing*, critical): PostgreSQL then keeps every WAL
+file until it is archived, and its disk fills. Each file never replaces one already archived; a file with the same name
 and other content fails, and PostgreSQL's log says so.
 
-**Space.** Each file is 16 MB, and PostgreSQL closes one at least every 15 minutes while HC360 runs: at least 1.5 GB a
-day, plus the hospital's own changes. Watch the folder for a week, and keep enough for the WAL since the oldest base
-backup you keep (below); PostgreSQL never deletes from it. With `-WalArchiveDirectory` given to `New-HC360Standby.ps1`
-too, a standby that was away too long catches up from the archive.
+**The WAL is encrypted before it leaves the server.** Every minute HC360 encrypts each file PostgreSQL archived, with the
+backup recovery key current at the time, as the nightly backups are, into
+`%ProgramData%\HyFib\HealthCare360\backups\wal\<system identifier>\`, checks that the encrypted file opens to the
+same bytes, and only then removes the plain one: the archive folder holds a minute's WAL at most. It copies the
+encrypted WAL, and the base backups, to the second disk or NAS, in `wal\<system identifier>` and
+`base\<system identifier>` beside the nightly backups' copies, so the disk taken off site holds nothing unencrypted. The
+standby does not read the archive (`New-HC360Standby.ps1` sets no `restore_command`): its slot keeps what it needs.
+System health says, critically, when archived WAL has waited over 15 minutes unencrypted on the server's own disk
+(`pitr.wal_not_encrypted`, with the reason), and when PostgreSQL archived a file again with other content than the copy
+already encrypted (`pitr.wal_conflict`: both are kept, the new one unencrypted in the archive folder, for HyFib support
+to look at); and it warns while the copies to the second disk or NAS fail (`pitr.wal_not_copied`), critically after three
+and a half days, as for the nightly backups' copies.
 
-**A restore to a point in time** starts from a base backup, a copy of PostgreSQL's data folder, not from the nightly
-`.hc360bak` backup (which holds a dump of the database). Take one after turning archiving on, and every week:
+**An archive set up before HC360 encrypted it** (`-WalArchiveDirectory D:\HC360-WAL` on the second disk, or a share)
+holds plain WAL. Run `.\Enable-HC360Replication.ps1 -WalArchive` again on the primary: archiving moves to the server's
+own disk. Once System health shows no `pitr.no_base_backup`, delete the old archive folder and any base backup made by
+hand (such as `D:\HC360-Base`): they are not encrypted.
 
-```powershell
-& 'C:\Program Files\PostgreSQL\17\bin\pg_basebackup.exe' -h localhost -U postgres -D "D:\HC360-Base\$(Get-Date -Format yyyyMMdd)" -Ft -z -X fetch -c fast
-```
+**Base backups.** HC360 makes each one with `pg_basebackup`, signed in as `hc360_basebackup`, encrypts it with the
+backup recovery key current at the time, as the nightly backups are, reads it back to check it, and keeps it in
+`%ProgramData%\HyFib\HealthCare360\backups\base\<system identifier>\` for as long as nightly backups are kept (30
+days), and the newest always. The plain copy `pg_basebackup` writes stays on the server's own disk, in HC360's `temp`
+folder, only until it is encrypted. A file's name gives its time and the WAL file it starts from:
+`hc360-base-20261115-220000-000000010000000000000042.hc360base`. System health warns, and the administrators are told in
+the app, when one fails (`pitr.base_backup_failed`; HC360 tries again after 6 hours); while there is none of the
+database's current timeline (`pitr.no_base_backup`: just after archiving is turned on, and after a failover), until
+HC360 has taken one; and when the weekly one has not been made for over a week (`pitr.base_backup_stale`).
 
-Delete the archive's files older than the oldest base backup kept, with `pg_archivecleanup D:\HC360-WAL <the file named
-in that backup's .backup file>`. To restore to 10:45 today, for example, on a machine with the same PostgreSQL version:
+**Space.** PostgreSQL closes a 16 MB WAL file at least every 15 minutes while HC360 runs; HC360 compresses it before it
+encrypts it, so a quiet quarter of an hour takes well under 1 MB, and a busy one about what the hospital changed. A base
+backup is about the size of the database. HC360 removes the encrypted WAL older than the WAL the oldest base backup kept
+starts from, on the server and on the second disk or NAS (a share that does not let the server delete keeps them for its
+own retention). Watch the folders for a week.
+
+**A restore to a point in time** starts from a base backup, not from the nightly `.hc360bak` backup (which holds a dump
+of the database), and needs the same PostgreSQL version. To restore to 10:45 today, for example:
 
 1. Stop `HC360Server` and PostgreSQL. Move PostgreSQL's data folder aside.
-2. Make a new data folder and extract the base backup into it: `tar -xzf D:\HC360-Base\<date>\base.tar.gz -C <data
-   folder>`. Give it the permissions the old one had (PostgreSQL's service account, Administrators and SYSTEM).
-3. Add to its `postgresql.auto.conf`:
+2. Decrypt the newest base backup made before 10:45 into a new folder on the server's own disk, never the disk taken
+   off site. The files are in `%ProgramData%\HyFib\HealthCare360\backups`; on new hardware, after a disk failure, use
+   the copies on the second disk or NAS, in the same folders:
+
+   ```powershell
+   $hc360 = "$env:ProgramFiles\HyFib\HealthCare360\Server\HyFib.HealthCare360.Server.exe"
+   & $hc360 backup decrypt-base --in "<backups>\base\<system identifier>\hc360-base-<time>-<WAL file>.hc360base" --out C:\HC360-Restore\base
+   ```
+
+   It asks for the recovery key that was current when the base backup was made, as a nightly backup of that day needs,
+   checks the whole file, and writes `base.tar.gz`, `pg_wal.tar.gz` and `backup_manifest`.
+3. Decrypt the WAL archived since, from the folder of the same system identifier:
+
+   ```powershell
+   & $hc360 backup decrypt-wal --in "<backups>\wal\<system identifier>" --out C:\HC360-Restore\wal
+   ```
+
+   It checks each file as it writes it. Files encrypted with another recovery key (the key was changed since the base
+   backup) are named by that key's ID and left: run it again with that key, into the same folder.
+4. Make a new data folder, and extract the base backup into it: `tar -xzf C:\HC360-Restore\base\base.tar.gz -C <data
+   folder>`, then `tar -xzf C:\HC360-Restore\base\pg_wal.tar.gz -C <data folder>\pg_wal`. Give it the permissions the
+   old one had (PostgreSQL's service account, Administrators and SYSTEM).
+5. Add to its `postgresql.auto.conf`:
 
    ```
-   restore_command = 'copy "D:\\HC360-WAL\\%f" "%p"'
+   restore_command = 'copy "C:\\HC360-Restore\\wal\\%f" "%p"'
    recovery_target_time = '2026-10-12 10:45:00+05:30'
    recovery_target_action = 'promote'
    ```
 
    and create an empty file `recovery.signal` in it.
-4. Start PostgreSQL. It replays the archived changes up to 10:45, then opens. Its log says when it got there.
-5. Take the three lines out of `postgresql.auto.conf` again, and start HC360. On other hardware, put the keys and
-   documents back first, as for a failover (step 3 below).
+6. Start PostgreSQL. It replays the archived changes up to 10:45, then opens, on a new timeline. Its log says when it
+   got there.
+7. Take the three lines out of `postgresql.auto.conf` again, delete `C:\HC360-Restore` (it holds the database in plain),
+   and start HC360. It takes a base backup of the new timeline within a quarter of an hour. On other hardware, put the
+   keys and documents back first, as for a failover (step 3 below), and set the archive up there with
+   `.\Enable-HC360Replication.ps1 -WalArchive`.
 
 ### Failing over to the standby
 
@@ -1789,15 +2086,25 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    Workstations trust any server with the hospital CA, so an old primary that came back with HC360 running would take
    patient data the new one never sees. Before it is switched on again, unplug its network, and disable both its
    services first (`Set-Service HC360Server -StartupType Disabled`, and the same for its PostgreSQL service, for
-   example `postgresql-x64-17`).
-2. **Promote the standby's PostgreSQL**:
+   example `postgresql-x64-17`). Step 2 records the failover where the old primary looks, and HC360 there then refuses
+   to run; this step covers the time until it can read that record.
+2. **Promote the standby**:
 
    ```powershell
-   & 'C:\Program Files\PostgreSQL\17\bin\psql.exe' -h localhost -U postgres -d postgres -c 'SELECT pg_promote()'
+   .\Invoke-HC360Failover.ps1
    ```
 
-   With the primary's `postgres` password. It answers `t`: PostgreSQL takes writes now, and `SELECT
-   pg_is_in_recovery()` answers `f`. (`pg_ctl promote -D <data folder>` does the same.)
+   With the primary's `postgres` password. It says how far behind the standby is: when it last applied a change made on
+   the primary (what was made after that is lost), and how much it has received but not applied yet (the promotion
+   applies it). It refuses while the old primary's PostgreSQL still answers at the address the standby streams from: stop
+   it first, or switch the machine off. Then it promotes PostgreSQL, which takes writes on a new timeline, and records
+   the failover: this machine is the primary from that timeline on, in `config\hc360-primary.json` of HC360's data
+   folder here and beside the backups' second copy (`-SecondaryBackupDir`, the NAS or disk both servers are given; or
+   give the script `-SecondaryBackupDir`). HC360 on the old primary reads the record there: it refuses to start, and one
+   still running (cut off from the standby, but not from the NAS) stops within a minute, with System health's
+   `replication.superseded` critical just before, until the old primary is set up again as this server's standby. Without
+   a second copy both reach, it warns that the old primary cannot learn it was replaced: keep it off the network until
+   then. PostgreSQL promoted by hand (`SELECT pg_promote()`): run the script with `-RecordOnly` to record it.
 3. **Put the keys and documents back** from the latest backup, on the NAS or wherever it is kept:
 
    ```powershell
@@ -1813,7 +2120,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
    documents uploaded since the backup.
 4. **Start HC360**: `.\Install-HC360Server.ps1`, without `-Standby`, from the same package. It enables and starts the
    service, checks that HC360 is ready, and prints the hospital CA fingerprint, the same as before. It refuses until
-   step 3 is done.
+   step 3 is done. HC360 takes a full backup within five minutes of starting: the promoted server has none of its own.
+   Where the primary archived the WAL, set it up here too: `.\Enable-HC360Replication.ps1 -WalArchive`; HC360 then takes
+   a base backup of the new timeline within a quarter of an hour.
 5. **Workstations** follow by themselves: when HC360 Desktop cannot reach the old primary, it looks on the network for
    a server announcing the same CA, connects to the standby and says so from the tray. Staff sign in again. Where
    multicast does not pass between access points, or IT fixed a workstation's server (`-ServerUrl`, the machine policy),
@@ -1830,7 +2139,9 @@ password. On the standby, in an elevated PowerShell in the `deploy` folder:
 
 ### Making the old primary the new standby
 
-Once the old primary is repaired, and still fenced:
+Once the old primary is repaired, and still fenced. HC360 refuses to start on it while its database is on the old
+timeline, saying it was replaced (if it can read the failover's record); setting it up as the standby gives it the new
+timeline, and keeps its own database aside:
 
 1. On the new primary (the promoted standby), let the old one in: `.\Enable-HC360Replication.ps1 -StandbyAddress
    10.0.5.11`, with the replication password (or a new one). Copy its `hc360-server.crt`.
@@ -1847,11 +2158,15 @@ To make it the primary again, fail over once more, at a quiet hour.
 A planned failover, at a quiet hour, proves the steps and that the people on call can do them:
 
 1. Tell users: HC360 is unavailable for about half an hour.
-2. Check that System health on the primary has no warning about the standby. Make a backup (Back up now).
+2. Check that System health on the primary has no warning about the standby, `replication.standby_lagging` included.
+   Make a backup (Back up now).
 3. Stop `HC360Server` on the primary. On the primary, `SELECT pg_current_wal_lsn()`; on the standby,
-   `SELECT pg_last_wal_replay_lsn()`: when they match, the standby has everything.
+   `SELECT pg_last_wal_replay_lsn()`: when they match, the standby has everything. Then stop the primary's PostgreSQL
+   service: `Invoke-HC360Failover.ps1` refuses while it answers.
 4. Fail over (steps 1 to 6 above), and check that a workstation reconnects and that a record made just before is
-   there.
+   there. Then check the fence: with the old primary still kept from the workstations, start its PostgreSQL and HC360
+   services. HC360 must stop at once, saying its database was replaced by the promoted standby (its log, and Windows
+   Event Viewer). Disable HC360 there again.
 5. Make the old primary the new standby (above).
 6. Write down how long each step took and what was unclear, and fix this section.
 

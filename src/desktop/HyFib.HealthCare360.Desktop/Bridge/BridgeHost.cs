@@ -186,8 +186,8 @@ internal sealed class BridgeHost(
             case "printer.printHtml":
             {
                 var request = Required(parameters).Deserialize<PrintHtmlRequest>(Json) ?? throw new BridgeException("bad_request", "Nothing to print.");
-                await printing.PrintHtmlAsync(request);
-                return null;
+                // The outcome says whether the printer took the job or it is queued behind a paused or offline printer.
+                return await printing.PrintHtmlAsync(request);
             }
 
             case "printer.printRaw":

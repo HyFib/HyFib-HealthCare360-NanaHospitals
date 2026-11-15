@@ -9,39 +9,19 @@ import {
   DialogTitle,
   Field,
   makeStyles,
-  MessageBar,
-  MessageBarBody,
-  MessageBarTitle,
   Spinner,
   Text,
   Textarea,
-  tokens,
 } from '@fluentui/react-components';
-import { formatDateTime, isApiError } from '@hc360/core';
+import { isApiError } from '@hc360/core';
 import { useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ActionError } from '@/modules/billing/ui';
-import {
-  APPROVAL_STATUS_LABEL,
-  approvalKeys,
-  approvalsApi,
-  type ApprovalHandover,
-  type ApprovalRequestDto,
-  type ApprovalStatus,
-} from './api';
+import { APPROVAL_STATUS_LABEL, approvalKeys, approvalsApi, type ApprovalRequestDto, type ApprovalStatus } from './api';
 
 const useStyles = makeStyles({
   body: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  secret: {
-    fontFamily: tokens.fontFamilyMonospace,
-    fontSize: tokens.fontSizeBase500,
-    padding: '12px 16px',
-    borderRadius: tokens.borderRadiusMedium,
-    backgroundColor: tokens.colorNeutralBackground3,
-    letterSpacing: '1px',
-    userSelect: 'all',
-  },
 });
 
 export type Decision = 'approve' | 'reject' | 'withdraw';
@@ -70,8 +50,8 @@ export function ApprovalStatusBadge({ request }: { request: Pick<ApprovalRequest
 
 /**
  * Approves (the change is made then, by the server, on the record as it was asked for), rejects (with a reason the
- * person who asked is told) or withdraws (only the person who asked) a request. An approval that hands the approver a
- * secret to give in person (a temporary password) shows it here, once: the server keeps it nowhere.
+ * person who asked is told) or withdraws (only the person who asked) a request. No approval hands the approver a secret:
+ * an approved temporary password goes to the account's holder, and the outcome says where.
  */
 export function ApprovalDecisionDialog({
   request,
@@ -86,7 +66,6 @@ export function ApprovalDecisionDialog({
   const notify = useNotify();
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
-  const [handover, setHandover] = useState<ApprovalHandover | null>(null);
   const reasonNeeded = decision === 'reject';
   const valid = !reasonNeeded || text.trim().length >= 5;
 
@@ -106,10 +85,6 @@ export function ApprovalDecisionDialog({
             : 'Request withdrawn',
         decision === 'approve' ? (decided.outcome ?? request.summary) : request.summary,
       );
-      if (decision === 'approve' && decided.handover) {
-        setHandover(decided.handover);
-        return;
-      }
       guard.close();
     },
     // A refusal (the record changed since it was asked for, so the request failed) changes the request too.
@@ -126,34 +101,6 @@ export function ApprovalDecisionDialog({
     open: true,
     onClose,
   });
-
-  if (handover) {
-    return (
-      <Dialog open modalType="alert">
-        <DialogSurface style={{ maxWidth: 520 }}>
-          <DialogBody>
-            <DialogTitle>{handover.label}</DialogTitle>
-            <DialogContent className={styles.body}>
-              <div className={styles.secret}>{handover.secret}</div>
-              <MessageBar intent="warning" layout="multiline">
-                <MessageBarBody>
-                  <MessageBarTitle>Shown only now</MessageBarTitle>
-                  It is kept nowhere. Give it to them in person. They choose their own password when they sign in with
-                  it
-                  {handover.expiresAt ? `, and it stops working after ${formatDateTime(handover.expiresAt)}` : ''}.
-                </MessageBarBody>
-              </MessageBar>
-            </DialogContent>
-            <DialogActions>
-              <Button appearance="primary" onClick={guard.close}>
-                Done
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
-    );
-  }
 
   return (
     <Dialog open onOpenChange={guard.onOpenChange} modalType="alert">

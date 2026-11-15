@@ -40,7 +40,8 @@ public sealed class WithdrawApprovalRequestValidator : AbstractValidator<Withdra
 /// <summary>
 /// The approvals inbox. Any signed-in member of staff may call these: what each person sees and may decide follows from
 /// the permissions of the kinds of change (<see cref="IApprovalAction.ApprovePermission"/>) and from who asked, which the
-/// service checks on every call.
+/// service checks on every call as an endpoint's permission policy would (<see cref="Security.PermissionGate"/>): a kind
+/// only an administrative permission approves is decided on an enrolled HC360 Desktop alone.
 /// </summary>
 internal static class ApprovalEndpoints
 {

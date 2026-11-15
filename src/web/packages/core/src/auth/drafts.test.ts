@@ -33,9 +33,8 @@ function answer(status: number, body?: unknown): Response {
 
 /**
  * SRS DED-10: drafts are kept on this computer, per user and per form, through a WiFi drop or a crash, and cleared at
- * sign-out. When the app starts again it restores the session from its cookie: a session the server says is over goes,
- * drafts and all, as at sign-out; one the server could not answer for keeps its drafts, for its user to find once
- * signed in again.
+ * sign-out. When the app starts again it restores the session from its cookie: whether the server says the session is
+ * over or could not answer for it, nobody signed out, so its drafts stay for their user to find once signed in again.
  */
 describe('drafts', () => {
   beforeEach(() => {
@@ -95,16 +94,17 @@ describe('drafts', () => {
   });
 
   it.each([401, 403])(
-    'are cleared when the app starts and the server says the session is over (%i)',
+    'are kept when the app starts and the server says the session is over (%i): nobody signed out',
     async (status) => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer(status, { code: 'auth.session_ended' })));
 
       const restored = await auth.restore();
 
+      // It may have expired during an outage, with a note half typed: the same person finds it once signed in again.
       expect(restored).toBe(false);
       expect(useSession.getState().status).toBe('anonymous');
-      expect(localStorage.getItem(noteDraft)).toBeNull();
-      expect(localStorage.getItem(otherDraft)).toBeNull();
+      expect(localStorage.getItem(noteDraft)).not.toBeNull();
+      expect(localStorage.getItem(otherDraft)).not.toBeNull();
       expect(localStorage.getItem('hc360:theme')).toBe('dark');
     },
   );
@@ -182,21 +182,24 @@ describe('drafts on this computer', () => {
   it('cannot be read by someone else signed in on the same Windows account', async () => {
     await openDrafts('u-asha', ashaKey);
     draftStorage.setItem(noteDraft, typed);
-    await sealedOnComputer();
+    const ashas = await sealedOnComputer();
     closeDrafts();
 
+    // Ravi signs in: Asha's draft is not his to read, and goes.
     await openDrafts('u-ravi', raviKey);
     expect(draftStorage.getItem(noteDraft)).toBeNull();
+    expect(localStorage.getItem(noteDraft)).toBeNull();
     closeDrafts();
-    // Not even by copying Asha's draft under his own name, or opening it with his key under hers.
-    localStorage.setItem(otherDraft, localStorage.getItem(noteDraft)!);
+    // Copied back first, it opens neither under his own name nor with his key under hers.
+    localStorage.setItem(otherDraft, ashas);
     await openDrafts('u-ravi', raviKey);
     expect(draftStorage.getItem(otherDraft)).toBeNull();
     closeDrafts();
+    localStorage.setItem(noteDraft, ashas);
     await openDrafts('u-asha', raviKey);
     expect(draftStorage.getItem(noteDraft)).toBeNull();
 
-    // It is still there for Asha.
+    // Only Asha's key opens it.
     closeDrafts();
     await openDrafts('u-asha', ashaKey);
     expect(draftStorage.getItem(noteDraft)).toBe(typed);
@@ -298,6 +301,57 @@ describe('drafts on this computer', () => {
     expect(useDrafts.getState().openFor).toBeNull();
     expect(draftStorage.getItem(noteDraft)).toBeNull();
     expect(localStorage.getItem(noteDraft)).not.toBeNull();
+  });
+
+  it('typed in a session that expired during an outage are kept, and given back once the same user signs in', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(answer(200, { accessToken: 't1', expiresAt: null, user: asha, draftKey: ashaKey })),
+    );
+    expect(await auth.restore()).toBe(true);
+    await vi.waitFor(() => expect(useDrafts.getState().openFor).toBe('u-asha'));
+    draftStorage.setItem(noteDraft, typed);
+    await sealedOnComputer();
+
+    // The server was down for hours; back, it says the session is over.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(answer(401, { code: 'auth.session_ended' })));
+    expect(await auth.refresh()).toBeNull();
+
+    expect(useSession.getState().status).toBe('anonymous');
+    expect(draftStorage.getItem(noteDraft)).toBeNull();
+    expect(localStorage.getItem(noteDraft)).toMatch(/^\{"v":2,/);
+    expect(localStorage.getItem(noteDraft)).not.toContain('BP 150/95');
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(answer(200, { accessToken: 't2', expiresAt: null, user: asha, draftKey: ashaKey })),
+    );
+    await auth.login('asha', 'Morning rounds at seven');
+    await vi.waitFor(() => expect(draftStorage.getItem(noteDraft)).toBe(typed));
+  });
+
+  it('left by a session the server ended are removed when another user signs in', async () => {
+    await openDrafts('u-asha', ashaKey);
+    useSession.setState({ status: 'authenticated', accessToken: 't1', user: asha });
+    draftStorage.setItem(noteDraft, typed);
+    await sealedOnComputer();
+    // Asha's session ends without her signing out (the server ended it), and she leaves.
+    auth.ended();
+    expect(localStorage.getItem(noteDraft)).not.toBeNull();
+
+    const ravi: AuthUser = { ...asha, id: 'u-ravi', userName: 'ravi', displayName: 'Ravi Kumar' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(answer(200, { accessToken: 't3', expiresAt: null, user: ravi, draftKey: raviKey })),
+    );
+    await auth.login('ravi', 'Evening rounds at nine');
+
+    await vi.waitFor(() => expect(useDrafts.getState().openFor).toBe('u-ravi'));
+    expect(localStorage.getItem(noteDraft)).toBeNull();
+    // Nor is it offered to Asha later: it went when Ravi signed in.
+    closeDrafts();
+    await openDrafts('u-asha', ashaKey);
+    expect(draftStorage.getItem(noteDraft)).toBeNull();
   });
 
   it('kept or removed in another of the app’s windows are kept or removed here too', async () => {

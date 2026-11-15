@@ -105,6 +105,15 @@ public static class InventoryQueries
             .ToDictionaryAsync(i => i.Id, ct);
     }
 
+    /// <summary>
+    /// The items the store has stock of to hand out, as a query to filter a list by before it is cut short: a batch not
+    /// blocked, not expired, and holding more than is reserved of it, as <see cref="AvailabilityAsync"/> counts sellable stock.
+    /// </summary>
+    public static IQueryable<Guid> InStock(HospitalDbContext db, Guid storeId, DateOnly today) =>
+        db.Set<StockBatch>().AsNoTracking()
+            .Where(b => b.StoreId == storeId && !b.IsBlocked && b.QuantityOnHand > b.QuantityReserved && (b.ExpiryDate == null || b.ExpiryDate >= today))
+            .Select(b => b.ItemId);
+
     /// <summary>On-hand, sellable quantity, nearest usable expiry and the MRP of the batch FEFO would pick first.</summary>
     public static async Task<Dictionary<Guid, StockAvailability>> AvailabilityAsync(
         HospitalDbContext db, Guid storeId, IReadOnlyCollection<Guid> itemIds, DateOnly today, CancellationToken ct)

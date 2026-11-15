@@ -25,13 +25,21 @@
        Then clears, and names, the rows of the servers the backup knew (System health's part of each server): a backup
        made before HC360 left them out holds those of the machines that made it, which on new hardware would show as
        servers that stopped reporting, told to IT every day. Each server here writes its own as it starts.
-    4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A different
-       key already here is kept under a new name, never deleted. On new hardware, later backups open with the recovery
-       key entered here.
+    4. Puts back the stored documents and then installs the backup's field encryption keys ("backup restore"). A document
+       already here whose bytes are not those the backup recorded for it is replaced by the backup's copy, the file that
+       was there kept in files-replaced-<time> beside the documents. The erasures in the erasure ledger the backup carries,
+       and in the ledger's copy beside the backup file, are added to this server's ledger first: as it starts, HC360
+       carries out again each one the restored database does not have. A different key already here is kept under a new
+       name, never deleted. On new hardware, later backups open with the recovery key entered here. Last, it installs the
+       hospital CA the backup carries, so HC360 Desktop, the lab agents, tablets and browsers trust this server without
+       being set up again; a server whose own CA took its place after the backup was made (a rollover, or new-ca) keeps
+       its own.
     5. Leaves the restore marker (restored.json) in the data folder, for HC360's next start. As it starts, HC360 moves
        every number series (UHIDs, visits, bills, receipts, GST invoices) past the numbers issued after the backup was
        made, by their high-water mark kept outside the database; holds outgoing messages, some of which went after the
-       backup was made, until an administrator checks and releases them; and says so in System health.
+       backup was made, until an administrator checks and releases them; records the restore in the audit trail and in
+       the audit anchor file, so the audit trail's check accepts the break the restore makes in its chain, and no other;
+       and says so in System health.
     6. Starts the service again.
 
     Backups made before HC360 archive backups hold the database only. To restore one of those on new hardware, copy

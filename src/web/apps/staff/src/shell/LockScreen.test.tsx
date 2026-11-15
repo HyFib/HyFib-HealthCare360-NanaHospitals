@@ -1,11 +1,27 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
-import { ApiError, rememberedUnlockKeys, rememberUnlockKey, useSession, type AuthUser } from '@hc360/core';
+import {
+  ApiError,
+  clearDrafts,
+  draftStorage,
+  draftStorageKey,
+  openDrafts,
+  rememberedUnlockKeys,
+  rememberUnlockKey,
+  useConnection,
+  useSession,
+  type AuthUser,
+} from '@hc360/core';
+import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from '@/lib/api';
+import { PUBLIC_SETTINGS_KEY } from '@/lib/lookups';
+import { useOfflineCopy } from '@/lib/offline/offlineCopy';
+import { forgetOfflineUnlock, openOfflineUnlock, rememberOfflineSecret } from '@/lib/offline/offlineUnlock';
+import type { DowntimePack } from '@/modules/downtime/continuityApi';
 import { LockScreen } from './LockScreen';
 
 // The server is outside the test: what the lock screen sends and does with the answers is what is tested.
@@ -57,9 +73,13 @@ const signed = {
   getClientExtensionResults: () => ({}),
 };
 
-function renderLocked(who: AuthUser = user('locked')) {
+function renderLocked(who: AuthUser = user('locked'), settings?: Record<string, unknown>) {
   useSession.setState({ status: 'authenticated', accessToken: 'locked-token', user: who, locked: true });
   const client = new QueryClient();
+  if (settings) {
+    // The hospital's settings as the app last had them from the server.
+    client.setQueryData(PUBLIC_SETTINGS_KEY, settings);
+  }
   const invalidate = vi.spyOn(client, 'invalidateQueries');
   render(
     <QueryClientProvider client={client}>
@@ -240,6 +260,32 @@ describe('LockScreen', () => {
     expect(screen.queryByRole('button', { name: /^Unlock with/ })).not.toBeInTheDocument();
   });
 
+  it('ends a session the server says is over without signing out, so the drafts typed in it stay', async () => {
+    const noteDraft = draftStorageKey('u1', 'nursing-note:adm-1');
+    await openDrafts('u1', btoa(String.fromCharCode(...new Uint8Array(32).fill(7))));
+    draftStorage.setItem(noteDraft, JSON.stringify({ value: { note: 'BP 150/95' }, savedAt: 1 }));
+    await waitFor(() => expect(localStorage.getItem(noteDraft)).toMatch(/^\{"v":2,/));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === '/api/v1/auth/unlock') {
+        // It expired while the screen was locked, through an outage.
+        throw new ApiError({ status: 401, title: 'Please sign in again', code: 'auth.session_ended' });
+      }
+      return undefined;
+    });
+    renderLocked();
+
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await waitFor(() => expect(useSession.getState().status).toBe('anonymous'));
+    // Nobody signed out: no sign-out is sent, and the draft stays, encrypted, for Asha's next sign-in.
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+    expect(localStorage.getItem(noteDraft)).toMatch(/^\{"v":2,/);
+    clearDrafts();
+  });
+
   it('keeps what was typed and not yet saved on the screen behind the lock', async () => {
     vi.mocked(api.post).mockImplementation(async (path: string) =>
       path === '/api/v1/auth/unlock' ? { accessToken: 'fresh-token', expiresAt: null, user: user() } : undefined,
@@ -265,5 +311,229 @@ describe('LockScreen', () => {
 
     await waitFor(() => expect(useSession.getState().locked).toBe(false));
     expect(screen.getByLabelText('Clinical notes')).toHaveValue('Fever since two days');
+  });
+});
+
+/** Asha's key from the server (AuthResult.draftKey), the same in each of her sessions. */
+const SERVER_KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)));
+
+const PACK: DowntimePack = {
+  id: 'p1',
+  kind: 'Refreshed',
+  generatedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+  windowEndsAt: new Date(Date.now() + 86_400_000).toISOString(),
+  facilityName: 'Nana Hospitals',
+  generatedByName: null,
+  patients: 1,
+  sections: [
+    {
+      key: 'census',
+      title: 'Census by ward',
+      note: null,
+      pagePerTable: false,
+      tables: [
+        {
+          heading: 'Ward A',
+          note: null,
+          alert: null,
+          columns: ['Bed', 'Patient (UHID)'],
+          rows: [['A-1', 'Meena Iyer (NH26000001)']],
+        },
+      ],
+    },
+  ],
+};
+
+/** Asha's session before the outage: the server accepted her PIN once on this computer, and her copy was taken. */
+async function readyForAnOutage() {
+  openOfflineUnlock('u1', SERVER_KEY);
+  await rememberOfflineSecret('u1', 'pin', '2468');
+  useOfflineCopy.setState({ userId: 'u1', takenAt: Date.now() - 10 * 60_000, pack: PACK, worklists: [] });
+}
+
+const offlineCopy = () => screen.queryByRole('dialog', { name: 'Offline copy (read only)' });
+
+/** How long to wait for a PIN to be checked: 210,000 rounds of PBKDF2 take a while on a busy test machine. */
+const checked = { timeout: 10_000 };
+
+/**
+ * DED-07 with UX-11: the screen locks during an outage, when nothing can unlock it and signing out would wipe the
+ * offline copy. The PIN or password, checked on this computer, opens the copy read only over the lock, for the user
+ * whose screen it is.
+ */
+describe('LockScreen during an outage', () => {
+  beforeEach(() => vi.mocked(api.post).mockReset().mockResolvedValue(undefined));
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    forgetOfflineUnlock();
+    localStorage.clear();
+    useOfflineCopy.setState({ userId: null, takenAt: null, pack: null, worklists: [] });
+    useConnection.setState({ browserOnline: true, serverReachable: true, databaseDown: false });
+    useSession.setState({ status: 'unknown', accessToken: null, user: null, locked: false });
+  });
+
+  it('opens the offline copy after the right PIN, read only, sending nothing to the server', async () => {
+    await readyForAnOutage();
+    useConnection.setState({ serverReachable: false });
+    renderLocked();
+    expect(screen.getByText('Cannot reach the HealthCare360 server')).toBeInTheDocument();
+    await expectNoAxeViolations();
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/v1/auth/lock'));
+    vi.mocked(api.post).mockClear();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+
+    const copy = await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked);
+    expect(within(copy).getByRole('region', { name: 'Census by ward' })).toHaveTextContent('Meena Iyer (NH26000001)');
+    // Read only, over a screen that stays locked: nothing to save, and nothing sent.
+    expect(
+      within(copy)
+        .getAllByRole('button')
+        .map((b) => b.textContent),
+    ).toEqual(['Close']);
+    expect(useSession.getState().locked).toBe(true);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expectNoAxeViolations();
+
+    // Closed, the PIN is asked for again.
+    await userEvent.click(within(copy).getByRole('button', { name: 'Close' }));
+    expect(await screen.findByLabelText('PIN')).toHaveValue('');
+    expect(offlineCopy()).not.toBeInTheDocument();
+  });
+
+  it('refuses a wrong PIN and says how many tries are left', async () => {
+    await readyForAnOutage();
+    useConnection.setState({ serverReachable: false });
+    renderLocked();
+
+    await userEvent.type(screen.getByLabelText('PIN'), '1357');
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+
+    expect(await screen.findByText(/That did not match\. 4 more tries/, {}, checked)).toBeInTheDocument();
+    expect(offlineCopy()).not.toBeInTheDocument();
+    expect(useSession.getState().locked).toBe(true);
+    expect(api.post).not.toHaveBeenCalledWith('/api/v1/auth/unlock', expect.anything());
+  });
+
+  it("never opens one user's copy on another user's locked screen, even with that user's PIN", async () => {
+    await readyForAnOutage();
+    useConnection.setState({ serverReachable: false });
+    renderLocked({ ...user('locked'), id: 'u2', userName: 'ravi', displayName: 'Ravi Kumar' });
+
+    expect(screen.getByText(/There is no offline copy on this computer/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open the offline copy' })).not.toBeInTheDocument();
+    // Asha's PIN on Ravi's screen is only an unlock, which the server must answer: nothing opens here.
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/api/v1/auth/unlock', { pin: '2468' }));
+    expect(offlineCopy()).not.toBeInTheDocument();
+    expect(useSession.getState().locked).toBe(true);
+  });
+
+  it('is offered when the server answers but its database is down', async () => {
+    await readyForAnOutage();
+    useConnection.setState({ serverReachable: true, databaseDown: true });
+    renderLocked();
+
+    expect(screen.getByText('HealthCare360 cannot reach its database')).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.keyboard('{Enter}');
+
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
+  });
+
+  it('keeps the PIN typed when unlocking fails for the server, so it opens the copy once the outage shows', async () => {
+    await readyForAnOutage();
+    vi.mocked(api.post).mockImplementation(async (path: string) => {
+      if (path === '/api/v1/auth/unlock') {
+        // The answer while the database is down; the app then finds it down (`noteServerFailure`).
+        throw new ApiError({ status: 500, title: 'Something went wrong' });
+      }
+      return undefined;
+    });
+    renderLocked();
+
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    expect(await screen.findByText(/could not unlock the screen: try again once it is back/)).toBeInTheDocument();
+    act(() => useConnection.setState({ databaseDown: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
+    expect(useSession.getState().locked).toBe(true);
+  });
+
+  it('is not offered while the server can unlock the screen', async () => {
+    await readyForAnOutage();
+    renderLocked();
+
+    expect(screen.queryByRole('button', { name: 'Open the offline copy' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Cannot reach the HealthCare360 server')).not.toBeInTheDocument();
+  });
+
+  it('closes the copy again on the idle lock timer, and asks for the PIN', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const typist = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    await readyForAnOutage();
+    useConnection.setState({ serverReachable: false });
+    renderLocked(user('locked'), { 'ui.idleLockMinutes': 2 });
+
+    await typist.type(screen.getByLabelText('PIN'), '2468');
+    await typist.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+    await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked);
+    // The copy opened once the check of the PIN was done, after the click: let it start its idle timer.
+    await act(() => Promise.resolve());
+
+    act(() => vi.advanceTimersByTime(110_000));
+    expect(offlineCopy()).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(15_000));
+
+    expect(await screen.findByLabelText('PIN')).toHaveValue('');
+    expect(offlineCopy()).not.toBeInTheDocument();
+  });
+
+  it('opens with the PIN the server last accepted on this computer, once the server is down', async () => {
+    openOfflineUnlock('u1', SERVER_KEY);
+    useOfflineCopy.setState({ userId: 'u1', takenAt: Date.now(), pack: PACK, worklists: [] });
+    vi.mocked(api.post).mockImplementation(async (path: string) =>
+      path === '/api/v1/auth/unlock' ? { accessToken: 'fresh-token', expiresAt: null, user: user() } : undefined,
+    );
+    renderLocked();
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(useSession.getState().locked).toBe(false));
+    await waitFor(() => expect(localStorage.getItem('hc360:offline-unlock')).toContain('"pin"'), checked);
+    expect(localStorage.getItem('hc360:offline-unlock')).not.toContain('2468');
+
+    // Later the server goes down, and the screen locks again.
+    act(() => {
+      useConnection.setState({ serverReachable: false });
+      useSession.getState().setLocked(true);
+    });
+    await userEvent.type(await screen.findByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
+  });
+
+  it('sends a PIN it has not checked here since sign-in to the password instead', async () => {
+    openOfflineUnlock('u1', SERVER_KEY);
+    await rememberOfflineSecret('u1', 'password', 'Morning rounds at seven');
+    useOfflineCopy.setState({ userId: 'u1', takenAt: Date.now(), pack: PACK, worklists: [] });
+    useConnection.setState({ serverReachable: false });
+    renderLocked();
+
+    await userEvent.type(screen.getByLabelText('PIN'), '2468');
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+
+    expect(await screen.findByText(/Use your password: your PIN has not been used/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Password'), 'Morning rounds at seven');
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' }, checked)).toBeInTheDocument();
   });
 });

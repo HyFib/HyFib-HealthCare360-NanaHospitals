@@ -67,6 +67,8 @@ import {
 import { controlledItems, itemsFromErrorData, planBatchIssue } from '@/modules/pharmacy/dispense';
 import { MedicineSearch } from '@/modules/pharmacy/MedicineSearch';
 import { scannedBatchProblem } from '@/modules/pharmacy/tags';
+import { NOT_A_PAPER_SALE, paperSaleOf, paperSaleProblemsOf, type PaperSaleEntry } from '@/modules/pharmacy/paperSale';
+import { PaperSaleFields } from '@/modules/pharmacy/PaperSaleFields';
 import { PaymentPanel } from '@/modules/pharmacy/PaymentPanel';
 import {
   checkPayments,
@@ -160,6 +162,8 @@ function CounterSalePage() {
   const [dispatchState, setDispatchState] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
   const [payments, setPayments] = useState<PaymentDraft[]>(defaultPayments);
+  // A sale written on paper while HC360 was down: the number and the time on it.
+  const [paperSale, setPaperSale] = useState<PaperSaleEntry>(NOT_A_PAPER_SALE);
   const [sessionKey, setSessionKey] = useState(0);
   const [done, setDone] = useState<PharmacySaleCreated | null>(null);
 
@@ -242,7 +246,13 @@ function CounterSalePage() {
     blockers.push("Enter the buyer's GSTIN and legal name for the B2B invoice.");
   }
   const pending = lines.some((l) => l.plan.pending);
-  const ready = canSell && Boolean(storeId) && blockers.length === 0 && !pending && paymentCheck.ok;
+  const ready =
+    canSell &&
+    Boolean(storeId) &&
+    blockers.length === 0 &&
+    !pending &&
+    paymentCheck.ok &&
+    paperSaleOf(paperSale).problem === null;
 
   const addItem = (row: PharmacyStockRow) => {
     if (row.available <= 0) {
@@ -295,6 +305,7 @@ function CounterSalePage() {
     setDiscount('');
     setConfirmControlled(false);
     setPayments(defaultPayments());
+    setPaperSale(NOT_A_PAPER_SALE);
     setSessionKey((k) => k + 1);
     setDone(null);
     draft.clear();
@@ -326,6 +337,7 @@ function CounterSalePage() {
         discountPercent,
         payments: paymentsRequest(resolved),
         confirmControlledDrugs: registerItems.length > 0 && confirmControlled,
+        paper: paperSaleOf(paperSale).paper,
         buyer: b2bShown
           ? {
               gstin: buyerGstin.replace(/\s/g, '').toUpperCase(),
@@ -379,6 +391,8 @@ function CounterSalePage() {
   };
 
   const errorItems = isApiError(sell.error) ? itemsFromErrorData(sell.error.data) : [];
+  const paperSaleProblems =
+    paperSaleProblemsOf(sell.error) ?? (paperSale.onPaper ? (paperSaleOf(paperSale).problem ?? undefined) : undefined);
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
   useLeaveGuard({ dirty: cart.length > 0 && done === null, busy: sell.isPending });
@@ -634,6 +648,12 @@ function CounterSalePage() {
               )}
             </div>
           </Section>
+
+          {canSell && (
+            <Section title="Paper sale">
+              <PaperSaleFields value={paperSale} onChange={setPaperSale} problems={paperSaleProblems} />
+            </Section>
+          )}
 
           <Section
             title="Prescription"

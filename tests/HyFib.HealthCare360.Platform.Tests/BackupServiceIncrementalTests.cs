@@ -72,18 +72,20 @@ public sealed class BackupServiceIncrementalTests : IDisposable
     [Fact]
     public async Task The_backup_folder_grows_by_the_new_documents_and_one_archive_a_night()
     {
-        // The brief's "done when": growth of about (new documents + one dump) a night, not (all documents + dump).
+        // The brief's "done when": growth of about (new documents + one dump) a night, not (all documents + dump). Every
+        // night of the 22 is kept, as the newest 30 days' are: nothing expires to make the folder shrink meanwhile.
+        _options.Backup.Retention = new BackupRetentionOptions { Daily = 30, Weekly = 0, Monthly = 0 };
         AddDocuments(20, 20_000);
-        await NightAsync(-21);
+        var first = await NightAsync(-21);
         var previous = FolderBytes(_directories.Backups);
-        long archives = 0;
+        long archives = first.SizeBytes + ListBytes(first);
         for (var night = -20; night <= 0; night++)
         {
             var added = new FileInfo(Path.Combine(_directories.Files, AddDocument(20_000)));
             var result = await NightAsync(night);
             var size = FolderBytes(_directories.Backups);
             var archive = result.SizeBytes;
-            var list = new FileInfo(Path.ChangeExtension(Path.Combine(_directories.Backups, result.FileName), ".refs")).Length;
+            var list = ListBytes(result);
 
             // The new document, the night's archive and its list; the hash cache changes by a few dozen bytes.
             (size - previous).ShouldBeInRange(added.Length + archive + list, added.Length + archive + list + 1_024);
@@ -91,10 +93,13 @@ public sealed class BackupServiceIncrementalTests : IDisposable
             archives += archive + list;
         }
 
-        // 41 documents of 20 kB and 22 archives: what a full copy each night would have taken is 22 times the documents.
+        // 41 documents of 20 kB and 22 archives with their lists: what a full copy each night would have taken is 22 times
+        // the documents. Besides, only the hash cache and the folder's marker and lock.
         BlobBytes(_directories.Backups).ShouldBe(DocumentBytes());
-        FolderBytes(_directories.Backups).ShouldBeLessThan(DocumentBytes() + archives + new FileInfo(Path.Combine(_directories.Backups, BackupHashCache.FileName)).Length + 20_000);
+        FolderBytes(_directories.Backups).ShouldBeLessThan(DocumentBytes() + archives + new FileInfo(Path.Combine(_directories.Backups, BackupHashCache.FileName)).Length + 1_024);
         BlobBytes(Usb).ShouldBe(DocumentBytes());
+
+        long ListBytes(BackupResult result) => new FileInfo(Path.ChangeExtension(Path.Combine(_directories.Backups, result.FileName), ".refs")).Length;
     }
 
     [Fact]
@@ -137,7 +142,8 @@ public sealed class BackupServiceIncrementalTests : IDisposable
     public async Task Unused_documents_leave_both_folders_once_no_kept_archive_needs_them()
     {
         // F14: a document removed from the file store (erased, purged, moved to a new key) leaves the backups once the
-        // last archive that lists it has expired.
+        // last archive that lists it has expired: here, kept 30 days and no weekly or monthly backup.
+        _options.Backup.Retention = new BackupRetentionOptions { Daily = 30, Weekly = 0, Monthly = 0 };
         var kept = AddDocument(5_000);
         var erased = AddDocument(5_000);
         var erasedId = await BackupStore.HashFileAsync(Path.Combine(_directories.Files, erased), Ct);
@@ -356,8 +362,11 @@ public sealed class BackupServiceIncrementalTests : IDisposable
 
         public Task<long> GetDatabaseSizeAsync(CancellationToken ct) => Task.FromResult(1024L);
 
-        public Task DumpAsync(string outputFile, CancellationToken ct) =>
-            File.WriteAllBytesAsync(outputFile, [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(4096)], ct);
+        public async Task<IReadOnlyDictionary<string, long>> DumpAsync(string outputFile, bool lowPriority, CancellationToken ct)
+        {
+            await File.WriteAllBytesAsync(outputFile, [.. "PGDMP"u8, .. RandomNumberGenerator.GetBytes(4096)], ct);
+            return new Dictionary<string, long>(StringComparer.Ordinal);
+        }
 
         public Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct) => Task.FromResult(true);
     }

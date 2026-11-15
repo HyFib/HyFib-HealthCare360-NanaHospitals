@@ -19,14 +19,16 @@ internal sealed record OwnMedicine(Guid StoreId, Guid ItemId, BatchStock Batch)
     /// <summary>
     /// The store keeper adds an over-the-counter tablet that carries GST, as the seeded paracetamol does, and receives
     /// <paramref name="tablets"/> of it into the OP pharmacy at an MRP of <paramref name="mrp"/> a tablet (the seeded
-    /// paracetamol suspension's MRP, so that its tax rounds as before).
+    /// paracetamol suspension's MRP, so that its tax rounds as before). It is named <paramref name="name"/> when the test
+    /// looks for it by name, else "Paracetamol 500 mg Tablet" and six letters of its own.
     /// </summary>
-    public static async Task<OwnMedicine> OnTheShelfAsync(HospitalServer server, ApiClient pharmacist, decimal tablets = 20m, decimal mrp = 32m)
+    public static async Task<OwnMedicine> OnTheShelfAsync(
+        HospitalServer server, ApiClient pharmacist, decimal tablets = 20m, decimal mrp = 32m, string? name = null)
     {
         var storeKeeper = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var store = (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH");
         var itemId = (await storeKeeper.PostAsync<JsonElement>("/api/v1/inventory/items", new SaveItemRequest(
-            Code: $"IT-{Letters(10)}", Name: $"Paracetamol 500 mg Tablet {Letters(6)}", GenericName: "Paracetamol", BrandName: null, Type: ItemType.Drug,
+            Code: $"IT-{Letters(10)}", Name: name ?? $"Paracetamol 500 mg Tablet {Letters(6)}", GenericName: "Paracetamol", BrandName: null, Type: ItemType.Drug,
             CategoryId: null, Strength: "500 mg", DosageForm: "Tablet", PackSize: "Strip of 10", BaseUnit: "TAB", PurchaseUnit: "TAB", PurchaseUnitFactor: 1,
             HsnCode: "300490", GstRate: 5m, Schedule: DrugSchedule.Otc, IsControlled: false, IsColdChain: false, VedClass: VedClass.Essential,
             ReorderLevel: 0, ReorderQuantity: 0, MinimumStock: 0, MaximumStock: 0, Manufacturer: "Test Pharma", Barcode: null, IsActive: true, Version: null)))

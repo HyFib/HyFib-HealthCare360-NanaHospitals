@@ -40,14 +40,14 @@ Assert ($text -match '(?m)^\$IndexBytesPerDocument = 60\r?$') 'and counts 60 byt
 Write-Host 'The model, with the year-3 figures of the readiness doc'
 $GB = [double] 1GB
 $space = Get-BackupSpace (15 * $GB) (274 * $GB) 0 30 35
-Assert (Near $space.ServerFolder (31 * 15 * $GB + 274 * $GB) 1) 'server folder: 31 backups of the dump, and the documents once'
-Assert (Near $space.ServerAfterRotation (31 * 15 * $GB + 548 * $GB) 1) 'after a key rotation: the documents twice'
-Assert (Near $space.UsbDisk (16 * 15 * $GB + 274 * $GB) 1) 'each USB disk: 16 backups (two disks swapped weekly), and the documents once'
+Assert (Near $space.ServerFolder (30 * 15 * $GB + 274 * $GB) 1) 'server folder: 30 backups of the dump (14 days, 8 weeks, 12 months), and the documents once'
+Assert (Near $space.ServerAfterRotation (30 * 15 * $GB + 548 * $GB) 1) 'after a key rotation: the documents twice'
+Assert (Near $space.UsbDisk (30 * 15 * $GB + 274 * $GB) 1) 'each USB disk: as many backups, as retention counts its own, and the documents once'
 Assert (Near $space.Bucket (35 * 15 * $GB + 6 * 274 * $GB) 1) 'bucket: 35 backups and six generations of the documents'
-Assert (Near $space.Before (31 * (15 + 274) * $GB) 1) 'before: every backup with every document'
+Assert (Near $space.Before (30 * (15 + 274) * $GB) 1) 'before: every backup with every document'
 Assert ($space.Before / $space.ServerFolder -gt 10) 'more than ten times the space before'
 $indexed = Get-BackupSpace 0 0 1000000 30 35
-Assert (Near $indexed.ServerFolder (31 * 60000000) 1) 'the index: 60 bytes a document in each kept backup'
+Assert (Near $indexed.ServerFolder (30 * 60000000) 1) 'the index: 60 bytes a document in each kept backup'
 
 Write-Host 'The projection'
 $now = [pscustomobject]@{ DocumentBytes = 0.0; DocumentCount = 0.0; DocumentBytesPerDay = 0.25 * $GB; DocumentsPerDay = 0.0; DumpBytes = 5 * $GB; DumpBytesPerDay = 0.0 }
@@ -55,7 +55,7 @@ $rows = @(Get-SizingProjection $now @(0, 365, 1095) 30 35)
 Assert ($rows.Count -eq 3) 'now, year 1, year 3'
 Assert (Near $rows[1].Documents (365 * 0.25 * $GB) 1) 'year 1: 365 days of documents'
 Assert (Near $rows[2].Documents (1095 * 0.25 * $GB) 1) 'year 3: 1095 days of documents'
-Assert (Near $rows[2].ServerFolder (31 * 5 * $GB + 1095 * 0.25 * $GB) 1) 'a dump that does not grow stays as it is'
+Assert (Near $rows[2].ServerFolder (30 * 5 * $GB + 1095 * 0.25 * $GB) 1) 'a dump that does not grow stays as it is'
 $shrinking = [pscustomobject]@{ DocumentBytes = 0.0; DocumentCount = 0.0; DocumentBytesPerDay = 0.0; DocumentsPerDay = 0.0; DumpBytes = 1 * $GB; DumpBytesPerDay = -1 * $GB }
 Assert ((@(Get-SizingProjection $shrinking @(10) 30 35))[0].Dump -eq 0) 'a dump is never projected below nothing'
 

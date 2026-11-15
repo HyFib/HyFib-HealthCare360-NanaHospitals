@@ -9,16 +9,19 @@ public enum DowntimeNumberKind
     OpBill,
     IpBill,
     Receipt,
+
+    /// <summary>A pharmacy sale written on paper at the counter: its number is the invoice number the sale is entered under.</summary>
+    PharmacySale,
 }
 
 /// <summary>
 /// The series a <see cref="DowntimeNumberKind"/> takes its numbers from, registered by the module that issues them
-/// (visits by Patients, bills and receipts by Billing), so a block reserves from the same series as the desk would.
+/// (visits by Patients, bills and receipts by Billing, pharmacy sales by Pharmacy), so a block reserves from the same series as the desk would.
 /// </summary>
 public sealed record DowntimeNumberSeries(DowntimeNumberKind Kind, NumberSeriesDefinition Series, BackEntryRecord Record, string Name);
 
 /// <summary>
-/// A block of visit, bill or receipt numbers issued ahead of time to one counter of a facility, printed on its downtime
+/// A block of visit, bill, receipt or pharmacy sale numbers issued ahead of time to one counter of a facility, printed on its downtime
 /// pack. While HC360 is down the counter writes each visit slip, bill or receipt under the next number of the block, in
 /// order; when HC360 is back each is entered under the number on the paper (<see cref="DowntimeNumber"/>). The numbers are
 /// reserved from the series at once, so HC360 never issues them again, and a block no longer needed is returned: its
@@ -61,7 +64,7 @@ public sealed class DowntimeNumber : AuditableEntity
 
     public string Number { get; set; } = string.Empty;
 
-    /// <summary>The record entered under it: a visit, a bill or a receipt.</summary>
+    /// <summary>The record entered under it: a visit, a bill, a receipt or a pharmacy sale.</summary>
     public string? EntityType { get; set; }
 
     public Guid? EntityId { get; set; }

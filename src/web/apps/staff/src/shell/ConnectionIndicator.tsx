@@ -21,7 +21,17 @@ import {
   Wifi3Regular,
   WifiWarningRegular,
 } from '@fluentui/react-icons';
-import { connectionHealth, formatLinkSpeed, formatRelative, onCable, useConnection, weakWifiSignal } from '@hc360/core';
+import {
+  checkConnection,
+  connectionHealth,
+  formatLinkSpeed,
+  formatRelative,
+  onCable,
+  serverOutage,
+  serverStatus,
+  useConnection,
+  weakWifiSignal,
+} from '@hc360/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 
@@ -45,6 +55,7 @@ export function ConnectionIndicator() {
   const styles = useStyles();
   const state = useConnection();
   const health = connectionHealth(state);
+  const label = serverStatus(state) === 'database-down' ? 'HealthCare360 database down' : LABELS[health];
   const cable = onCable(state);
   const Icon = cable
     ? health === 'offline'
@@ -63,16 +74,22 @@ export function ConnectionIndicator() {
           appearance="subtle"
           className={styles.pill}
           icon={<Icon className={styles[health]} />}
-          aria-label={`Connection: ${LABELS[health]}`}
+          aria-label={`Connection: ${label}`}
         />
       </PopoverTrigger>
       <PopoverSurface aria-label="Connection details">
         <div className={styles.details}>
           <Text weight="semibold" style={{ gridColumn: '1 / -1' }} className={styles[health]}>
-            {LABELS[health]}
+            {label}
           </Text>
           <Caption1 className={styles.label}>Server</Caption1>
-          <Caption1>{state.serverReachable ? 'Reachable' : 'Not reachable'}</Caption1>
+          <Caption1>
+            {!state.serverReachable
+              ? 'Not reachable'
+              : state.databaseDown
+                ? 'Answering, but its database is not'
+                : 'Reachable'}
+          </Caption1>
           <Caption1 className={styles.label}>Live updates</Caption1>
           <Caption1>
             {state.realtime === 'connected'
@@ -113,15 +130,16 @@ export function ConnectionIndicator() {
 }
 
 /**
- * Full-width banner while the server is unreachable. Work in progress stays on screen. A save whose outcome is not known
- * keeps its idempotency key, so saving it again with the same details cannot save it twice; one changed meanwhile is a
- * new save, so users are told to check first whether the first one was saved.
+ * Full-width banner while the server is unreachable, or answers but its database is down. Work in progress stays on
+ * screen. A save whose outcome is not known keeps its idempotency key, so saving it again with the same details cannot
+ * save it twice; one changed meanwhile is a new save, so users are told to check first whether the first one was saved.
  */
 export function OfflineBanner() {
   const styles = useStyles();
   const state = useConnection();
   const queryClient = useQueryClient();
-  const offline = !state.browserOnline || !state.serverReachable;
+  const offline = serverOutage(state);
+  const databaseDown = serverStatus(state) === 'database-down';
   // On a cable that is up, this computer's own link is fine: what is down is beyond it.
   const beyondThisComputer = state.browserOnline && onCable(state);
   const wasOffline = useRef(false);
@@ -142,24 +160,22 @@ export function OfflineBanner() {
     <MessageBar intent="warning" layout="multiline" className={styles.banner} icon={<PlugDisconnectedRegular />}>
       <MessageBarBody>
         <MessageBarTitle>
-          {state.browserOnline ? 'Cannot reach the HealthCare360 server' : 'This computer is offline'}
+          {databaseDown
+            ? 'HealthCare360 cannot reach its database'
+            : state.browserOnline
+              ? 'Cannot reach the HealthCare360 server'
+              : 'This computer is offline'}
         </MessageBarTitle>
-        {beyondThisComputer
-          ? "This computer's network cable is connected, so the server or the hospital network may be down: tell IT."
-          : "Check this computer's network cable or WiFi."}{' '}
+        {databaseDown
+          ? 'The server answers, but its database does not, so nothing can be opened or saved until it is back: tell IT.'
+          : beyondThisComputer
+            ? "This computer's network cable is connected, so the server or the hospital network may be down: tell IT."
+            : "Check this computer's network cable or WiFi."}{' '}
         Your unsaved work stays on this screen. Saving it again with the same details will not save it twice; if you
         change anything, first check whether it was saved.
       </MessageBarBody>
       <MessageBarActions>
-        <Button
-          icon={<ArrowClockwiseRegular />}
-          onClick={() =>
-            void fetch('/health/live', { cache: 'no-store' }).then(
-              (r) => state.setReachable(r.ok),
-              () => state.setReachable(false),
-            )
-          }
-        >
+        <Button icon={<ArrowClockwiseRegular />} onClick={() => void checkConnection()}>
           Check again
         </Button>
       </MessageBarActions>

@@ -1,8 +1,9 @@
 ﻿<#
 .SYNOPSIS
     Checks how Install-HC360Server.ps1 sets up the database's two accounts (docs/deployment/DEPLOYMENT.md, "Two database
-    accounts"): hc360_owner, which owns the schema, and hc360_app, which the server works as. CI runs it in Windows
-    PowerShell 5.1 and in PowerShell 7, the two the installer runs in.
+    accounts"): hc360_owner, which owns the schema, and hc360_app, which the server works as; and hc360_restore, which
+    the weekly test restores of the backups sign in as (section 8, "Test restores"). CI runs it in Windows PowerShell 5.1
+    and in PowerShell 7, the two the installer runs in.
 
 .DESCRIPTION
     Takes the installer's functions and account names from the script itself (running it would install HC360) and checks
@@ -15,7 +16,8 @@ Set-StrictMode -Version Latest
 $installer = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\deploy\windows\Install-HC360Server.ps1')).Path
 $restore = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..\deploy\windows\Restore-HC360.ps1')).Path
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($installer, [ref] $null, [ref] $null)
-$functions = 'Get-RoleSql', 'Get-RolesSqlArguments', 'New-HospitalConnectionString'
+$functions = 'Get-RoleSql', 'Get-RolesSqlArguments', 'New-HospitalConnectionString', 'Get-RestoreRoleSql', 'New-RestoreTestConnectionString',
+    'Test-LoopbackHost', 'Get-RestoreAccountStep'
 foreach ($function in $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
     if ($functions -contains $function.Name) { . ([scriptblock]::Create($function.Extent.Text)) }
 }
@@ -24,9 +26,9 @@ foreach ($name in $functions) {
 }
 # The account names, as the installer sets them.
 foreach ($assignment in $ast.EndBlock.Statements | Where-Object { $_ -is [System.Management.Automation.Language.AssignmentStatementAst] }) {
-    if (@('$OwnerRole', '$AppRole', '$RolesSqlFile') -contains $assignment.Left.Extent.Text) { . ([scriptblock]::Create($assignment.Extent.Text)) }
+    if (@('$OwnerRole', '$AppRole', '$RolesSqlFile', '$RestoreRole', '$RestoreSetting') -contains $assignment.Left.Extent.Text) { . ([scriptblock]::Create($assignment.Extent.Text)) }
 }
-foreach ($name in 'OwnerRole', 'AppRole', 'RolesSqlFile') {
+foreach ($name in 'OwnerRole', 'AppRole', 'RolesSqlFile', 'RestoreRole', 'RestoreSetting') {
     if (-not (Get-Variable -Name $name -ErrorAction SilentlyContinue)) { throw "Install-HC360Server.ps1 no longer sets `$$name." }
 }
 
@@ -87,10 +89,48 @@ Assert ($owner -like '*Username=hc360_owner;Password=secret2;*') 'ConnectionStri
 Assert ($owner -like '*Maximum Pool Size=5*') 'with a small pool: only start-up and the partition jobs use it'
 Assert ((New-HospitalConnectionString 'localhost' 5432 'hc360' 'hc360_app' $null) -notlike '*Password*') 'without a password (the Windows sign-in), none is written'
 
+Write-Host 'The test restores'' account'
+# The weekly test restores make a scratch database, restore the newest backup into it and drop it: hc360_app may not
+# create databases, so they sign in as an account of their own, which may do that and nothing else.
+Assert ($RestoreRole -eq 'hc360_restore') 'the test restores sign in as hc360_restore'
+Assert (@($OwnerRole, $AppRole) -notcontains $RestoreRole) 'an account of its own'
+$restoreTest = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\..\src\server\HyFib.HealthCare360.Platform\Jobs\BackupRestoreTest.cs') -Raw
+Assert ($RestoreSetting -eq 'ConnectionStrings:BackupRestoreTest' -and $restoreTest.Contains('ConnectionName = "BackupRestoreTest"')) 'its setting is the connection string the server reads'
+
+$made = Get-RestoreRoleSql 'hc360_restore' 'abc-DEF_123' 'hc360'
+Assert ($made -like "*CREATE ROLE hc360_restore LOGIN PASSWORD 'abc-DEF_123'*" -and $made -like "*ALTER ROLE hc360_restore LOGIN PASSWORD 'abc-DEF_123'*") 'a new account is made with its password, or one that exists is given it'
+Assert ($made -like '*ALTER ROLE hc360_restore LOGIN CREATEDB NOSUPERUSER NOCREATEROLE NOREPLICATION NOBYPASSRLS;*') 'it may sign in and create databases, and nothing more'
+Assert ($made -like '*GRANT pg_read_all_settings TO hc360_restore;*') 'it reads PostgreSQL''s settings, to check the disk has room for the restored copy'
+Assert ($made -like '*REVOKE ALL ON DATABASE hc360 FROM hc360_restore;*') 'it may not connect to the hospital''s database'
+Assert ([regex]::Matches($made, '\bGRANT\b').Count -eq 1) 'nothing else is granted'
+Assert ($made -like 'SET client_min_messages TO warning; *') 'quietly: PostgreSQL''s notice of a membership granted before goes to psql''s error output'
+$kept = Get-RestoreRoleSql 'hc360_restore' $null 'hc360'
+Assert ($kept -notlike '*PASSWORD*' -and $kept -like 'SET client_min_messages TO warning; ALTER ROLE hc360_restore LOGIN CREATEDB *') 'without a password, an account that exists keeps its own'
+Assert (Test-Throws { Get-RestoreRoleSql 'hc360_restore' 'abc' 'hc360; DROP DATABASE hc360' } 'letters, digits') 'a database name that could break out of the statement is refused'
+Assert (Test-Throws { Get-RestoreRoleSql 'hc360_restore' "x'; DROP ROLE postgres; --" 'hc360' } 'letters, digits') 'so is such a password'
+Assert (Test-Throws { Get-RestoreRoleSql 'HC360 Restore' 'abc' 'hc360' } 'lower-case letters') 'and an account name that would need quoting'
+
+$restoreConnection = New-RestoreTestConnectionString 'localhost' 5432 'hc360_restore' 'secret3'
+Assert ($restoreConnection -like 'Host=localhost;Port=5432;Database=postgres;Username=hc360_restore;Password=secret3*') 'ConnectionStrings:BackupRestoreTest signs in as hc360_restore, to the maintenance database'
+
+Assert ((Test-LoopbackHost 'localhost') -and (Test-LoopbackHost '127.0.0.1') -and (Test-LoopbackHost '::1') -and (Test-LoopbackHost 'LocalHost')) 'PostgreSQL at localhost is on this machine'
+Assert (-not (Test-LoopbackHost 'hc360-db') -and -not (Test-LoopbackHost '10.0.0.5') -and -not (Test-LoopbackHost '')) 'one at another name is on another server'
+
+Assert ((Get-RestoreAccountStep $true $true $false $true) -eq 'standby') 'none is made on a standby: the primary''s comes with a failover'
+Assert ((Get-RestoreAccountStep $false $false $false $true) -eq 'remote') 'nor on another server, which the installer does not manage'
+Assert ((Get-RestoreAccountStep $false $true $false $true) -eq 'make') 'one is made with the superuser''s password'
+Assert ((Get-RestoreAccountStep $false $true $false $false) -eq 'ask') 'which is asked for when it is not given'
+Assert ((Get-RestoreAccountStep $false $true $true $true) -eq 'check') 'an account set up before is checked, its setting kept'
+Assert ((Get-RestoreAccountStep $false $true $true $false) -eq 'keep') 'and kept as it is without the superuser''s password'
+
 Write-Host 'The installer and Restore-HC360.ps1 use them'
 $installerText = Get-Content -LiteralPath $installer -Raw
 Assert ($installerText -match "CREATE DATABASE \`$DatabaseName OWNER \`$OwnerRole") 'a new database is the owner''s'
 Assert ($installerText -match "'ConnectionStrings:HospitalOwner'") 'the owner''s connection string is written to the settings file'
+Assert ($installerText.Contains('if ($restoreConnectionString) { Set-Setting $settings ''ConnectionStrings:BackupRestoreTest'' $restoreConnectionString -Replace }')) 'the test restores'' connection string is written only when its account was given a new password'
+Assert ($installerText.Contains('$restorePassword = if ($restoreStep -eq ''make'' -or -not $roleExists) { New-RandomSecret } else { $null }')) 'a new password only for a new setting, or for an account PostgreSQL lost'
+Assert ($installerText.Contains('throw "Setting up the database account $RestoreRole failed."')) 'a failure is told without the statement, which holds the password'
+Assert ($installerText.Contains('& $exe settings protect --data-dir $DataDir')) 'and every connection string is protected once written'
 $restoreText = Get-Content -LiteralPath $restore -Raw
 Assert ($restoreText -match "rolname = 'hc360_owner'") 'Restore-HC360.ps1 finds whether the accounts are split'
 Assert ($restoreText -match '--role=\$owner') 'and restores the tables as their owner'

@@ -162,4 +162,13 @@ describe('the privacy notice', () => {
     expect(await screen.findByText('Neha Kulkarni', {}, SLOW)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
+
+  it('states no backup period of its own when the server gives none', async () => {
+    server = createFakeFetch({ ...PORTAL_ANSWERS, 'GET /api/v1/public/privacy': { ...INFO, backupWindowDays: null } });
+    vi.stubGlobal('fetch', vi.fn(server.fetch));
+    open('/portal/privacy', false);
+    expect(await screen.findByText('Neha Kulkarni', {}, SLOW)).toBeInTheDocument();
+    expect(screen.queryByText('Erased data and backups')).not.toBeInTheDocument();
+    expect(screen.queryByText(/copies stay in our encrypted backups/)).not.toBeInTheDocument();
+  });
 });

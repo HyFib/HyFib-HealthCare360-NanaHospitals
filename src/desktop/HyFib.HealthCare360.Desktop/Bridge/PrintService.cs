@@ -13,6 +13,11 @@ internal sealed record PrintHtmlRequest(string Html, string? PrinterName, bool? 
 /// disabled. Silent jobs go straight to the printer they name, which is what counters and wards need (the staff app
 /// names the printer this computer uses for that kind of print). A silent job that names no printer gets the Windows
 /// print dialog, so nothing is printed on whichever printer happens to be the Windows default.
+/// <para>
+/// The spooler accepts a job for a paused or offline printer and holds it, so a job accepted is not a job on paper. Once
+/// it is accepted the printer's state is read (<see cref="PrinterStatus"/>), and a printer that is paused, offline or
+/// reporting a fault is told to the screen as a queued job (<see cref="PrintOutcome"/>), not as a print.
+/// </para>
 /// </summary>
 internal sealed class PrintService(CoreWebView2Environment environment, IntPtr ownerWindow)
 {
@@ -73,7 +78,7 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
                        : $"The printer '{name}' is not installed on this computer.");
     }
 
-    public async Task PrintHtmlAsync(PrintHtmlRequest request)
+    public async Task<PrintOutcome> PrintHtmlAsync(PrintHtmlRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Html) || request.Html.Length > 1_500_000)
         {
@@ -88,6 +93,7 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
         // One job at a time keeps slips from interleaving on shared counter printers.
         await _gate.WaitAsync();
         CoreWebView2Controller? controller = null;
+        PrintOutcome outcome;
         try
         {
             controller = await environment.CreateCoreWebView2ControllerAsync(ownerWindow);
@@ -128,12 +134,23 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
                         status == CoreWebView2PrintStatus.PrinterUnavailable ? "printer_unavailable" : "print_failed",
                         status == CoreWebView2PrintStatus.PrinterUnavailable ? "The printer is offline or out of paper." : "Printing failed.");
                 }
+
+                // The spooler took the job. Whether it can reach paper is the queue's state, read now.
+                var condition = await Task.Run(() => PrinterStatus.Read(request.PrinterName!)) ?? PrinterCondition.Ready;
+                outcome = PrinterStatus.Outcome(request.PrinterName, condition);
             }
             else
             {
+                var opened = DateTime.UtcNow;
                 view.ShowPrintUI(CoreWebView2PrintDialogKind.System);
                 // The system dialog runs on its own; keep the document alive long enough to spool.
                 await Task.Delay(TimeSpan.FromSeconds(30));
+
+                // The printer was the person's to choose: those that took a job while the dialog was open are the ones to ask.
+                var installed = PrinterSettings.InstalledPrinters.Cast<string>().ToList();
+                var received = await Task.Run(() => PrinterStatus.ReceivingJobsSince(installed, opened));
+                var worst = PrinterStatus.Worst(received.Select(r => r.Condition));
+                outcome = PrinterStatus.Outcome(received.Count == 1 ? received[0].Printer : null, worst);
             }
         }
         finally
@@ -141,5 +158,12 @@ internal sealed class PrintService(CoreWebView2Environment environment, IntPtr o
             controller?.Close();
             _gate.Release();
         }
+
+        if (outcome.Status != PrintOutcome.Printed)
+        {
+            Log.Warning("Print to {Printer} queued but not printing: {Status}", outcome.Printer ?? "(chosen in the dialog)", outcome.Status);
+        }
+
+        return outcome;
     }
 }

@@ -67,6 +67,19 @@ export interface PrintHtmlRequest {
   landscape?: boolean;
 }
 
+/**
+ * How HC360 Desktop's print ended. `printed`: the printer took the job. `queued_printer_paused`, `queued_printer_offline` and
+ * `queued_printer_needs_attention`: Windows accepted the job, but it will not reach paper until someone resumes the printer,
+ * brings it back online or clears its fault (`message` says which, in words for the person; `printer` names it, or is null
+ * when the person chose it in the Windows dialog and it is not known). These are not failures, the job is not lost, but the
+ * screen must not say "printed". An HC360 Desktop older than this returns nothing, which is a `printed`.
+ */
+export interface PrintOutcome {
+  status: 'printed' | 'queued_printer_paused' | 'queued_printer_offline' | 'queued_printer_needs_attention';
+  printer: string | null;
+  message: string | null;
+}
+
 /** The kinds of print a workstation gives a printer to. */
 export type PrinterRole = 'labels' | 'wristbands' | 'receipts' | 'documents';
 
@@ -253,7 +266,7 @@ export const bridge = {
   getScannerSetup: () => invoke<ScannerSetupInfo>('scanner.getSetup'),
   /** Saves this computer's serial scanner for everyone who uses it and listens to it; returns what was saved. */
   saveScannerSetup: (setup: WorkstationScanner) => invoke<WorkstationScanner>('scanner.saveSetup', { setup }),
-  printHtml: (request: PrintHtmlRequest) => invoke<void>('printer.printHtml', request, 60_000),
+  printHtml: (request: PrintHtmlRequest) => invoke<PrintOutcome | null>('printer.printHtml', request, 60_000),
   printRaw: (printerName: string, data: string) => invoke<void>('printer.printRaw', { printerName, data }),
   openExternal: (url: string) => invoke<void>('shell.openExternal', { url }),
   notify: (title: string, body: string) => invoke<void>('notifications.show', { title, body }),

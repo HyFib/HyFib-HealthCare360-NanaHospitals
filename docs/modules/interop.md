@@ -48,7 +48,7 @@ Integration partners (a referral hospital, a health information exchange) get th
 3. Assign the user to **one** facility: the partner reads that facility's records and patients only (#251, decided
    by the hospital), whatever a patient's consent says. A request from an account assigned to no facility, or from a
    session at a facility it is not assigned to, is refused with 403 `facility-required` before anything is looked up
-   (an account assigned to none may sign in at any facility, so it is no facility's partner). What "the facility's"
+   (an account given all facilities may sign in at any facility, so it is no facility's partner). What "the facility's"
    means for each kind of record:
    * visits, encounters, orders, lab results and reports, imaging and cardiology reports, prescriptions, discharge
      summaries, clinical notes, procedures, home readings, wards, rooms and beds: recorded there (platform facility
@@ -94,6 +94,8 @@ the `oauth-uris` extension).
 * **Consent still applies on every read**: a token signs the request in as its account, so the account's
   `fhir.read`, its facility and each patient's record-sharing consent (who may read, purpose, kinds, dates, until)
   decide exactly as for a session; scopes only narrow.
+* **Where**: on the staff app's address only, never the patient portal's: an app's authorization signs a staff member in
+  on the staff app, and the FHIR API reads as a staff account. A partner outside the hospital connects over a VPN.
 * **Tokens**: opaque, 15 minutes, stored as SHA-256, accepted by the FHIR API only. `POST /oauth2/introspect` (RFC 7662)
   and `POST /oauth2/revoke` (RFC 7009) answer the client the token was issued to (an assertion, or a public app's
   `client_id` for revocation). No refresh tokens are issued: an app asks again, a service mints a new assertion.
@@ -885,6 +887,14 @@ sees it in their PHR app without anyone doing anything (`AbdmAutoLinking`):
     linked to the patient's ABHA automatically: 1", with no user and `automatic: true`.
 * What the gateway answers, and a request it does not answer, are handled as for staff's requests; a refusal is not
   retried by the job.
+* A gateway that cannot be reached (`abdm.gateway_unreachable`: the hospital's internet is down) is retried. Nothing
+  reached ABDM, so sending again cannot link a record twice. The failed request stays on the patient's list, marked
+  failed, and the job is queued again 2 minutes later, then twice as long each time up to 2 hours: 8 tries in all, the
+  last some four hours after the first. When the last one fails (or the message's two days end first) the holders of
+  `abdm.export` at the facility get one in-app warning, "A record was not linked to the patient's ABHA", naming the
+  kind of record (never the patient) and linking to the patient's chart, where the failed request can be sent again
+  with Retry once the internet is back. `AbdmAutoLinkRetryTests` covers a transient failure that then succeeds, the
+  doubling waits and the single alert.
 * Not linked automatically, though staff may link them: cardiology reports, clinical notes, vaccine doses, bills, home
   readings, in-patient notes and prescriptions, and records completed before ABDM, the gateway or `autoLink` was
   switched on (nothing is linked backwards).
@@ -1177,7 +1187,7 @@ They are anonymous at the HTTP level and checked by the gateway's signed bearer 
 401 when it is missing, forged or expired. They answer 503 `feature.disabled` while the ABDM switch is off, 404 while
 the gateway is off or not set up, 422 for a body that is not the expected JSON, and 202 otherwise, also for an answer to no request of this hospital's,
 which is logged and ignored. Bodies are limited to 64 KB and requests to the partners' rate limit per client address
-(1,200 a minute by default, `HealthCare360:RateLimits:Partner`), apart from the public limit on QR codes and links. The hospital's public address for these paths is registered with NHA as the HIP's callback URL.
+(1,200 a minute by default, `HealthCare360:RateLimits:Partner`), apart from the public limit on QR codes and links. The hospital's public address for these paths is registered with NHA as the HIP's callback URL: the patient portal's, the one address a hospital opens to the internet, where they answer as on the staff app's (`ListenerPaths`; DEPLOYMENT.md, "Network checklist").
 
 `HttpAbdmGatewayClientTests` checks each call against NHA's wrapper (paths, headers, bodies, the session's reuse and
 renewal, both error shapes, no retry) and what each writes to the integration log (no token, ABHA detail or name);

@@ -237,7 +237,7 @@ describe('useFormDraft', () => {
     await keptOnComputer('asha');
     asha.unmount();
 
-    // Not offered on another admission's note, nor to another nurse on the same computer…
+    // Not offered on another admission's note, nor to another nurse who signs in on the same computer…
     const other = openNote('nursing-note:adm-2');
     expect(other.result.current.draft.saved).toBeNull();
     other.unmount();
@@ -248,11 +248,12 @@ describe('useFormDraft', () => {
     wait(4_000);
     ravi.unmount();
 
-    // …whose own draft of it leaves Asha's as it was.
-    expect(stored('ravi')?.value.note).toBe("Ravi's note");
+    // …whose sign-in takes Asha's away, kept for her alone, and whose own draft is his.
+    expect(localStorage.getItem(draftStorageKey('asha', ADMISSION_NOTE))).toBeNull();
     await keptOnComputer('ravi');
-    await signIn('asha');
-    expect(openNote().result.current.draft.saved?.value.note).toBe("Asha's note");
+    closeDrafts();
+    await signIn('ravi');
+    expect(openNote().result.current.draft.saved?.value.note).toBe("Ravi's note");
   });
 
   it('keeps no clinical text on this computer, only what its user’s key opens (audit P10)', async () => {
@@ -266,12 +267,26 @@ describe('useFormDraft', () => {
     expect(onComputer()).not.toContain('GCS 14');
   });
 
-  it('is offered after HC360 crashes, once its user signs in again, and to nobody else', async () => {
+  it('is offered after HC360 crashes, once its user signs in again', async () => {
     const before = openNote();
     type(before, 'Patient drowsy, GCS 14');
     wait(4_000);
     await keptOnComputer('asha');
-    // HC360 Desktop crashes: what it held in memory is gone, and Ravi signs in on the same Windows account.
+    // HC360 Desktop crashes: what it held in memory is gone.
+    before.unmount();
+    closeDrafts();
+
+    await signIn('asha');
+
+    expect(openNote().result.current.draft.saved?.value.note).toBe('Patient drowsy, GCS 14');
+  });
+
+  it('is offered to nobody else after a crash, and goes when another user signs in', async () => {
+    const before = openNote();
+    type(before, 'Patient drowsy, GCS 14');
+    wait(4_000);
+    await keptOnComputer('asha');
+    // HC360 Desktop crashes, and Ravi signs in on the same Windows account.
     before.unmount();
     closeDrafts();
     await signIn('ravi');
@@ -280,7 +295,25 @@ describe('useFormDraft', () => {
     closeDrafts();
     await signIn('asha');
 
-    expect(openNote().result.current.draft.saved?.value.note).toBe('Patient drowsy, GCS 14');
+    expect(openNote().result.current.draft.saved).toBeNull();
+    expect(localStorage.getItem(draftStorageKey('asha', ADMISSION_NOTE))).toBeNull();
+  });
+
+  it('survives a session the server ended during an outage, and is offered once its user signs in again', async () => {
+    const note = openNote();
+    type(note, 'Wound dressing changed');
+    wait(4_000);
+    await keptOnComputer('asha');
+    note.unmount();
+    // The server comes back after hours down and says the session is over: nobody signed out.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 401 })));
+
+    expect(await auth.refresh()).toBeNull();
+
+    expect(useSession.getState().status).toBe('anonymous');
+    expect(onComputer()).not.toContain('Wound dressing changed');
+    await signIn('asha');
+    expect(openNote().result.current.draft.saved?.value.note).toBe('Wound dressing changed');
   });
 
   it('is offered by a form opened before its user’s drafts were', async () => {

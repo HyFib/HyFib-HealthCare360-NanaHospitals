@@ -164,6 +164,35 @@ public sealed class AdministrationOnDesktopTests
         (await AuthorizeAsync(Browser(), PlatformPermissions.DevicesManage, Endpoint(FirstDesktopEnrolment.Instance))).HasFailed.ShouldBeTrue();
     }
 
+    // The approvals inbox learns the permission a decision needs from the kind of change, so it asks the gate itself: it
+    // must hear what an endpoint needing that permission would.
+    [Fact]
+    public async Task Code_that_checks_a_permission_as_it_runs_is_told_what_an_endpoint_would_decide()
+    {
+        Holds(PlatformPermissions.GrantsApprove, PatientsRead);
+        var gate = new PermissionGate(_permissions, _desktops);
+
+        (await gate.CheckAsync(Browser(), [PlatformPermissions.GrantsApprove], cancellationToken: TestContext.Current.CancellationToken))
+            .ShouldBe(PermissionVerdict.DesktopRequired);
+        (await gate.CheckAsync(Desktop(), [PlatformPermissions.GrantsApprove], cancellationToken: TestContext.Current.CancellationToken))
+            .ShouldBe(PermissionVerdict.Allowed);
+        (await gate.CheckAsync(Browser(), [PatientsRead], cancellationToken: TestContext.Current.CancellationToken))
+            .ShouldBe(PermissionVerdict.Allowed);
+        (await gate.CheckAsync(Desktop(), [PlatformPermissions.UsersManage], cancellationToken: TestContext.Current.CancellationToken))
+            .ShouldBe(PermissionVerdict.NotHeld);
+    }
+
+    [Fact]
+    public async Task A_restricted_token_is_told_it_holds_nothing_even_on_a_desktop()
+    {
+        Holds(PermissionRegistry.Wildcard);
+
+        var verdict = await new PermissionGate(_permissions, _desktops)
+            .CheckAsync(Desktop(new Claim(HcClaims.Restriction, "password-change")), [PlatformPermissions.GrantsApprove], cancellationToken: TestContext.Current.CancellationToken);
+
+        verdict.ShouldBe(PermissionVerdict.NotHeld);
+    }
+
     [Fact]
     public void A_browser_is_given_every_permission_but_the_administrative_ones()
     {
@@ -210,7 +239,7 @@ public sealed class AdministrationOnDesktopTests
     private async Task<AuthorizationHandlerContext> AuthorizeAsync(ClaimsPrincipal user, string[] anyOf, HttpContext? resource)
     {
         var context = new AuthorizationHandlerContext([new PermissionRequirement(anyOf)], user, resource);
-        await new PermissionAuthorizationHandler(_permissions, _desktops).HandleAsync(context);
+        await new PermissionAuthorizationHandler(new PermissionGate(_permissions, _desktops)).HandleAsync(context);
         return context;
     }
 

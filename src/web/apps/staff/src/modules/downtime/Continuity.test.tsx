@@ -1,12 +1,12 @@
 import { FluentProvider, webLightTheme } from '@fluentui/react-components';
-import { useConnection } from '@hc360/core';
+import { useConnection, useSession, type AuthUser } from '@hc360/core';
 import { expectNoAxeViolations } from '@hc360/ui/testing';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useOfflineCopy } from '@/lib/offline/offlineCopy';
+import { useOfflineCopy, type OfflineWorklist } from '@/lib/offline/offlineCopy';
 import { OfflineCopyBanner } from '@/shell/OfflineCopy';
 import type * as ContinuityApi from './continuityApi';
 import type * as PackPrint from './packPrint';
@@ -54,8 +54,9 @@ beforeAll(() => {
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => {
-  useConnection.setState({ browserOnline: true, serverReachable: true });
-  useOfflineCopy.setState({ takenAt: null, pack: null, worklists: [] });
+  useConnection.setState({ browserOnline: true, serverReachable: true, databaseDown: false });
+  useOfflineCopy.setState({ userId: null, takenAt: null, pack: null, worklists: [] });
+  useSession.setState({ user: null });
 });
 
 function wrap(children: ReactNode) {
@@ -256,16 +257,48 @@ describe('late back-entry', () => {
   });
 });
 
+const nurse = (id: string): AuthUser => ({
+  id,
+  userName: id,
+  displayName: id,
+  type: 'staff',
+  facilityId: null,
+  facilityName: null,
+  practitionerId: null,
+  patientId: null,
+  roles: ['Nurse'],
+  permissions: [],
+  facilities: [],
+  mfaEnabled: false,
+  hasPin: true,
+  mustChangePassword: false,
+  restriction: null,
+});
+
+/** The copy as the app holds it for the nurse signed in. */
+function holdCopy(copy: { takenAt: number; pack: DowntimePack | null; worklists: OfflineWorklist[] }): void {
+  useSession.setState({ user: nurse('u-asha') });
+  useOfflineCopy.setState({ userId: 'u-asha', ...copy });
+}
+
 describe('the read-only offline copy', () => {
   it('shows nothing while the server can be reached', () => {
-    useOfflineCopy.setState({ takenAt: Date.now(), pack: PACK, worklists: [] });
+    holdCopy({ takenAt: Date.now(), pack: PACK, worklists: [] });
     render(wrap(<OfflineCopyBanner />));
     expect(screen.queryByText(/Read-only copy/)).not.toBeInTheDocument();
   });
 
+  it('is offered when the server answers but its database is down, as when it cannot be reached', async () => {
+    holdCopy({ takenAt: Date.now(), pack: PACK, worklists: [] });
+    act(() => useConnection.setState({ serverReachable: true, databaseDown: true }));
+    render(wrap(<OfflineCopyBanner />));
+    await userEvent.click(screen.getByRole('button', { name: 'Open the offline copy' }));
+    expect(await screen.findByRole('dialog', { name: 'Offline copy (read only)' })).toBeInTheDocument();
+  });
+
   it('says how old the copy is when the server cannot be reached, and opens it with nothing to save', async () => {
     const takenAt = Date.parse('2026-11-08T08:00:00Z');
-    useOfflineCopy.setState({
+    holdCopy({
       takenAt,
       pack: PACK,
       worklists: [
@@ -294,7 +327,7 @@ describe('the read-only offline copy', () => {
     // The pack was made at 02:05, the nightly one; the copy was fetched at 14:30, when the screen went dark.
     const generatedAt = '2026-11-14T02:05:00+05:30';
     const fetchedAt = Date.parse('2026-11-14T14:30:00+05:30');
-    useOfflineCopy.setState({ takenAt: fetchedAt, pack: { ...PACK, kind: 'Nightly', generatedAt }, worklists: [] });
+    holdCopy({ takenAt: fetchedAt, pack: { ...PACK, kind: 'Nightly', generatedAt }, worklists: [] });
     act(() => useConnection.setState({ serverReachable: false }));
     render(wrap(<OfflineCopyBanner now={() => fetchedAt + 20 * 60_000} />));
     expect(screen.getByText(/ward sheets and medicines as of 14 Nov 2026, 2:05 am/)).toBeInTheDocument();
@@ -305,7 +338,7 @@ describe('the read-only offline copy', () => {
 
   it('does not warn about medicines while the pack is less than an hour old', () => {
     const fetchedAt = Date.parse('2026-11-14T14:30:00+05:30');
-    useOfflineCopy.setState({
+    holdCopy({
       takenAt: fetchedAt,
       pack: { ...PACK, kind: 'Refreshed', generatedAt: '2026-11-14T14:10:00+05:30' },
       worklists: [],
@@ -320,5 +353,14 @@ describe('the read-only offline copy', () => {
     act(() => useConnection.setState({ serverReachable: false }));
     render(wrap(<OfflineCopyBanner />));
     expect(screen.getByText('No offline copy on this computer')).toBeInTheDocument();
+  });
+
+  it('is not shown to another user signed in on the same computer', () => {
+    holdCopy({ takenAt: Date.now(), pack: PACK, worklists: [] });
+    useSession.setState({ user: nurse('u-ravi') });
+    act(() => useConnection.setState({ serverReachable: false }));
+    render(wrap(<OfflineCopyBanner />));
+    expect(screen.getByText('No offline copy on this computer')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open the offline copy' })).not.toBeInTheDocument();
   });
 });

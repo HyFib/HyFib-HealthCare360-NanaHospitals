@@ -6,7 +6,7 @@ using HyFib.HealthCare360.Platform.Numbering;
 namespace HyFib.HealthCare360.Modules.Patients.Services;
 
 /// <summary>
-/// Downtime visit, bill and receipt numbers (NABH IMS, continuity when HC360 is down), as downtime UHIDs work
+/// Downtime visit, bill, receipt and pharmacy sale numbers (NABH IMS, continuity when HC360 is down), as downtime UHIDs work
 /// (<see cref="DowntimeUhidService"/>): blocks issued ahead to a facility's counters, consumed in order on paper, entered
 /// under the number on the paper when HC360 is back, never issued again; the numbers not used are voided, one by one or
 /// by returning the block.

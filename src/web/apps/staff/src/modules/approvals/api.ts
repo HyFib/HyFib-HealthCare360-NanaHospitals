@@ -38,23 +38,14 @@ export interface ApprovalRequestDto {
   decidedByName: string | null;
   decidedAt: string | null;
   decisionNote: string | null;
-  /** What the approval made (a credit note's number), or why the change could not be made. */
+  /**
+   * What the approval made (a credit note's number), or why the change could not be made. Never a secret: an approved
+   * temporary password goes to the account's holder, and this says only where.
+   */
   outcome: string | null;
   canDecide: boolean;
   canWithdraw: boolean;
   version: number;
-  /**
-   * In the answer to an approval only, never again: a secret the approval made for the person who approved it to hand
-   * over in person (the temporary password of an account with no mobile number or e-mail address to send it to).
-   */
-  handover?: ApprovalHandover | null;
-}
-
-/** A secret handed to the approver once: what it is for, the secret, and when it stops working. */
-export interface ApprovalHandover {
-  label: string;
-  secret: string;
-  expiresAt: string | null;
 }
 
 export interface ApprovalFilters {

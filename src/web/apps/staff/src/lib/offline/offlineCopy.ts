@@ -33,6 +33,8 @@ export const PACK_SLOT = 'pack';
 export const REFRESH_MS = 15 * 60 * 1000;
 
 interface OfflineCopyState {
+  /** Whose copy is in hand: it is shown to nobody else. */
+  userId: string | null;
   /**
    * When the copy in hand was fetched (ms), or null when there is none. That is the age of the worklists only: the ward
    * sheets and medicines are as old as the pack itself (its `generatedAt`), which can be hours older.
@@ -42,7 +44,17 @@ interface OfflineCopyState {
   worklists: OfflineWorklist[];
 }
 
-export const useOfflineCopy = create<OfflineCopyState>(() => ({ takenAt: null, pack: null, worklists: [] }));
+const NO_COPY: OfflineCopyState = { userId: null, takenAt: null, pack: null, worklists: [] };
+
+export const useOfflineCopy = create<OfflineCopyState>(() => NO_COPY);
+
+/** The user's copy in hand, or null when there is none of theirs. */
+export function copyOf(state: OfflineCopyState, userId: string | null | undefined): OfflineCopyState | null {
+  return state.takenAt !== null && userId && state.userId === userId ? state : null;
+}
+
+/** Whose copy the computer holds: kept beside it (it is only an id), so another user's sign-in finds it to wipe it. */
+const OWNER_KEY = 'hc360:offline-owner';
 
 export interface OfflineCopyDeps {
   backend: VaultBackend | null;
@@ -56,12 +68,21 @@ let owner: string | null = null;
 
 const aad = (userId: string, slot: string) => `${userId}:${slot}`;
 
-/** The user's key has come: derive the offline key and keep it for this tab. */
-export async function openOfflineCopy(userId: string, serverKey: string): Promise<void> {
+/**
+ * The user's key has come: derive the offline key and keep it for this tab. Another user's copy, on the computer or in
+ * hand, is wiped first: a different user signing in on this computer never inherits it.
+ */
+export async function openOfflineCopy(userId: string, serverKey: string, backend: VaultBackend | null): Promise<void> {
+  const previous = keptOwner() ?? owner ?? useOfflineCopy.getState().userId;
+  if (previous !== null && previous !== userId) {
+    await clearOfflineCopy(backend);
+  }
+  keepOwner(userId);
   try {
-    key = await deriveOfflineKey(serverKey, userId);
+    const derived = await deriveOfflineKey(serverKey, userId);
+    key = derived;
     owner = userId;
-    await rememberKeyForTab(key);
+    await rememberKeyForTab(derived);
   } catch {
     // No WebCrypto: no copy is kept.
     key = null;
@@ -80,8 +101,9 @@ export async function takeOfflineCopy(deps: OfflineCopyDeps): Promise<boolean> {
   const at = (deps.now ?? Date.now)();
   const sealedWith = key;
   const userId = owner;
+  const held = copyOf(useOfflineCopy.getState(), userId) ?? NO_COPY;
   let taken = false;
-  let pack: DowntimePack | null = useOfflineCopy.getState().pack;
+  let pack: DowntimePack | null = held.pack;
   try {
     pack = (await deps.fetchJson('/api/v1/downtime/pack/latest')) as DowntimePack;
     await deps.backend?.put(PACK_SLOT, await seal(sealedWith, aad(userId, PACK_SLOT), pack, at));
@@ -99,27 +121,28 @@ export async function takeOfflineCopy(deps: OfflineCopyDeps): Promise<boolean> {
       worklists.push(copy);
       taken = true;
     } catch {
-      const held = useOfflineCopy.getState().worklists.find((w) => w.slot === list.slot);
-      if (held) {
-        worklists.push(held);
+      const kept = held.worklists.find((w) => w.slot === list.slot);
+      if (kept) {
+        worklists.push(kept);
       }
     }
   }
   if (taken && owner === userId) {
-    useOfflineCopy.setState({ takenAt: at, pack, worklists });
+    useOfflineCopy.setState({ userId, takenAt: at, pack, worklists });
   }
   return taken;
 }
 
 /**
  * Opens the kept copy when the one in memory is gone (the tab was reloaded while HC360 is down): with the key kept for
- * this tab. Answers whether a copy is now in hand.
+ * this tab. Answers whether a copy of the user's is now in hand.
  */
 export async function readKeptCopy(userId: string, backend: VaultBackend | null): Promise<boolean> {
-  if (useOfflineCopy.getState().takenAt !== null) {
+  if (copyOf(useOfflineCopy.getState(), userId)) {
     return true;
   }
-  const sealedWith = key ?? (await keyFromTab());
+  useOfflineCopy.setState(NO_COPY);
+  const sealedWith = (owner === userId ? key : null) ?? (await keyFromTab());
   if (!sealedWith || !backend) {
     return false;
   }
@@ -138,16 +161,20 @@ export async function readKeptCopy(userId: string, backend: VaultBackend | null)
   if (takenAt === null) {
     return false;
   }
-  useOfflineCopy.setState({ takenAt, pack, worklists });
+  useOfflineCopy.setState({ userId, takenAt, pack, worklists });
   return true;
 }
 
-/** Sign-out: the copy is wiped from memory, from the computer and from the tab, and the cached app shell with it. */
+/**
+ * Sign-out, or another user's sign-in: the copy is wiped from memory, from the computer and from the tab, and the cached
+ * app shell with it.
+ */
 export async function clearOfflineCopy(backend: VaultBackend | null): Promise<void> {
   key = null;
   owner = null;
   forgetKeyForTab();
-  useOfflineCopy.setState({ takenAt: null, pack: null, worklists: [] });
+  forgetOwner();
+  useOfflineCopy.setState(NO_COPY);
   try {
     await backend?.clear();
   } catch {
@@ -163,6 +190,30 @@ export async function clearOfflineCopy(backend: VaultBackend | null): Promise<vo
     }
   } catch {
     // No Cache Storage.
+  }
+}
+
+function keptOwner(): string | null {
+  try {
+    return localStorage.getItem(OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function keepOwner(userId: string): void {
+  try {
+    localStorage.setItem(OWNER_KEY, userId);
+  } catch {
+    // No storage: nothing is kept on the computer either.
+  }
+}
+
+function forgetOwner(): void {
+  try {
+    localStorage.removeItem(OWNER_KEY);
+  } catch {
+    // Nothing kept.
   }
 }
 

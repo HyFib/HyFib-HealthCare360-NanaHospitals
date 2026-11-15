@@ -37,6 +37,12 @@ export interface ApiClientConfig {
   /** Reports reachability so the UI can show the WiFi/server banner. */
   onReachability?: (reachable: boolean) => void;
   /**
+   * Called when the server answers with a failure of its own that names no reason: a 500, or a 502 to 504 without a
+   * problem code of the server's (`isServerDecision`). Every request is answered so while the server's database is down,
+   * so the app asks the server whether it is ready (`noteServerFailure`). The request still fails.
+   */
+  onServerFailure?: () => void;
+  /**
    * Called when the server refuses a request because an administrator switched its feature off (`feature.disabled`),
    * with the feature it names, so the app can explain instead of showing an error. The request still fails.
    */
@@ -123,6 +129,8 @@ const STILL_RUNNING_NEW_KEY =
  *   (Retry-After) and is sent again, a few times;
  * - transient failures (network, 502/503/504) are retried with exponential backoff + jitter, and so is an answer lost
  *   while it arrived: the server kept it under the key;
+ * - a server failure that names no reason is reported (`onServerFailure`): an answer counts as the server being
+ *   reachable, but while its database is down every answer is such a failure;
  * - a 401 triggers one token refresh and replay; a 423 (the screen is locked) does not: a read waits until the screen
  *   is unlocked and is then sent again, so the screens behind the lock keep what they show (SRS UX-11), and a write
  *   fails, to be made again once unlocked;
@@ -253,8 +261,13 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         throw await toApiError(response);
       }
 
-      // A gateway that gave no answer of the server's own may have passed the request on.
-      const gatewayFailure = RETRYABLE_STATUS.has(response.status) && !(await isServerDecision(response));
+      // A failure that names no reason: the server's database may be down, or (502 to 504) a gateway that gave no answer
+      // of the server's own may have passed the request on.
+      const unexplainedFailure = response.status >= 500 && !(await isServerDecision(response));
+      if (unexplainedFailure) {
+        config.onServerFailure?.();
+      }
+      const gatewayFailure = unexplainedFailure && RETRYABLE_STATUS.has(response.status);
       if (gatewayFailure && retryable) {
         await delay(backoff(attempt++, response.headers.get('Retry-After')));
         continue;

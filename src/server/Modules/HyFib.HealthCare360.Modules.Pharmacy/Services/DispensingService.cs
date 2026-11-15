@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
@@ -83,6 +84,9 @@ public sealed class DispensingService(
     CashLimit cashLimit,
     IEInvoiceQueue einvoices,
     ICounterTerminal terminal,
+    DowntimeNumberService downtimeNumbers,
+    BackEntryService backEntry,
+    IAuditLogger audit,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -223,7 +227,11 @@ public sealed class DispensingService(
             DiscountPercent = free is null ? request.DiscountPercent : 0m,
             FreeTreatmentReason = free,
         };
-        sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
+        var numbered = await NumberAsync(sale, request.Paper, entry.PatientId, now, ct);
+        if (numbered.IsFailure)
+        {
+            return numbered.Error!;
+        }
 
         var reference = new StockReference(PharmacyStockReferences.Dispense, sale.Id, sale.InvoiceNumber);
         var issued = await stock.IssueAsync(
@@ -262,7 +270,7 @@ public sealed class DispensingService(
             }
         }
 
-        var completed = sale.Complete(request.Payments, creditAllowed: true, now, currentUser.UserId);
+        var completed = sale.Complete(request.Payments, creditAllowed: true, sale.SoldAt, currentUser.UserId);
         if (completed.IsFailure)
         {
             return completed.Error!;
@@ -277,7 +285,7 @@ public sealed class DispensingService(
         sale.MarkDispensed(null);
         db.Add(sale);
         register.Record(sale.FacilityId, issued.Value.Movements, StockMovementType.Dispense, inward: false, reference,
-            PharmacyLookups.Party(patient, null, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, now);
+            PharmacyLookups.Party(patient, null, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, sale.SoldAt);
 
         var saved = await stock.SaveAsync(ct);
         if (saved.IsFailure)
@@ -374,7 +382,12 @@ public sealed class DispensingService(
             SoldByUserId = currentUser.UserId,
             DiscountPercent = request.DiscountPercent,
         };
-        sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
+        var numbered = await NumberAsync(sale, request.Paper, patient?.Id, now, ct);
+        if (numbered.IsFailure)
+        {
+            return numbered.Error!;
+        }
+
         if (request.Buyer is { } buyer)
         {
             var facilityGstin = await db.Set<Facility>().Where(f => f.Id == sale.FacilityId).Select(f => f.Gstin).FirstOrDefaultAsync(ct);
@@ -407,7 +420,7 @@ public sealed class DispensingService(
             sale.Items.Add(PharmacyLookups.SaleItem(sale.Id, items[moved.ItemId], moved, request.DiscountPercent, sale.IsInterState));
         }
 
-        var completed = sale.Complete(request.Payments, creditAllowed: patient is not null, now, currentUser.UserId);
+        var completed = sale.Complete(request.Payments, creditAllowed: patient is not null, sale.SoldAt, currentUser.UserId);
         if (completed.IsFailure)
         {
             return completed.Error!;
@@ -428,7 +441,11 @@ public sealed class DispensingService(
         }
 
         register.Record(sale.FacilityId, issued.Value.Movements, StockMovementType.Sale, inward: false, reference,
-            PharmacyLookups.Party(patient, customerName, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, now);
+            PharmacyLookups.Party(patient, customerName, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, sale.SoldAt);
+
+        // A paper sale against an e-prescription that is waiting in the queue is that prescription's dispensing: it is closed
+        // here, so it is not offered, and dispensed, a second time.
+        var closedOnPaper = request.Paper is null ? null : await CloseOnPaperAsync(sale, patient?.Id, now, ct);
 
         var saved = await stock.SaveAsync(ct);
         if (saved.IsFailure)
@@ -437,8 +454,138 @@ public sealed class DispensingService(
         }
 
         await transaction.CommitAsync(ct);
+        if (closedOnPaper is { } closed)
+        {
+            await realtime.QueueChangedAsync(closed.FacilityId, closed.Id, closed.Status, ct);
+        }
+
         return Created(sale);
     }
+
+    /// <summary>
+    /// The invoice's number: the next in the series, or, for a sale written on paper during a downtime, the downtime number
+    /// on the paper (claimed from its block, which checks it is issued for pharmacy sales to this facility, unused, and that
+    /// the time on the paper is not before the block, in the series' period, in order, within the back-entry window and not
+    /// in the future), with the sale dated at the time on the paper and marked as entered from paper.
+    /// </summary>
+    private async Task<Result> NumberAsync(PharmacySale sale, PaperNumber? paper, Guid? patientId, DateTimeOffset now, CancellationToken ct)
+    {
+        if (paper is null)
+        {
+            sale.InvoiceNumber = await numbers.NextAsync(PharmacyNumberSeries.Invoice, sale.FacilityId, ct);
+            return Result.Success();
+        }
+
+        var claimed = await downtimeNumbers.ClaimAsync(DowntimeNumberKind.PharmacySale, paper, nameof(PharmacySale), sale.Id, patientId, ct);
+        if (claimed.IsFailure)
+        {
+            return claimed.Error!;
+        }
+
+        sale.InvoiceNumber = claimed.Value.Number;
+        sale.SoldAt = paper.At;
+        sale.EnteredFromPaperAt = now;
+        return Result.Success();
+    }
+
+    /// <summary>Closes the open queue entry the paper sale names as its prescription (same patient, when the sale has one), if there is one.</summary>
+    private async Task<PharmacyQueueEntry?> CloseOnPaperAsync(PharmacySale sale, Guid? patientId, DateTimeOffset now, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(sale.PrescriptionNumber))
+        {
+            return null;
+        }
+
+        var number = sale.PrescriptionNumber.Trim().ToUpperInvariant();
+        var entry = await db.Set<PharmacyQueueEntry>().Include(e => e.Lines)
+            .FirstOrDefaultAsync(e => e.PrescriptionNumber == number && !e.IsInpatient
+                && (e.Status == QueueEntryStatus.Pending || e.Status == QueueEntryStatus.PartiallyDispensed)
+                && (patientId == null || e.PatientId == patientId), ct);
+        if (entry is null || entry.MarkDispensedOnPaper(sale.InvoiceNumber, sale.SoldAt, null, now).IsFailure)
+        {
+            return null;
+        }
+
+        AuditPaper(entry, sale.InvoiceNumber, sale.SoldAt);
+        return entry;
+    }
+
+    /// <summary>
+    /// The prescription was dispensed on paper during a downtime (its sale is in the paper sale book, entered under its
+    /// number or not yet): closes the queue entry as dispensed so it is not offered, or dispensed, again. With the invoice
+    /// number, that must be a pharmacy sale entered from paper, for the same patient. Audited.
+    /// </summary>
+    public async Task<Result> MarkDispensedOnPaperAsync(Guid entryId, DispensedOnPaperRequest request, CancellationToken ct)
+    {
+        var entry = await db.Set<PharmacyQueueEntry>().Include(e => e.Lines).FirstOrDefaultAsync(e => e.Id == entryId, ct);
+        if (entry is null)
+        {
+            return Error.NotFound(nameof(PharmacyQueueEntry), entryId);
+        }
+
+        if (entry.IsInpatient)
+        {
+            return Error.Rule("pharmacy.inpatient_prescription", "In-patient prescriptions are issued to the ward from the IP pharmacy.");
+        }
+
+        if (!entry.IsOpen)
+        {
+            return Error.Rule("queue.closed", $"Prescription {entry.PrescriptionNumber} is {entry.Status}.");
+        }
+
+        var access = await guard.EnsureCanOpenAsync(entry.PatientId, ct);
+        if (access.IsFailure)
+        {
+            return access.Error!;
+        }
+
+        string? invoice = null;
+        if (!string.IsNullOrWhiteSpace(request.InvoiceNumber))
+        {
+            invoice = request.InvoiceNumber.Trim().ToUpperInvariant();
+            var sale = await db.Set<PharmacySale>().AsNoTracking()
+                .Where(s => s.InvoiceNumber == invoice)
+                .Select(s => new { s.PatientId, s.EnteredFromPaperAt })
+                .FirstOrDefaultAsync(ct);
+            if (sale is null || sale.EnteredFromPaperAt is null)
+            {
+                return Error.Field("invoiceNumber", $"{invoice} is not a pharmacy sale entered from paper. Enter the paper sale first, under its number, or leave the number out and say where the paper is.");
+            }
+
+            if (sale.PatientId is { } buyer && buyer != entry.PatientId)
+            {
+                return Error.Field("invoiceNumber", $"{invoice} was sold to another patient, not the one this prescription is for.");
+            }
+        }
+
+        var allowed = await backEntry.CheckAsync(BackEntryRecord.PharmacySale, request.At, consume: true, ct);
+        if (allowed.IsFailure)
+        {
+            return allowed.Error!;
+        }
+
+        var marked = entry.MarkDispensedOnPaper(invoice, request.At, request.Note, time.GetUtcNow());
+        if (marked.IsFailure)
+        {
+            return marked;
+        }
+
+        AuditPaper(entry, invoice, request.At);
+        await db.SaveChangesAsync(ct);
+        await realtime.QueueChangedAsync(entry.FacilityId, entry.Id, entry.Status, ct);
+        return Result.Success();
+    }
+
+    private void AuditPaper(PharmacyQueueEntry entry, string? invoice, DateTimeOffset at) =>
+        audit.Add(new AuditEntry(AuditCategories.Data, "pharmacy.dispensed_on_paper",
+            $"Prescription {entry.PrescriptionNumber} was dispensed on paper during a downtime, at {NumberFormat.ToHospitalTime(at):d MMM yyyy HH:mm}{(invoice is null ? string.Empty : $", sale {invoice}")}: closed in the queue")
+        {
+            PatientId = entry.PatientId,
+            EntityType = nameof(PharmacyQueueEntry),
+            EntityId = entry.Id.ToString(),
+            Severity = AuditSeverity.Warning,
+            Details = new { entry.PrescriptionNumber, invoice, paperAt = at },
+        });
 
     /// <summary>Discounts above the facility's limit (setting <c>pharmacy.discount.max_percent</c>, default 10%) are refused.</summary>
     /// <summary>Why a visit's medicines are free of cost by law (BNSS 2023, s.397); <c>null</c> when they are sold as usual.</summary>

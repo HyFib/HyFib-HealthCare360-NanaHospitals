@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { ApiError, CORRELATION_HEADER, LANGUAGE_HEADER, toApiError } from '../api/errors';
 import type { ClientType } from '../api/client';
 import { forgetRememberedKeys } from '../api/rememberedKeys';
-import { clearDrafts, openDrafts } from './drafts';
+import { clearDrafts, closeDrafts, openDrafts } from './drafts';
 
 export interface FacilityOption {
   id: string;
@@ -113,10 +113,13 @@ export const useSession = create<SessionState>((set, get) => ({
   },
   setUser: (user) => set({ user }),
   setLocked: (locked) => set({ locked }),
-  // Signing out, or the server ending the session, forgets the user's drafts and the keys of their writes whose outcome
-  // was not known: nothing of what they did stays behind for whoever uses the computer next.
+  // The session is over: the server ended it (it expired, perhaps during an outage while the user was typing, or was
+  // ended elsewhere), or the user signed out (`auth.logout`, which first removes every draft). The keys of writes whose
+  // outcome was not known are forgotten, and the user's drafts are closed; those kept on this computer stay, encrypted
+  // under the user's key, for them to find once they sign in again (SRS DED-10). Another user's sign-in removes them
+  // (`openDrafts`).
   clear: () => {
-    clearDrafts();
+    closeDrafts();
     forgetRememberedKeys();
     set({ status: 'anonymous', accessToken: null, expiresAt: null, user: null, locked: false });
   },
@@ -330,9 +333,10 @@ export const auth = {
   },
 
   /**
-   * Restores the session from the refresh cookie on app start. Without it the sign-in page shows. A session the server
-   * said is over was signed out by the refresh, drafts and all; but when the server could not answer (a server error,
-   * the WiFi down) nobody signed out, so the drafts stay for their user to find once signed in again (SRS DED-10).
+   * Restores the session from the refresh cookie on app start. Without it the sign-in page shows. Whether the server
+   * said the session is over (it expired while the app was closed, or during an outage) or could not answer (a server
+   * error, the WiFi down), nobody signed out, so the drafts stay for their user to find once signed in again (SRS
+   * DED-10).
    */
   async restore(): Promise<boolean> {
     const token = await auth.refresh();
@@ -342,6 +346,16 @@ export const auth = {
     return token !== null;
   },
 
+  /**
+   * The server says the session is over, in answer to something other than a refresh (an unlock, say): it ends here as
+   * it did there, without signing out, so the drafts stay for the same user's next sign-in.
+   */
+  ended(): void {
+    clearTimeout(refreshTimer);
+    useSession.getState().clear();
+  },
+
+  /** Signing out is the user's own: their drafts go with the session, so nothing they typed stays for the next user. */
   async logout() {
     try {
       await authFetch('logout');
@@ -349,6 +363,7 @@ export const auth = {
       // Sign out locally even if the server is unreachable.
     }
     clearTimeout(refreshTimer);
+    clearDrafts();
     useSession.getState().clear();
   },
 };

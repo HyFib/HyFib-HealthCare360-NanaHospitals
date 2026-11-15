@@ -19,8 +19,10 @@
     5. The disks: each volume's file system, cluster size, size and free space, and which folders are on it.
     6. Reading speed: a sample of documents read and timed, for the first night's hashing and a restore's read time.
     7. The projections, with the model the growth benchmark checks (BackupGrowthBenchmarkTests): the server's backup
-       folder, each of two USB disks swapped weekly, and the off-site bucket, now, in one year and in three, and what the
-       backups would take if every backup still held every document.
+       folder, each USB disk, and the off-site bucket, now, in one year and in three, and what the backups would take if
+       every backup still held every document. -BackupsKept is how many backups each folder keeps: 30 with nightly
+       backups and the default grandfather-father-son retention once it is a year old (14 days, the last of 8 weeks and
+       of 12 months). Each USB disk keeps as many as the server: retention counts each folder's own backups.
 
     Writes hc360-backup-sizing-<machine>-<date>.json and .md in -OutputFolder (the current folder by default).
 
@@ -33,7 +35,7 @@ param(
     [string] $OutputFolder = (Get-Location).Path,
     [switch] $MeasureDump,
     [string] $SecondaryDirectory,
-    [int] $RetentionDays = 30,
+    [int] $BackupsKept = 30,
     [int] $OffsiteRetainDays = 35,
     [int] $ReadSample = 200,
     [securestring] $PostgresSuperuserPassword,
@@ -68,32 +70,32 @@ function Get-LinearFit([double[]] $X, [double[]] $Y) {
     return [pscustomobject]@{ Slope = $slope; Intercept = $meanY - $slope * $meanX }
 }
 
-# The backup space at a time, by the model (docs/design/incremental-backup.md, section 2.2; DEPLOYMENT.md section 8):
-#   server folder  (R + 1) x (D + I) + Docs        (+ Docs for 30 days after the data key is rotated)
-#   each USB disk  ceil((R + 1) / 2) x (D + I) + Docs  (two disks swapped weekly)
+# The backup space at a time, by the model (docs/design/incremental-backup.md, sections 2.2 and 5.7; DEPLOYMENT.md
+# section 8), with R the backups each folder keeps:
+#   server folder  R x (D + I) + Docs               (+ Docs while backups from before a data-key rotation are kept)
+#   each USB disk  R x (D + I) + Docs               (retention counts each disk's own backups)
 #   bucket         retainDays x (D + I) + ((retainDays + 7) / 7) x Docs
-#   before         (R + 1) x (D + Docs)            (every backup holding every document)
-function Get-BackupSpace([double] $Dump, [double] $Documents, [double] $DocumentCount, [int] $Retention, [int] $Retain) {
-    $kept = $Retention + 1
+#   before         R x (D + Docs)                   (every backup holding every document)
+function Get-BackupSpace([double] $Dump, [double] $Documents, [double] $DocumentCount, [int] $Kept, [int] $Retain) {
     $index = $DocumentCount * $IndexBytesPerDocument
     $generations = [math]::Ceiling(($Retain + $GenerationDays) / $GenerationDays)
     return [pscustomobject]@{
-        ServerFolder        = $kept * ($Dump + $index) + $Documents
-        ServerAfterRotation = $kept * ($Dump + $index) + 2 * $Documents
-        UsbDisk             = [math]::Ceiling($kept / 2) * ($Dump + $index) + $Documents
+        ServerFolder        = $Kept * ($Dump + $index) + $Documents
+        ServerAfterRotation = $Kept * ($Dump + $index) + 2 * $Documents
+        UsbDisk             = $Kept * ($Dump + $index) + $Documents
         Bucket              = $Retain * ($Dump + $index) + $generations * $Documents
-        Before              = $kept * ($Dump + $Documents)
+        Before              = $Kept * ($Dump + $Documents)
     }
 }
 
 # The measurements carried forward: documents at their daily rate, the dump at its own (or kept as it is).
-function Get-SizingProjection($Now, [int[]] $Days, [int] $Retention, [int] $Retain) {
+function Get-SizingProjection($Now, [int[]] $Days, [int] $Kept, [int] $Retain) {
     $rows = @()
     foreach ($day in $Days) {
         $documents = $Now.DocumentBytes + $Now.DocumentBytesPerDay * $day
         $count = $Now.DocumentCount + $Now.DocumentsPerDay * $day
         $dump = [math]::Max($Now.DumpBytes + $Now.DumpBytesPerDay * $day, 0)
-        $space = Get-BackupSpace $dump $documents $count $Retention $Retain
+        $space = Get-BackupSpace $dump $documents $count $Kept $Retain
         $rows += [pscustomobject]@{
             Days = $day; Documents = $documents; DocumentCount = $count; Dump = $dump
             ServerFolder = $space.ServerFolder; ServerAfterRotation = $space.ServerAfterRotation
@@ -263,7 +265,7 @@ $now = [pscustomobject]@{
     DocumentBytesPerDay = $bytesPerDay; DocumentsPerDay = $documentsPerDay
     DumpBytes = $dumpBytes; DumpBytesPerDay = $dumpPerDay
 }
-$projection = @(Get-SizingProjection $now @(0, 365, 1095) $RetentionDays $OffsiteRetainDays)
+$projection = @(Get-SizingProjection $now @(0, 365, 1095) $BackupsKept $OffsiteRetainDays)
 
 $warnings = @()
 foreach ($volume in $volumes) {
@@ -294,7 +296,7 @@ $report = [ordered]@{
     backups = [ordered]@{ recorded = $runs.Count; inFolder = $present.Count; sizeMismatches = $sizeMismatches; folderBytes = $backupFolderBytes }
     volumes = $volumes
     readBytesPerSecond = [math]::Round($readBytesPerSecond)
-    assumptions = [ordered]@{ retentionDays = $RetentionDays; offsiteRetainDays = $OffsiteRetainDays; generationDays = $GenerationDays; indexBytesPerDocument = $IndexBytesPerDocument }
+    assumptions = [ordered]@{ backupsKept = $BackupsKept; offsiteRetainDays = $OffsiteRetainDays; generationDays = $GenerationDays; indexBytesPerDocument = $IndexBytesPerDocument }
     projection = $projection
     warnings = $warnings
 }
@@ -312,8 +314,8 @@ $md.Add('')
 $md.Add('| | Now | Year 1 | Year 3 |')
 $md.Add('|---|---|---|---|')
 foreach ($line in @(
-        @('Documents', 'Documents'), @('Server''s backup folder', 'ServerFolder'), @('... in the 30 days after a key rotation', 'ServerAfterRotation'),
-        @('Each USB disk (two, swapped weekly)', 'UsbDisk'), @('Off-site bucket', 'Bucket'), @('Before: every document in every backup', 'Before'))) {
+        @('Documents', 'Documents'), @('Server''s backup folder', 'ServerFolder'), @('... while backups from before a key rotation are kept', 'ServerAfterRotation'),
+        @('Each USB disk', 'UsbDisk'), @('Off-site bucket', 'Bucket'), @('Before: every document in every backup', 'Before'))) {
     $md.Add("| $($line[0]) | $(Format-Size $projection[0].($line[1])) | $(Format-Size $projection[1].($line[1])) | $(Format-Size $projection[2].($line[1])) |")
 }
 $md.Add('')

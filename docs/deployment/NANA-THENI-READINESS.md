@@ -207,11 +207,14 @@ SRS 3.2 asks every profile for a UPS and an external backup target, and the hosp
 
 Each nightly backup holds the database dump and a list of the stored documents. Each backup folder keeps one copy of
 every document, so a folder grows by about one dump and the day's new documents each night (DEPLOYMENT.md section 8;
-docs/design/incremental-backup.md, section 2). Space needed, with *R* backups kept (31: tonight's and the 30 days
-before), a dump of *D* and documents of *Docs*:
+docs/design/incremental-backup.md, sections 2 and 5.7). Space needed, with *R* backups kept (about 30 once backups are
+a year old: every backup of the last 14 days, and the last of each of 8 weeks and of 12 months), a dump of *D* and
+documents of *Docs*:
 
-- **The server's backup folder, and each USB disk:** about *R* × *D* + *Docs*, and *Docs* more for 30 days after the
-  data encryption key is rotated (every document is copied once more).
+- **The server's backup folder, and each USB disk:** about *R* × *D* + *Docs*. Each USB disk keeps as many backups as
+  the server, since retention counts the backups each disk holds. After the data encryption key is rotated every
+  document is copied once more, and the old copies stay, *Docs* more, until the last backup made before the rotation
+  goes: up to 342 days, as the monthly backups are kept a year.
 - **The off-site bucket:** about 35 × *D* + 6 × *Docs*.
 
 The hospital's own figures are not measured yet. Run `deploy\windows\Measure-HC360BackupSizing.ps1 -MeasureDump` on
@@ -221,8 +224,8 @@ day**, with dumps of about 5 GB in year 1 and 15 GB in year 3.
 
 | | Year 1 | Year 3 | Before (every document in every backup), year 3 |
 |---|---|---|---|
-| Server's backup folder (31 backups) | 0.25 TB | 0.74 TB (1.0 TB after a key rotation) | 9.0 TB |
-| Each USB disk (about 16 backups on each of two disks swapped weekly) | 0.17 TB | 0.51 TB (0.79 TB after a key rotation) | 4.6 TB |
+| Server's backup folder (30 backups) | 0.24 TB | 0.72 TB (1.0 TB after a key rotation) | 8.7 TB |
+| Each USB disk (as many backups, on each of two disks swapped weekly) | 0.24 TB | 0.72 TB (1.0 TB after a key rotation) | 8.7 TB |
 | Off-site bucket | 0.72 TB | 2.2 TB | 10 TB |
 
 What this means for this PC: by year 3 the documents (about 0.27 TB), the database and the backup folder no longer fit

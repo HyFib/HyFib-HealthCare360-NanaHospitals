@@ -32,6 +32,7 @@ using HyFib.HealthCare360.Platform.Updates;
 using HyFib.HealthCare360.Server;
 using HyFib.HealthCare360.SharedKernel;
 using HyFib.HealthCare360.WindowsInterop.Updates;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
@@ -55,6 +56,8 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// database. The real migrations create the database, and the seeders fill it with the demonstration data and the staff
 /// accounts in <see cref="Users"/> (roles the seed has no account for are created on first use). One server is shared by
 /// every test and tests run one at a time, so each journey registers its own patients rather than relying on another test's.
+/// A test that needs a server of its own makes one: on a clock it sets (<see cref="MidnightInIndiaServer"/>), or with a step of
+/// its own between seeding and starting (<see cref="UpgradeTests"/>).
 /// </summary>
 public sealed class HospitalServer : IAsyncLifetime
 {
@@ -147,14 +150,31 @@ public sealed class HospitalServer : IAsyncLifetime
     private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), "hc360-tests", "it-" + Guid.NewGuid().ToString("N"));
     private readonly ConcurrentDictionary<string, ApiClient> _signedIn = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _created = new(StringComparer.Ordinal);
+    private readonly TestClock? _clock;
+    private readonly Func<IServiceProvider, CancellationToken, Task>? _beforeStart;
     private TestDatabase? _database;
     private WebApplication? _app;
+
+    /// <summary>The server every journey shares, on the real clock.</summary>
+    public HospitalServer()
+    {
+    }
+
+    /// <summary>A server of a test's own, on its own database and on <paramref name="clock"/>.</summary>
+    internal HospitalServer(TestClock clock) => _clock = clock;
+
+    /// <summary>
+    /// A server of a test's own, on its own database, which runs <paramref name="beforeStart"/> once the database is migrated
+    /// and seeded, before anything else is written to it and before the server starts.
+    /// </summary>
+    internal HospitalServer(Func<IServiceProvider, CancellationToken, Task> beforeStart) => _beforeStart = beforeStart;
 
     public IServiceProvider Services => App.Services;
 
     /// <summary>
-    /// Today in the hospital's calendar (IST), on the server's clock. No test starts near midnight
-    /// (<see cref="AwayFromMidnightInIndiaAttribute"/>), so a test reads the same day from its start to its end.
+    /// Today in the hospital's calendar (IST), on the server's clock. No test on the real clock starts near midnight
+    /// (<see cref="AwayFromMidnightInIndiaAttribute"/>), so a test reads the same day from its start to its end; a test on a
+    /// clock of its own reads the day it set.
     /// </summary>
     public DateOnly Today =>
         DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(Services.GetRequiredService<TimeProvider>().GetUtcNow(), HospitalTimeZone.Zone).DateTime);
@@ -222,6 +242,16 @@ public sealed class HospitalServer : IAsyncLifetime
         // HC360 Desktop packages signed with a throwaway key made for this run (DesktopUpdateTests) are trusted too, as
         // HyFib's are; the server registers only the built-in keys when nothing was registered before.
         builder.Services.AddSingleton(new ReleaseTrust([.. ReleaseKeys.Trusted, ReleaseKey.FromSubjectPublicKeyInfo(ReleaseSigningKey.ExportSubjectPublicKeyInfo())]));
+
+        // A server on a test's clock reads every "now" from it, the lifetimes of its sign-ins included: it dates its tokens by
+        // that clock, and the token handler would otherwise check them against the real one.
+        if (_clock is { } clock)
+        {
+            builder.Services.AddSingleton<TimeProvider>(clock);
+            builder.Services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme,
+                jwt => jwt.TokenValidationParameters.LifetimeValidator = clock.IsWithinLifetime);
+        }
+
         builder.AddServerApplication(certificates);
 
         // The ABDM gateway is a fake one of this run (AbdmLinkingTests): the gateway client, the key-set fetch and the
@@ -263,6 +293,10 @@ public sealed class HospitalServer : IAsyncLifetime
         _app.UseListenerGate();
         _app.UseServerApplication();
         await _app.InitializeDatabaseAsync(ct);
+        if (_beforeStart is not null)
+        {
+            await _beforeStart(_app.Services, ct);
+        }
 
         // Many tests sign in the same seeded accounts, each with a session of its own, while other tests keep using the
         // cached ones: no limit on sessions per account, except in a test that sets one (SessionControlTests).
@@ -276,7 +310,7 @@ public sealed class HospitalServer : IAsyncLifetime
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SetAsync(
                 Modules.Clinical.Services.DischargeSummaryDischargeHold.Setting, false, cancellationToken: ct);
 
-            var now = DateTimeOffset.UtcNow;
+            var now = scope.ServiceProvider.GetRequiredService<TimeProvider>().GetUtcNow();
             var desktop = new Device
             {
                 Name = "IT workstation",
@@ -653,23 +687,37 @@ public sealed class HospitalServer : IAsyncLifetime
 
     /// <summary>
     /// A member of staff's password reset by <paramref name="maker"/> as Administration › Users resets it: the temporary
-    /// password, read where it went. The administrator is never shown it: it goes to the account's own mobile number or
-    /// e-mail address (the test server sends nothing, so it is read from the outbox), or, for an account with neither, the
-    /// reset waits for the other administrator, who is shown it once when they approve.
+    /// password, read where it went. Nobody is shown it: it goes to the account's own mobile number or e-mail address (the
+    /// test server sends nothing, so it is read from the outbox). For an account with neither, the reset gives a mobile number
+    /// of the holder's, and waits for the other administrator, whose approval sends it there.
     /// </summary>
     public async Task<string> ResetPasswordAsync(ApiClient maker, Guid userId)
     {
         ArgumentNullException.ThrowIfNull(maker);
         var path = $"/api/v1/admin/users/{userId}/reset-password";
-        using var response = await maker.SendRawAsync(HttpMethod.Post, path);
+        PasswordResetRequest? destination;
+        await using (var scope = Services.CreateAsyncScope())
+        {
+            var account = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<User>().AsNoTracking()
+                .SingleAsync(u => u.Id == userId, TestContext.Current.CancellationToken);
+            destination = account.Phone is null && account.Email is null ? new PasswordResetRequest("9" + Random.Shared.Next(100_000_000, 999_999_999), null) : null;
+        }
+
+        using var response = destination is null ? await maker.SendRawAsync(HttpMethod.Post, path) : await maker.SendRawAsync(HttpMethod.Post, path, destination);
         if (response.StatusCode == HttpStatusCode.Accepted)
         {
             var approved = await ApproveGrantAsync((await ApiClient.ReadAsync<ApprovalRequestDto>(response, HttpMethod.Post, path)).Id);
-            return approved.Handover?.Secret ?? throw new InvalidOperationException($"Approving the password reset of {userId} handed over no password ({approved.Status}: {approved.Outcome}).");
+            if (approved.Status != ApprovalStatus.Approved)
+            {
+                throw new InvalidOperationException($"Approving the password reset of {userId} made nothing ({approved.Status}: {approved.Outcome}).");
+            }
+        }
+        else
+        {
+            await ApiClient.ReadAsync<PasswordResetResponse>(response, HttpMethod.Post, path);
         }
 
-        var reset = await ApiClient.ReadAsync<PasswordResetResponse>(response, HttpMethod.Post, path);
-        return reset.TemporaryPassword ?? await TemporaryPasswordSentAsync(userId);
+        return await TemporaryPasswordSentAsync(userId);
     }
 
     /// <summary>The last temporary password sent to the account's own mobile number or e-mail address: the test server sends nothing, so it is read from the outbox.</summary>
