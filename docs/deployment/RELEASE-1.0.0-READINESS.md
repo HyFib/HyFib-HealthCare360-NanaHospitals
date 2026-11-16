@@ -1,16 +1,25 @@
 # Release 1.0.0: readiness report
 
-**Status: not released.** Updated on 10 November 2026: the blockers' fixes are in pull request #333, and *Where the
-blockers stand* below says what each needs still. The release build has run seven times on that pull request. Two
-runs found faults the Linux CI could not see (R7, R8), both fixed; the others passed, the last of them on all of the
-pull request's code. What remains before a tag is HyFib's: merge the pull request, and make the release signing key
-(R2), which only HyFib can do. The rest of this report is the assessment as written first, on 10 November 2026, from:
+**Status: not released.** Assessed again on 16 November 2026, for the candidate `31cae7c0`, `main` after #373. Its
+CI run on `main` (#1189) passed all six jobs. CI on `main` had failed at the merges of #361 and #371, and #373 fixed
+the cause (R9).
 
-- commit `ad5acb37`, the head of `main`, and its CI run (#1030);
-- the last 30 completed CI runs on `main`;
-- the repository's tags and releases on GitHub;
-- the release workflow and the scripts it runs;
-- [TRACEABILITY.md](../requirements/TRACEABILITY.md) and [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md).
+One thing stands before a tag: **the release signing key (R2).** HC360 trusts no key yet, so a tagged release stops at
+its own check. Only HyFib can make the key, and never in a CI job or a hosted session. R6 and R10 should be settled
+before the tag too.
+
+Then make a release candidate first (S2). Set the version to `1.0.0-rc.1` in a commit of its own, tag that commit once
+its own CI run on `main` has passed, and install it on the Theni machine for wave 0.
+
+This report replaces the assessment of 10 November, whose candidate was `ad5acb37`. *What changed since 10 November*
+lists what moved. It was written from:
+
+- the candidate and its CI runs, on its pull request and on `main`;
+- the last 30 completed CI runs on `main`, and the scheduled checks;
+- the repository's tags and releases, and every run of the release workflow;
+- the code at the candidate, counted with the commands in [MODULE-ROLLOUT-PLAN.md](MODULE-ROLLOUT-PLAN.md)'s appendix;
+- [TRACEABILITY.md](../requirements/TRACEABILITY.md), [ASVS-L2.md](../security/ASVS-L2.md),
+  [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), and the production-readiness review of 14 November.
 
 The appendix lists every source. What could not be checked is marked **to confirm**.
 
@@ -18,58 +27,89 @@ This report covers the first release to Nana Hospitals, Theni: the version, the 
 and how it is built, installed and undone. [MODULE-ROLLOUT-PLAN.md](MODULE-ROLLOUT-PLAN.md) covers what goes live
 after it, one department at a time.
 
+## What changed since 10 November
+
+| | 10 November (`ad5acb37`) | 16 November (`31cae7c0`) |
+|---|---|---|
+| .NET tests on the candidate | 10,832: 10,822 passed, 10 skipped | 12,164: 12,154 passed, 10 skipped |
+| Endpoints, in route groups | 1,661 in 225 | 1,671 in 227 |
+| Tables, in schemas | 439 in 23 | 441 in 23 |
+| Database migrations | 140 | 149 |
+| The release build | Never run | Passed end to end on #333 and on #361 |
+| Requirements | 173 Done, 10 Blocked | The same |
+
+Merged since, in pull requests #333 to #373:
+
+- **The production-readiness review of 14 November.** It found 8 blockers, fixed in #346: restore, the off-site
+  backup, duplicate saves, Pine Labs, the offline copy, the portal, the outbox and alerting. Its 26 items to fix next
+  were fixed in #361: offline working, backup and recovery, security and operations. Its lower-priority items are in
+  section 2, *Known limits*.
+- **This report's blockers.** R1, R3, R4, R5, R7 and R8 were fixed in #333, and R8's fifteen other pickers in #334.
+- **Payments and integrations.** Pharmacy and canteen card and UPI payments on the Pine Labs terminal (#341); Pine
+  Labs payments left unrecorded, lab analysers' withdrawn results and ABDM consents (#339); GST e-invoices and e-way
+  bills (#340, #342, #344, #345, #360); ABDM auto-linking (#343); results naming another patient held, withdrawn
+  results passed on, and the HORIBA Yumizen analysers (#347, #348, #359).
+- **Backups.** Incremental document backups, with generations kept off site (#350, #354); the Theni server and backup
+  hardware (#349, #355).
+- **Operations and security.** The server's network cable watched (#337); WhatsApp care messages in the patient's
+  language (#338); a role turned off and on whole, and the roles inventory (#353, #357); secrets scanned in CI and
+  every day (#351, #352, #358); .NET's 10 November security release taken (`d905a8e5`).
+- **The test restores' scratch database** (#371, #373): R9 below.
+
 ## Where the blockers stand
 
-| # | What was done | Shown by | Still needed |
+| # | State | Shown by | Still needed |
 |---|---|---|---|
-| R1 | `release.yml` starts the runner's PostgreSQL for the tests, as CI does. A pull request that changes the release (the workflow, `Publish-HC360.ps1` or `tools/release`) now runs the release build, without the signing key and without publishing; a newer push stops the older build | **The release build passes on #333.** Run 2 (`934f4eab`, 1 h 39 min) was the first through every step: the version check, every test with the runner's PostgreSQL, the publish, the patch windows and the SBOMs. Signing and attaching were skipped, as on every pull request. Run 1 stopped at R7, run 3 at R8. Runs 4 to 7 passed, run 7 on `1a964c02`, which holds every change to code and to the workflow in the pull request | — |
-| R2 | A tagged release now stops when HC360 Desktop's package is not signed, with what to do. SECURITY.md keeps the procedure and adds: never make the key in a CI job or a hosted session | The workflow step *Refuse to release an unsigned HC360 Desktop* | **HyFib makes the key pair**, stores the private key as the workflow's secret, keeps a copy offline, and merges the public key into `ReleaseKeys.cs` (SECURITY.md, *Release signing key*) |
-| R3 | The cause was the test, not screen unlock. It polled for the waiting request through `pg_stat_activity` inside one transaction, and PostgreSQL reads that view once per transaction: a connection the server opened after the first poll never appeared. It now reads `pg_locks`, which is read again at every query | Reproduced on PostgreSQL 16: a waiting connection opened after the first poll counts 0 in `pg_stat_activity` and 1 in `pg_locks` | CI runs the test on every change |
-| R4 | DEPLOYMENT.md section 1 now opens with the release files: check the hashes against `SHA256SUMS.txt` and HyFib's second copy, unblock the checked zip, extract it, and set a process-scope execution policy, before the preflight runs. The Theni steps follow | — | — |
-| R5 | `tools/release/Test-ReleaseVersion.ps1` runs first in the release workflow: the version is a release version, `InformationalVersion` agrees, and the tag names it. A tag with a label is published as a pre-release | `tests/deploy/Test-ReleaseVersion.ps1`, 16 cases and the repository's own file, in CI in Windows PowerShell 5.1 and PowerShell 7 | — |
-| R6 | The alerts were in two tools with lockfiles of their own, not in what ships. cdxgen 12.8.5 → 12.9.0, with body-parser held at 2.4.0; wrangler 4.151.1 → 4.156.2. CI and the daily Security audit now fail on a high advisory against either tool | `npm audit`: the SBOM tool has no high left (5 moderate, recorded in SECURITY.md, *Tools that do not ship*); the demo site's tool none at all | GitHub's count on `main` falls once #333 merges |
-| R7 (new) | **The staff app did not build on Windows**, where the release is built: `AbdmReceivedRecords.tsx` beside `abdmReceivedRecords.ts` are one file there. The module is now `receivedRecords.ts`, and CI fails on any two files or modules whose names differ only in case | Found by R1's release build on #333 (run 1) | — |
-| R8 (new) | **A doctor chosen in the payout picker could be lost, silently.** The picker searched 250 ms after the last key and, on a choice, looked the doctor up in the results as they were by then. A choice made as that search started (the list empties while it fetches) found nothing and set no doctor, so *Prepare payout* stayed disabled with no message. The doctor now comes from the option chosen, and the list keeps its options while the next search runs | Found by R1's release build on #333 (run 3): 1 of 2,796 web tests failed on the loaded Windows runner. Clicking 400 ms after typing fails as on Windows before the fix and passes after; that is now a test | Fifteen other pickers look the choice up the same way: a change of their own, not a blocker for wave 1 |
-| Review | Codex reviewed #333 and found two faults, both fixed. `SHA256SUMS.txt` did not list HC360 Desktop's manifest and signature, so IT could not check them against HyFib's second copy (S1). *Going back* said the backup taken before an update names the previous version; the new version takes it as it starts, so it names the version upgraded to | Codex's two comments on #333, each answered with its fix | — |
-| Rollout item 7 | Start-up stops on a database a newer version changed, names the changes it does not know, and changes nothing | `NewerDatabaseTests`, `UnknownMigrationsTests` | — |
-| Rollout item 8 | DEPLOYMENT.md section 7, *Going back*: the previous package and the backup taken before the update | — | The drill, once, on a spare PC |
-| S1 | DEPLOYMENT.md section 1 now tells IT to compare the checksums with the copy HyFib sends another way | — | HyFib sends them with each release; a code-signing certificate later |
+| R1 | Done. The release workflow starts the runner's PostgreSQL, and a pull request that changes the release runs the release build, without signing or publishing | The release build passed end to end on #333 (runs 2 and 4 to 7) and on #361 (run 24, `797dbea8`, 1 h 55 min). The candidate adds #371 and #373, which change only the test restores' scratch database and its tests, so the release build has not run on the candidate itself: the tag runs it | — |
+| R2 | **Open.** `ReleaseKeys.Trusted` is empty at `31cae7c0`, so a tagged release stops at *Refuse to release an unsigned HC360 Desktop* | `src/shared/HyFib.HealthCare360.WindowsInterop/Updates/ReleaseKeys.cs` | **HyFib makes the key pair** (`Sign-HC360Release.ps1 -NewKey`), stores the private key as the `HC360_RELEASE_SIGNING_KEY` secret, keeps a copy offline, and merges the public key into `ReleaseKeys.cs` (SECURITY.md, *Release signing key*). The first version each workstation installs must already trust it |
+| R3 | Done. The test failed because of its own poll of `pg_stat_activity`, not because of screen unlock | It has not failed in the last 30 runs on `main` | — |
+| R4 | Done. DEPLOYMENT.md section 1 tells IT to check the hashes, unblock the zip and set a process-scope execution policy before the preflight runs | — | *To confirm* on the Theni PC: `Get-ExecutionPolicy -List` |
+| R5 | Done. `tools/release/Test-ReleaseVersion.ps1` checks the version, and that the tag names it | `tests/deploy/Test-ReleaseVersion.ps1`, in CI | — |
+| R6 | **To confirm.** GitHub's Dependabot alerts could not be read in this session. CI's audits of what ships find none, the daily security audit passed on 15 November, and `.github/security-advisories.json` records none. The nine Dependabot pull requests opened on 16 November (#362 to #370) are version updates, .NET 11 among them; none was raised by an advisory | The audits; the pull requests | Read each high alert on the Security tab, then fix it or write down why it neither ships nor runs in the release build. Leave the version updates until after 1.0.0 |
+| R7 | Done. CI fails on two files whose names differ only in case | — | — |
+| R8 | Done, and the fifteen other pickers in #334, each with a test | — | — |
+| R9 (new) | Done. **A weekly test restore could pass and leave its scratch database, a full copy of every patient's record, on the server.** A database just restored is where autovacuum goes to work. While an autovacuum worker was in the copy, PostgreSQL refused the test-restore account's forced drop ("permission denied to terminate process"), and the copy stayed until the next week's test. This was found because CI on `main` failed at the merges of #361 and #371. #371 stopped the test from seeing other tests' scratch databases, and gave each hospital database's scratch databases names of their own. #373 drops plainly first, which ends autovacuum workers without any special right | Reproduced on PostgreSQL 16.15. Two cases in `PostgresRestoreTests` failed on the old code and pass now. CI on `main` passed at #373's merge (run #1189). | — |
+| R10 (new) | **Open.** GitHub's CodeQL default setup holds two alerts, 23 and 24 (`js/clear-text-storage-of-sensitive-data`: the offline unlock verifier and its test). The maintainer ruled both false positives, and they are marked as SECURITY.md prescribes, but default setup ignores those markings. The repository's own CodeQL jobs pass | GitHub's *CodeQL* check on #361 and on later pull requests | Someone allowed to manage security alerts dismisses them on the Security tab (24 as a false positive, 23 as used in tests), or code scanning moves to advanced setup only |
+| S1 | DEPLOYMENT.md section 1 tells IT to compare the checksums with the copy HyFib sends another way | — | HyFib sends them with each release; a code-signing certificate later |
 
 ## 1. The answer in one page
 
-**No release exists yet.** The repository has no tag and no GitHub release, and the release workflow
-(`.github/workflows/release.yml`) has never run. `Directory.Build.props` says 1.0.0.
+**No release exists yet.** The repository has no tag and no GitHub release. The release workflow has run only on
+pull requests, where it never signs or publishes. `Directory.Build.props` says 1.0.0.
 
-**The code at `ad5acb37` is a sound candidate.** Its CI run passed all six jobs:
+**The code at `31cae7c0` is a sound candidate.** Its CI run on `main`, #1189, passed all six jobs:
 
-- 10,832 .NET tests against a real PostgreSQL: 10,822 passed, none failed, 10 skipped;
+- 12,164 .NET tests against a real PostgreSQL (12,154 passed, none failed, 10 skipped), and after them the database
+  watchdog, the certificate probe, the warm standby and the desktop updater;
 - the installer's tests, in Windows PowerShell 5.1 and in PowerShell 7;
 - the web apps' checks, and accessibility in a browser (WCAG 2.2 AA);
 - the SBOMs and the security patch windows.
 
+The release build passed end to end on `797dbea8`, two pull requests earlier. Those two changed only the test
+restores' scratch database and its tests.
+
 173 of the 183 requirements are Done. The other 10 are Blocked, each waiting on someone outside HyFib.
 
-**It cannot be released as it stands.** Six things stand in the way, all on HyFib's side:
+**It cannot be tagged until the signing key exists (R2)**, which only HyFib can make. `release.yml` also refuses a commit
+whose own CI run on `main` did not pass, so the version commit of S2 needs its run. R6 and R10 should be settled before
+the tag too: one is a reading of GitHub's Security tab, the other two dismissals.
 
-| # | What stops it | Found by | Fix |
-|---|---|---|---|
-| R1 | **The release workflow would most likely fail on its first run.** It runs every test again (`Publish-HC360.ps1`), and the end-to-end tests then have no database: no `HC360_TEST_DATABASE`, so they try a Linux PostgreSQL container, which a Windows runner cannot start (`ci.yml` says so above its own step that starts one) | Reading `release.yml`, `Publish-HC360.ps1` and `TestDatabase.cs`. Not run | Copy CI's step *Start PostgreSQL for the end-to-end journeys* into `release.yml`, before the publish |
-| R2 | **HC360 trusts no release signing key.** `ReleaseKeys.Trusted` is empty. HC360 Desktop never updates itself, and if the signing secret is set, the release fails at its own signature check. A key added in a later version reaches a workstation only when someone reinstalls it by hand | `src/shared/HyFib.HealthCare360.WindowsInterop/Updates/ReleaseKeys.cs` | Before tagging 1.0.0, make the key pair (`Sign-HC360Release.ps1 -NewKey`), store the private key as the workflow's secret, keep a copy offline, and add the public key. The first version each workstation installs must already trust it |
-| R3 | **A test failed on `main` and nobody knows why.** `WebAuthnUnlockTests.A_refused_answer_stays_on_the_audit_trail_when_the_session_ends_meanwhile` failed on `653e7dde`: the unlock request was still running after 30 s and had not reached the session's row. Nothing changed the test or the code before `ad5acb37` passed. It is in screen unlock, a security path | CI run #1024, its test log | Find the cause: a slow runner, or an unlock that waits 30 s on something else. Running CI again until it is green explains nothing |
-| R4 | **The install scripts may not run on the hospital's PC.** They are not signed. A browser marks a downloaded zip as from the internet, and Windows' execution policy then refuses the scripts in it (RemoteSigned refuses such scripts; Restricted refuses all scripts). DEPLOYMENT.md does not mention it. CI cannot see it, because its scripts come from a checkout, not a download | Microsoft's *about_Execution_Policies*; a search of `docs` and `deploy` | After checking the hashes, unblock the extracted folder (`Get-ChildItem -Recurse \| Unblock-File`) and say so in DEPLOYMENT.md section 1. *To confirm* on the Theni PC: `Get-ExecutionPolicy -List` |
-| R5 | **Nothing checks the tag against the version.** A tag `v1.0.1` on a commit that still says 1.0.0 publishes packages named 1.0.0 | `release.yml`: the tag only starts the workflow | One step that compares the tag (`GITHUB_REF_NAME`) with `Directory.Build.props` and stops on a difference |
-| R6 | **GitHub holds 34 open Dependabot alerts on `main` (12 high, 19 moderate, 3 low), while CI's audits find none.** CI audits what ships: the .NET solution and `src/web/pnpm-lock.yaml`. The repository has two more npm lockfiles, for tools: the demo site (`.github/demo-site`) and the SBOM tool (`.github/sbom`), which runs inside the release build. The likely reading is that the alerts are there, or are advisories the project accepted (*to confirm*) | GitHub's reply to this branch's push; `ci.yml`; SECURITY.md, *Patching security advisories* | Read every high alert on the Security tab. For each: update the package, or show that it neither ships nor runs in the release build, and write that down. Then audit the tool lockfiles in CI as well |
-
-Also needed, though none of them blocks the tag:
+Also needed, though neither blocks the tag:
 
 - **S1. The programs are not signed (Authenticode).** `SHA256SUMS.txt` sits on the same release page as the packages,
   so it shows that a download is complete, not who made it. Until a code-signing certificate signs them, send the
   checksums to the hospital's IT by a second channel (an e-mail from a known HyFib address, or read out by phone),
   and have IT compare them before anything is extracted.
 - **S2. Make a release candidate first.** Set `Version` and `InformationalVersion` in `Directory.Build.props` to
-  `1.0.0-rc.1`, tag it, and install it on a test server. HC360's version numbers allow this (`ReleaseVersion`:
-  `1.0.0-rc.1` comes before `1.0.0`). Use the Theni machine before it holds any real data, which is wave 0's load
-  test anyway. Tag 1.0.0 only once that install has worked.
+  `1.0.0-rc.1` in a commit of its own on `main`. Once that commit's own CI run has passed, tag it, and install it on
+  the Theni machine before it holds any real data, which is wave 0's load test anyway. Tag 1.0.0 the same way, from
+  the same code, only once that install has worked. A commit that changes only the version, or only documents, leaves
+  the candidate's code as it is.
+
+**Wave 1 has a gap the report of 10 November missed.** Wave 1 puts the stores live, but three of their tasks exist only
+on the server, with no screen that calls them: supplier returns (debit notes for expired or damaged stock sent back),
+payable adjustments, and stock levels for each store. Decide before wave 1: return goods on paper and post them once
+a screen exists, or have HyFib build the screens first (section 5).
 
 **The SRS's release-1 acceptance (section 9) is not met in full.** For the first two waves it does not need to be:
 
@@ -85,12 +125,15 @@ Also needed, though none of them blocks the tag:
 
 **Recommendation**
 
-1. HyFib closes R1 to R6 and starts S1's second channel. Then it tags `1.0.0-rc.1` and installs it on the test server.
-2. Once that works, HyFib tags 1.0.0 from the same code.
-3. Install 1.0.0 at Theni for **wave 0 and wave 1 only** (foundation, then pharmacy and stores), as in section 5.
-   Wave 1 needs no new code (section 5). Wave 2 has one hand-over, which a procedure covers; from wave 3, when the
-   EMR goes live and the laboratory is still on paper, the department switches of MODULE-ROLLOUT-PLAN.md are needed.
-4. Go-live then waits on the hospital's gates in section 7: the UPS, the backup disks, BitLocker, the preflight, the
+1. HyFib makes the signing key (R2), reads the Security tab (R6), and has the two CodeQL alerts dismissed (R10). It
+   starts S1's second channel.
+2. The hospital decides how wave 1 handles supplier returns.
+3. HyFib tags `1.0.0-rc.1` on a commit CI passed, and installs it on the Theni machine. Once that works, it tags 1.0.0
+   from the same code.
+4. Install 1.0.0 at Theni for **wave 0 and wave 1 only** (foundation, then pharmacy and stores), as in section 5.
+   From wave 3, when the EMR goes live and the laboratory is still on paper, the department switches of
+   MODULE-ROLLOUT-PLAN.md are needed.
+5. Go-live then waits on the hospital's gates in section 7: the UPS, the backup disks, BitLocker, the preflight, the
    load test, the restore drill and the ASVS sign-off.
 
 ## 2. What the release is
@@ -98,102 +141,118 @@ Also needed, though none of them blocks the tag:
 | | |
 |---|---|
 | Product and version | HyFib HealthCare360 1.0.0 (`Directory.Build.props`) |
-| Candidate commit | `ad5acb37` (`main`, 10 November 2026) |
+| Candidate commit | `31cae7c0` (`main`, 16 November 2026) |
 | Built by | `release.yml`, on a tag `v*.*.*`, on a Windows runner |
 | Packages | `HC360-Server-<version>-win-x64.zip`: the server, self-contained, with the staff app, the portal and the deployment scripts · `HC360-Desktop-<version>-win-x64.zip`: HC360 Desktop with its updater and installer, and its `.manifest.json` and `.manifest.sig` when signed · `HC360-LabAgent-<version>-win-x64.zip`: the lab agent for PCs with serial analysers · `SHA256SUMS.txt` · one CycloneDX SBOM for each package and web app |
 | The server machine needs | Windows 10 2004 or later (Pro or above, for BitLocker); PostgreSQL 17, from `Install-PostgreSQL.ps1`; Microsoft Edge, for PDFs |
 | Workstations need | Windows 10 or 11 with the WebView2 runtime (Windows 11 has it) |
-| What it holds | The whole product: 18 modules, 1,661 endpoints, 439 tables in 23 schemas, 140 database migrations, 43 groups of staff screens (counted in MODULE-ROLLOUT-PLAN.md, appendix) |
+| What it holds | The whole product: 18 modules, 1,671 endpoints in 227 route groups, 441 tables in 23 schemas, 149 database migrations, 43 groups of staff screens (counted at the candidate with MODULE-ROLLOUT-PLAN.md's commands) |
 | Requirements | 183: 173 Done, 10 Blocked, none Partial or Missing ([TRACEABILITY.md](../requirements/TRACEABILITY.md)) |
 
-**A first release has no upgrade to test.** Its 140 migrations run on an empty database. The way an upgrade is undone
+**Known limits.** These belong in the release notes:
+
+- **Built on the server, with no screen yet.** These come from the production-readiness review, section B, and were
+  checked again at the candidate against the staff app's code:
+  - supplier returns (purchase debit notes), payable adjustments, and stock levels for each store;
+  - HR's statutory payroll: EPF, ESIC, bank files, TDS challans, Form 16, Form 24Q, gratuity, bonus and employees' tax
+    declarations;
+  - doctors' TDS returns (26Q and 16A) and their tax profiles;
+  - quality audit templates and starting an audit, an HAI case entered by hand, and registering SMART apps;
+  - about 45 to 55 settings with no admin screen, among them `lab.requirePaymentBeforeCollection`,
+    `inpatient.bedDayPolicy` and `doctorfees.tds.percent`.
+- **The HPR registry check** runs against its simulator until the hospital is connected to ABDM's HPR service, so a
+  real doctor shows as not found.
+- **The review's ten hardening items** (section D) are open. None is a blocker.
+- **Hindi and Tamil** have not been reviewed by native speakers (PP-06).
+- **The ASVS L2 checklist**, as assessed on 30 September, has 130 requirements Met, 61 Partial and 8 Gap, and it is
+  not signed (SEC-06).
+
+**A first release has no upgrade to test.** Its 149 migrations run on an empty database. The way an upgrade is undone
 (section 6) first matters at 1.0.1.
 
 **No release notes exist.** For 1.0.0 they should say:
 
 - that this is the first release;
 - what it contains (TRACEABILITY.md);
-- its known limits (the Blocked rows, and S1 and S2 above);
+- its known limits (above, the Blocked rows, and S1 and S2);
 - what the hospital must provide (the *Who must act* column of TRACEABILITY.md).
 
 ## 3. The evidence
 
 ### 3.1 CI on the candidate
 
-CI run #1030, on `ad5acb37`, 10 November 2026, 10:08 to 10:58 UTC. Every job passed.
+CI run #1189, on `31cae7c0`, 16 November 2026, 07:20 to 08:21 UTC. Every job passed. The same code passed CI on its
+pull request, #373 (on `de8d90fb`), with the same counts.
 
 | Job | What it checks | Result |
 |---|---|---|
-| Server and desktop (.NET), on Windows | C# formatting; package restore and audit; build, with warnings as errors; every .NET test, the end-to-end journeys among them, against a real PostgreSQL. Then: the database watchdog starts a crashed PostgreSQL again; the certificate probe runs as SYSTEM from Task Scheduler; a warm standby streams from the primary and takes over; the desktop updater is published as the release publishes it | 10,832 tests: 10,822 passed, 0 failed, 10 skipped, in 33 min. Every later check passed |
-| Server installer, in PowerShell 5.1 and 7 | Twelve scripts: the settings file, the database sign-in, the two database accounts, restarts after a failure, `-NoStart`, Windows Update's active hours, power settings, firewall rules, the standby scripts, the desktop's self-update, release signing with a throwaway key, and the server preflight | Passed |
-| Web apps (TypeScript) | A secret scan of every commit; package audit and patch windows; formatting; type checking; lint; unit tests; the demo; the build | Passed |
+| Server and desktop (.NET), on Windows | C# formatting; package restore and audit; build, with warnings as errors; every .NET test, the end-to-end journeys among them, against a real PostgreSQL. Then: the database watchdog starts a crashed PostgreSQL again; the certificate probe runs as SYSTEM from Task Scheduler; a warm standby streams from the primary and takes over; the desktop updater is published as the release publishes it | 12,164 tests: 12,154 passed, 0 failed, 10 skipped, in 31 min. Every later check passed |
+| Server installer, in PowerShell 5.1 and 7 | Sixteen scripts: the settings file, the database sign-in, the two database accounts, the restore marker, the restore drill's decisions, the backup sizing arithmetic, restarts after a failure, `-NoStart`, Windows Update's active hours, power settings, firewall rules, the standby scripts, the desktop's self-update, release signing with a throwaway key, the release's version and tag check, and the server preflight | Passed |
+| Web apps (TypeScript) | A secret scan of the change's history; package audit and patch windows; formatting; type checking; lint; unit tests; the demo; the build | Passed |
 | Accessibility (WCAG 2.2 AA) | The staff app and the portal, in Chromium | Passed |
 | SBOMs (CycloneDX) | The SBOMs the release attaches | Passed |
 | Security patch windows (SEC-11) | No advisory past its patch window, and none unrecorded. `.github/security-advisories.json` records none | Passed |
 
 **The skipped tests** state their own reason. Some need Redis, which a single-server hospital does not use; some need
-`openssl`, or another operating system. Which ten skipped in this run is in its test reports, which were not read
-here (*to confirm*).
+`openssl`, or another operating system. Which ten were skipped is in the run's test reports, which were not read here
+(*to confirm*).
 
 ### 3.2 How stable the tests are
 
-| Last 30 completed CI runs on `main` | Count |
+| Last 30 completed CI runs on `main` (#1045 to #1189) | Count |
 |---|---|
-| Passed | 19 |
-| Failed | 2 |
-| Cancelled: a newer merge replaced the run | 9 |
+| Passed | 13 |
+| Failed | 3 |
+| Cancelled: a newer merge replaced the run | 14 |
 
-Each failure was a single test, out of about 10,700:
+Until #361, each merge to `main` cancelled the run of the one before. Since #361, each push to `main` has a run of its
+own, so every merge is tested.
 
-| Run | Commit | Test | Cause | Status |
+| Run | Commit | What failed | Cause | Status |
 |---|---|---|---|---|
-| #980 | `c3602887` | `OutpatientJourneyTests`, the portal-booked journey | The test made a time past midnight. The run was at about 23:00 IST | Fixed in the test (`5316ea9e`) |
-| #1024 | `653e7dde` | `WebAuthnUnlockTests`, a refused unlock while the session ends | Not known: the unlock took more than 30 s to reach the lock it waits on | **Open (R3)** |
+| #1046 | `cbe5afb9` | The package audit and the security patch windows | .NET's 10 November security release | Taken in `d905a8e5`, 12 November |
+| #1173 | `381fa7c3` | `BackupRestoreTestTests` | R9 | Fixed in #371 and #373 |
+| #1186 | `ea12b44c` | `BackupRestoreTestTests` | R9: the scratch database the test restore made, left because autovacuum was in it | Fixed in #373 |
 
-So one green run is good evidence, but it is not proof that the suite is stable. R3 has to be explained, not re-run.
+No other test failed. The test whose failure on 10 November had no known cause (R3) has not failed since.
 
 ### 3.3 Checks that run on a schedule
 
-- **Security audit**, every day at 06:00 IST. It last ran on 10 November, on `653e7dde`, and passed. It covers the
-  candidate too: between `653e7dde` and `ad5acb37` only deployment scripts, their tests, `ci.yml` and two documents
-  changed, and no package list.
-- **Load test**, every Monday at 02:00 IST. It last ran on 9 November IST, on `ec80fc81`, and passed. It runs on a
-  shared runner, so its timings are only reported; they decide nothing about the hospital.
-- **CodeQL** runs on every change. Its alerts on `main` were not read here (*to confirm*, on the repository's
-  Security tab).
-- **Dependabot.** When this branch was pushed, GitHub replied that it found 34 vulnerabilities on the default branch:
-  12 high, 19 moderate and 3 low. CI's package audits and the patch-window check passed on the candidate, and
-  `.github/security-advisories.json` records none. The alerts themselves could not be read with the tools in this
-  session, so which packages they name is *to confirm* (R6).
+- **Security audit**, every day at 06:00 IST. It last ran on 16 November, on `ea12b44c`, and passed. Since then no
+  package list has changed: #373 changed code and tests only.
+- **Load test**, every Monday at 02:00 IST. It ran on 16 November, on `381fa7c3`, and passed. It runs on a shared
+  runner with front-office accounts only, so its timings are only reported; they decide nothing about the hospital.
+- **CodeQL** runs on every change. The repository's own jobs pass. Default setup's two alerts are R10.
+- **Dependabot.** See R6.
 
 ### 3.4 What CI does not prove, and what does
 
 | Claim | Not shown by CI because | Shown by | Who |
 |---|---|---|---|
-| The release workflow works | It has never run | A run on `1.0.0-rc.1` | HyFib |
+| The release workflow works when tagged | It has run only on pull requests, which neither sign nor publish | A run on `v1.0.0-rc.1`, with every file attached | HyFib |
 | The installers work on the hospital's PC | CI uses its own Windows image, with no files downloaded | The preflight report, then System health after the install | Hospital IT, with HyFib |
 | The server is fast enough there | GitHub's runners are not the hospital's machine | The load test at 75 users (PERF-01), with the peak mix of billing, pharmacy, lab, ward and portal steps (LOAD-TESTS.md), run on the real 6-core desk PC as a site task, and `pg_test_fsync` | Hospital IT, with HyFib |
-| The data survives a lost disk | — | A backup restored on another PC | Hospital IT |
+| The data survives a lost disk | — | A backup restored on another PC. The weekly test restore also checks each backup, from the first week | Hospital IT |
 | Workstations update themselves | No key is trusted (R2) | The second release, offered by the server and taken by a workstation | HyFib |
-| It is secure enough to hold patients | A test suite is not an audit | The ASVS L2 checklist, signed | The hospital's security officer |
+| It is secure enough to hold patients | A test suite is not an audit | The ASVS L2 checklist, signed; an independent security test by a CERT-In-empanelled auditor | The hospital's security officer |
 | The pharmacy's registers are right | — | Three days in parallel, reconciled, signed | The pharmacist-in-charge, then the Drugs Inspector |
 
 ## 4. How a release is built and shipped
 
 | Step | What happens | State |
 |---|---|---|
-| 1. Tag `vX.Y.Z` | Starts `release.yml`, which first checks that the tag names the version | Works. There was no such check (R5, fixed) |
-| 2. `Publish-HC360.ps1` | Web apps: install from the lockfile, type check, tests, build. .NET: every test. Publishes the server (self-contained, web apps included), HC360 Desktop and the lab agent. Writes `SHA256SUMS.txt` | **The tests had no database (R1, fixed)**. The staff app did not build on Windows (R7, fixed). A web test lost a race on the Windows runner (R8, fixed). Passed on #333 |
-| 3. `Sign-HC360Release.ps1` | Signs HC360 Desktop's manifest (ECDSA P-256) with `HC360_RELEASE_SIGNING_KEY`. Without the secret, it builds unsigned and says so in the job summary | Tested in CI with a throwaway key |
-| 4. Check the signature | `desktop verify` with the keys built into this version, when the package was signed. An unsigned package now stops a tagged release | **No key is built in (R2)**: a signed package fails here, and until the key exists no release can be made |
+| 1. Tag `vX.Y.Z` | Starts `release.yml`, which refuses a commit CI has not passed on `main` (the newest CI run of a push of that commit decides, so a re-run that passed counts), and checks that the tag names the version | The version check is tested in CI. The CI check has not run yet: it runs only on a tag. So tag a commit of `main` whose own CI run passed |
+| 2. `Publish-HC360.ps1` | Web apps: install from the lockfile, type check, tests, build. .NET: every test. Publishes the server (self-contained, web apps included), HC360 Desktop and the lab agent, and stops if the developer settings reach the server package. Writes `SHA256SUMS.txt` | Passed end to end on #333 and on #361 |
+| 3. `Sign-HC360Release.ps1` | Signs HC360 Desktop's manifest (ECDSA P-256) with `HC360_RELEASE_SIGNING_KEY`. Without the secret, it builds unsigned and says so in the job summary | Tested in CI with a throwaway key; never run for real |
+| 4. Check the signature | `desktop verify` with the keys built into this version, when the package was signed. An unsigned package stops a tagged release | **No key is built in (R2)**: until the key exists, no release can be made |
 | 5. Patch windows | No advisory past its window, and none unrecorded | Works |
-| 6. SBOMs | CycloneDX, for each package and web app. They, and HC360 Desktop's manifest and signature, are added to `SHA256SUMS.txt` | Works. The manifest and signature were not listed (found by Codex, fixed) |
+| 6. SBOMs | CycloneDX, for each package and web app. They, and HC360 Desktop's manifest and signature, are added to `SHA256SUMS.txt` | Works |
 | 7. Attach to the GitHub release | Zips, manifests, signature, SBOMs, checksums | Not yet run |
 | — | Authenticode signature on the programs | **None (S1)** |
 
 ## 5. Installing 1.0.0 at Theni (waves 0 and 1)
 
-Follow [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), section 4. This release adds four things to it:
+Follow [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), section 4. This release adds five things to it:
 
 1. **In step 1, before anything runs.** Check the files against `SHA256SUMS.txt` and the copy HyFib sent another
    way (S1), unblock the checked zip, and let the window run scripts (R4; DEPLOYMENT.md section 1).
@@ -203,8 +262,11 @@ Follow [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), section 4. This relea
    roles are what keeps the other departments closed in wave 1.
 4. **Integrations.** Leave SMS, WhatsApp, payments and Tally unset unless wave 1 uses them. A live server refuses the
    simulators (DEPLOYMENT.md, *Going live on a database used for training*).
+5. **Supplier returns.** Before wave 1, decide how the stores return expired or damaged stock to a supplier: on paper,
+   posted once a screen exists, or through screens HyFib builds first. Payable adjustments and stock levels for each
+   store wait the same way. The item master's own reorder levels work.
 
-**Why wave 1 needs no new code.** In wave 1 no live department hands work to one that is not live:
+**Why wave 1 needs no other new code.** In wave 1 no live department hands work to one that is not live:
 
 - the EMR is not used, so no orders and no prescriptions are signed;
 - nobody is admitted, so no ward charges or medication chart lines are made;
@@ -221,7 +283,7 @@ cases at wave 3's take-on. From wave 3 they are many.
   go-live means going back to entering in it alone. Print what was entered in HC360 that day from its registers, and
   enter it by hand.
 - **Upgrades from 1.0.1 onwards.** The way back is the previous package and the backup HC360 takes before an update.
-  Never the previous package alone: on a database a newer version changed, start-up now stops and changes nothing
+  Never the previous package alone: on a database a newer version changed, start-up stops and changes nothing
   (rollout item 7). DEPLOYMENT.md section 7, *Going back*, gives the steps. Rehearse each upgrade on a restored copy
   first.
 - **HC360 Desktop.** Until R2 is closed, every new version is installed on each workstation with
@@ -231,7 +293,7 @@ cases at wave 3's take-on. From wave 3 they are many.
 
 | Gate | Evidence | Signed by |
 |---|---|---|
-| R1 to R8 closed | The pull requests that close them; CI green on the tagged commit; each high Dependabot alert fixed or written down | HyFib engineering lead |
+| The blockers closed | R2's key in `ReleaseKeys.cs`; CI green on the tagged commit; each high Dependabot alert fixed or written down (R6); CodeQL alerts 23 and 24 dismissed (R10) | HyFib engineering lead |
 | The release workflow works | A green run on `v1.0.0-rc.1`, with every file attached | HyFib engineering lead |
 | The checksums reached IT by a second channel | IT's note of the values compared | Hospital IT officer |
 | The machine is fit | The preflight with no Fail, and a decision against each Warn | Hospital IT officer |
@@ -241,6 +303,7 @@ cases at wave 3's take-on. From wave 3 they are many.
 | The data survives a lost disk | The first night's backup verified, and restored on another PC | Hospital IT officer |
 | Secure enough to hold patients | The ASVS L2 checklist, signed (SEC-06) | The hospital's security officer |
 | The item master is right | The H1 and X list reviewed | Pharmacist-in-charge |
+| Supplier returns decided | How the stores return stock to suppliers in wave 1, written down (section 5) | Pharmacist-in-charge and the stores in-charge |
 | Go | Every row above | The hospital's named decision-maker |
 
 After go-live, the pharmacist-in-charge signs the parallel run (NANA-THENI-READINESS.md, section 2).
@@ -250,43 +313,46 @@ After go-live, the pharmacist-in-charge signs the parallel run (NANA-THENI-READI
 | Risk | Why it is accepted | Until |
 |---|---|---|
 | A 6-core desk PC where the SRS asks for 8 cores, kept in daily use | The load test decides; the readiness document's conditions apply | The hospital decides on a dedicated server (readiness document, section 6) |
-| Up to a day of entries lost if the disk fails | The backup runs nightly at 01:30. WAL archiving would bring the loss down to 15 minutes (DEPLOYMENT.md, section 9) | The hospital decides whether to archive the WAL to the USB disk |
+| Up to a day of entries lost if the disk fails | The backup runs nightly at 01:30. WAL archiving, which now works on a single server and is encrypted, would bring the loss down to 15 minutes (DEPLOYMENT.md, section 9) | The hospital decides whether to archive the WAL to the take-home disk |
 | Every workstation upgraded by hand | Only if R2 is put off | R2 is closed |
 | Programs not signed | The second channel for the checksums (S1) | A code-signing certificate |
+| Features with no screen (section 2) | Each belongs to a later wave, except supplier returns (section 5) | Their screens are built, wave by wave |
+| The ASVS L2 checklist's Partial and Gap rows | The security officer's sign-off decides each | SEC-06 is signed |
 | Translations not reviewed | Patients first see them in wave 7 | The reviewers |
 
 ## Appendix: sources
 
-From GitHub, on 10 November 2026:
+From GitHub, on 16 November 2026:
 
 - Releases and tags: none.
-- Release workflow runs: none.
-- CI runs on `main`: the last 30 completed. #1030 (`ad5acb37`, run 42796583920): six jobs, all passed. The .NET job
-  (129763199704) printed `total: 10832, failed: 0, succeeded: 10822, skipped: 10`. #1024 (`653e7dde`, run
-  42765853117): failed in its .NET job (129662137166), one test, 30.04 s against 30 s, at
-  `WebAuthnUnlockTests.cs:338`. #980 (`c3602887`, run 42663896829): failed in
-  `OutpatientJourneyTests.FreeSlotTodayAsync`.
-- Security audit: run #20, 10 November, passed. Load test: run #23 (scheduled), 9 November IST, passed.
-- `git push` of this branch, 10 November: "GitHub found 34 vulnerabilities on HyFib/HyFib-HealthCare360-NanaHospitals's
-  default branch (12 high, 19 moderate, 3 low)."
-- Release workflow runs on pull request #333, added with *Where the blockers stand*: run 1 (42820982602, `8c27aff7`)
-  failed at the staff app's type check (R7); run 2 (42822682123, `934f4eab`) passed every step; run 3 (42823227135,
-  `1df1293d`) failed one web test, in the doctor fee screens (R8). Run 4 (42823506101, `730b49a8`, still without the
-  R8 fix) passed, as the race allows; runs 5 (42829792250, `0b192096`), 6 (42835499077, `6ac9c3f8`) and 7
-  (42839765907, `1a964c02`) passed with it.
-- Codex's review of #333: two comments, on `release.yml` (the checksums) and DEPLOYMENT.md (*Going back*).
+- Release workflow runs: on pull requests only, which neither sign nor publish. #361's run 24 (43662761647, on
+  `797dbea8`) passed every step in 1 h 55 min, its publish step from 01:23 to 03:15 UTC. Every other run on #361 was
+  cancelled by the next push, except run 12 (43593797511), which failed at a web test fixed since.
+- CI on the candidate: run #1189 (43823197964, `31cae7c0`, a push to `main`): six jobs, all passed. The .NET job
+  (133150799132) printed `total: 12164, failed: 0, succeeded: 12154, skipped: 10`. On #373's head, `de8d90fb` (run
+  43815583092), the same.
+- CI runs on `main`: the last 30 completed, #1045 to #1189, of which 13 passed, 3 failed and 14 were cancelled.
+  - #1173 (43671764955, `381fa7c3`) failed in `BackupRestoreTestTests`, with `hc360_restore_test_96bebb8bb0e7` left.
+  - #1186 (43805475089, `ea12b44c`) failed in the same test, with `hc360_restore_test_e7a5fe22_fc2b3babef55` left,
+    owned by the test's own account.
+  - #1046 (43023566105, `cbe5afb9`) failed at *Restore and audit packages* and the patch windows.
+- Security audit: run #27, 16 November, on `ea12b44c`, passed. Load test: run #41 (scheduled), 16 November, passed.
+- Open pull requests: #362 to #370, Dependabot's, opened on 16 November. No open issues.
 
-From the repository, at `ad5acb37`:
+From the repository, at `31cae7c0`:
 
-- `.github/workflows/release.yml`, `ci.yml` (the PostgreSQL step and the comment above it), `security-audit.yml`,
-  `load.yml`, `.github/security-advisories.json`;
-- `deploy/windows/Publish-HC360.ps1`, `tools/release/Sign-HC360Release.ps1`;
-- `src/shared/HyFib.HealthCare360.WindowsInterop/Updates/ReleaseKeys.cs`;
-- `tests/HyFib.HealthCare360.IntegrationTests/TestDatabase.cs` and `WebAuthnUnlockTests.cs`;
-- `git log -- tests/HyFib.HealthCare360.IntegrationTests/WebAuthnUnlockTests.cs`: last changed in `b4232ac9`, before the
-  failure;
-- `git diff --stat 653e7dde ad5acb37`: five files, none a package list;
-- a search of `docs`, `deploy` and `README.md` for `ExecutionPolicy` and `Unblock-File`: none found;
-- a search of `.github`, `deploy` and `tools` for Authenticode or `signtool`: none found.
+- `src/shared/HyFib.HealthCare360.WindowsInterop/Updates/ReleaseKeys.cs`: `Trusted` holds only a commented example.
+- `.github/security-advisories.json`: no advisories.
+- TRACEABILITY.md's summary: 183 requirements, 173 Done, 10 Blocked. ASVS-L2.md: 253 rows, 130 Met, 61 Partial, 8 Gap,
+  54 N/A, assessed on 30 September.
+- The figures in section 2: the commands in MODULE-ROLLOUT-PLAN.md's appendix, run at the candidate.
+- The screens in section 2's known limits: the server routes in `src/web/apps/staff/src/test/serverAccess.json`,
+  searched for in the staff app's code, tests left out.
+- `git log --merges ad5acb37..31cae7c0`: pull requests #333 to #373.
 
-From Microsoft: *about_Execution_Policies* and *Unblock-File* (learn.microsoft.com, PowerShell 7.6), for R4.
+The reproduction of R9, on PostgreSQL 16.15:
+
+- A non-superuser account that may create databases made one, and filled a table there until autovacuum came to it.
+- `DROP DATABASE … WITH (FORCE)`, run by that account while the autovacuum worker ran `VACUUM ANALYZE`, answered
+  "permission denied to terminate process", and the database stayed.
+- A plain `DROP DATABASE` by the same account succeeded in 0.26 s, with the worker present.
