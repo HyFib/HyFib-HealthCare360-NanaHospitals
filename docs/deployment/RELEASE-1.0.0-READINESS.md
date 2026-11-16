@@ -126,7 +126,7 @@ a screen exists, or have HyFib build the screens first (section 5).
 **Recommendation**
 
 1. HyFib makes the signing key (R2), reads the Security tab (R6), and has the two CodeQL alerts dismissed (R10). It
-   starts S1's second channel, and rules on the four CodeQL findings SECURITY.md does not cover yet (section 3.3).
+   starts S1's second channel.
 2. The hospital decides how wave 1 handles supplier returns.
 3. HyFib tags `1.0.0-rc.1` on a commit CI passed, and installs it on the Theni machine. Once that works, it tags 1.0.0
    from the same code.
@@ -226,11 +226,10 @@ No other test failed. The test whose failure on 10 November had no known cause (
   GitHub refuses the repository's own results, so its jobs check them themselves and list them in their summaries, not
   on the Security tab. On the candidate (run #1112) those jobs passed: no high or critical finding is open, and the
   three high ones SECURITY.md rules false positives are marked in the source. They also list 13 medium findings, which
-  do not fail the check. SECURITY.md's table, of the first run's alerts, rules nine of them false positives. Nobody has
-  ruled on the other four yet. On a first reading, each is a false positive too:
-  - `KeyRotation.cs`, lines 207 and 211 (log entries created from user input): by then the key id has matched a key in
-    the server's key ring, and only a user allowed to manage the system, who has entered their password again, gets
-    there.
+  do not fail the check. SECURITY.md's table rules every one of them a false positive. The maintainer ruled on the last
+  four on 16 November:
+  - `KeyRotation.cs`, lines 207 and 211 (log entries created from user input): a key id is logged only once it has
+    matched a key in the ring. Any other is refused as not found first, which `KeyRotationTests` now pins.
   - `src/web/demo/capture.mjs`, line 267 (network data written to a file): the tool that records the demo's data,
     run by hand. It is no part of what a hospital installs.
   - The portal's proof-of-work worker, `solver.worker.ts`, line 5 (no origin check on a message): a dedicated worker
