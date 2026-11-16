@@ -51,7 +51,7 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
             listed.RestoreTestPassed.ShouldBe(true);
             listed.RestoreTestedAt.ShouldNotBeNull();
             listed.RestoreTestNote.ShouldNotBeNull().ShouldContain($"its {manifest.RowCounts.Count} key tables hold the");
-            (await ScratchDatabasesAsync()).ShouldBeEmpty("the scratch database, a copy of every patient's record, is dropped");
+            (await ScratchDatabasesOfAsync(account)).ShouldBeEmpty("the scratch database it made, a copy of every patient's record, is dropped");
         }
         finally
         {
@@ -83,7 +83,7 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
             var told = (await admin.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
                 .Where(n => n.Title == BackupRestoreTest.FailedTitle && n.Body?.Contains(made.FileName!, StringComparison.Ordinal) == true);
             told.ShouldHaveSingleItem("the administrators are told in the app");
-            (await ScratchDatabasesAsync()).ShouldBeEmpty();
+            (await ScratchDatabasesOfAsync(account)).ShouldBeEmpty();
         }
         finally
         {
@@ -150,12 +150,20 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
         return await command.ExecuteScalarAsync(Ct) is string directory && Directory.Exists(directory);
     }
 
-    private async Task<List<string>> ScratchDatabasesAsync()
+    /// <summary>
+    /// The scratch databases <paramref name="account"/> owns: those its test restores made, and only those. The PostgreSQL
+    /// server is shared by every test of the run and by the platform tests, which run at the same time and make scratch
+    /// databases of their own as their own accounts (PostgresRestoreTests); a check of every scratch database on the
+    /// server sees theirs.
+    /// </summary>
+    private async Task<List<string>> ScratchDatabasesOfAsync(string account)
     {
         await using var connection = new NpgsqlConnection(Live());
         await connection.OpenAsync(Ct);
-        await using var command = new NpgsqlCommand("SELECT datname FROM pg_database WHERE starts_with(datname, @prefix)", connection);
+        await using var command = new NpgsqlCommand(
+            "SELECT datname FROM pg_database WHERE starts_with(datname, @prefix) AND pg_get_userbyid(datdba) = @account", connection);
         command.Parameters.AddWithValue("prefix", PostgresTools.ScratchPrefix);
+        command.Parameters.AddWithValue("account", account);
         var names = new List<string>();
         await using var reader = await command.ExecuteReaderAsync(Ct);
         while (await reader.ReadAsync(Ct))
