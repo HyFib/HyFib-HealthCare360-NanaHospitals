@@ -51,7 +51,7 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
             listed.RestoreTestPassed.ShouldBe(true);
             listed.RestoreTestedAt.ShouldNotBeNull();
             listed.RestoreTestNote.ShouldNotBeNull().ShouldContain($"its {manifest.RowCounts.Count} key tables hold the");
-            (await ScratchDatabasesAsync()).ShouldBeEmpty("the scratch database, a copy of every patient's record, is dropped");
+            (await OwnedByAsync(account, Ct)).ShouldBeEmpty($"the scratch database, a copy of every patient's record, is dropped ({outcome.Note})");
         }
         finally
         {
@@ -83,7 +83,7 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
             var told = (await admin.GetAsync<PagedResult<UserNotificationDto>>("/api/v1/notifications?pageSize=200")).Items
                 .Where(n => n.Title == BackupRestoreTest.FailedTitle && n.Body?.Contains(made.FileName!, StringComparison.Ordinal) == true);
             told.ShouldHaveSingleItem("the administrators are told in the app");
-            (await ScratchDatabasesAsync()).ShouldBeEmpty();
+            (await OwnedByAsync(account, Ct)).ShouldBeEmpty();
         }
         finally
         {
@@ -150,15 +150,20 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
         return await command.ExecuteScalarAsync(Ct) is string directory && Directory.Exists(directory);
     }
 
-    private async Task<List<string>> ScratchDatabasesAsync()
+    /// <summary>
+    /// The databases <paramref name="account"/> owns: the scratch databases the test's own restore account made and did not
+    /// drop, as it makes no others. Not every scratch database on the server: the run shares it with the other test
+    /// assemblies, run at the same time, and PostgresRestoreTests makes its own there, under accounts of its own.
+    /// </summary>
+    private async Task<List<string>> OwnedByAsync(string account, CancellationToken ct)
     {
         await using var connection = new NpgsqlConnection(Live());
-        await connection.OpenAsync(Ct);
-        await using var command = new NpgsqlCommand("SELECT datname FROM pg_database WHERE starts_with(datname, @prefix)", connection);
-        command.Parameters.AddWithValue("prefix", PostgresTools.ScratchPrefix);
+        await connection.OpenAsync(ct);
+        await using var find = new NpgsqlCommand("SELECT datname FROM pg_database WHERE pg_get_userbyid(datdba) = @account", connection);
+        find.Parameters.AddWithValue("account", account);
         var names = new List<string>();
-        await using var reader = await command.ExecuteReaderAsync(Ct);
-        while (await reader.ReadAsync(Ct))
+        await using var reader = await find.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
         {
             names.Add(reader.GetString(0));
         }
@@ -169,19 +174,9 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
     /// <summary>The account, and any scratch database a failed test left it owning, which would keep it from being dropped.</summary>
     private async Task DropAccountAsync(string account)
     {
+        var owned = await OwnedByAsync(account, CancellationToken.None);
         await using var connection = new NpgsqlConnection(Live());
         await connection.OpenAsync(CancellationToken.None);
-        var owned = new List<string>();
-        await using (var find = new NpgsqlCommand("SELECT datname FROM pg_database WHERE pg_get_userbyid(datdba) = @account", connection))
-        {
-            find.Parameters.AddWithValue("account", account);
-            await using var reader = await find.ExecuteReaderAsync(CancellationToken.None);
-            while (await reader.ReadAsync(CancellationToken.None))
-            {
-                owned.Add(reader.GetString(0));
-            }
-        }
-
         foreach (var name in owned)
         {
             await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)", connection);
