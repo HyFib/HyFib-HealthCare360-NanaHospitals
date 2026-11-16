@@ -205,7 +205,7 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
     {
         var server = Server();
         var restorer = As(On(server, "postgres"), Restorer);
-        var leftover = PostgresTools.ScratchPrefix + "0123456789ab";
+        var leftover = PostgresTools.ScratchPrefixFor(Database) + "0123456789ab";
         await ExecuteAsync(restorer, $"CREATE DATABASE {leftover}");
         var tools = Tools(As(On(server, Database), App), restorer, checkRoom: false);
 
@@ -214,6 +214,38 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
 
         (await DatabaseExistsAsync(server, leftover)).ShouldBeFalse();
         await Should.ThrowAsync<ArgumentException>(() => tools.DropAsync(Database, CancellationToken.None), "only a scratch database is ever dropped");
+    }
+
+    /// <summary>
+    /// Two HC360 databases on one PostgreSQL server (the live one and a training one, say) share the account test restores
+    /// sign in as, as Install-HC360Server.ps1 makes it (hc360_restore), and both test their backups at the same hour. A test
+    /// restore of one never takes the other's scratch database, which may be filling at that moment, for one an earlier
+    /// test left, nor drops it by name.
+    /// </summary>
+    [Fact]
+    public async Task A_test_restore_of_another_hospital_database_on_the_server_is_left_alone()
+    {
+        var server = Server();
+        var restorer = As(On(server, "postgres"), Restorer);
+        var tools = Tools(As(On(server, Database), App), restorer, checkRoom: false);
+        // The other hospital database's name is all its test restore takes from it before the restore itself.
+        var training = Tools(As(On(server, Database + "_training"), App), restorer, checkRoom: false);
+
+        var theirs = await training.CreateAsync(1L << 20, Ct);
+        try
+        {
+            var ours = await tools.CreateAsync(1L << 20, Ct);
+            await tools.DropAsync(ours, CancellationToken.None);
+
+            (await DatabaseExistsAsync(server, theirs)).ShouldBeTrue("the other database's test restore is not taken for a leftover");
+            await Should.ThrowAsync<ArgumentException>(() => tools.DropAsync(theirs, CancellationToken.None), "nor dropped by name");
+        }
+        finally
+        {
+            await training.DropAsync(theirs, CancellationToken.None);
+        }
+
+        (await DatabaseExistsAsync(server, theirs)).ShouldBeFalse("its own test restore drops it");
     }
 
     /// <summary>
