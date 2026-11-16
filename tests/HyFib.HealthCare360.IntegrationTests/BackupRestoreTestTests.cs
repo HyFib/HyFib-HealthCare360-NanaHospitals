@@ -46,6 +46,8 @@ public sealed class BackupRestoreTestTests(HospitalServer server)
             var outcome = await Tester(scope.ServiceProvider, CreatedBy(account)).RunAsync(force: true, Ct);
 
             outcome.ShouldNotBeNull().Passed.ShouldBeTrue(outcome.Note);
+            // A drop that fails does not fail the test restore; its note says why, which this shows when it happens.
+            outcome.Note.ShouldNotContain("could not be dropped", Case.Sensitive, "its scratch database, a copy of every patient's record, is dropped");
             outcome.RunId.ShouldBe(made.Id, "the newest backup");
             var listed = (await admin.GetAsync<List<BackupRunDto>>("/api/v1/admin/backups")).Single(r => r.Id == made.Id);
             listed.RestoreTestPassed.ShouldBe(true);
