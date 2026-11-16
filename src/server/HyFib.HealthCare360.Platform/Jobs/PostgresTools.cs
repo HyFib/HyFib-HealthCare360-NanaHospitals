@@ -49,7 +49,7 @@ public interface IPostgresTools
 internal interface IScratchDatabase
 {
     /// <summary>
-    /// Drops what an earlier test restore of the hospital's database left (cut off by a power cut or a restart), checks that
+    /// Drops what an earlier test restore of this hospital database left (cut off by a power cut or a restart), checks that
     /// PostgreSQL's disk has <paramref name="roomNeeded"/> bytes free, and makes an empty database; returns its name.
     /// </summary>
     /// <exception cref="ScratchDatabaseException">It cannot be made: why, and what to do, in words for the administrator.</exception>
@@ -73,8 +73,8 @@ internal sealed partial class PostgresTools(
     IConfiguration configuration, DatabaseCredentials credentials, IOptions<PlatformOptions> options, ILogger<PostgresTools> logger) : IPostgresTools, IScratchDatabase
 {
     /// <summary>
-    /// What the names of the scratch databases test restores make begin with, followed by the mark of the hospital's database
-    /// they were made for (<see cref="ScratchPrefixFor"/>) and 12 random hex digits; only these are ever dropped.
+    /// How the names of the scratch databases test restores make begin. Each name then carries a code of the hospital
+    /// database it copies (<see cref="ScratchPrefixFor"/>), and only a hospital database's own are ever dropped.
     /// </summary>
     internal const string ScratchPrefix = "hc360_restore_test_";
     /// <summary>
@@ -91,15 +91,16 @@ internal sealed partial class PostgresTools(
     public string DatabaseName => Connection.Database ?? string.Empty;
 
     /// <summary>
-    /// What the scratch databases of <paramref name="hospitalDatabase"/>'s test restores are named with: <see cref="ScratchPrefix"/>
-    /// and the database's mark, the first 8 hex digits of its name's SHA-256. Two HC360 databases on one PostgreSQL server (a
-    /// training server's beside the live one's) may have their test restores sign in as the same account, and run them the
-    /// same night; the test restores' lock (<see cref="BackupRestoreTest.LockKey"/>) does not keep them apart, as PostgreSQL
-    /// holds an advisory lock in one database. Each then drops only what its own database's tests left, never the scratch
-    /// database of the other's restore under way.
+    /// How the names of <paramref name="hospitalDatabase"/>'s scratch databases begin: <see cref="ScratchPrefix"/> and the
+    /// first 8 hex digits of the SHA-256 of its name. Two HC360 databases on one PostgreSQL server (a live one and a
+    /// training one) share the account test restores sign in as, and test their backups at the same hour: with its own
+    /// names, a test restore of one never takes the other's scratch database, which may be filling at that moment, for one
+    /// an earlier test left.
     /// </summary>
     internal static string ScratchPrefixFor(string hospitalDatabase) =>
-        ScratchPrefix + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(hospitalDatabase)).AsSpan(0, 4)) + "_";
+        ScratchPrefix + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(hospitalDatabase)))[..8] + "_";
+
+    private string OwnScratchPrefix => ScratchPrefixFor(DatabaseName);
 
     public async Task<long> GetDatabaseSizeAsync(CancellationToken ct)
     {
@@ -186,7 +187,7 @@ internal sealed partial class PostgresTools(
     }
 
     [SuppressMessage("Security", "CA2100:Review SQL queries for security vulnerabilities",
-        Justification = "The database's name is HC360's own (a fixed prefix, the hex mark of the hospital's database and random hex); its encoding and locale are the hospital database's, from pg_database, quoted as literals.")]
+        Justification = "The database's name is HC360's own (a fixed prefix, a hex code of the hospital database's name and random hex); its encoding and locale are the hospital database's, from pg_database, quoted as literals.")]
     public async Task<string> CreateAsync(long roomNeeded, CancellationToken ct)
     {
         var account = RestoreConnection(null);
@@ -200,15 +201,15 @@ internal sealed partial class PostgresTools(
             throw new ScratchDatabaseException($"The account test restores sign in as ({account.Username}) could not sign in to PostgreSQL: {ex.Message}", ex);
         }
 
-        // What an earlier test restore of this database left: a power cut, or a restart, in the middle of one. Only this
-        // account's own scratch databases, by their names (IsScratch), never the hospital's, nor those of another HC360
-        // database on this server whose test restores sign in as this account too: one of them may be restoring now.
+        // What an earlier test restore left: a power cut, or a restart, in the middle of one. Only this hospital database's
+        // scratch databases, by their names, that this account made: never the hospital's, nor another HC360 database's on
+        // this server, whose test restore may share the account and be filling one now.
         var leftovers = new List<string>();
         await using (var find = new NpgsqlCommand(
                          "SELECT datname FROM pg_database WHERE starts_with(datname, @prefix) AND datdba = (SELECT oid FROM pg_roles WHERE rolname = current_user)",
                          connection))
         {
-            find.Parameters.AddWithValue("prefix", ScratchPrefix);
+            find.Parameters.AddWithValue("prefix", OwnScratchPrefix);
             await using var reader = await find.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
@@ -253,7 +254,7 @@ internal sealed partial class PostgresTools(
             }
         }
 
-        var name = ScratchPrefixFor(DatabaseName) + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+        var name = OwnScratchPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
         var locale = collate.Length > 0 ? $" LC_COLLATE {Literal(collate)} LC_CTYPE {Literal(ctype)}" : string.Empty;
         // However long it takes: the account's connection string may give none, and Npgsql's default is 30 seconds.
         await using (var create = new NpgsqlCommand($"CREATE DATABASE \"{name}\" TEMPLATE template0 ENCODING {Literal(encoding)}{locale}", connection) { CommandTimeout = 0 })
@@ -305,7 +306,7 @@ internal sealed partial class PostgresTools(
     {
         if (!IsScratch(database))
         {
-            throw new ArgumentException($"{database} is not a scratch database of a test restore of {DatabaseName}.", nameof(database));
+            throw new ArgumentException($"{database} is not a scratch database of a test restore.", nameof(database));
         }
 
         // FORCE ends the sessions this account still has in it (a pg_restore a restart left running). It may not end another
@@ -327,15 +328,11 @@ internal sealed partial class PostgresTools(
     }
 
     /// <summary>
-    /// Whether <paramref name="database"/> is one of the scratch databases of this hospital's test restores, and not the
-    /// hospital's own: named with its database's mark (<see cref="ScratchPrefixFor"/>), or with none, as every scratch
-    /// database was named before the mark. One without may be another HC360 database's on this server, until that one is
-    /// upgraded too; but it may be what a test cut off before the upgrade left, a copy of every patient's record that nothing
-    /// else would ever drop, so it is dropped all the same.
+    /// Whether <paramref name="database"/> is named as this hospital database's scratch databases are, and is not the
+    /// hospital's: another HC360 database's on the same server is not.
     /// </summary>
     internal bool IsScratch(string database) =>
-        ScratchName().Match(database) is { Success: true } name
-        && (!name.Groups["mark"].Success || database.StartsWith(ScratchPrefixFor(DatabaseName), StringComparison.Ordinal))
+        ScratchName().IsMatch(database) && database.StartsWith(OwnScratchPrefix, StringComparison.Ordinal)
         && !string.Equals(database, DatabaseName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -379,8 +376,7 @@ internal sealed partial class PostgresTools(
 
     private static string Literal(string text) => "'" + text.Replace("'", "''", StringComparison.Ordinal) + "'";
 
-    // ScratchPrefix, the mark of the hospital's database and 12 random hex digits; or, made before the mark, without it.
-    [GeneratedRegex("^hc360_restore_test_(?:(?<mark>[0-9a-f]{8})_)?[0-9a-f]{12}$", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 1000)]
+    [GeneratedRegex("^hc360_restore_test_[0-9a-f]{8}_[0-9a-f]{12}$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 1000)]
     private static partial Regex ScratchName();
 
     public async Task<bool> TryValidateDumpAsync(string dumpFile, CancellationToken ct)
