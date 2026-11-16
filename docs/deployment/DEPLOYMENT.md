@@ -1532,9 +1532,12 @@ once a week HC360 restores the newest backup into a scratch database on the hosp
   count. A backup made before HC360 counted rows passes if it restores without error. Every document the backup lists
   must also have its copy in the backup folder, as a restore from that folder needs; one missing fails the test, and
   is named.
-- **Cleaned up.** The scratch database (`hc360_restore_test_…`) holds a full copy of every patient's record. It is
-  dropped as soon as the test ends, whether it passed or failed. One left by a power cut or a restart during a test
-  is dropped by the next test. The plain database dump in the temporary folder is deleted too.
+- **Cleaned up.** The scratch database (`hc360_restore_test_…`, then a mark of the hospital's database) holds a full
+  copy of every patient's record. It is dropped as soon as the test ends, whether it passed or failed. One left by a
+  power cut or a restart during a test is dropped by the next test of the same database. Where two HC360 databases
+  share a PostgreSQL server (a training server's beside the live one's), each test drops only the scratch databases
+  of its own, even when both sign in as `hc360_restore` and test the same night: the other's may be in the middle of
+  its restore. The plain database dump in the temporary folder is deleted too.
 - **Shown.** The Backups screen's **Checked** column says "Test restore passed" or "Test restore failed", with the
   time, and on a failure, why. A failure is told to the administrators in the app ("Backup test restore failed"), once
   until a test passes again. System health warns (`backup.restore_test`) once no test restore has passed for 14 days

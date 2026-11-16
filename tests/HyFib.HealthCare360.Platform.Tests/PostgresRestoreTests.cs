@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using HyFib.HealthCare360.Platform.Hosting;
 using HyFib.HealthCare360.Platform.Jobs;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -18,8 +19,9 @@ namespace HyFib.HealthCare360.Platform.Tests;
 /// an owner account, read and written by the account the server works as (hc360-database-roles.sql), and the account test
 /// restores sign in as, which may create databases and nothing else. The key tables' rows are counted in the snapshot
 /// pg_dump dumps, so rows saved while it runs are in neither; the scratch database is made, filled by pg_restore, counted
-/// and dropped by that account, and one an earlier test left is dropped first. Runs where HC360_TEST_DATABASE names a
-/// PostgreSQL server the tests may create databases and accounts on (CI's, signed in as its superuser); skipped elsewhere.
+/// and dropped by that account, and one an earlier test of the same database left is dropped first, never one of another
+/// database on the server. Runs where HC360_TEST_DATABASE names a PostgreSQL server the tests may create databases and
+/// accounts on (CI's, signed in as its superuser); skipped elsewhere.
 /// </summary>
 public sealed class PostgresRestoreTests : IAsyncLifetime
 {
@@ -199,21 +201,59 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
         }
     }
 
-    /// <summary>A scratch database left by a test that was cut off (a power cut, a restart) is dropped before the next is made.</summary>
+    /// <summary>
+    /// A scratch database left by a test that was cut off (a power cut, a restart) is dropped before the next is made: one
+    /// named for the hospital's database, as they are made, and one named as they were before their names carried it.
+    /// </summary>
     [Fact]
     public async Task A_scratch_database_left_by_an_earlier_test_is_dropped_first()
     {
         var server = Server();
         var restorer = As(On(server, "postgres"), Restorer);
-        var leftover = PostgresTools.ScratchPrefix + "0123456789ab";
+        var leftover = PostgresTools.ScratchPrefixFor(Database) + "0123456789ab";
+        var unmarked = PostgresTools.ScratchPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
         await ExecuteAsync(restorer, $"CREATE DATABASE {leftover}");
+        await ExecuteAsync(restorer, $"CREATE DATABASE {unmarked}");
         var tools = Tools(As(On(server, Database), App), restorer, checkRoom: false);
 
         var database = await tools.CreateAsync(1L << 20, Ct);
         await tools.DropAsync(database, CancellationToken.None);
 
+        database.ShouldStartWith(PostgresTools.ScratchPrefixFor(Database), Case.Sensitive, "named for the hospital's database");
         (await DatabaseExistsAsync(server, leftover)).ShouldBeFalse();
+        (await DatabaseExistsAsync(server, unmarked)).ShouldBeFalse("one an earlier version left");
         await Should.ThrowAsync<ArgumentException>(() => tools.DropAsync(Database, CancellationToken.None), "only a scratch database is ever dropped");
+    }
+
+    /// <summary>
+    /// Two HC360 databases on one PostgreSQL server, as a training server's beside the live one's, whose test restores sign
+    /// in as the same account and run the same night: the training database's test drops nothing of the live database's
+    /// test under way, nor lets its scratch database be dropped through it.
+    /// </summary>
+    [Fact]
+    public async Task A_test_restore_leaves_alone_the_scratch_database_of_another_database_on_the_server()
+    {
+        var server = Server();
+        var restorer = As(On(server, "postgres"), Restorer);
+        var live = Tools(As(On(server, Database), App), restorer, checkRoom: false);
+        // Its database need not exist: the test restores' account makes and drops scratch databases from "postgres".
+        var training = Tools(As(On(server, Database + "_training"), App), restorer, checkRoom: false);
+
+        var restoring = await live.CreateAsync(1L << 20, Ct);
+        try
+        {
+            var other = await training.CreateAsync(1L << 20, Ct);
+            await training.DropAsync(other, CancellationToken.None);
+
+            (await DatabaseExistsAsync(server, restoring)).ShouldBeTrue("the live database's test restore is still under way");
+            await Should.ThrowAsync<ArgumentException>(() => training.DropAsync(restoring, CancellationToken.None), "it is not the training database's");
+        }
+        finally
+        {
+            await live.DropAsync(restoring, CancellationToken.None);
+        }
+
+        (await DatabaseExistsAsync(server, restoring)).ShouldBeFalse();
     }
 
     /// <summary>
