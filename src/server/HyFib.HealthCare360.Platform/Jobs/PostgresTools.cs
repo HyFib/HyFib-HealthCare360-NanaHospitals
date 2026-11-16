@@ -309,9 +309,29 @@ internal sealed partial class PostgresTools(
             throw new ArgumentException($"{database} is not a scratch database of a test restore.", nameof(database));
         }
 
-        // A copy of the whole database takes a while to remove from the disk.
-        await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection) { CommandTimeout = 0 };
-        await drop.ExecuteNonQueryAsync(ct);
+        // A plain DROP DATABASE ends the autovacuum workers in the database itself, and waits up to 5 seconds for any other
+        // session to leave. WITH (FORCE) also ends the sessions this account may end (a pg_restore that was cut off), but
+        // PostgreSQL refuses it outright while an autovacuum worker is in the database, which only a superuser or a member
+        // of pg_signal_backend may end; and a database just restored is where autovacuum goes to work. So: plainly first,
+        // by force while a session of this account is still in it, and plainly again if autovacuum came back meanwhile.
+        var force = false;
+        for (var attempt = 1; ; attempt++)
+        {
+            // A copy of the whole database takes a while to remove from the disk.
+            await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\"{(force ? " WITH (FORCE)" : string.Empty)}", connection)
+            {
+                CommandTimeout = 0,
+            };
+            try
+            {
+                await drop.ExecuteNonQueryAsync(ct);
+                return;
+            }
+            catch (PostgresException ex) when (attempt < 4 && ex.SqlState is PostgresErrorCodes.ObjectInUse or PostgresErrorCodes.InsufficientPrivilege)
+            {
+                force = ex.SqlState == PostgresErrorCodes.ObjectInUse;
+            }
+        }
     }
 
     /// <summary>
