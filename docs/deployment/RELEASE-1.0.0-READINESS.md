@@ -65,7 +65,7 @@ Merged since, in pull requests #333 to #373:
 | R3 | Done. The test failed because of its own poll of `pg_stat_activity`, not because of screen unlock | It has not failed in the last 30 runs on `main` | — |
 | R4 | Done. DEPLOYMENT.md section 1 tells IT to check the hashes, unblock the zip and set a process-scope execution policy before the preflight runs | — | *To confirm* on the Theni PC: `Get-ExecutionPolicy -List` |
 | R5 | Done. `tools/release/Test-ReleaseVersion.ps1` checks the version, and that the tag names it | `tests/deploy/Test-ReleaseVersion.ps1`, in CI | — |
-| R6 | **To confirm.** GitHub's Dependabot alerts could not be read in this session. CI's audits of what ships find none, the daily security audit passed on 15 November, and `.github/security-advisories.json` records none. The nine Dependabot pull requests opened on 16 November (#362 to #370) are version updates, .NET 11 among them; none was raised by an advisory | The audits; the pull requests | Read each high alert on the Security tab, then fix it or write down why it neither ships nor runs in the release build. Leave the version updates until after 1.0.0 |
+| R6 | **To confirm.** GitHub reports two open Dependabot alerts on `main`, both moderate, none high or critical. The alerts themselves could not be read in this session, so which packages they name, and whether those ship, is not known. CI's audits of what ships find none, the daily security audit passed on 16 November, and `.github/security-advisories.json` records none. The nine Dependabot pull requests opened on 16 November (#362 to #370) are version updates, .NET 11 among them; none was raised by an advisory | GitHub's count, given on a push on 16 November; the audits; the pull requests | Read the two alerts on the Security tab, then fix each or write down why it neither ships nor runs in the release build. Leave the version updates until after 1.0.0 |
 | R7 | Done. CI fails on two files whose names differ only in case | — | — |
 | R8 | Done, and the fifteen other pickers in #334, each with a test | — | — |
 | R9 (new) | Done. **A weekly test restore could pass and leave its scratch database, a full copy of every patient's record, on the server.** A database just restored is where autovacuum goes to work. While an autovacuum worker was in the copy, PostgreSQL refused the test-restore account's forced drop ("permission denied to terminate process"), and the copy stayed until the next week's test. This was found because CI on `main` failed at the merges of #361 and #371. #371 stopped the test from seeing other tests' scratch databases, and gave each hospital database's scratch databases names of their own. #373 drops plainly first, which ends autovacuum workers without any special right | Reproduced on PostgreSQL 16.15. Two cases in `PostgresRestoreTests` failed on the old code and pass now. CI on `main` passed at #373's merge (run #1189). | — |
@@ -235,7 +235,7 @@ No other test failed. The test whose failure on 10 November had no known cause (
     run by hand. It is no part of what a hospital installs.
   - The portal's proof-of-work worker, `solver.worker.ts`, line 5 (no origin check on a message): a dedicated worker
     gets messages only from the page that started it.
-- **Dependabot.** See R6.
+- **Dependabot.** Two open alerts on `main`, both moderate. See R6.
 
 ### 3.4 What CI does not prove, and what does
 
@@ -305,7 +305,7 @@ cases at wave 3's take-on. From wave 3 they are many.
 
 | Gate | Evidence | Signed by |
 |---|---|---|
-| The blockers closed | R2's key in `ReleaseKeys.cs`; CI green on the tagged commit; each high Dependabot alert fixed or written down (R6); CodeQL alerts 23 and 24 dismissed (R10) | HyFib engineering lead |
+| The blockers closed | R2's key in `ReleaseKeys.cs`; CI green on the tagged commit; the two Dependabot alerts read, each fixed or written down (R6); CodeQL alerts 23 and 24 dismissed (R10) | HyFib engineering lead |
 | The release workflow works | A green run on `v1.0.0-rc.1`, with every file attached | HyFib engineering lead |
 | The checksums reached IT by a second channel | IT's note of the values compared | Hospital IT officer |
 | The machine is fit | The preflight with no Fail, and a decision against each Warn | Hospital IT officer |
@@ -353,6 +353,8 @@ From GitHub, on 16 November 2026:
   upload, so each checked its results itself. C# (133150870442): 12 findings, none high or critical open, 1
   suppressed in the source. TypeScript (133150871076): 4 findings, none high or critical open, 2 suppressed. Actions
   (133150870921): none.
+- Dependabot: GitHub's answer to the push of `1ed6aea6` to this report's branch, on 16 November, said "GitHub found
+  2 vulnerabilities on [the] default branch (2 moderate)". The alerts' own pages could not be read in this session.
 - Open pull requests: #362 to #370, Dependabot's, opened on 16 November. No open issues.
 
 From the repository, at `31cae7c0`:
