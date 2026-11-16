@@ -69,7 +69,7 @@ Merged since, in pull requests #333 to #373:
 | R7 | Done. CI fails on two files whose names differ only in case | — | — |
 | R8 | Done, and the fifteen other pickers in #334, each with a test | — | — |
 | R9 (new) | Done. **A weekly test restore could pass and leave its scratch database, a full copy of every patient's record, on the server.** A database just restored is where autovacuum goes to work. While an autovacuum worker was in the copy, PostgreSQL refused the test-restore account's forced drop ("permission denied to terminate process"), and the copy stayed until the next week's test. This was found because CI on `main` failed at the merges of #361 and #371. #371 stopped the test from seeing other tests' scratch databases, and gave each hospital database's scratch databases names of their own. #373 drops plainly first, which ends autovacuum workers without any special right | Reproduced on PostgreSQL 16.15. Two cases in `PostgresRestoreTests` failed on the old code and pass now. CI on `main` passed at #373's merge (run #1189). | — |
-| R10 (new) | **Open.** GitHub's CodeQL default setup holds two alerts, 23 and 24 (`js/clear-text-storage-of-sensitive-data`: the offline unlock verifier and its test). The maintainer ruled both false positives, and they are marked as SECURITY.md prescribes, but default setup ignores those markings. The repository's own CodeQL jobs pass | GitHub's *CodeQL* check on #361 and on later pull requests | Someone allowed to manage security alerts dismisses them on the Security tab (24 as a false positive, 23 as used in tests), or code scanning moves to advanced setup only |
+| R10 (new) | **Open.** GitHub's CodeQL default setup holds two alerts, 23 and 24 (`js/clear-text-storage-of-sensitive-data`: the offline unlock verifier and its test). The maintainer ruled both false positives, and they are marked as SECURITY.md prescribes, but default setup ignores those markings. The repository's own CodeQL jobs pass | GitHub's *CodeQL* check on #361 and on later pull requests | Someone allowed to manage security alerts dismisses them on the Security tab (24 as a false positive, 23 as used in tests), or code scanning moves to advanced setup only, which also puts the repository's own findings (section 3.3) on the Security tab |
 | S1 | DEPLOYMENT.md section 1 tells IT to compare the checksums with the copy HyFib sends another way | — | HyFib sends them with each release; a code-signing certificate later |
 
 ## 1. The answer in one page
@@ -90,9 +90,9 @@ restores' scratch database and its tests.
 
 173 of the 183 requirements are Done. The other 10 are Blocked, each waiting on someone outside HyFib.
 
-**It cannot be tagged until the signing key exists (R2)**, which only HyFib can make. `release.yml` also refuses a commit
-whose own CI run on `main` did not pass, so the version commit of S2 needs its run. R6 and R10 should be settled before
-the tag too: one is a reading of GitHub's Security tab, the other two dismissals.
+**It cannot be tagged until the signing key exists (R2)**, which only HyFib can make. `release.yml` also refuses a
+commit whose own CI run on `main` did not pass, so the version commit of S2 needs its run. R6 and R10 should be settled
+before the tag too: one is a reading of GitHub's Security tab, the other two dismissals.
 
 Also needed, though neither blocks the tag:
 
@@ -126,7 +126,7 @@ a screen exists, or have HyFib build the screens first (section 5).
 **Recommendation**
 
 1. HyFib makes the signing key (R2), reads the Security tab (R6), and has the two CodeQL alerts dismissed (R10). It
-   starts S1's second channel.
+   starts S1's second channel, and rules on the four CodeQL findings SECURITY.md does not cover yet (section 3.3).
 2. The hospital decides how wave 1 handles supplier returns.
 3. HyFib tags `1.0.0-rc.1` on a commit CI passed, and installs it on the Theni machine. Once that works, it tags 1.0.0
    from the same code.
@@ -222,7 +222,19 @@ No other test failed. The test whose failure on 10 November had no known cause (
   package list has changed: #373 changed code and tests only.
 - **Load test**, every Monday at 02:00 IST. It ran on 16 November, on `381fa7c3`, and passed. It runs on a shared
   runner with front-office accounts only, so its timings are only reported; they decide nothing about the hospital.
-- **CodeQL** runs on every change. The repository's own jobs pass. Default setup's two alerts are R10.
+- **CodeQL** runs on every change, with the `security-extended` queries. While default setup is on as well (R10),
+  GitHub refuses the repository's own results, so its jobs check them themselves and list them in their summaries, not
+  on the Security tab. On the candidate (run #1112) those jobs passed: no high or critical finding is open, and the
+  three high ones SECURITY.md rules false positives are marked in the source. They also list 13 medium findings, which
+  do not fail the check. SECURITY.md's table, of the first run's alerts, rules nine of them false positives. Nobody has
+  ruled on the other four yet. On a first reading, each is a false positive too:
+  - `KeyRotation.cs`, lines 207 and 211 (log entries created from user input): by then the key id has matched a key in
+    the server's key ring, and only a user allowed to manage the system, who has entered their password again, gets
+    there.
+  - `src/web/demo/capture.mjs`, line 267 (network data written to a file): the tool that records the demo's data,
+    run by hand. It is no part of what a hospital installs.
+  - The portal's proof-of-work worker, `solver.worker.ts`, line 5 (no origin check on a message): a dedicated worker
+    gets messages only from the page that started it.
 - **Dependabot.** See R6.
 
 ### 3.4 What CI does not prove, and what does
@@ -337,6 +349,10 @@ From GitHub, on 16 November 2026:
     owned by the test's own account.
   - #1046 (43023566105, `cbe5afb9`) failed at *Restore and audit packages* and the patch windows.
 - Security audit: run #27, 16 November, on `ea12b44c`, passed. Load test: run #41 (scheduled), 16 November, passed.
+- CodeQL on the candidate: run #1112 (43823198062, `31cae7c0`), three jobs, all passed. GitHub refused each job's
+  upload, so each checked its results itself. C# (133150870442): 12 findings, none high or critical open, 1
+  suppressed in the source. TypeScript (133150871076): 4 findings, none high or critical open, 2 suppressed. Actions
+  (133150870921): none.
 - Open pull requests: #362 to #370, Dependabot's, opened on 16 November. No open issues.
 
 From the repository, at `31cae7c0`:
