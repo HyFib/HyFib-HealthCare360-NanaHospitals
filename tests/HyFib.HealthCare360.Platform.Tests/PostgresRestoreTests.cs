@@ -257,6 +257,28 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// A scratch database is dropped though a session the test restores' account may not end is in it. Most often that is an
+    /// autovacuum worker, which PostgreSQL starts on the tables a restore has just filled, and which DROP DATABASE WITH (FORCE)
+    /// lets only a superuser end ("permission denied to terminate process"); a plain DROP DATABASE stops autovacuum workers
+    /// itself, and waits up to 5 seconds for any other session to leave. A session of the account the server works as stands
+    /// in for the worker here, leaving after 3 seconds.
+    /// </summary>
+    [Fact]
+    public async Task A_scratch_database_is_dropped_though_a_session_the_account_may_not_end_is_in_it()
+    {
+        var server = Server();
+        var tools = Tools(As(On(server, Database), App), As(On(server, "postgres"), Restorer), checkRoom: false);
+        var database = await tools.CreateAsync(1L << 20, Ct);
+        var session = SleepInAsync(As(On(server, database), App), TimeSpan.FromSeconds(3));
+        await UntilConnectedAsync(server, database, App);
+
+        await tools.DropAsync(database, CancellationToken.None);
+        await session;
+
+        (await DatabaseExistsAsync(server, database)).ShouldBeFalse();
+    }
+
+    /// <summary>
     /// Without an account that may create databases, the account the server works as is used, which may not: the test
     /// restore says so, and what to do, rather than PostgreSQL's "permission denied".
     /// </summary>
@@ -333,6 +355,31 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
         await using var command = new NpgsqlCommand("SELECT count(*) FROM pg_database WHERE datname = @name", connection);
         command.Parameters.AddWithValue("name", name);
         return (long)(await command.ExecuteScalarAsync(Ct))! > 0;
+    }
+
+    /// <summary>A session in the database <paramref name="connectionString"/> names, which leaves after <paramref name="stay"/>.</summary>
+    private static async Task SleepInAsync(string connectionString, TimeSpan stay)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(Ct);
+        await using var sleep = new NpgsqlCommand("SELECT pg_sleep(@seconds)", connection);
+        sleep.Parameters.AddWithValue("seconds", stay.TotalSeconds);
+        await sleep.ExecuteNonQueryAsync(Ct);
+    }
+
+    /// <summary>Returns once <paramref name="role"/> has a session in <paramref name="database"/>.</summary>
+    private static async Task UntilConnectedAsync(string server, string database, string role)
+    {
+        await using var connection = new NpgsqlConnection(server);
+        await connection.OpenAsync(Ct);
+        await using var command = new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE datname = @database AND usename = @role", connection);
+        command.Parameters.AddWithValue("database", database);
+        command.Parameters.AddWithValue("role", role);
+        for (var tries = 0; (long)(await command.ExecuteScalarAsync(Ct))! == 0; tries++)
+        {
+            tries.ShouldBeLessThan(100, $"{role} has no session in {database} after 10 seconds");
+            await Task.Delay(TimeSpan.FromMilliseconds(100), Ct);
+        }
     }
 
     private static async Task ExecuteAsync(string connectionString, string sql)

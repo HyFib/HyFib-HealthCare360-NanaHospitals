@@ -308,9 +308,22 @@ internal sealed partial class PostgresTools(
             throw new ArgumentException($"{database} is not a scratch database of a test restore of {DatabaseName}.", nameof(database));
         }
 
-        // A copy of the whole database takes a while to remove from the disk.
-        await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection) { CommandTimeout = 0 };
-        await drop.ExecuteNonQueryAsync(ct);
+        // FORCE ends the sessions this account still has in it (a pg_restore a restart left running). It may not end another
+        // role's, and refuses then, ending none: most often an autovacuum worker, which PostgreSQL starts on the tables a
+        // restore has just filled, and which only a superuser may end that way. A plain DROP DATABASE stops autovacuum workers
+        // itself, and waits up to 5 seconds for other sessions to leave. A copy of the whole database takes a while to remove
+        // from the disk, hence no command timeout.
+        try
+        {
+            await using var force = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)", connection) { CommandTimeout = 0 };
+            await force.ExecuteNonQueryAsync(ct);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.InsufficientPrivilege)
+        {
+            logger.LogInformation("A session this account may not end, most likely an autovacuum worker, is in the scratch database {Database}; dropping it without FORCE", database);
+            await using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{database}\"", connection) { CommandTimeout = 0 };
+            await drop.ExecuteNonQueryAsync(ct);
+        }
     }
 
     /// <summary>
