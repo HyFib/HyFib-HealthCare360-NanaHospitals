@@ -147,6 +147,7 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
         RuleFor(x => x.SundryCreditors).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.Purchases).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.PurchasesFrom).IsInEnum().WithMessage("Choose the pharmacy stores, every store or none.");
+        RuleFor(x => x.PatientInNarration).IsInEnum().WithMessage("Choose the name and UHID, the UHID only, or no patient.");
 
         RuleFor(x => x.IncomeByDepartment).Must(map => map is null || map.Count <= MaxEntries).WithMessage($"Map at most {MaxEntries} departments.");
         RuleForEach(x => x.IncomeByDepartment).Must(pair => BeACode(pair.Key) && BeALedgerName(pair.Value))

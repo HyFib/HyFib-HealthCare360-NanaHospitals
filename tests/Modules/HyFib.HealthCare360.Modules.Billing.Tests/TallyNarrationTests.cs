@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
@@ -121,6 +122,17 @@ public sealed class TallyNarrationTests
         JsonSerializer.Deserialize<TallyLedgerMap>("""{"patientInNarration":"UhidOnly"}""", web)!.PatientInNarration.ShouldBe(TallyNarrationPatient.UhidOnly);
         JsonSerializer.Deserialize<TallyLedgerMap>("{}", web)!.PatientInNarration.ShouldBe(TallyNarrationPatient.NameAndUhid);
         JsonSerializer.Serialize(new TallyLedgerMap(), web).ShouldContain("\"patientInNarration\":\"NameAndUhid\"");
+    }
+
+    [Fact]
+    public void A_setting_that_is_none_of_the_three_is_refused()
+    {
+        var validator = new TallyLedgerMapValidator();
+
+        validator.Validate(Ledgers with { PatientInNarration = TallyNarrationPatient.UhidOnly }).IsValid.ShouldBeTrue();
+        var error = validator.Validate(Ledgers with { PatientInNarration = (TallyNarrationPatient)7 }).Errors.ShouldHaveSingleItem();
+        error.PropertyName.ShouldBe(nameof(TallyLedgerMap.PatientInNarration));
+        error.ErrorMessage.ShouldBe("Choose the name and UHID, the UHID only, or no patient.");
     }
 
     [Fact]
