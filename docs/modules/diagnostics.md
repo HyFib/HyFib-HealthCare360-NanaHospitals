@@ -637,7 +637,10 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
   and the doctors give it, each a channel: `VITD`, `VIT-D`, `VIT D-25`, `VIT-D3`, `VIT D3`, `VIT 25 OH`; the order screen
   finds tests by code, name and short name only, so those names are not search words there: open, see
   NANA-THENI-ANSWERS-LAB.md), LAB-VITB12 ₹1,000, LAB-PSA ₹800,
-  LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700, LAB-ABG ₹1,200
+  LAB-COAG ₹700 (PT, INR, APTT; PT and APTT in seconds, as the Wondfo OCG-102 reports them. Open: a "Control" time
+  printed beside the patient's PT and APTT, the normal plasma time the laboratory compares them with. It belongs to a
+  reagent or control lot and changes with it, so it needs a value stored with the lot (a migration) and the report
+  line to carry it; the proposal is in docs/deployment/NANA-THENI-ANSWERS-LAB.md), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700, LAB-ABG ₹1,200
   (arterial blood gas, last in the catalogue so that a database seeded before keeps every test's place: pH, pCO2,
   bicarbonate and base excess under *Acid-base*; pO2, sO2, FiO2, P/F ratio and A-a gradient under *Oxygenation*. Arterial
   blood in a heparinised syringe, drawn on its own, TAT 1 hour. Adult intervals pH 7.35 - 7.45, pCO2 35 - 45 mmHg, pO2
