@@ -271,7 +271,34 @@ public sealed class LabCatalogTests
         fasting.Result!.QcGroup.ShouldBe("GLU");
         postPrandial.Result!.QcGroup.ShouldBe("GLU");
         postPrandial.DrawSeparately.ShouldBeTrue();
-        LabCatalog.Orderables.Where(o => o.DrawSeparately).Select(o => o.Code).ShouldBe(["LAB-PPBS"]);
+        LabCatalog.Orderables.Where(o => o.DrawSeparately).Select(o => o.Code).ShouldBe(["LAB-PPBS", "LAB-GCT"], ignoreOrder: true);
+    }
+
+    /// <summary>
+    /// The 50 g glucose challenge test (C150-2: "GCT sample marked for GLU code, not one code"): read on the glucose
+    /// channel, from its own fluoride tube, with the glucose assay's QC; 140 mg/dL or more is a positive screen.
+    /// </summary>
+    [Fact]
+    public void The_glucose_challenge_test_is_read_on_the_glucose_channel_from_its_own_fluoride_tube()
+    {
+        var challenge = LabCatalog.Orderables.Single(o => o.Code == "LAB-GCT");
+        var fasting = LabCatalog.Orderables.Single(o => o.Code == "LAB-FBS");
+
+        challenge.Name.ShouldBe("Glucose challenge test (50 g, 1 hour)");
+        (challenge.Specimen, challenge.Container, challenge.Section).ShouldBe((SpecimenType.Plasma, ContainerType.Fluoride, LabSection.Biochemistry));
+        challenge.DrawSeparately.ShouldBeTrue();
+        challenge.Price.ShouldBe(fasting.Price, "its tariff is the other glucose tests'");
+        var result = challenge.Result.ShouldNotBeNull();
+        result.Channels.ShouldBe(["GLU"]);
+        result.QcGroup.ShouldBe("GLU");
+        result.Unit.ShouldBe("mg/dL");
+
+        var test = new LabTest { Code = challenge.Code, Name = challenge.Name, ResultType = LabResultType.Numeric, Unit = "mg/dL" };
+        var range = ReferenceRangeSelector.Select(result.Ranges.Select(r => r.ToEntity(Guid.Empty)), Gender.Female, TestData.Years(28)).ShouldNotBeNull();
+        ResultInterpreter.Interpret(test, range, "139").Value.Flag.ShouldBe(ResultFlag.Normal);
+        ResultInterpreter.Interpret(test, range, "140").Value.Flag.ShouldBe(ResultFlag.High, "140 mg/dL is a positive screen");
+        ResultInterpreter.Interpret(test, range, "460").Value.Flag.ShouldBe(ResultFlag.CriticalHigh);
+        range.Text.ShouldNotBeNull().ShouldStartWith("< 140");
     }
 
     [Fact]

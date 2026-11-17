@@ -341,8 +341,9 @@ diagnostics screen.
 ## Workflow rules
 
 * **Tube planning**: tests share a tube when container, specimen, bench (section) and destination (in-house or reference
-  lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`, e.g. LAB-PPBS) always get
-  their own tube. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
+  lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`: LAB-PPBS, LAB-GCT) always get
+  their own tube. So the glucose tests that share the analyser's glucose channel (GLU: fasting, post-prandial and the
+  glucose challenge test) never share a tube, and a GLU result goes on the test its tube was drawn for. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
   1000000000 on, never with a leading zero (series `lab.sample`). Where the lab uses no barcodes (Nana Hospitals), the
   technician writes the number on the tube and types it on the analyser as its sample id; the analyser's results come
   back under it and are matched to the tube by the exact number, as a scanned barcode is.
@@ -582,7 +583,9 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
 * **Laboratory** (with analytes, age/sex reference intervals, critical limits, LOINC codes, analyser channels):
   LAB-CBC ₹350 (Hb, TLC, DLC N/L/M/E/B and immature granulocytes in % and as absolute counts, RBC, PCV, MCV, MCH, MCHC,
   RDW-CV, RDW-SD, platelets, MPV, plateletcrit, PDW, P-LCR: every parameter the Yumizen H500 sends, see *The Yumizen
-  H500's parameters* below), LAB-FBS ₹80, LAB-PPBS ₹80, LAB-HBA1C ₹550,
+  H500's parameters* below), LAB-FBS ₹80, LAB-PPBS ₹80, LAB-GCT ₹80 (glucose challenge test, 50 g, 1 hour: fluoride
+  plasma in its own tube, read on the glucose channel GLU with the glucose QC; 140 mg/dL or more is a positive screen,
+  per ACOG Practice Bulletin 190 and the ADA's two-step approach, a default the lab reviews), LAB-HBA1C ₹550,
   LAB-LIPID ₹600 (TC, TG, HDL, LDL, VLDL), LAB-LFT ₹650, LAB-KFT ₹700 (urea, creatinine, uric acid, Na, K, Cl),
   LAB-TFT ₹600 (T3, T4, TSH), LAB-URINE-RE ₹150, LAB-ESR ₹120, LAB-CRP ₹500, LAB-DENGUE-NS1 ₹700, LAB-MALARIA ₹350,
   LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400, LAB-VITB12 ₹1,000, LAB-PSA ₹800,

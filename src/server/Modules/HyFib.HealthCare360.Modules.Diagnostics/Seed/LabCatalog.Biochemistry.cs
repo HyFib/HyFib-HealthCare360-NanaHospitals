@@ -91,6 +91,24 @@ internal static partial class LabCatalog
             DrawSeparately = true,
         };
 
+        // The 50 g glucose challenge test, the first step of screening for gestational diabetes in two steps: the Yumizen
+        // C150 reads it on its glucose channel (GLU), as Nana Hospitals asked ("GCT sample marked for GLU code, not one
+        // code", C150-2), so it shares the glucose assay's QC. It is drawn into its own fluoride tube, as the post-prandial
+        // sugar is, so a GLU result goes on the test the tube was drawn for. The screening cut-off, 140 mg/dL, is one of
+        // those ACOG Practice Bulletin No. 190, "Gestational Diabetes Mellitus", Obstet Gynecol 2018;131(2):e49-e64
+        // (doi:10.1097/AOG.0000000000002501), and the American Diabetes Association's Standards of Care (section 2, the
+        // two-step approach) give (130, 135 or 140 mg/dL); a default the laboratory reviews. Its tariff is the other
+        // glucose tests'.
+        yield return new OrderableSeed(
+            "LAB-GCT", "Glucose challenge test (50 g, 1 hour)", "GCT", 80m, Section, SpecimenType.Plasma, ContainerType.Fluoride, 2, Glucose, "1504-0",
+            Preparation: "No fasting needed. The patient drinks 50 g of glucose dissolved in water within 5 minutes; draw the sample exactly 1 hour after the start of the drink.",
+            Interpretation: "A screen for gestational diabetes: 140 mg/dL or more at 1 hour calls for the 100 g, 3-hour oral glucose tolerance test.")
+        {
+            Result = Numeric("mg/dL", 0,
+                [Ages(Years(12), null, null, 139, 50, 450, "< 140 (screen negative); >= 140: do the 100 g oral glucose tolerance test")], "GLU", qcGroup: "GLU"),
+            DrawSeparately = true,
+        };
+
         yield return new OrderableSeed(
             "LAB-HBA1C", "Glycated haemoglobin (HbA1c)", "HbA1c", 550m, Section, SpecimenType.WholeBlood, ContainerType.Edta, 6,
             "HPLC (NGSP certified)", "4548-4",

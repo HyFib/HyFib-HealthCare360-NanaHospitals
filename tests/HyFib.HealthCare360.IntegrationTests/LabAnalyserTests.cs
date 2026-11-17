@@ -489,6 +489,51 @@ public sealed class LabAnalyserTests(HospitalServer server)
         (await UnmatchedAsync(lab, tube.Barcode)).ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// The Yumizen C150 reads the glucose challenge test on its glucose channel (C150-2). A fasting sugar and a challenge
+    /// test ordered together are drawn into two tubes, and the GLU each tube's number brings goes on the test that tube was
+    /// drawn for.
+    /// </summary>
+    [Fact]
+    public async Task A_glucose_result_goes_on_the_glucose_test_its_tube_was_drawn_for()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var patient = await RegisterPatientAsync();
+        var ordered = new List<Guid>();
+        foreach (var code in new[] { "LAB-FBS", "LAB-GCT" })
+        {
+            ordered.Add((await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={code}")).Items.Single(t => t.Code == code).Id);
+        }
+
+        var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
+            patient.Id, null, ordered, OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
+        order.Samples.Count.ShouldBe(2, "the challenge test is drawn an hour after the glucose drink, into its own tube");
+        var fasting = order.Samples.Single(s => s.Tests.Any(t => t.StartsWith("Glucose, fasting", StringComparison.Ordinal)));
+        var challenge = order.Samples.Single(s => s.Tests.Any(t => t.StartsWith("Glucose challenge", StringComparison.Ordinal)));
+
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId ?? throw new InvalidOperationException("No facility.");
+        await SetPaymentGateAsync(admin, facilityId, required: false);
+        try
+        {
+            await lab.PostAsync<List<SampleLabel>>($"/api/v1/lab/orders/{order.Id}/collect", new CollectSamplesRequest(null, null, null));
+            (await lab.PostAsync<List<ReceiveOutcome>>("/api/v1/lab/samples/receive", new ReceiveSamplesRequest([fasting.Barcode, challenge.Barcode])))
+                .ShouldAllBe(o => o.Received);
+        }
+        finally
+        {
+            await SetPaymentGateAsync(admin, facilityId, required: true);
+        }
+
+        (await AnalyserSendsAsync("EM360", $"O|1|{challenge.Barcode}||^^^GLU|R", "R|1|^^^GLU|152|mg/dL||H||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await AnalyserSendsAsync("EM360", $"O|1|{fasting.Barcode}||^^^GLU|R", "R|1|^^^GLU|88|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        var onChallenge = (await SheetAsync(lab, challenge)).Lines.ShouldHaveSingleItem();
+        (onChallenge.TestCode, onChallenge.Value, onChallenge.Flag).ShouldBe(("LAB-GCT", "152", ResultFlag.High));
+        var onFasting = (await SheetAsync(lab, fasting)).Lines.ShouldHaveSingleItem();
+        (onFasting.TestCode, onFasting.Value).ShouldBe(("LAB-FBS", "88"));
+    }
+
     [Fact]
     public async Task An_analysers_results_auto_validate_only_on_the_qc_that_analyser_ran_today()
     {

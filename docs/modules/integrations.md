@@ -1096,7 +1096,8 @@ acknowledgements are never acknowledged in turn.
   above apply as written. An unknown name is refused on save and read as E1394 if stored.
   * **HORIBA Yumizen C150** (`YumizenC150`, clinical chemistry; HORIBA's *LIS Communication Protocol* for the C150).
     It connects to HC360 as a network client (*Server IP* and *Port* in its Maintenance › Parameter settings) or over
-    RS-232 (9600 8N1 by default). It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
+    RS-232 (9600 8N1 by default). Its glucose channel, `GLU`, serves every glucose test, the glucose challenge test
+    (LAB-GCT) included: each timed one is drawn into its own tube, so the result goes on the test its tube was drawn for. It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
     the backtick is the repeat delimiter both ways, and HC360 writes `H|`^&`. Its *Patient ID* (P.3) is the id it keys a
     sample by: it asks for orders by it and uploads results as H, P, R… L **without an O record**, so HC360 sends the
     tube's barcode in P.3 (not the UHID) and reads the sample from P.3 when no O record names one; the patient is then
