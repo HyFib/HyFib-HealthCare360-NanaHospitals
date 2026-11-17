@@ -200,7 +200,7 @@ public sealed class GstComplianceTests(HospitalServer server)
         var (first, _) = await B2bSaleWithIrnAsync(pharmacist, medicine);
         var printed = EwayBillNumber();
         var recorded = (await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{first}/ewaybill/record",
-            new RecordEwayBillRequest(printed, now.AddMinutes(-30), now.AddDays(1)))).Registration!;
+            new RecordEwayBillRequest(printed, JustGenerated(), now.AddDays(1)))).Registration!;
         recorded.EwbNo.ShouldBe(long.Parse(printed, CultureInfo.InvariantCulture));
         recorded.EwbValidTill!.Value.ShouldBe(now.AddDays(1), TimeSpan.FromSeconds(1));
         (await AuditAsync("billing.einvoice.ewaybill_recorded", printed)).ShouldContain("holds no e-way bill for the invoice's IRN");
@@ -208,7 +208,7 @@ public sealed class GstComplianceTests(HospitalServer server)
         // Recorded once: not again on another invoice.
         var (second, secondIrn) = await B2bSaleWithIrnAsync(pharmacist, medicine);
         using (var twice = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{second}/ewaybill/record",
-                   new RecordEwayBillRequest(printed, now.AddMinutes(-30), null)))
+                   new RecordEwayBillRequest(printed, JustGenerated(), null)))
         {
             (await CodeAsync(twice)).ShouldBe("einvoice.ewaybill_number_exists");
         }
@@ -220,14 +220,14 @@ public sealed class GstComplianceTests(HospitalServer server)
         var (madeAt, madeTill) = (now.AddHours(-2), now.AddDays(2));
         ledger.Entries[secondIrn] = entry with { Irn = entry.Irn with { EwbNo = made, EwbDate = madeAt, EwbValidTill = madeTill } };
         using (var mistyped = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{second}/ewaybill/record",
-                   new RecordEwayBillRequest((made + 1).ToString(CultureInfo.InvariantCulture), now.AddMinutes(-30), null)))
+                   new RecordEwayBillRequest((made + 1).ToString(CultureInfo.InvariantCulture), JustGenerated(), null)))
         {
             (await CodeAsync(mistyped)).ShouldBe("einvoice.ewaybill_unconfirmed");
             (await mistyped.Content.ReadAsStringAsync(Ct)).ShouldContain($"The portal holds e-way bill {made} for this invoice's IRN");
         }
 
         var confirmed = (await pharmacist.PostAsync<EInvoiceDetail>($"{Register}/pharmacy/{second}/ewaybill/record",
-            new RecordEwayBillRequest(made.ToString(CultureInfo.InvariantCulture), now.AddMinutes(-30), now.AddDays(9)))).Registration!;
+            new RecordEwayBillRequest(made.ToString(CultureInfo.InvariantCulture), JustGenerated(), now.AddDays(9)))).Registration!;
         confirmed.EwbNo.ShouldBe(made);
         confirmed.EwbDate!.Value.ShouldBe(madeAt, TimeSpan.FromSeconds(1));
         confirmed.EwbValidTill!.Value.ShouldBe(madeTill, TimeSpan.FromSeconds(1));
@@ -237,7 +237,7 @@ public sealed class GstComplianceTests(HospitalServer server)
         // The portal not answering: nothing is recorded. Not connected: it is recorded on its print, the portal not asked.
         var (third, thirdIrn) = await B2bSaleWithIrnAsync(pharmacist, medicine);
         var other = EwayBillNumber();
-        var record = new RecordEwayBillRequest(other, now.AddMinutes(-10), null);
+        var record = new RecordEwayBillRequest(other, JustGenerated(), null);
         using (ledger.Fail(SimulatorIrpOperations.GetEwayBill, SimulatorIrpFault.Down, irn: thirdIrn))
         {
             using var down = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{third}/ewaybill/record", record);
@@ -253,16 +253,19 @@ public sealed class GstComplianceTests(HospitalServer server)
 
         (await AuditAsync("billing.einvoice.ewaybill_recorded", other)).ShouldContain("not connected to the e-invoice portal");
 
-        // Not one the portal could have generated: 14 digits before 2027, or not 12 or 14 digits at all.
+        // Not one the portal could have generated: 14 digits on one generated before 2027 (typed as generated in 2026, so it
+        // holds whenever this runs), or not 12 or 14 digits at all.
         var (fourth, _) = await B2bSaleWithIrnAsync(pharmacist, medicine);
+        var in2026 = new DateTimeOffset(2026, 12, 31, 12, 0, 0, TimeSpan.FromHours(5.5));
         using (var early = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{fourth}/ewaybill/record",
-                   new RecordEwayBillRequest("33100012345678", now.AddMinutes(-10), null)))
+                   new RecordEwayBillRequest("33100012345678", in2026, null)))
         {
             (await CodeAsync(early)).ShouldBe("einvoice.ewaybill_invalid");
+            (await early.Content.ReadAsStringAsync(Ct)).ShouldContain("E-way bill numbers have 14 digits only from 1 January 2027");
         }
 
         using var garbled = await pharmacist.SendRawAsync(HttpMethod.Post, $"{Register}/pharmacy/{fourth}/ewaybill/record",
-            new RecordEwayBillRequest("12345", now.AddMinutes(-10), null));
+            new RecordEwayBillRequest("12345", JustGenerated(), null));
         garbled.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
@@ -459,6 +462,12 @@ public sealed class GstComplianceTests(HospitalServer server)
 
     /// <summary>A 12-digit e-way bill number, above those the simulator gives.</summary>
     private static string EwayBillNumber() => Random.Shared.NextInt64(500000000000L, 999999999999L).ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// When an e-way bill entered by hand was generated: just now, after the invoice it names. HC360 refuses one dated
+    /// (in IST) before its invoice, so a time from before the sale fails whenever midnight IST falls in between.
+    /// </summary>
+    private static DateTimeOffset JustGenerated() => DateTimeOffset.UtcNow;
 
     /// <summary>The summary of the latest audit event <paramref name="action"/> naming <paramref name="naming"/>, once written.</summary>
     private async Task<string> AuditAsync(string action, string naming)
