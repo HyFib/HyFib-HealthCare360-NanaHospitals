@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
@@ -40,6 +41,24 @@ internal sealed class DiagnosticsSeeder : ISeeder
         await SeedImagingProceduresAsync(db, services, cancellationToken);
         await SeedReportTemplatesAsync(db, cancellationToken);
         await SeedNotificationTemplatesAsync(db, cancellationToken);
+        await UpgradeTubeNumberFormatAsync(db, cancellationToken);
+    }
+
+    /// <summary>
+    /// Tube numbers have 10 digits (Nana Hospitals writes them on the tubes and types them on the analysers). The series is
+    /// locked, so the format stored for it is the one it was created with: a database made before keeps {SEQ:9} until it
+    /// is brought to the definition's here. Its counter needs nothing: the series never issues a number below its first
+    /// (<c>NumberSeriesDefinition.FirstNumber</c>), so the next tube after the upgrade is 1000000000.
+    /// </summary>
+    internal static async Task UpgradeTubeNumberFormatAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        var series = DiagnosticsNumberSeries.LabSample;
+        var row = await db.Set<NumberSeries>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Key == series.Key && s.FacilityId == null, ct);
+        if (row is not null && !string.Equals(row.Format, series.DefaultFormat, StringComparison.Ordinal))
+        {
+            row.Format = series.DefaultFormat;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     private static async Task<Dictionary<string, Guid>> SeedServiceItemsAsync(

@@ -20,6 +20,25 @@ public sealed class NumberFormatTests
     public void A_format_makes_the_number_from_its_parts(string format, long value, string expected) =>
         NumberFormat.Render(format, value, "NH", October2).ShouldBe(expected);
 
+    [Theory]
+    [InlineData(0L, 1L, 1L)]
+    [InlineData(41L, 1L, 42L)]
+    [InlineData(0L, 1_000_000_000L, 1_000_000_000L)]
+    [InlineData(523L, 1_000_000_000L, 1_000_000_000L)]
+    [InlineData(1_000_000_041L, 1_000_000_000L, 1_000_000_042L)]
+    public void The_next_number_carries_on_from_the_last_but_never_below_the_first(long last, long first, long next) =>
+        NumberFormat.NextNumber(last, first).ShouldBe(next);
+
+    [Fact]
+    public void Tube_numbers_have_ten_digits_and_no_leading_zero()
+    {
+        NumberFormat.Render("{SEQ:10}", NumberFormat.NextNumber(0, 1_000_000_000), null, October2).ShouldBe("1000000000");
+        NumberFormat.Render("{SEQ:10}", NumberFormat.NextNumber(1_000_000_041, 1_000_000_000), null, October2).ShouldBe("1000000042");
+
+        // A database from before kept {SEQ:9} and a counter of 523: its next tube is the first 10-digit number.
+        NumberFormat.Render("{SEQ:9}", NumberFormat.NextNumber(523, 1_000_000_000), null, October2).ShouldBe("1000000000");
+    }
+
     [Fact]
     public void A_running_number_outgrows_its_padding_rather_than_being_cut() =>
         NumberFormat.Render("{FAC}AS{SEQ:3}", 12345, "NH", October2).ShouldBe("NHAS12345");

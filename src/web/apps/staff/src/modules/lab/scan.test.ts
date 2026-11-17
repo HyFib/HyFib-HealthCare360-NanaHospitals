@@ -33,6 +33,9 @@ describe('splitScans', () => {
 
 describe('classifyScan', () => {
   it('recognises sample barcodes and accession numbers', () => {
+    expect(classifyScan('1000000123')).toBe('sample');
+    expect(isSampleBarcode('1000000123')).toBe(true);
+    expect(classifyScan(' 1000004321 ')).toBe('sample');
     expect(classifyScan('000123456')).toBe('sample');
     expect(isSampleBarcode('000123456')).toBe(true);
     expect(classifyScan('NHLB260000123')).toBe('labAccession');

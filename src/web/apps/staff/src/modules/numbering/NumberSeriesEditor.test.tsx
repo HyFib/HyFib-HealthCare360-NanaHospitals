@@ -170,4 +170,39 @@ describe('NumberSeriesFields', () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ startAt: 250001 });
   });
+
+  it('shows the next tube number as 10 digits from 1000000000, and refuses one that would lose a digit', async () => {
+    const onSubmit = vi.fn();
+    const tubes = series({
+      key: 'lab.sample',
+      name: 'Sample tube number',
+      area: 'Laboratory',
+      scope: 'global',
+      format: '{SEQ:10}',
+      resetPolicy: 'Never',
+      defaultFormat: '{SEQ:10}',
+      defaultResetPolicy: 'Never',
+      // A database from before the tubes had 10 digits.
+      lastNumber: 523,
+      firstNumber: 1_000_000_000,
+      isLocked: true,
+      lockedReason: 'Tube numbers are written on the tubes and typed on the analysers, so the format cannot change.',
+      maxLength: 20,
+      facilityCode: null,
+    });
+    render(<Harness item={tubes} onSubmit={onSubmit} />);
+
+    expect(screen.getByText('1000000000')).toBeInTheDocument();
+    expect(screen.getByText(/Leave it empty to carry on from 1000000000\./)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole('spinbutton', { name: /Next number/ }), '524');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(
+      await screen.findByText(
+        'The next number must be 1000000000 or more, so that these numbers keep the shape other systems read.',
+      ),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

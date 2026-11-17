@@ -419,6 +419,34 @@ public sealed class LabAnalyserTests(HospitalServer server)
         }
     }
 
+    /// <summary>
+    /// Nana Hospitals uses no barcodes: the technician writes the tube's 10-digit number on it and types it on the analyser,
+    /// whose results come back under it. They go on the tube with exactly that number, and on no other.
+    /// </summary>
+    [Fact]
+    public async Task A_tube_number_typed_on_the_analyser_finds_its_tube_by_the_exact_ten_digits()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        tube.Barcode.ShouldMatch(@"^[1-9][0-9]{9}$", "every tube number has 10 digits and no leading zero");
+        long.Parse(tube.Barcode, CultureInfo.InvariantCulture).ShouldBeGreaterThanOrEqualTo(1_000_000_000L);
+
+        // A digit dropped, or a zero put in front, as a technician might type it: no tube has that number.
+        var dropped = tube.Barcode[..9];
+        var padded = "0" + tube.Barcode;
+        (await AnalyserSendsAsync("EM360", $"O|1|{dropped}||^^^GLU|R", "R|1|^^^GLU|93|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await AnalyserSendsAsync("EM360", $"O|1|{padded}||^^^GLU|R", "R|1|^^^GLU|94|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBeNull();
+        (await UnmatchedAsync(lab, dropped)).ShouldContain(u => u.Reason == UnmatchedResultReason.UnknownSample && u.Value == "93");
+        (await UnmatchedAsync(lab, padded)).ShouldContain(u => u.Reason == UnmatchedResultReason.UnknownSample && u.Value == "94");
+
+        // Typed right, the result goes on the tube.
+        (await AnalyserSendsAsync("EM360", $"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|92|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("92");
+    }
+
     [Fact]
     public async Task An_analysers_results_auto_validate_only_on_the_qc_that_analyser_ran_today()
     {

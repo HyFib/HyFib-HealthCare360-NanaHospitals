@@ -378,6 +378,42 @@ public sealed class NumberFormatRulesTests
         NumberFormatRules.Check(change with { StartAt = 250_001 }).ShouldBeEmpty("a hospital moving from an older system continues its UHIDs");
     }
 
+    private static readonly NumberSeriesDefinition Tubes =
+        new("lab.sample", "Sample tube number", "Laboratory", "{SEQ:10}", NumberResetPolicy.Never, MaxLength: 20)
+        {
+            PerFacility = false,
+            FirstNumber = 1_000_000_000,
+            LockedReason = "Analysers read tube numbers.",
+        };
+
+    [Fact]
+    public void A_series_that_starts_at_its_first_number_never_takes_a_next_number_below_it()
+    {
+        var change = new NumberFormatChange
+        {
+            Series = Tubes,
+            Format = Tubes.DefaultFormat,
+            ResetPolicy = NumberResetPolicy.Never,
+            StartAt = 524,
+            CurrentFormat = Tubes.DefaultFormat,
+            CurrentResetPolicy = NumberResetPolicy.Never,
+
+            // A database from before tube numbers had 10 digits.
+            LastNumber = 523,
+        };
+        string[] tooLow = ["The next number must be 1000000000 or more, so that these numbers keep the shape other systems read."];
+
+        NumberFormatRules.Check(change)[NumberFormatRules.StartAtField].ShouldBe(tooLow);
+        NumberFormatRules.Check(change with { StartAt = 0 })[NumberFormatRules.StartAtField].ShouldBe(tooLow);
+        NumberFormatRules.Check(change with { StartAt = 1_000_000_000 }).ShouldBeEmpty();
+        NumberFormatRules.Check(change with { StartAt = 9_999_999_999 }).ShouldBeEmpty();
+        NumberFormatRules.Check(change with { StartAt = 10_000_000_000 })[NumberFormatRules.StartAtField]
+            .ShouldBe(["The next number can be at most 9999999999, so that these numbers keep the shape other systems read."]);
+    }
+
+    [Fact]
+    public void A_series_counts_from_1_unless_it_says_otherwise() => OpBill.FirstNumber.ShouldBe(1L);
+
     [Fact]
     public void The_largest_next_number_follows_the_running_number()
     {

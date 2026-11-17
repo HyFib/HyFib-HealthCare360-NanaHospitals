@@ -38,7 +38,8 @@ export function splitScans(raw: string | null | undefined): string[] {
 export type ScanKind = 'sample' | 'labAccession' | 'radiologyAccession' | 'cardiologyAccession' | 'text';
 
 /**
- * What a scanned code probably is. Sample barcodes are numeric (series lab.sample, {SEQ:9}); accession numbers follow
+ * What a scanned (or typed) code probably is. Tube numbers are numeric: 10 digits from 1000000000 on (series lab.sample,
+ * {SEQ:10}), and 6 to 20 digits are accepted so that tubes numbered before keep opening. Accession numbers follow
  * {FAC}LB{YY}{SEQ:7}, {FAC}RD… and {FAC}CD…; anything else (UHID, name) is searched as text.
  */
 export function classifyScan(code: string): ScanKind {

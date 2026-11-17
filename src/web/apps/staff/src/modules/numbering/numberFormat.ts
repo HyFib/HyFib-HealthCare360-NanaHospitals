@@ -304,6 +304,14 @@ export function longestNumber(format: string, facilityCodeLength: number): Numbe
 }
 
 /**
+ * The running number issued after `lastNumber`: the one after it, or the series' first number when the counter is
+ * below that (the server's NumberFormat.NextNumber).
+ */
+export function nextNumber(lastNumber: number, firstNumber = 1): number {
+  return Math.max(lastNumber + 1, firstNumber, 1);
+}
+
+/**
  * The largest next number `format` allows: as many digits as the running number is measured with, or for a locked
  * series its padding, so its numbers keep their shape. Null when the format has no single, valid running number.
  */
@@ -348,6 +356,8 @@ export interface FormatChange {
   currentFormat: string;
   currentResetPolicy: NumberResetPolicy;
   lastNumber: number;
+  /** The lowest running number the series issues (1 when absent); the next number cannot be below it. */
+  firstNumber?: number;
   facilityCount: number;
   longestFacilityCode: number;
   otherFormats: readonly OtherFormat[];
@@ -723,7 +733,13 @@ export function checkChange(change: FormatChange): FormatErrors {
 
   if (change.startAt !== null) {
     const largest = syntax.length === 0 ? largestStartAt(change.isLocked, change.format) : null;
-    if (change.startAt < 1) {
+    const first = change.firstNumber ?? 1;
+    if (first > 1 && change.startAt < first) {
+      add(
+        'startAt',
+        `The next number must be ${first} or more, so that these numbers keep the shape other systems read.`,
+      );
+    } else if (change.startAt < 1) {
       add('startAt', 'Enter a number of 1 or more.');
     } else if (change.startAt <= change.lastNumber) {
       add(

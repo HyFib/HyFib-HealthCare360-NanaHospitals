@@ -334,7 +334,10 @@ diagnostics screen.
 
 * **Tube planning**: tests share a tube when container, specimen, bench (section) and destination (in-house or reference
   lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`, e.g. LAB-PPBS) always get
-  their own tube. Barcodes are numeric and unique across facilities.
+  their own tube. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
+  1000000000 on, never with a leading zero (series `lab.sample`). Where the lab uses no barcodes (Nana Hospitals), the
+  technician writes the number on the tube and types it on the analyser as its sample id; the analyser's results come
+  back under it and are matched to the tube by the exact number, as a scanned barcode is.
 * **Sample state machine**: Pending → Collected → Received → InProcess → Completed; Rejected from Collected/Received/
   InProcess (reason; remarks required for Other) with a linked recollection tube; Cancelled when every test on it is
   cancelled. A second scan at receipt returns 409 `sample.already_received`; receipt before collection is refused.
@@ -558,7 +561,7 @@ either way. SMS never carries it. Only released content is ever made into these 
 | Key | Format | Reset | Scope |
 |---|---|---|---|
 | `lab.accession` | `{FAC}LB{YY}{SEQ:7}` (e.g. `NHLB260000123`) | Yearly | Facility |
-| `lab.sample` | `{SEQ:9}` (barcode) | Never | Global (analysers look samples up by barcode only) |
+| `lab.sample` | `{SEQ:10}` (tube number, from 1000000000: always 10 digits, no leading zero) | Never | Global (analysers look samples up by this number only) |
 | `radiology.accession` | `{FAC}RD{YY}{SEQ:7}` | Yearly | Facility |
 | `cardiology.accession` | `{FAC}CD{YY}{SEQ:7}` | Yearly | Facility |
 | `radiology.form-f` | `{FAC}FF{YY}{SEQ:6}` | Yearly | Facility |
