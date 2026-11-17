@@ -1115,9 +1115,12 @@ acknowledgements are never acknowledged in turn.
     ordered by panel: O.5 is `^^^CBC`, `^^^DIF` (which also measures the CBC) or `^^^ESR`, and any other test name
     makes it refuse the order, so HC360 turns the channels pending on the tube into panels (DIF when a differential
     parameter such as LYM# or NEU% is pending, else CBC; ESR when ESR is), while each result still comes back under its
-    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). Map the haematology tests' analytes in
-    Lab setup to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT,
-    PDW, P-LCC, P-LCR, LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, ALY#/%, LIC#/%, MIC, MAC, ESR…). It takes orders
+    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). HC360's catalogue maps the CBC's analytes
+    to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT, PDW, P-LCR,
+    LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, and ESR on LAB-ESR), so every one of them is on the report (see *The
+    Yumizen H500's parameters* in [diagnostics.md](diagnostics.md)); its research-use parameters (ALY#/%, LIC#/%, MIC,
+    MAC…) and P-LCC are on none, listed in Lab setup among the channels no test maps. Its units `1E03/mm3`, `1E06/mm3`
+    and `µm3` read as 10³/µL, 10⁶/µL and fL. It takes orders
     **only in answer to its own query** and ignores any other, so no orders are sent unasked (queued ones are closed as
     skipped with that reason), and a queried sample with nothing pending is answered with an empty order (`P|1|`,
     `O|1|id||^^^|||||||N||||||||||||||Y`), exactly as its manual does. The answer's H.5 is a copy of the query's H.10,

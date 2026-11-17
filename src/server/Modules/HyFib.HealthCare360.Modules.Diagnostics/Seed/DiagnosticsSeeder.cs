@@ -96,6 +96,7 @@ internal sealed class DiagnosticsSeeder : ISeeder
     {
         var tests = await db.Set<LabTest>().IgnoreQueryFilters().ToDictionaryAsync(t => t.Code, t => t.Id, ct);
         var newPanels = new List<(LabTest Panel, OrderableSeed Seed)>();
+        var created = new HashSet<string>(StringComparer.Ordinal);
         var displayOrder = 0;
 
         foreach (var analyte in LabCatalog.Analytes)
@@ -120,6 +121,7 @@ internal sealed class DiagnosticsSeeder : ISeeder
             ApplyResult(test, analyte.Result);
             db.Add(test);
             tests[test.Code] = test.Id;
+            created.Add(test.Code);
         }
 
         foreach (var orderable in LabCatalog.Orderables)
@@ -176,7 +178,85 @@ internal sealed class DiagnosticsSeeder : ISeeder
             }
         }
 
+        await JoinPanelsAsync(db, tests, created, newPanels.Select(p => p.Panel.Code).ToHashSet(StringComparer.Ordinal), ct);
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Analytes new to this database join the seeded panels it already has that list them, in the seed's place: the
+    /// CBC's new parameters on a database seeded before them. The laboratory cannot have taken an analyte it never had out
+    /// of a panel, so this changes none of its decisions: the panel's own components stay, in their order (those after
+    /// the place move down one), and a panel it deleted is left alone.
+    /// </summary>
+    private static async Task JoinPanelsAsync(
+        HospitalDbContext db, IReadOnlyDictionary<string, Guid> tests, IReadOnlySet<string> created, IReadOnlySet<string> newPanels, CancellationToken ct)
+    {
+        var codesById = tests.ToDictionary(t => t.Value, t => t.Key);
+        foreach (var seed in LabCatalog.Orderables.Where(o => o.IsPanel && !newPanels.Contains(o.Code) && o.Components.Any(c => created.Contains(c.Code))))
+        {
+            if (!tests.TryGetValue(seed.Code, out var panelId)
+                || await db.Set<LabTest>().FirstOrDefaultAsync(t => t.Id == panelId, ct) is not { IsPanel: true })
+            {
+                continue;
+            }
+
+            var components = await db.Set<LabTestComponent>().Where(c => c.PanelTestId == panelId).OrderBy(c => c.DisplayOrder).ToListAsync(ct);
+            var current = components.Select(c => codesById.GetValueOrDefault(c.TestId) ?? c.TestId.ToString()).ToList();
+            var added = seed.Components.Where(c => created.Contains(c.Code)).ToList();
+            var order = PanelOrder(current, [.. seed.Components.Select(c => c.Code)], added.Select(c => c.Code));
+            foreach (var (component, code) in components.Zip(current))
+            {
+                var position = order.IndexOf(code) + 1;
+                if (component.DisplayOrder != position)
+                {
+                    component.DisplayOrder = position;
+                }
+            }
+
+            foreach (var (code, group) in added)
+            {
+                db.Add(new LabTestComponent { PanelTestId = panelId, TestId = tests[code], DisplayOrder = order.IndexOf(code) + 1, GroupName = group });
+            }
+        }
+    }
+
+    /// <summary>
+    /// A panel's analytes (by code) once <paramref name="added"/> join it: each goes after the nearest analyte the seed
+    /// lists before it that the panel has, or first when it has none; the panel's own keep their order.
+    /// </summary>
+    internal static List<string> PanelOrder(IReadOnlyList<string> current, IReadOnlyList<string> seed, IEnumerable<string> added)
+    {
+        var order = current.ToList();
+        foreach (var code in added)
+        {
+            if (order.Contains(code, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var after = -1;
+            for (var i = IndexOf(seed, code) - 1; i >= 0 && after < 0; i--)
+            {
+                after = order.IndexOf(seed[i]);
+            }
+
+            order.Insert(after + 1, code);
+        }
+
+        return order;
+
+        static int IndexOf(IReadOnlyList<string> codes, string code)
+        {
+            for (var i = 0; i < codes.Count; i++)
+            {
+                if (string.Equals(codes[i], code, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return codes.Count;
+        }
     }
 
     private static void ApplyResult(LabTest test, ResultSeed result)

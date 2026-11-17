@@ -370,9 +370,9 @@ diagnostics screen.
   QC accepted today on that analyser (below), delta passed, and the analyser raised no flag (none or `N`), sent the
   value in the test's unit and reported it as final. A unit is the test's however it is spelt (`AnalyserUnits`):
   whatever the case, the spaces and the micro sign (`mg/dl` is `mg/dL`, `µIU/mL` is `uIU/mL`); powers of ten written
-  10³, `10^3`, `10*3` (UCUM), `10E3` or `x10^3`; `K/uL` and `10^9/L` for 10³/µL, `M/uL` and `10^12/L` for 10⁶/µL;
-  `/cumm` and `/mm3` for `/µL`; `s`, `sec` and `seconds`; `mm/h` for `mm/hr`; `mg%` for mg/dL and `gm%` for g/dL;
-  `IU/L` for U/L. Only spellings of the same quantity in the same scale are taken as the test's unit: g/L, mmol/L or
+  10³, `10^3`, `10*3` (UCUM), `10E3`, `x10^3` or HORIBA's `1E03`; `K/uL` and `10^9/L` for 10³/µL, `M/uL` and `10^12/L`
+  for 10⁶/µL; `/cumm` and `/mm3` for `/µL` (so the H500's `1E03/mm3` is 10³/µL); `µm3` for fL; `s`, `sec` and
+  `seconds`; `mm/h` for `mm/hr`; `mg%` for mg/dL and `gm%` for g/dL; `IU/L` for U/L. Only spellings of the same quantity in the same scale are taken as the test's unit: g/L, mmol/L or
   mEq/L against g/dL, mg/dL or mmol/L are not. The staff app's review hints read units with the same rule, and both are
   tested against one list of spellings (`src/web/apps/staff/src/modules/lab/unitSpellings.json`). An analyser that
   sends no unit is not compared. The final status is
@@ -580,7 +580,9 @@ either way. SMS never carries it. Only released content is ever made into these 
 creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
 
 * **Laboratory** (with analytes, age/sex reference intervals, critical limits, LOINC codes, analyser channels):
-  LAB-CBC ₹350 (Hb, TLC, DLC N/L/M/E/B, RBC, PCV, MCV, MCH, MCHC, platelets), LAB-FBS ₹80, LAB-PPBS ₹80, LAB-HBA1C ₹550,
+  LAB-CBC ₹350 (Hb, TLC, DLC N/L/M/E/B and immature granulocytes in % and as absolute counts, RBC, PCV, MCV, MCH, MCHC,
+  RDW-CV, RDW-SD, platelets, MPV, plateletcrit, PDW, P-LCR: every parameter the Yumizen H500 sends, see *The Yumizen
+  H500's parameters* below), LAB-FBS ₹80, LAB-PPBS ₹80, LAB-HBA1C ₹550,
   LAB-LIPID ₹600 (TC, TG, HDL, LDL, VLDL), LAB-LFT ₹650, LAB-KFT ₹700 (urea, creatinine, uric acid, Na, K, Cl),
   LAB-TFT ₹600 (T3, T4, TSH), LAB-URINE-RE ₹150, LAB-ESR ₹120, LAB-CRP ₹500, LAB-DENGUE-NS1 ₹700, LAB-MALARIA ₹350,
   LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400, LAB-VITB12 ₹1,000, LAB-PSA ₹800,
@@ -737,6 +739,36 @@ analyser and lists them with what each last read and the mapping to add to the r
 whose code holds characters a mapping cannot (`/`, a space, `:`) is said to be unmappable, for the analyser's engineer
 to send under another code. Whoever manages the masters can decide that a channel goes on no report (a research
 parameter, a flag sent as a channel), with the reason (`IgnoredAnalyserChannel`, audited), and take that back.
+
+**The Yumizen H500's parameters** (Nana Hospitals, H500-1 and H500-2: "Analyser sent all parameter to test code", "The
+parameter are commonly used to patient clinical diagnosis"; N6: "PCT-Plateletcrit, PLT – Platelet All parameters are show
+patient reports"). The CBC (LAB-CBC) has an analyte for each parameter the H500 reports for a CBC or DIF, and the
+analytes' channels are the H500's own codes, so its results go on them as they come:
+
+| H500 code | Analyte | Unit | Adult interval (default, for the lab to review) |
+|---|---|---|---|
+| WBC, RBC, HGB, HCT, MCV, MCH, MCHC, PLT | TLC, RBC, HB, PCV, MCV, MCH, MCHC, PLT | as before | as before |
+| NEU%, LYM%, MON%, EOS%, BAS% | NEUT, LYMPH, MONO, EOS, BASO (which keep NEUT%, LYMPH%, MONO%, EO% and BASO% as second codes) | % | as before |
+| IMG% / IMG# | IG / IG-ABS, immature granulocytes | % / 10³/µL | 0.0 - 0.6 / 0.00 - 0.06 |
+| NEU#, LYM#, MON#, EOS#, BAS# | NEUT-ABS, LYMPH-ABS, MONO-ABS, EOS-ABS, BASO-ABS, absolute counts | 10³/µL | 2.00 - 7.00, 1.00 - 3.00, 0.20 - 1.00, 0.02 - 0.50, 0.02 - 0.10 |
+| RDW-CV / RDW-SD | RDW-CV / RDW-SD | % / fL | 11.6 - 14.0 / 39.0 - 46.0 |
+| MPV, PCT, PDW, P-LCR | MPV, PCT (plateletcrit), PDW, P-LCR | fL, %, fL, % | 8.6 - 15.5, 0.150 - 0.620, 8.3 - 25.0, 11.9 - 66.9 |
+
+The intervals are adults' only (a child's result prints without one rather than against an adult's), from Dacie and
+Lewis Practical Haematology (12th ed., 2017) for the absolute counts and RDW, Sachdev et al. 2014 (945 healthy Indian
+adults, doi:10.4103/0377-4929.134676) for the platelet indices, and Monteiro et al. 2021 (doi:10.7754/Clin.Lab.2020.200439)
+for the immature granulocytes; the code comments name them. The lab enters its own, by sex (N3). The platelet indices were
+measured on a Sysmex: check them, and PDW's unit (the H500 may send it in %), against HORIBA's intervals for the H500. The
+H500's research-use parameters (ALY#/%, LIC#/%, MIC, MAC, and the others it sends with research output on) and its large
+platelet count (P-LCC, for which no adult interval was found to cite) go on no report: Lab setup › Analysers lists them
+among the channels no test maps, where the lab ignores them, or maps them to a test it adds. HORIBA writes the counts'
+unit `1E03/mm3` (`1E06/mm3` for red cells) and cell volumes in `µm3`: both read as the tests' units (10³/µL, 10⁶/µL, fL),
+so they hold no result back from auto-validation.
+
+On a database seeded before these analytes, the seeder adds them to the CBC it has, each after the analyte the seed puts
+before it (the CBC's own analytes keep their order): the lab cannot have taken out an analyte it never had. The
+differential's H500 codes (NEU%, LYM%, MON%, EOS%, BAS%) are not added to analytes it already has: Lab setup › Analysers
+lists them among the channels no test maps, with the mapping to add (`H500:NEU%` on Neutrophils, and so on).
 
 **Order download** (`AnalyserOrders`, LIS-04). In the same unit of work as the change, Diagnostics adds one
 `lab.analyser.order` outbox message (`InstrumentOrderRequest`: barcode, action, analysers with channel codes), so

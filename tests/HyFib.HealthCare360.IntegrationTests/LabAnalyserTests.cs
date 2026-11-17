@@ -447,6 +447,48 @@ public sealed class LabAnalyserTests(HospitalServer server)
         (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("92");
     }
 
+    /// <summary>
+    /// The Yumizen H500 sends every parameter of a CBC with differential under its own code (H500-1, H500-2, N6): each goes
+    /// on its own test of the CBC, the differential in per cent too (NEU%, not NEUT%), and nothing is left over. Its units
+    /// written HORIBA's way (1E03/mm3, µm3) are the tests' units.
+    /// </summary>
+    [Fact]
+    public async Task A_yumizen_h500_cbc_with_differential_fills_every_test_of_the_cbc()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var h500 = "H5" + Letters(6).ToUpperInvariant();
+        await admin.PostAsync<JsonObject>("/api/v1/lab/instruments", new SaveLabInstrumentRequest(
+            h500, "Yumizen H500", "HORIBA", "Yumizen H500", LabSection.Hematology, InstrumentProtocol.Astm,
+            IsBidirectional: false, AutoValidationEnabled: false, Location: null, IsActive: true, Version: null));
+        var tube = await ReceivedSampleAsync(admin, lab, "LAB-CBC");
+        (string Test, string Code, string Value, string Unit)[] sent =
+        [
+            ("HB", "HGB", "13.9", "g/dL"), ("TLC", "WBC", "9.45", "1E03/mm3"), ("NEUT", "NEU%", "62", "%"), ("LYMPH", "LYM%", "28", "%"),
+            ("MONO", "MON%", "6", "%"), ("EOS", "EOS%", "3", "%"), ("BASO", "BAS%", "1", "%"), ("IG", "IMG%", "0.2", "%"),
+            ("NEUT-ABS", "NEU#", "5.86", "1E03/mm3"), ("LYMPH-ABS", "LYM#", "2.65", "1E03/mm3"), ("MONO-ABS", "MON#", "0.57", "1E03/mm3"),
+            ("EOS-ABS", "EOS#", "0.28", "1E03/mm3"), ("BASO-ABS", "BAS#", "0.07", "1E03/mm3"), ("IG-ABS", "IMG#", "0.02", "1E03/mm3"),
+            ("RBC", "RBC", "4.71", "1E06/mm3"), ("PCV", "HCT", "41.8", "%"), ("MCV", "MCV", "88.7", "µm3"), ("MCH", "MCH", "29.5", "pg"),
+            ("MCHC", "MCHC", "33.3", "g/dL"), ("RDW-CV", "RDW-CV", "12.9", "%"), ("RDW-SD", "RDW-SD", "41.2", "µm3"),
+            ("PLT", "PLT", "250", "1E03/mm3"), ("MPV", "MPV", "9.1", "µm3"), ("PCT", "PCT", "0.228", "%"), ("PDW", "PDW", "15.2", "fL"),
+            ("P-LCR", "P-LCR", "24.6", "%"),
+        ];
+
+        (await AnalyserSendsAsync(h500, [$"O|1|{tube.Barcode}||^^^DIF|R", .. sent.Select((s, i) => $"R|{i + 1}|^^^{s.Code}|{s.Value}|{s.Unit}||N||F")]))
+            .ShouldNotBeNull().Accepted.ShouldBeTrue();
+
+        var sheet = await SheetAsync(lab, tube);
+        sheet.Lines.Select(l => l.TestCode).ShouldBe(sent.Select(s => s.Test), ignoreOrder: true, "the CBC has a test for each parameter, and no other");
+        foreach (var (test, code, value, unit) in sent)
+        {
+            var line = sheet.Lines.Single(l => l.TestCode == test);
+            (line.Value, line.InstrumentCode, line.InstrumentUnit).ShouldBe((value, h500, unit), $"{code} goes on {test}");
+            line.HeldReasons.ShouldNotContain(r => r.Contains("unit", StringComparison.OrdinalIgnoreCase), $"{unit} is {test}'s unit written another way");
+        }
+
+        (await UnmatchedAsync(lab, tube.Barcode)).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task An_analysers_results_auto_validate_only_on_the_qc_that_analyser_ran_today()
     {

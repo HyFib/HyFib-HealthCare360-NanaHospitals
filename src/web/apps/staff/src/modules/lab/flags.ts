@@ -410,11 +410,14 @@ const UNIT_ALIASES: Record<string, string> = {
   'G%': 'G/DL',
   'GM/DL': 'G/DL',
   'IU/L': 'U/L',
+  UM3: 'FL',
+  'UM^3': 'FL',
 };
 
 /**
  * One spelling for every way of writing a unit, as the server reads it (AnalyserUnits.Canonical): no spaces, upper
- * case, the micro sign as u, powers of ten as 10^n (10³, 10*3, 10E3, x10^3), a cubic millimetre as a microlitre.
+ * case, the micro sign as u, powers of ten as 10^n (10³, 10*3, 10E3, x10^3, and HORIBA's 1E03), a cubic millimetre as a
+ * microlitre, a cubic micrometre as a femtolitre.
  */
 export function unitKey(unit: string | null | undefined): string {
   let text = '';
@@ -433,6 +436,9 @@ export function unitKey(unit: string | null | undefined): string {
   let key = text.toUpperCase();
   if (key.startsWith('X10')) key = key.slice(1);
   if (key.startsWith('10*') || (key.startsWith('10E') && /^[0-9]$/.test(key.charAt(3)))) key = `10^${key.slice(3)}`;
+  // HORIBA's analysers write 10³ as 1E03 ("1E03/mm3" for the white cells, "1E06/mm3" for the red).
+  const power = /^1E([0-9]{1,2})(?![0-9])/.exec(key);
+  if (power) key = `10^${Number(power[1])}${key.slice(power[0].length)}`;
   key = key.replaceAll('/CUMM', '/UL').replaceAll('/MM^3', '/UL').replaceAll('/MM3', '/UL');
   if (key.startsWith('CELLS/')) key = key.slice('CELLS'.length);
   return UNIT_ALIASES[key] ?? key;

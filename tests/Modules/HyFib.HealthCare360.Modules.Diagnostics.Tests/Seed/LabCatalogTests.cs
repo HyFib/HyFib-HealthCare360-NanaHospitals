@@ -51,13 +51,86 @@ public sealed class LabCatalogTests
     }
 
     [Theory]
-    [InlineData("LAB-CBC", new[] { "HB", "TLC", "NEUT", "LYMPH", "MONO", "EOS", "BASO", "RBC", "PCV", "MCV", "MCH", "MCHC", "PLT" })]
+    [InlineData("LAB-CBC", new[]
+    {
+        "HB", "TLC", "NEUT", "LYMPH", "MONO", "EOS", "BASO", "IG", "NEUT-ABS", "LYMPH-ABS", "MONO-ABS", "EOS-ABS", "BASO-ABS", "IG-ABS",
+        "RBC", "PCV", "MCV", "MCH", "MCHC", "RDW-CV", "RDW-SD", "PLT", "MPV", "PCT", "PDW", "P-LCR",
+    })]
     [InlineData("LAB-LIPID", new[] { "CHOL", "TG", "HDL", "LDL", "VLDL" })]
     [InlineData("LAB-KFT", new[] { "UREA", "CREA", "UA", "NA", "K", "CL" })]
     [InlineData("LAB-TFT", new[] { "T3", "T4", "TSH" })]
     [InlineData("LAB-COAG", new[] { "PT", "INR", "APTT" })]
     public void Panels_report_the_analytes_clinicians_expect(string code, string[] analytes) =>
         LabCatalog.Orderables.Single(o => o.Code == code).Components.Select(c => c.Code).ShouldBe(analytes, ignoreOrder: true);
+
+    /// <summary>
+    /// The Yumizen H500's CBC and DIF parameters (manual RAA085BEN, YumizenH500Tests), by its own codes: Nana Hospitals
+    /// reports all of them (H500-1, H500-2, N6).
+    /// </summary>
+    private static readonly string[] YumizenH500Parameters =
+    [
+        "WBC", "RBC", "HGB", "HCT", "MCV", "MCH", "MCHC", "RDW-CV", "RDW-SD", "PLT", "MPV", "PCT", "PDW", "P-LCR",
+        "NEU%", "LYM%", "MON%", "EOS%", "BAS%", "IMG%", "NEU#", "LYM#", "MON#", "EOS#", "BAS#", "IMG#",
+    ];
+
+    [Fact]
+    public void The_cbc_reports_every_parameter_the_yumizen_h500_sends_each_on_its_own_analyte()
+    {
+        var cbc = LabCatalog.Orderables.Single(o => o.Code == "LAB-CBC").Components.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
+        var analytes = LabCatalog.Analytes.Where(a => cbc.Contains(a.Code)).ToList();
+
+        foreach (var parameter in YumizenH500Parameters)
+        {
+            var mapping = analytes.Where(a => ChannelMappings.Score(a.Result.Channels ?? [], "H500", parameter) > 0).ToList();
+            mapping.Count.ShouldBe(1, $"{parameter} goes on exactly one CBC analyte");
+            Analyte(mapping[0]).ChannelFor("H500").ShouldBe(parameter, $"a host query asks for {mapping[0].Code} by the H500's own code");
+        }
+
+        analytes.Count.ShouldBe(cbc.Count);
+        analytes.Where(a => !YumizenH500Parameters.Any(p => ChannelMappings.Score(a.Result.Channels ?? [], "H500", p) > 0))
+            .Select(a => a.Code).ShouldBeEmpty("every CBC analyte is one the H500 measures");
+        LabCatalog.Orderables.Single(o => o.Code == "LAB-ESR").Result!.Channels.ShouldBe(["ESR"], "the H500 runs the ESR too");
+    }
+
+    [Theory]
+    [InlineData("NEUT", "NEU%", "NEUT%")]
+    [InlineData("LYMPH", "LYM%", "LYMPH%")]
+    [InlineData("MONO", "MON%", "MONO%")]
+    [InlineData("EOS", "EOS%", "EO%")]
+    [InlineData("BASO", "BAS%", "BASO%")]
+    public void The_differential_takes_the_h500s_codes_and_keeps_the_codes_it_had(string analyte, string h500, string before) =>
+        LabCatalog.Analytes.Single(a => a.Code == analyte).Result.Channels.ShouldBe([h500, before]);
+
+    [Theory]
+    [InlineData("ALY%")]
+    [InlineData("ALY#")]
+    [InlineData("LIC%")]
+    [InlineData("LIC#")]
+    [InlineData("MIC")]
+    [InlineData("MAC")]
+    [InlineData("P-LCC")]
+    public void The_h500s_research_parameters_and_its_large_platelet_count_go_on_no_report(string parameter) =>
+        LabCatalog.Analytes.Where(a => ChannelMappings.Score(a.Result.Channels ?? [], "H500", parameter) > 0).ShouldBeEmpty();
+
+    [Fact]
+    public void The_new_cbc_parameters_have_a_unit_and_an_adult_interval_but_none_for_a_child()
+    {
+        string[] added = ["IG", "NEUT-ABS", "LYMPH-ABS", "MONO-ABS", "EOS-ABS", "BASO-ABS", "IG-ABS", "RDW-CV", "RDW-SD", "MPV", "PCT", "PDW", "P-LCR"];
+        foreach (var code in added)
+        {
+            var result = LabCatalog.Analytes.Single(a => a.Code == code).Result;
+            result.Unit.ShouldNotBeNullOrWhiteSpace(code);
+            var ranges = result.Ranges.Select(r => r.ToEntity(Guid.Empty)).ToList();
+            ReferenceRangeSelector.Select(ranges, Gender.Female, TestData.Years(35)).ShouldNotBeNull(code);
+            ReferenceRangeSelector.Select(ranges, Gender.Male, TestData.Years(5)).ShouldBeNull($"{code}: a child is not read against an adult interval");
+        }
+
+        // Spot checks against the cited sources.
+        LabCatalog.Analytes.Single(a => a.Code == "NEUT-ABS").Result.Ranges.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            r => r.Low.ShouldBe(2.00m), r => r.High.ShouldBe(7.00m));
+        LabCatalog.Analytes.Single(a => a.Code == "PCT").Result.ShouldSatisfyAllConditions(
+            r => r.Unit.ShouldBe("%"), r => r.Decimals.ShouldBe(3), r => r.Ranges.ShouldHaveSingleItem().High.ShouldBe(0.620m));
+    }
 
     [Fact]
     public void Every_test_is_either_a_panel_of_known_analytes_or_a_single_result()
@@ -234,6 +307,8 @@ public sealed class LabCatalogTests
         ImagingCatalog.Procedures.Single(p => p.Code == "RAD-CT-ABD").RequiresContrast.ShouldBeTrue();
         ImagingCatalog.Procedures.Single(p => p.Code == "RAD-CT-HEAD").RequiresContrast.ShouldBeFalse();
     }
+
+    private static LabTest Analyte(AnalyteSeed seed) => new() { Code = seed.Code, InstrumentChannelCodes = [.. seed.Result.Channels ?? []] };
 
     private static IEnumerable<(string Code, ResultSeed Result)> ResultDefinitions() =>
         LabCatalog.Analytes.Select(a => (a.Code, a.Result))
