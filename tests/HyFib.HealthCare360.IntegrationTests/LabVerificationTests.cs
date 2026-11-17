@@ -40,9 +40,10 @@ public sealed class LabVerificationTests(HospitalServer server)
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
         var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
 
-        // The technician enters a tube of electrolytes: the potassium is critically high, sodium and chloride are normal.
+        // The technician enters a tube of electrolytes: the potassium is critically high, sodium, chloride and bicarbonate
+        // are normal.
         var tube = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
-        var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "7.2", ["CL"] = "101" });
+        var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "7.2", ["CL"] = "101", ["HCO3"] = "24" });
         var potassium = lines.Single(l => l.TestCode == "K");
         potassium.Flag.ShouldBe(ResultFlag.CriticalHigh);
         potassium.IsCritical.ShouldBeTrue();
@@ -63,7 +64,7 @@ public sealed class LabVerificationTests(HospitalServer server)
 
         // Now the tube is verified, and the call is not asked for again.
         var verified = await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(tubeResults, null, null, Release: false));
-        verified.Verified.ShouldBe(3);
+        verified.Verified.ShouldBe(4);
         verified.CriticalCallsRecorded.ShouldBe(0, "the call was documented before the verification");
         (await SheetAsync(lab, tube)).Lines.ShouldAllBe(l => l.Status == LabResultStatus.Verified);
 
@@ -83,7 +84,7 @@ public sealed class LabVerificationTests(HospitalServer server)
                          ?? throw new InvalidOperationException("The hospital administrator has no facility.");
         var own = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
         var entered = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
-        var normal = new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" };
+        var normal = new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101", ["HCO3"] = "24" };
         var ownResults = (await EnterAsync(pathologist, own, normal)).Select(l => l.ResultId).ToList();
         var labResults = (await EnterAsync(lab, entered, normal)).Select(l => l.ResultId).ToList();
 
@@ -94,7 +95,7 @@ public sealed class LabVerificationTests(HospitalServer server)
             refused.GetProperty("code").GetString().ShouldBe("lab.verify_own_result");
             (await SheetAsync(pathologist, own)).Lines.ShouldAllBe(l => l.Status == LabResultStatus.Entered);
 
-            (await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(labResults, null, null, Release: false))).Verified.ShouldBe(3);
+            (await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(labResults, null, null, Release: false))).Verified.ShouldBe(4);
         }
         finally
         {
@@ -103,7 +104,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         }
 
         // A lab with one pathologist, the default: the pathologist verifies what they entered.
-        (await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(ownResults, null, null, Release: false))).Verified.ShouldBe(3);
+        (await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(ownResults, null, null, Release: false))).Verified.ShouldBe(4);
     }
 
     [Fact]
@@ -114,7 +115,7 @@ public sealed class LabVerificationTests(HospitalServer server)
         var me = await pathologist.GetAsync<AuthUser>("/api/v1/auth/me");
 
         var tube = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
-        var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "141", ["K"] = "2.1", ["CL"] = "99" });
+        var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "141", ["K"] = "2.1", ["CL"] = "99", ["HCO3"] = "25" });
         var potassium = lines.Single(l => l.TestCode == "K");
         potassium.Flag.ShouldBe(ResultFlag.CriticalLow);
 
@@ -124,7 +125,7 @@ public sealed class LabVerificationTests(HospitalServer server)
             new CriticalCallDetails("Sr. Kavitha Nair", "Ward sister, medical ward", null, CommunicationMethod.Phone, DateTimeOffset.UtcNow.AddMinutes(-1),
                 ReadBackConfirmed: true, null),
             Release: false));
-        verified.Verified.ShouldBe(3);
+        verified.Verified.ShouldBe(4);
         verified.CriticalCallsRecorded.ShouldBe(1);
 
         var sheet = await SheetAsync(lab, tube);

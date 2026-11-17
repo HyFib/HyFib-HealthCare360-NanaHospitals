@@ -32,7 +32,7 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static readonly Dictionary<string, string> Normal = new() { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" };
+    private static readonly Dictionary<string, string> Normal = new() { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101", ["HCO3"] = "24" };
 
     [Fact]
     public async Task Where_the_lab_requires_a_second_pathologist_a_correction_waits_for_one_and_names_both()
