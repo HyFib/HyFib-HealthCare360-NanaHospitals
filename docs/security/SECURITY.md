@@ -1988,7 +1988,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     a false positive or an accepted risk is marked where it is: a `// codeql[<query id>]` comment on the line just
     before it, with the reason beside it. While Code Security is off, that comment is what keeps it from failing the
     check. With Code Security on, also dismiss the alert on GitHub with the same reason. Medium and low findings do
-    not fail the check. The first run's alerts and how each was handled are in the table below.
+    not fail the check. The first run's alerts and how each was handled are in the table below, with four medium ones
+    ruled on later.
 
 | CodeQL alert | Where | How it was handled |
 |---|---|---|
@@ -1999,6 +2000,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | Missing XML validation (medium) | `RdService.Load` (WindowsInterop, HC360 Desktop's fingerprint reader) | False positive: UIDAI publishes no schema for an RD service's answers, so there is none to validate against. The parser refuses DTDs and external entities, caps the size, and checks the root element. Numbers are parsed and range-checked, the paths the service names must be plain local paths, and the rest is carried as text. With Code Security on, dismiss as "false positive" |
 | Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
 | Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). With Code Security on, dismiss as "false positive" |
+| Log entries created from user input (medium) | `KeyRotationService.RetireDataKeyAsync` (Platform, retiring a data key), twice | False positive: the key's id comes from the request's path, but is logged only once it has matched a key in the ring, whose ids are 16 hexadecimal digits. Any other id, one carrying a forged log line among them, is refused as not found before anything is logged (`KeyRotationTests.A_key_id_not_in_the_ring_is_refused_before_it_is_logged`). Only an administrator allowed to manage the system, who has given their password again, gets that far. With Code Security on, dismiss as "false positive" |
+| Network data written to file (medium) | `src/web/demo/capture.mjs`, the demo's recording tool | False positive: writing the server's answers to files is what the tool is for. It records what HyFib's demo server answers each demo role, one file per role, in a folder the developer names. A developer runs it by hand (`src/web/demo/README.md`); no workflow runs it, and nothing in `src/web/demo` reaches a hospital (`Publish-HC360.ps1` builds only `src/web/apps`). With Code Security on, dismiss as "false positive" |
+| Missing origin verification in `postMessage` handler (medium) | Portal `lib/proofOfWork/solver.worker.ts` | False positive: the handler is a dedicated Web Worker's, not a window's. A dedicated worker receives messages only from the page that started it, through its `Worker` object (`lib/proofOfWork/index.ts`; MDN, *DedicatedWorkerGlobalScope: message event*), so there is no other origin to check. It solves the proof-of-work challenge it is given and posts back the answer. With Code Security on, dismiss as "false positive" |
 
 | Rule | Where | Why it is accepted |
 |---|---|---|
