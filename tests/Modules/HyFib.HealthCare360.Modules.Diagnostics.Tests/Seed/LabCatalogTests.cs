@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Tests.Seed;
@@ -151,6 +152,27 @@ public sealed class LabCatalogTests
         (range.Low, range.High).ShouldBe((22m, 29m));
         LabCatalog.Orderables.Single(o => o.Code == "LAB-ELECTROLYTES").Name.ShouldBe("Serum electrolytes (Na, K, Cl, HCO3)");
     }
+
+    /// <summary>
+    /// Vitamin D under every name the i-CHROMA and the doctors give it: one test, LAB-VITD (i-CHROMA; N10), each name a
+    /// channel the master screen can save again.
+    /// </summary>
+    [Fact]
+    public void Vitamin_d_is_one_test_under_every_name_it_is_sent_as()
+    {
+        var channels = LabCatalog.Orderables.Single(o => o.Code == "LAB-VITD").Result.ShouldNotBeNull().Channels.ShouldNotBeNull();
+
+        channels.ShouldBe(["VITD", "VIT-D", "VIT D-25", "VIT-D3", "VIT D3", "VIT 25 OH"]);
+        channels.ShouldAllBe(c => MasterRules.IsChannelMapping(c));
+        foreach (var name in new[] { "VIT-D", "VIT D-25", "VIT-D3", "VIT 25 OH", "VIT D3" })
+        {
+            ResultDefinitions().Count(d => (d.Result.Channels ?? []).Contains(name, StringComparer.OrdinalIgnoreCase)).ShouldBe(1, $"{name} names one test");
+        }
+    }
+
+    [Fact]
+    public void Every_seeded_channel_is_one_the_master_screen_can_save() =>
+        ResultDefinitions().SelectMany(d => d.Result.Channels ?? []).Where(c => !MasterRules.IsChannelMapping(c)).ShouldBeEmpty();
 
     [Fact]
     public void Every_test_is_either_a_panel_of_known_analytes_or_a_single_result()

@@ -590,7 +590,10 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
   LAB-ELECTROLYTES ₹450 (Na, K, Cl and bicarbonate: HCO3, mmol/L, adult 22 - 29 after Tietz, measured on the EXIAS e|1
   and entered by hand as the lab enters its other electrolytes, with the channel `HCO3` should it ever be interfaced),
   LAB-TFT ₹600 (T3, T4, TSH), LAB-URINE-RE ₹150, LAB-ESR ₹120, LAB-CRP ₹500, LAB-DENGUE-NS1 ₹700, LAB-MALARIA ₹350,
-  LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400, LAB-VITB12 ₹1,000, LAB-PSA ₹800,
+  LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400 (one test under every name the i-CHROMA
+  and the doctors give it, each a channel: `VITD`, `VIT-D`, `VIT D-25`, `VIT-D3`, `VIT D3`, `VIT 25 OH`; the order screen
+  finds tests by code, name and short name only, so those names are not search words there: open, see
+  NANA-THENI-ANSWERS-LAB.md), LAB-VITB12 ₹1,000, LAB-PSA ₹800,
   LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700.
 * **Radiology** (procedures with modality, body part, duration, contrast, preparation): RAD-XR-CHEST ₹400,
   RAD-XR-SPINE-LS ₹700, RAD-USG-ABD ₹1,200, RAD-USG-PELVIS ₹1,000, RAD-CT-HEAD ₹3,000, RAD-CT-ABD ₹6,500 (contrast),
@@ -740,9 +743,10 @@ and two messages at once only count a channel twice. The first time an analyser 
 `lab.masters.manage` in its facility get one notification naming every new channel (link: Lab setup › Analysers).
 Whether a channel is mapped is worked out when the list is read, so mapping it in a test is all it takes for it to
 leave the list (and un-mapping it brings it back). **Lab setup › Analysers** counts the channels to map on each
-analyser and lists them with what each last read and the mapping to add to the right test (`H500:RDW-CV`); a channel
-whose code holds characters a mapping cannot (`/`, a space, `:`) is said to be unmappable, for the analyser's engineer
-to send under another code. Whoever manages the masters can decide that a channel goes on no report (a research
+analyser and lists them with what each last read and the mapping to add to the right test (`H500:RDW-CV`). A mapping
+may hold single spaces inside, as some analysers name their tests (`VIT D-25`, `ICHROMA:VIT 25 OH`); a channel whose code
+holds characters a mapping cannot (`/`, `:`, a space at an end or two in a row) is said to be unmappable, for the
+analyser's engineer to send under another code. Whoever manages the masters can decide that a channel goes on no report (a research
 parameter, a flag sent as a channel), with the reason (`IgnoredAnalyserChannel`, audited), and take that back.
 
 **The Yumizen H500's parameters** (Nana Hospitals, H500-1 and H500-2: "Analyser sent all parameter to test code", "The
