@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -15,6 +16,7 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 internal sealed class LabResultService(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     LabWorkflow workflow,
     QualityControlService qc,
     CriticalValueNotifier critical,
@@ -53,7 +55,10 @@ internal sealed class LabResultService(
             patient?.FullName ?? string.Empty, patient?.AgeSex(DiagnosticsTime.Today(time)) ?? string.Empty, order.ClinicalNotes, lines);
     }
 
-    /// <summary>Bulk entry (a whole tube, or a batch from the worklist). All-or-nothing, with per-line error messages.</summary>
+    /// <summary>
+    /// Bulk entry (a whole tube, or a batch from the worklist). All-or-nothing, with per-line error messages. The results
+    /// HC360 calculates from those entered (N7) are calculated again on the same tubes, and come back with them.
+    /// </summary>
     public async Task<Result<IReadOnlyList<ResultSheetLine>>> EnterAsync(EnterResultsRequest request, CancellationToken ct)
     {
         var ids = request.Entries.Select(e => e.ResultId).Distinct().ToList();
@@ -83,21 +88,24 @@ internal sealed class LabResultService(
             return Error.Validation("lab.results_invalid", "Some results could not be saved. Correct the highlighted values.", errors);
         }
 
-        await workflow.RefreshAsync(results.Select(r => r.LabOrderId).ToList(), now, ct);
+        var calculated = await calculator.CalculateAsync(results.Select(r => r.SampleId), now, ct);
+        var changed = results.Concat(calculated.Where(c => !results.Contains(c))).ToList();
+        await workflow.RefreshAsync(changed.Select(r => r.LabOrderId).ToList(), now, ct);
         await db.SaveChangesAsync(ct);
 
-        var criticals = results.Where(r => r.IsCritical && r.Status == LabResultStatus.Entered).ToList();
+        var criticals = changed.Where(r => r.IsCritical && r.Status == LabResultStatus.Entered).ToList();
         if (criticals.Count > 0)
         {
             await critical.AlertVerifiersAsync(await AlertsAsync(criticals, ct), ct);
         }
 
-        foreach (var facility in results.GroupBy(r => r.FacilityId))
+        foreach (var facility in changed.GroupBy(r => r.FacilityId))
         {
             await realtime.PublishAsync(facility.Key, "lab.results.entered", new { OrderIds = facility.Select(r => r.LabOrderId).Distinct().ToList() }, ct);
         }
 
-        return Result<IReadOnlyList<ResultSheetLine>>.Ok(await LinesAsync(results, context, ct));
+        var shown = calculated.Count == 0 ? context : await evaluator.LoadAsync(changed, ct);
+        return Result<IReadOnlyList<ResultSheetLine>>.Ok(await LinesAsync(changed, shown, ct));
     }
 
     public async Task<Result<VerificationOutcome>> VerifyAsync(VerifyResultsRequest request, CancellationToken ct)
@@ -391,7 +399,11 @@ internal sealed class LabResultService(
                     r.InstrumentComment, r.HeldReasons, r.Method, r.Remarks, r.Organism, r.ColonyCount,
                     r.Susceptibilities.Where(s => !s.IsDeleted).OrderBy(s => s.DisplayOrder)
                         .Select(s => new SusceptibilityDto(s.Antibiotic, s.Interpretation, s.Mic)).ToList(),
-                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version, r.InstrumentValue);
+                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version, r.InstrumentValue)
+                {
+                    IsCalculated = CalculatedResults.IsCalculated(r),
+                    Formula = ResultFormulas.For(r.TestCode)?.Expression,
+                };
             })
             .ToList();
     }

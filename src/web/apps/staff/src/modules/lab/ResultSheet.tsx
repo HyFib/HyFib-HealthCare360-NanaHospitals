@@ -61,6 +61,7 @@ import {
   type VerifyResultsRequest,
 } from './api';
 import { FlagChip, SampleStatusBadge } from './badges';
+import { calculationNote, enteredLabel } from './calculated';
 import { CultureDialog, type CultureValue } from './CultureDialog';
 import {
   flagDisplay,
@@ -730,7 +731,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     if (line.status === 'Entered') {
       return (
         <Badge appearance="tint" color="brand" shape="rounded">
-          {line.instrumentCode ? `From ${line.instrumentCode}` : 'Entered'}
+          {enteredLabel(line)}
         </Badge>
       );
     }
@@ -967,13 +968,19 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                                 Large change from the previous result: check the sample
                               </span>
                             )}
-                            {line.status === 'Entered' && line.heldReasons.length > 0 && (
-                              <Caption1 className={styles.muted}>
-                                Not auto-verified: {line.heldReasons.join(' ')}
-                              </Caption1>
-                            )}
-                            {line.status === 'Pending' && line.heldReasons.length > 0 && (
-                              <Caption1 className={styles.muted}>{line.heldReasons.join(' ')}</Caption1>
+                            {calculationNote(line) ? (
+                              <Caption1 className={styles.muted}>{calculationNote(line)}</Caption1>
+                            ) : (
+                              <>
+                                {line.status === 'Entered' && line.heldReasons.length > 0 && (
+                                  <Caption1 className={styles.muted}>
+                                    Not auto-verified: {line.heldReasons.join(' ')}
+                                  </Caption1>
+                                )}
+                                {line.status === 'Pending' && line.heldReasons.length > 0 && (
+                                  <Caption1 className={styles.muted}>{line.heldReasons.join(' ')}</Caption1>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>

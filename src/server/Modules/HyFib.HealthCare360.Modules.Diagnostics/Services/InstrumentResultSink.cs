@@ -35,7 +35,9 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// flags, status and comment. They are auto-validated only when in range, QC was accepted today on this analyser, the
 /// delta check passed, and the analyser raised no flag, used the test's unit and reported the result as final.
 /// Everything else waits for a pathologist, with the reasons stored on the result, and critical values alert the
-/// pathologists at once.</item>
+/// pathologists at once. The results HC360 calculates from them on the tube (indirect bilirubin, globulin…) are
+/// calculated again (<see cref="ResultCalculator"/>), and wait for a person; a value the analyser measures for one of
+/// them stands instead.</item>
 /// </list>
 /// A collected tube that reaches an analyser before it was scanned at the lab counter is received automatically, and the
 /// other bidirectional analysers that run its tests are sent its order (<see cref="AnalyserOrders"/>), once one of its
@@ -44,6 +46,7 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 internal sealed class InstrumentResultSink(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     LabWorkflow workflow,
     QualityControlService qc,
     LabResultService results,
@@ -276,6 +279,8 @@ internal sealed class InstrumentResultSink(
             return await KeepAsync(instrument, message, tube, unplaced, cancellationToken);
         }
 
+        // What HC360 calculates from these results is calculated again (N7); never verified automatically.
+        var calculated = await calculator.CalculateAsync([tube.Id], now, cancellationToken);
         await workflow.RefreshAsync([tube.LabOrderId], now, cancellationToken);
         var kept = await AddUnmatchedAsync(instrument, message, tube, unplaced, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
@@ -292,7 +297,7 @@ internal sealed class InstrumentResultSink(
                 instrument.Code, string.Join(", ", told.Select(r => r.TestName).Distinct(StringComparer.Ordinal)), barcode);
         }
 
-        var criticals = recorded.Where(r => r.IsCritical).ToList();
+        var criticals = recorded.Where(r => r.IsCritical).Concat(calculated.Where(r => r.IsCritical && r.Status == LabResultStatus.Entered)).Distinct().ToList();
         if (criticals.Count > 0)
         {
             await critical.AlertVerifiersAsync(await results.AlertsAsync(criticals, cancellationToken), cancellationToken);

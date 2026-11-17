@@ -30,7 +30,9 @@ public sealed record SusceptibilityDto(string Antibiotic, SusceptibilityInterpre
 /// One analyte line on the result-entry / verification sheet, with the reference interval for this patient. An
 /// analyser's result carries what the analyser said (<see cref="InstrumentUnit"/>, <see cref="InstrumentFlags"/>,
 /// <see cref="InstrumentStatus"/>, <see cref="InstrumentComment"/>, and its own word for an answer read as one of the
-/// test's, <see cref="InstrumentValue"/>) and, when it was not auto-validated, why (<see cref="HeldReasons"/>).
+/// test's, <see cref="InstrumentValue"/>) and, when it was not auto-validated, why (<see cref="HeldReasons"/>). A result
+/// HC360 calculates (<see cref="Formula"/>, N7) says whether its value was calculated (<see cref="IsCalculated"/>): its
+/// first held reason is then the formula with the inputs it was worked from, for the verifier.
 /// </summary>
 public sealed record ResultSheetLine(
     Guid ResultId,
@@ -70,7 +72,14 @@ public sealed record ResultSheetLine(
     DateTimeOffset? VerifiedAt,
     bool HasCriticalCall,
     uint Version,
-    string? InstrumentValue = null);
+    string? InstrumentValue = null)
+{
+    /// <summary>The value was calculated by HC360 from other results of the order and sample, never verified automatically.</summary>
+    public bool IsCalculated { get; init; }
+
+    /// <summary>The formula that fills this analyte ("Total protein − Albumin"); null for one that is measured.</summary>
+    public string? Formula { get; init; }
+}
 
 public sealed record ResultSheet(
     Guid SampleId,

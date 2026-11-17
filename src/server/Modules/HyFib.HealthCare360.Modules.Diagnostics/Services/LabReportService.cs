@@ -24,6 +24,7 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 internal sealed class LabReportService(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     ReportDelivery delivery,
     CriticalValueNotifier critical,
     DiagnosticsLookups lookups,
@@ -248,6 +249,24 @@ internal sealed class LabReportService(
         if (errors.Count > 0)
         {
             return Error.Validation("lab.amendment_invalid", "Some corrections could not be applied.", errors);
+        }
+
+        // A result HC360 calculated from a corrected one (N7) is corrected with it, calculated again from the corrected
+        // values, and listed with the changes; one the correction leaves incalculable is the pathologist's to correct.
+        var recalculated = await calculator.AmendCalculatedAsync(results, report.LabOrderId, currentUser.UserId, now, ct);
+        if (recalculated.IsFailure)
+        {
+            return recalculated.Error!;
+        }
+
+        foreach (var (result, before) in recalculated.Value)
+        {
+            results.Add(result);
+            changes.Add(new AmendedValue(result.TestName, $"{before} -> {result.Describe()}, calculated from the corrected results"));
+            if (result.IsCritical)
+            {
+                criticalResults.Add(result);
+            }
         }
 
         // A corrected critical value is a new communication: the earlier call documented a different value.

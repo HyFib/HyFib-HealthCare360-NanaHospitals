@@ -120,7 +120,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
-| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), susceptibilities, hasCriticalCall, version) |
+| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), isCalculated and formula (a result HC360 calculated from others: see Calculated results), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
 | POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
@@ -141,7 +141,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/{id}/document` | `lab.orders.read` | → `PrintableDocumentDto` (title, fileName, pageSize `A4`, landscape, html): the A4 report for the staff app to print. Same released-only rule and guard as `/{id}`; audit "Printed lab report …" |
 | GET | `/{id}/pdf` | `lab.orders.read` | → the same report as `application/pdf` (`lab-report-<number>.pdf`); 503 `pdf.unavailable` when the server can't make PDFs. Audit "Downloaded lab report … as a PDF" |
 | POST | `/{id}/release` | `lab.results.verify` | → `ReleaseOutcome` (releasedItemIds, isPartial, verificationCode); a released HIV result outside its normal answers puts the patient's record in the HIV category (R-4): an HIV test's result, or one reported under an HIV panel (a band of an HIV confirmation), not another test beside an HIV test in a panel |
-| POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced; an HIV result corrected to reactive puts the record in the HIV category, and one corrected to non-reactive leaves it there. Where the facility sets `lab.separateVerifier`: 202 `ApprovalRequestDto` (kind `diagnostics.lab_amendment`), every check made and nothing changed; another pathologist makes it by approving, on the report as it was asked for (`approval.stale` otherwise). `LabReportView.amendmentWaitingSince` says one waits, and each `LabAmendmentView.requestedBy` names who asked |
+| POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced; the released results HC360 calculated from a corrected one are calculated again in the same amendment (422 `lab.calculated_result` when one cannot be: correct it too); an HIV result corrected to reactive puts the record in the HIV category, and one corrected to non-reactive leaves it there. Where the facility sets `lab.separateVerifier`: 202 `ApprovalRequestDto` (kind `diagnostics.lab_amendment`), every check made and nothing changed; another pathologist makes it by approving, on the report as it was asked for (`approval.stale` otherwise). `LabReportView.amendmentWaitingSince` says one waits, and each `LabAmendmentView.requestedBy` names who asked |
 
 ### Quality control — `/api/v1/lab/qc`
 | Method | Path | Permission | Request → response |
@@ -381,6 +381,35 @@ diagnostics screen.
   (correction), HL7 `R` (not verified on the analyser) or any other is not taken as final. Anything else waits for a
   pathologist: the reasons are stored on the result (`heldReasons`) and the result sheet shows them under the test,
   with the analyser's flag, status, unit and comment among the hints that keep a result out of bulk verification.
+* **Calculated results** (`ResultFormulas`, `CalculatedResults`, `ResultCalculator`; Nana Hospitals N7). Some analytes
+  are calculated, not measured, from others on the same order and sample. The formulas are kept in code, keyed by test
+  code (the lab renames a test freely; its code is what the formula means):
+
+  | Test | Formula | Calculated when |
+  |---|---|---|
+  | `IBIL` Bilirubin, indirect (unconjugated) | `TBIL` − `DBIL` (mg/dL) | the direct is not above the total |
+  | `GLOB` Globulin (calculated) | `TP` − `ALB` (g/dL) | the albumin is below the total protein |
+  | `AGR` Albumin/globulin ratio | `ALB` ÷ `GLOB` | the globulin is above zero |
+  | `VLDL` VLDL cholesterol (calculated) | `TG` ÷ 5 (mg/dL) | the triglycerides are below 400 mg/dL |
+  | `LDL` LDL cholesterol (calculated) | `CHOL` − `HDL` − `TG` ÷ 5 (mg/dL) | the triglycerides are below 400 mg/dL |
+
+  VLDL and LDL follow Friedewald (Friedewald WT, Levy RI, Fredrickson DS, Clin Chem 1972;18(6):499-502), which does
+  not hold from 400 mg/dL of triglycerides up. After results are entered by hand, sent by an analyser or assigned from
+  the unmatched results, the results a formula fills on the same tubes are calculated in the same unit of work, the
+  globulin before the ratio that reads it. A calculated result is stored as a result entered by nobody, rounded to the
+  test's decimals, then read against its reference interval and flagged like any result. Its first held reason marks it
+  calculated and shows the verifier the formula and the inputs it was worked from ("Calculated by HC360: Total protein
+  − Albumin = 7.2 − 4.1 = 3.1 g/dL."); the result sheet line says so (`isCalculated`, `formula`), with "Calculated" as
+  its status and the note under the test. No column was added: the marker is the held reason. A calculated result is
+  never auto-validated; a person verifies it. It is calculated again whenever an input changes before it is verified,
+  and an input reopened and corrected after it was verified takes it back to unverified (audited
+  `lab.result.reopened`). One that can no longer be calculated (an input withdrawn, the triglycerides now 400 mg/dL or
+  more) loses the value it had and waits, with why ("Not calculated: …"); so does one whose input is beyond the
+  measuring range (`<0.10`), in another unit than the formula's, or impossible (a direct bilirubin above the total).
+  A value measured by an analyser or typed in for the test stands: the formula leaves it alone, so an analyser that
+  measures VLDL or LDL wins over the calculation. An amendment of a released input calculates the released results
+  calculated from it again, in the same amendment, with old → new values ("Globulin (calculated): 3.1 g/dL -> 2.7 g/dL,
+  calculated from the corrected results").
 * **Westgard QC**: z-scores against the lot targets; 1-2s warning; 1-3s, 2-2s, R-4s, 4-1s and 10x reject (all rules are
   always checked, limits are strict). Tests in the same QC group (FBS/PPBS share `GLU`) share QC. While today's latest run
   of any lot of the assay is rejected, verification is locked (`lab.qc_lockout`) unless a pathologist records an override
@@ -428,7 +457,8 @@ diagnostics screen.
 * **Release**: tests are released as soon as they are verified (a CBC is not held back by a culture); the report is
   "Released" and `isPartial` while other tests are pending. Each released test raises `DiagnosticReportReleased` with
   the clinical `OrderItemId`. The QR code is assigned at first release. Corrections after release are numbered
-  amendments with the reason and old → new values, re-announced as "(amended)".
+  amendments with the reason and old → new values, re-announced as "(amended)"; a correction of an input carries the
+  results calculated from it (see Calculated results).
 * **Charges**: posted when the item/study is created (`diagnostics.lab`, `diagnostics.radiology`,
   `diagnostics.cardiology`; SourceReference = item/study id; quantity from the order; departments LAB, RAD, CDX) and
   reversed on cancellation. A billing failure never blocks clinical work: the error is stored and can be retried.

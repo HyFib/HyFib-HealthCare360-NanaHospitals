@@ -120,6 +120,7 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<LabWorkflow>();
         services.AddScoped<AnalyserOrders>();
         services.AddScoped<ResultEvaluator>();
+        services.AddScoped<ResultCalculator>();
         services.AddScoped<CriticalValueNotifier>();
         services.AddScoped<ReportDelivery>();
         services.AddScoped<LabOrderService>();
