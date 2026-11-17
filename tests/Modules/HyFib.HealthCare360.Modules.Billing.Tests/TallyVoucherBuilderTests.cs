@@ -2,6 +2,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Integrations;
+using HyFib.HealthCare360.Platform.Organization;
 
 namespace HyFib.HealthCare360.Modules.Billing.Tests;
 
@@ -35,7 +36,7 @@ public sealed class TallyVoucherBuilderTests
     {
         var voucher = TallyVoucherBuilder.Build(Book(sales: [InsuredSale]), Ledgers).Single();
 
-        voucher.VoucherType.ShouldBe(TallyVoucherBuilder.SalesType);
+        voucher.VoucherType.ShouldBe("OP Sales");
         voucher.Number.ShouldBe("NHOB260000001");
         ShouldBalance(voucher);
         Entry(voucher, "Laboratory Income").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(1_000m), e => e.IsDebit.ShouldBeFalse(), e => e.CostCentre.ShouldBe("Laboratory"));
@@ -46,6 +47,48 @@ public sealed class TallyVoucherBuilderTests
         Entry(voucher, "Output CGST").Amount.ShouldBe(45m);
         Entry(voucher, "Output SGST").Amount.ShouldBe(45m);
         voucher.Narration.ShouldNotContain("Star Health");
+    }
+
+    [Theory]
+    [InlineData(BillType.InPatient, new[] { ServiceCategory.BedCharge, ServiceCategory.Laboratory }, TallySaleKind.InPatient)]
+    [InlineData(BillType.InPatient, new[] { ServiceCategory.Laboratory }, TallySaleKind.InPatient)]
+    [InlineData(BillType.OutPatient, new[] { ServiceCategory.Laboratory, ServiceCategory.Laboratory }, TallySaleKind.Laboratory)]
+    [InlineData(BillType.OutPatient, new[] { ServiceCategory.Laboratory, ServiceCategory.Radiology }, TallySaleKind.OutPatient)]
+    [InlineData(BillType.OutPatient, new[] { ServiceCategory.Consultation }, TallySaleKind.OutPatient)]
+    [InlineData(BillType.OutPatient, new ServiceCategory[0], TallySaleKind.OutPatient)]
+    public void A_bill_is_ip_lab_or_op_by_its_type_and_its_services(BillType type, ServiceCategory[] lines, TallySaleKind kind) =>
+        TallyVoucherBuilder.KindOf(type, lines).ShouldBe(kind);
+
+    [Fact]
+    public void Ip_op_and_lab_bills_go_to_their_own_voucher_types_and_cancellations_stay_credit_notes()
+    {
+        var vouchers = TallyVoucherBuilder.Build(Book(sales:
+        [
+            InsuredSale with { BillNumber = "NHIB260000001", Kind = TallySaleKind.InPatient },
+            InsuredSale with { BillNumber = "NHOB260000002", Kind = TallySaleKind.Laboratory },
+            InsuredSale with { BillNumber = "NHOB260000003" },
+            InsuredSale with { BillNumber = "NHIB260000004", Kind = TallySaleKind.InPatient, IsCancellation = true },
+        ]), Ledgers);
+
+        vouchers.Select(v => (v.Number, v.VoucherType)).ShouldBe(
+        [
+            ("NHIB260000001", "IP Sales"),
+            ("NHOB260000002", "Lab Sales"),
+            ("NHOB260000003", "OP Sales"),
+            ("NHIB260000004/C", TallyVoucherBuilder.CreditNoteType),
+        ]);
+        vouchers.ToList().ForEach(ShouldBalance);
+    }
+
+    [Fact]
+    public void The_voucher_types_come_from_the_settings_with_the_built_in_names_for_the_rest()
+    {
+        var map = JsonSerializer.Deserialize<TallyLedgerMap>(
+            """{"voucherTypes":{"inPatient":"Sales - IP","laboratory":"Sales - Lab"}}""", new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+
+        map.VoucherTypes.ShouldBe(new TallyVoucherTypes { InPatient = "Sales - IP", OutPatient = "OP Sales", Laboratory = "Sales - Lab", Pharmacy = "Pharmacy Sales" });
+        TallyVoucherBuilder.Build(Book(sales: [InsuredSale with { Kind = TallySaleKind.InPatient }]), map).Single().VoucherType.ShouldBe("Sales - IP");
+        new TallyLedgerMap().VoucherTypes.ShouldBe(new TallyVoucherTypes { InPatient = "IP Sales", OutPatient = "OP Sales", Laboratory = "Lab Sales", Pharmacy = "Pharmacy Sales" });
     }
 
     [Fact]
@@ -363,6 +406,7 @@ public sealed class TallyVoucherBuilderTests
         var voucher = TallyVoucherBuilder.Build(Book() with { Counters = [canteen] }, ledgers).ShouldHaveSingleItem();
 
         ShouldBalance(voucher);
+        voucher.VoucherType.ShouldBe(TallyVoucherBuilder.SalesType);
         voucher.Number.ShouldBe("CT-20260925");
         Entry(voucher, "Canteen Sales").Amount.ShouldBe(2_000m);
         Entry(voucher, "Canteen Cash").Amount.ShouldBe(1_600m);

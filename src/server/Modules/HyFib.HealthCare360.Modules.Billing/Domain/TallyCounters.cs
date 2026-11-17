@@ -154,7 +154,7 @@ public static class TallyCounters
     private static string Count(int count, string noun) => count.ToString(CultureInfo.InvariantCulture) + " " + noun + (count == 1 ? string.Empty : "s");
 }
 
-/// <summary>Tidies a ledger map before it is saved: names trimmed, blank department and mode entries dropped.</summary>
+/// <summary>Tidies a ledger map before it is saved: names and voucher types trimmed, blank department and mode entries dropped.</summary>
 public static class TallyLedgerMaps
 {
     public static TallyLedgerMap Normalize(TallyLedgerMap map) => map with
@@ -189,6 +189,13 @@ public static class TallyLedgerMaps
         ModeLedgers = Clean(map.ModeLedgers, key => key),
         Pharmacy = Counter(map.Pharmacy),
         Canteen = Counter(map.Canteen),
+        VoucherTypes = map.VoucherTypes with
+        {
+            InPatient = map.VoucherTypes.InPatient.Trim(),
+            OutPatient = map.VoucherTypes.OutPatient.Trim(),
+            Laboratory = map.VoucherTypes.Laboratory.Trim(),
+            Pharmacy = map.VoucherTypes.Pharmacy.Trim(),
+        },
     };
 
     private static TallyCounterLedgers Counter(TallyCounterLedgers counter) => counter with

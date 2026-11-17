@@ -183,6 +183,9 @@ public sealed record TallyLedgerMap
     /// <summary>Pharmacy and canteen sales go to one income ledger per GST rate ("Pharmacy Sales @ 12%"), which Tally's GST reports need.</summary>
     public bool SalesLedgerPerGstRate { get; init; } = true;
 
+    /// <summary>The voucher types the hospital's sales are entered under in Tally: one each for IP, OP, laboratory and pharmacy sales.</summary>
+    public TallyVoucherTypes VoucherTypes { get; init; } = new();
+
     /// <summary>
     /// The version of the facility's saved names, shown with them and sent back with a change (REL-04); none while the
     /// facility uses the hospital-wide names. Never saved with the names.
@@ -218,11 +221,45 @@ public sealed record TallyLedgerMap
         map?.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value)).Value;
 }
 
+/// <summary>
+/// The names of the voucher types (under Sales in Tally) that the day book's sales go to (setting <c>billing.tally.ledgers</c>,
+/// under <c>voucherTypes</c>): the hospital keeps IP, OP, laboratory and pharmacy sales apart. The accountant creates
+/// them in Tally before the first post; Tally refuses a voucher whose type it does not have.
+/// </summary>
+public sealed record TallyVoucherTypes
+{
+    /// <summary>In-patient bills (<see cref="BillType.InPatient"/>), interim and final.</summary>
+    public string InPatient { get; init; } = "IP Sales";
+
+    /// <summary>Out-patient bills that are not laboratory bills.</summary>
+    public string OutPatient { get; init; } = "OP Sales";
+
+    /// <summary>Out-patient bills whose every service is a laboratory test.</summary>
+    public string Laboratory { get; init; } = "Lab Sales";
+
+    /// <summary>The pharmacy counter's invoices, each a voucher of its own.</summary>
+    public string Pharmacy { get; init; } = "Pharmacy Sales";
+}
+
+/// <summary>Which of the hospital's sales voucher types a bill goes to.</summary>
+public enum TallySaleKind
+{
+    OutPatient = 0,
+    InPatient,
+
+    /// <summary>An out-patient bill of laboratory tests only.</summary>
+    Laboratory,
+}
+
 /// <summary>Income of one bill line: <paramref name="Income"/> excludes the package-covered part; discounts include tariff concessions.</summary>
 public sealed record TallySaleLine(string? DepartmentCode, string? DepartmentName, decimal Income, decimal Discount, decimal Cgst, decimal Sgst, decimal Igst = 0);
 
 public sealed record TallySale(
-    string BillNumber, DateOnly Date, string? PayerName, decimal PatientAmount, decimal PayerAmount, decimal RoundOff, IReadOnlyList<TallySaleLine> Lines, bool IsCancellation);
+    string BillNumber, DateOnly Date, string? PayerName, decimal PatientAmount, decimal PayerAmount, decimal RoundOff, IReadOnlyList<TallySaleLine> Lines, bool IsCancellation)
+{
+    /// <summary>The voucher type the bill's sale goes to (<see cref="TallyVoucherBuilder.KindOf"/>); its cancellation is a Credit Note whatever it is.</summary>
+    public TallySaleKind Kind { get; init; }
+}
 
 public sealed record TallyPayment(PaymentMode Mode, decimal Amount);
 
@@ -316,14 +353,16 @@ public sealed record TallyDayBook(
 }
 
 /// <summary>
-/// Builds balanced Tally vouchers from a day book (INT-TALLY): a Sales voucher per bill (income by department ledger,
-/// discount, CGST/SGST, round-off, patient and payer receivables), Credit Notes for cancellations, credit notes and
-/// write-offs, Receipts by payment mode, Payments for refunds and doctor payouts (with TDS) and Journals for advance
-/// adjustments, insurance disallowances, doctor-fee accruals and reversals of money that did not move (each the entries of
-/// its receipt or refund turned round, on the day of the reversal). Narrations carry document numbers, never patient names.
+/// Builds balanced Tally vouchers from a day book (INT-TALLY): a sales voucher per bill, under the IP, OP or laboratory
+/// sales voucher type (income by department ledger, discount, CGST/SGST, round-off, patient and payer receivables),
+/// Credit Notes for cancellations, credit notes and write-offs, Receipts by payment mode, Payments for refunds and doctor
+/// payouts (with TDS) and Journals for advance adjustments, insurance disallowances, doctor-fee accruals and reversals of
+/// money that did not move (each the entries of its receipt or refund turned round, on the day of the reversal).
+/// Narrations carry document numbers, never patient names.
 /// </summary>
 public static class TallyVoucherBuilder
 {
+    /// <summary>The voucher type of the canteen's (and, summarised, the pharmacy's) day of sales.</summary>
     public const string SalesType = "Sales";
     public const string CreditNoteType = "Credit Note";
     public const string ReceiptType = "Receipt";
@@ -455,8 +494,25 @@ public static class TallyVoucherBuilder
         // The reversal needs a reference of its own: with the bill's, Tally would alter the sale into the credit note.
         return sale.IsCancellation
             ? entries.Reversed().ToVoucher(CreditNoteType, sale.Date, CancellationNumber(sale.BillNumber), $"Cancellation of bill {sale.BillNumber}", CancellationNumber(sale.BillNumber))
-            : entries.ToVoucher(SalesType, sale.Date, sale.BillNumber, $"Bill {sale.BillNumber}", sale.BillNumber);
+            : entries.ToVoucher(SaleType(sale.Kind, map), sale.Date, sale.BillNumber, $"Bill {sale.BillNumber}", sale.BillNumber);
     }
+
+    /// <summary>
+    /// The voucher type a bill goes to: an in-patient bill is IP; an out-patient bill whose every line is a laboratory
+    /// test is Lab; any other out-patient bill (a bill without lines too) is OP.
+    /// </summary>
+    public static TallySaleKind KindOf(BillType type, IReadOnlyCollection<ServiceCategory> lineCategories) =>
+        type == BillType.InPatient ? TallySaleKind.InPatient
+        : lineCategories.Count > 0 && lineCategories.All(c => c == ServiceCategory.Laboratory) ? TallySaleKind.Laboratory
+        : TallySaleKind.OutPatient;
+
+    /// <summary>The name of the voucher type a bill of <paramref name="kind"/> goes to in the facility's Tally.</summary>
+    public static string SaleType(TallySaleKind kind, TallyLedgerMap map) => kind switch
+    {
+        TallySaleKind.InPatient => map.VoucherTypes.InPatient,
+        TallySaleKind.Laboratory => map.VoucherTypes.Laboratory,
+        _ => map.VoucherTypes.OutPatient,
+    };
 
     /// <summary>Number and reference of the credit note that reverses a cancelled bill.</summary>
     public static string CancellationNumber(string billNumber) => billNumber + "/C";

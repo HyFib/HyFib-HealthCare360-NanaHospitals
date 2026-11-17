@@ -130,7 +130,10 @@ public sealed class TallyService(
             }).ToList();
             var sale = new TallySale(
                 bill.BillNumber!, date, bill.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null, bill.PatientAmount, bill.PayerAmount,
-                bill.RoundOffAmount, lines, IsCancellation: false);
+                bill.RoundOffAmount, lines, IsCancellation: false)
+            {
+                Kind = TallyVoucherBuilder.KindOf(bill.Type, bill.Lines.Select(l => l.Category).ToList()),
+            };
             if (bill.FinalizedAt >= start && bill.FinalizedAt < end)
             {
                 sales.Add(sale);
