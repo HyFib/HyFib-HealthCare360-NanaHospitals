@@ -1,15 +1,50 @@
 import { z } from 'zod';
-import type { TallyCounterLedgers, TallyLedgerMap } from '../tallyApi';
+import type {
+  TallyCounterLedgers,
+  TallyLedgerMap,
+  TallyNarrationPatient,
+  TallyPurchaseStores,
+  TallyVoucherTypes,
+} from '../tallyApi';
 
 /**
  * The ledger names form (`billing.tally.ledgers`). The rules mirror the server's `TallyLedgerMapValidator`: every
- * name on one line and at most 100 characters, department codes of letters and digits. A payment mode or counter
- * ledger left empty uses the built-in name, shown as the placeholder.
+ * name on one line and at most 100 characters, department codes of letters and digits, voucher types on one line and
+ * at most 32 characters, at most 50 bank ledgers. A payment mode or counter ledger left empty uses the built-in name,
+ * shown as the placeholder.
  */
 
 export const MAX_LEDGER = 100;
 
-/** Payment modes that have a cash or bank ledger (advances and insurers post to their own ledgers). */
+/** The longest voucher type name: what a voucher's record keeps on the server. */
+export const MAX_VOUCHER_TYPE = 32;
+
+export const MAX_BANK_LEDGERS = 50;
+
+/** The voucher types the day book posts under, with the built-in names. */
+export const VOUCHER_TYPE_FIELDS = [
+  { key: 'inPatient', label: 'In-patient bills', builtIn: 'IP Sales' },
+  { key: 'outPatient', label: 'Out-patient bills', builtIn: 'OP Sales' },
+  { key: 'laboratory', label: 'Laboratory bills', builtIn: 'Lab Sales' },
+  { key: 'pharmacy', label: 'Pharmacy invoices', builtIn: 'Pharmacy Sales' },
+  { key: 'purchase', label: 'Purchases (goods receipts)', builtIn: 'Purchase' },
+] as const satisfies readonly { key: keyof TallyVoucherTypes; label: string; builtIn: string }[];
+
+/** What the narration of a patient's voucher says of the patient (`patientInNarration`). */
+export const NARRATION_OPTIONS: { value: TallyNarrationPatient; label: string }[] = [
+  { value: 'NameAndUhid', label: 'Name and UHID' },
+  { value: 'UhidOnly', label: 'UHID only' },
+  { value: 'None', label: 'No patient details' },
+];
+
+/** Which stores' goods receipts post as purchases (`purchasesFrom`). */
+export const PURCHASE_STORE_OPTIONS: { value: TallyPurchaseStores; label: string }[] = [
+  { value: 'Pharmacy', label: 'Pharmacy stores' },
+  { value: 'All', label: 'Every store' },
+  { value: 'None', label: 'None' },
+];
+
+/** Payment modes that have a cash or bank ledger (advances post to their own ledger). */
 export const MODE_FIELDS = [
   { key: 'Cash', label: 'Cash', builtIn: 'Cash' },
   { key: 'Card', label: 'Card', builtIn: 'Card Settlement Account' },
@@ -18,6 +53,7 @@ export const MODE_FIELDS = [
   { key: 'Cheque', label: 'Cheque', builtIn: 'Cheques in Hand' },
   { key: 'PaymentGateway', label: 'Payment gateway', builtIn: 'Payment Gateway Clearing' },
   { key: 'Wallet', label: 'Wallet', builtIn: 'Wallet Clearing' },
+  { key: 'Insurance', label: 'Insurers’ settlements', builtIn: 'Bank' },
 ] as const;
 
 export type ModeKey = (typeof MODE_FIELDS)[number]['key'];
@@ -50,6 +86,13 @@ const optionalLedger = z
   .trim()
   .max(MAX_LEDGER, `Use at most ${MAX_LEDGER} characters.`)
   .refine(isOneLine, 'Keep the ledger name on one line.');
+
+const voucherType = z
+  .string()
+  .trim()
+  .min(1, 'Enter the voucher type as it is named in Tally.')
+  .max(MAX_VOUCHER_TYPE, `Use at most ${MAX_VOUCHER_TYPE} characters.`)
+  .refine(isOneLine, 'Keep the voucher type on one line.');
 
 const counter = z.object({
   include: z.boolean(),
@@ -107,10 +150,60 @@ export const ledgerFormSchema = z
       Object.fromEntries(MODE_FIELDS.map((m) => [m.key, optionalLedger])) as Record<ModeKey, typeof optionalLedger>,
     ),
     salesLedgerPerGstRate: z.boolean(),
+    gstLedgerPerRate: z.boolean(),
     pharmacy: counter,
+    pharmacyPerInvoice: z.boolean(),
     canteen: counter,
+    purchases: ledger,
+    purchasesFrom: z.enum(['Pharmacy', 'All', 'None']),
+    sundryCreditors: ledger,
+    ledgerPerVendor: z.boolean(),
+    purchaseReturns: ledger,
+    inputCgst: ledger,
+    inputSgst: ledger,
+    inputIgst: ledger,
+    vendorAdjustments: ledger,
+    voucherTypes: z.object({
+      inPatient: voucherType,
+      outPatient: voucherType,
+      laboratory: voucherType,
+      pharmacy: voucherType,
+      purchase: voucherType,
+    }),
+    patientInNarration: z.enum(['NameAndUhid', 'UhidOnly', 'None']),
+    // On: the ledgers HC360 posts bank money to (sent as null); off: the rows below.
+    bankLedgersDefault: z.boolean(),
+    bankLedgers: z.array(z.object({ ledger: optionalLedger })),
   })
   .superRefine((values, ctx) => {
+    if (!values.bankLedgersDefault) {
+      const banks = new Set<string>();
+      if (values.bankLedgers.length > MAX_BANK_LEDGERS) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['bankLedgers'],
+          message: `List at most ${MAX_BANK_LEDGERS} bank ledgers.`,
+        });
+      }
+      values.bankLedgers.forEach((row, index) => {
+        const name = row.ledger.trim().toLowerCase();
+        if (!name) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bankLedgers', index, 'ledger'],
+            message: 'Enter the ledger name as it is in Tally.',
+          });
+        } else if (banks.has(name)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['bankLedgers', index, 'ledger'],
+            message: 'This ledger is already in the list.',
+          });
+        }
+        banks.add(name);
+      });
+    }
+
     const seen = new Set<string>();
     values.departments.forEach((row, index) => {
       const code = row.code.trim().toUpperCase();
@@ -193,9 +286,54 @@ export function toLedgerForm(map: TallyLedgerMap): LedgerForm {
       .sort((a, b) => a.code.localeCompare(b.code)),
     modes: Object.fromEntries(MODE_FIELDS.map((m) => [m.key, mode(m.key)])) as Record<ModeKey, string>,
     salesLedgerPerGstRate: map.salesLedgerPerGstRate,
+    gstLedgerPerRate: map.gstLedgerPerRate,
     pharmacy: counterForm(map.pharmacy, COUNTER_BUILT_IN.pharmacy),
+    pharmacyPerInvoice: map.pharmacyPerInvoice,
     canteen: counterForm(map.canteen, COUNTER_BUILT_IN.canteen),
+    purchases: map.purchases,
+    purchasesFrom: map.purchasesFrom,
+    sundryCreditors: map.sundryCreditors,
+    ledgerPerVendor: map.ledgerPerVendor,
+    purchaseReturns: map.purchaseReturns,
+    inputCgst: map.inputCgst,
+    inputSgst: map.inputSgst,
+    inputIgst: map.inputIgst,
+    vendorAdjustments: map.vendorAdjustments,
+    voucherTypes: { ...map.voucherTypes },
+    patientInNarration: map.patientInNarration,
+    bankLedgersDefault: map.bankLedgers == null,
+    bankLedgers: (map.bankLedgers ?? []).map((ledger) => ({ ledger })),
   };
+}
+
+/**
+ * The ledgers the day book treats as bank accounts while the facility lists none of its own, as the server works them
+ * out: the net banking and insurers' mode ledgers, the payout bank and the two settlement banks, each once.
+ */
+export function defaultBankLedgers(
+  form: Pick<LedgerForm, 'modes' | 'payoutBank' | 'gatewaySettlementBank' | 'posSettlementBank'>,
+): string[] {
+  const names = [
+    form.modes.NetBanking.trim() || 'Bank',
+    form.modes.Insurance.trim() || 'Bank',
+    form.payoutBank.trim(),
+    form.gatewaySettlementBank.trim(),
+    form.posSettlementBank.trim(),
+  ];
+  const seen = new Set<string>();
+  return names.filter((name) => {
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+/** A GST ledger as the day book names it: per tax and rate ("Output CGST @ 6%") when asked, else the one ledger. */
+export function gstLedger(ledger: string, perRate: boolean, taxRate: number): string {
+  return perRate ? `${ledger} @ ${taxRate}%` : ledger;
 }
 
 /** The map to save: names trimmed, empty modes and counter names left to the built-in names. */
@@ -238,6 +376,28 @@ export function toLedgerMap(form: LedgerForm): TallyLedgerMap {
     pharmacy: counterMap(form.pharmacy),
     canteen: counterMap(form.canteen),
     salesLedgerPerGstRate: form.salesLedgerPerGstRate,
+    gstLedgerPerRate: form.gstLedgerPerRate,
+    pharmacyPerInvoice: form.pharmacyPerInvoice,
+    purchases: form.purchases.trim(),
+    purchasesFrom: form.purchasesFrom,
+    sundryCreditors: form.sundryCreditors.trim(),
+    ledgerPerVendor: form.ledgerPerVendor,
+    purchaseReturns: form.purchaseReturns.trim(),
+    inputCgst: form.inputCgst.trim(),
+    inputSgst: form.inputSgst.trim(),
+    inputIgst: form.inputIgst.trim(),
+    vendorAdjustments: form.vendorAdjustments.trim(),
+    voucherTypes: {
+      inPatient: form.voucherTypes.inPatient.trim(),
+      outPatient: form.voucherTypes.outPatient.trim(),
+      laboratory: form.voucherTypes.laboratory.trim(),
+      pharmacy: form.voucherTypes.pharmacy.trim(),
+      purchase: form.voucherTypes.purchase.trim(),
+    },
+    patientInNarration: form.patientInNarration,
+    bankLedgers: form.bankLedgersDefault
+      ? null
+      : form.bankLedgers.map((row) => row.ledger.trim()).filter((ledger) => ledger.length > 0),
   };
 }
 
