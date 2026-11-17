@@ -83,11 +83,13 @@ public sealed class CreditNoteGstTests(HospitalServer server)
         (await RefusedAsync(billing, await BillOfAsync(billing, bill), new IssueCreditNoteRequest(CreditNoteKind.CreditNote, 1m, "Again",
             [new(loungeLine.Id, 1m)]), HttpStatusCode.UnprocessableEntity)).ShouldContain("is already credited in full");
 
-        // The books take the GST back from the output GST ledgers; the bill to a patient is not an e-invoice.
+        // The books take the GST back from the output GST ledgers of the lounge's rate (18%: CGST and SGST at 9% each, as
+        // the hospital's GST ledgers go by rate); the bill to a patient is not an e-invoice.
         var vouchers = await accountant.GetAsync<List<AccountingVoucher>>($"/api/v1/billing/tally/day-book?date={EInvoicing.Today():yyyy-MM-dd}");
         var voucher = vouchers.Single(v => v.Number == note.Number);
-        voucher.Entries.Single(e => e.LedgerName == "Output CGST").ShouldBe(new AccountingEntry("Output CGST", 45m, IsDebit: true));
-        voucher.Entries.Single(e => e.LedgerName == "Output SGST").ShouldBe(new AccountingEntry("Output SGST", 45m, IsDebit: true));
+        voucher.Entries.Single(e => e.LedgerName == "Output CGST @ 9%").ShouldBe(new AccountingEntry("Output CGST @ 9%", 45m, IsDebit: true));
+        voucher.Entries.Single(e => e.LedgerName == "Output SGST @ 9%").ShouldBe(new AccountingEntry("Output SGST @ 9%", 45m, IsDebit: true));
+        voucher.Entries.ShouldNotContain(e => e.LedgerName == "Output CGST" || e.LedgerName == "Output SGST");
         voucher.Entries.Single(e => e.LedgerName == "Sales Returns & Allowances").ShouldBe(new AccountingEntry("Sales Returns & Allowances", 550m, IsDebit: true));
         voucher.Entries.Where(e => !e.IsDebit).Sum(e => e.Amount).ShouldBe(640m);
 
