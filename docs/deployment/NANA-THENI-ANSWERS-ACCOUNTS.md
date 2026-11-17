@@ -6,7 +6,7 @@ decisions taken from them. This record lists every question with its answer, wha
 open, and gives the accountant's steps in Tally before go-live.
 
 The questions are listed by number and subject; their full wording is in the questionnaire sent to the hospital. The
-hospital's own words are quoted. How the day book is built is in [billing.md, The Tally day book](../modules/billing.md#the-tally-day-book),
+hospital's answers are quoted with their spelling tidied. How the day book is built is in [billing.md, The Tally day book](../modules/billing.md#the-tally-day-book),
 and what goes over the wire in [integrations.md, Tally Prime](../modules/integrations.md#tally-prime-int-tally).
 
 ## 1. What changes in HC360
@@ -28,30 +28,30 @@ All of it is set on the Tally screen's **Ledgers and voucher types** tab (Billin
 
 | # | Subject | The hospital's answer | What HC360 does, or why it is open |
 |---|---|---|---|
-| N11 | How HC360's documents should reach the books | "IP, OP, Pharmacy & labs as sales voucher"; "Purchase entry for pharmacy needs to be fetched party ledger wise". Its part N11.4 is about expenses booked in HC360 | Sales vouchers under the four voucher types (section 1). Goods receipts are Purchase vouchers from each supplier's ledger. **Expenses (N11.4): a gap.** HC360 has no expense booking; by HyFib's decision this is recorded as a gap, and expenses stay entered in Tally |
-| N12 | Voucher types and narrations | "Separate voucher type needs to be made for IP, OP, Pharmacy and Lab"; "Patient details can be fetched before narration" | Done (section 1). The patient's name and UHID come first, by the hospital's decision of 17 November 2026; protected and VIP patients by UHID only |
-| N13 | In the questionnaire | Not answered | Open: ask again |
-| T1 | The connector: how it lists vouchers | A list of vouchers, paged by count | A requirement for the Tally partner's connector (section 4). HC360 today pushes vouchers to Tally's XML port in batches of `batchSize` |
-| T2 | In the questionnaire | Not answered | Open: ask again |
-| T3 | The connector: companies and facilities | One Tally company per facility code | A requirement for the connector. HC360's Tally settings (`integrations.tally`, with the company's name) are per facility, and its own voucher numbers carry the facility's code, so facilities can share a company or have one each |
-| T4 | The connector: voucher types per call | Several voucher types per call; "Collection" means receipts | A requirement for the connector. HC360's Receipts are what "Collection" asks for |
-| T5 | The connector: amounts | Two decimals; rounding allowed | Already so: every amount is sent with two decimals, every voucher balances to the paisa, and a document's rounding goes to the round-off ledger |
-| T6 | The connector: changed vouchers | Confirm before altering | A requirement for the connector. Today a day posted again alters the vouchers Tally holds (same REMOTEID), and the post is started by staff or by the nightly job |
-| T7 | The connector: a voucher changed in HC360 | Serve it again with the same id | Already so for the XML post: a voucher keeps its REMOTEID (`HC360-<reference>`), and the day's records show it "changed since sent" until it is sent again. A requirement for the connector too |
-| T8 | The connector: deleting or cancelling | Never delete or cancel without approval | Already so: HC360 never deletes or cancels in Tally. A voucher that leaves the day book is listed "No longer in HC360" for the accountant to delete. A requirement for the connector |
-| T9 | In the questionnaire | Not answered | Open: ask again |
-| T10 | Formats | "Format enclosed" | Open: the enclosed formats were not received. They are needed for per-line HSN details (T13) and to match the hospital's layouts |
-| T11 | The connector: ledgers missing in Tally | The connector creates them after approval | A requirement for the connector. Today HC360 creates no ledgers: Tally refuses a voucher whose ledger is missing, and the day's message names the voucher |
-| T12 | In the questionnaire | No answer was passed on with the others | Open: to confirm with the hospital |
-| T13 | GST details | "Details like CGST, SGST, and IGST, HSN details, rate of tax and Party GST details which should match its GSTR2B" | GST by tax and rate, party GSTIN, state and place of supply, the supplier's invoice number and date: done (section 1). **HSN per line: open.** HC360 sends no per-line HSN details until the formats enclosed with T10 show where the hospital wants them |
+| N11 | The Tally company's ledger list (List of Accounts export) for each facility, to map HC360's ledgers to Tally's | Instead of the list, what the books need: "IP, OP, Pharmacy & labs as sales voucher"; "Mode of payment like cash or bank ledger needs to be fetched"; "Purchase entry for pharmacy needs to be fetched party ledger wise"; and (N11.4) "Expenses booked in software needs to be fetched in software on ledger wise" | Sales vouchers under the four voucher types (section 1). Money already posts to the cash or bank ledger of its payment mode, and bank lines now carry the cheque or UTR (T15). Goods receipts are Purchase vouchers from each supplier's ledger. **Expenses (N11.4): a gap.** HC360 has no expense booking; by HyFib's decision this is recorded as a gap, and expenses stay entered in Tally. **The ledger list itself was not sent** (section 5) |
+| N12 | The accountant's decision on T12: patient bills on a receivables ledger for each payer type, with the bill number and no patient names in Tally | "Separate voucher type needs to be made for IP, OP, Pharmacy and Lab"; "Bill no needs to be mentioned in voucher no."; "patient details can be fetched before narration" | Done (section 1). A bill's voucher number was already its bill number. The patient's name and UHID come first, by the hospital's decision of 17 November 2026; protected and VIP patients by UHID only. Patients' bills stay on the patient debtors and payer ledgers |
+| N13 | The switch-over date in T21, and who in accounts compares the first month's day book and GST ledgers in Tally with HC360's | Not answered | Open: ask again |
+| T1 | The connector: one voucher or a list per response, and how it pages | "List of vouchers, by count" | A requirement for the Tally partner's connector (section 4). HC360 today pushes vouchers to Tally's XML port in batches of `batchSize` |
+| T2 | The connector's request: a POST with a JSON body or a GET with the dates in the URL; whether fromDate and toDate are inclusive and in Indian time | Not answered | Open: ask again |
+| T3 | The connector: "College" as the facility's code, one Tally company per facility | "Yes" | A requirement for the connector. HC360's Tally settings (`integrations.tally`, with the company's name) are per facility, and its own voucher numbers carry the facility's code, so facilities can share a company or have one each |
+| T4 | The connector: voucher types per call, and whether "Collection" means receipts | "Multiple voucher type, yes": several voucher types per call, and "Collection" means receipts | A requirement for the connector. HC360's Receipts are what "Collection" asks for |
+| T5 | The connector: decimals in amounts, and whether a rounding difference is allowed | "2 decimals, yes rounding allowed" | Already so: every amount is sent with two decimals, every voucher balances to the paisa, and a document's rounding goes to the round-off ledger |
+| T6 | The connector: fetching the same dates twice, and altering a voucher it holds instead of importing it again | "In case of changes, confirm before the alteration" | A requirement for the connector. Today a day posted again alters the vouchers Tally holds (same REMOTEID) without asking: the post is started by staff, by the nightly job, or by HC360 itself when an online payment or a settlement is recorded for a day already sent (`TallyCorrections`). Whether HC360's own post should ask first too is open (section 5) |
+| T7 | The connector: a voucher changed in HC360 after it was posted: served again with the same id, or a "changed since" query | "Yes" | Read as the first: serve it again with the same id (to confirm, as the question offered two ways). Already so for the XML post: a voucher keeps its REMOTEID (`HC360-<reference>`), and the day's records show it "changed since sent" until it is sent again. A requirement for the connector too |
+| T8 | The connector: deleting or cancelling a voucher it imported, or a new voucher for every reversal | "Should not delete or cancel without approval" | Already so: HC360 never deletes or cancels in Tally. A voucher that leaves the day book is listed "No longer in HC360" for the accountant to delete. A requirement for the connector |
+| T9 | Whether the connector tells HC360 which vouchers it imported and which it rejected, and why, and how | Not answered | Open: ask again |
+| T10 | The formats of Credit Note, Debit Note and Journal vouchers | "Format enclosed" | Open: the enclosed formats were not received. They are needed for per-line HSN details (T13) and to match the hospital's layouts |
+| T11 | The connector: ledgers missing in Tally; and the company's ledger list (List of Accounts export) | "Connector create the missing ledger after approval" | A requirement for the connector. Today HC360 creates no ledgers: Tally refuses a voucher whose ledger is missing, and the day's message names the voucher. The ledger list was not sent (section 5) |
+| T12 | Whether Party Name must be a ledger in Tally; and whether patient bills on a receivables ledger per payer type, with the bill number and no patient names, are acceptable | No answer under T12; the accountant answered it through N12 | Answered by N12: the bill number as the voucher number, and the patient's details before the narration. Whether the partner's JSON needs Party Name to be a ledger: not answered, a question for the connector |
+| T13 | GST: one GST line or CGST, SGST and IGST ledgers per rate; HSN, taxable value and rate per line for purchases (GSTR-2B); Party State as a name or a code | "Details like CGST, SGST, and IGST, HSN details, rate of tax and Party GST details which should match its GSTR2B" | GST by tax and rate, party GSTIN, state and place of supply, the supplier's invoice number and date: done (section 1). The XML names the state, as Tally needs; how the partner's JSON wants it was not answered. **HSN per line: open.** HC360 sends no per-line HSN details until the formats enclosed with T10 show where the hospital wants them |
 | T14 | Bill references on supplier and payer ledgers (New Ref / Agst Ref), so outstandings show bill by bill | "Yes" | Done (section 1). Bill-by-bill must be on for those ledgers in Tally (section 3) |
 | T15 | The cheque or UTR number and its date on a bank ledger's receipt or payment line | "Yes" | Done (section 1). Only ledgers listed as bank ledgers carry them; the cheque ledger ("Cheques in Hand") only when it is listed |
-| T16 | In the questionnaire | Not answered | Open: ask again |
-| T17 | The pharmacy's sales | "One voucher per invoice" | Done (section 1). The daily summary per GST rate stays an option |
-| T18 | In the questionnaire | Not answered | Open: ask again |
-| T19 | In the questionnaire | Not answered | Open: ask again |
-| T20 | In the questionnaire | Not answered | Open: ask again |
-| T21 | In the questionnaire | Not answered | Open: ask again |
+| T16 | Whether the connector's JSON can carry cost centres (HC360 posts each bill's department as one), and in which field | Not answered | Open: ask again. The XML post keeps sending them |
+| T17 | The pharmacy's sales: one voucher per invoice, or the daily summary per GST rate | "One voucher per invoice" | Done (section 1). The daily summary per GST rate stays an option |
+| T18 | An API key in a header over HTTPS, tied to one facility, instead of a username and password in the URL | Not answered | Open: ask again |
+| T19 | Whether the PC that runs the connector can trust the hospital's own certificate authority | Not answered | Open: ask again |
+| T20 | A test Tally company or a test run of the connector, to put a full month of vouchers through before go-live | Not answered | Open: ask again |
+| T21 | The switch-over date, when HC360 stops posting XML to Tally so no voucher is posted twice | Not answered | Open: ask again |
 
 ## 3. The accountant's steps in Tally before go-live
 
@@ -99,12 +99,20 @@ sample JSON have not arrived, so the connector is not built. The answers recorde
 
 ## 5. Still open
 
-1. **Unanswered:** T2, T9, T16, T18, T19, T20, T21 and N13; and T12, whose answer was not passed on.
+1. **Unanswered:** T2, T9, T16, T18, T19, T20, T21 and N13; T12's question whether Party Name must be a ledger; and
+   T13's whether the JSON names Party State or gives its code.
 2. **Not received:** the formats enclosed with T10, and the Tally partner's sample JSON. They are needed for HSN details
-   per line (T13) and for the partner's connector (section 4).
-3. **Expenses booked in HC360 (N11.4):** HC360 has no expense booking. Recorded as a gap by HyFib's decision; expenses
+   per line (T13) and for the partner's connector (section 4). Nor the Tally company's ledger list (List of Accounts
+   export) asked for in N11 and T11: without it, the names on the Ledgers and voucher types tab are HC360's defaults, and
+   the accountant checks each against Tally before the first post (section 3).
+3. **Confirm before altering (T6) for HC360's own post.** The hospital asked it of the connector. HC360's XML post alters
+   the vouchers of a day sent again without asking, including when HC360 sends a day again itself for a late online
+   payment or settlement. To ask the accountant whether that is acceptable until the connector takes over.
+4. **T7's "Yes"** answered a question that offered two ways; it is read as "serve a changed voucher again with the same
+   id". To confirm with the Tally partner.
+5. **Expenses booked in HC360 (N11.4):** HC360 has no expense booking. Recorded as a gap by HyFib's decision; expenses
    stay entered in Tally.
-4. **Bills to registered insurers and corporates** carry no party GST details in Tally yet (only B2B pharmacy sales and
+6. **Bills to registered insurers and corporates** carry no party GST details in Tally yet (only B2B pharmacy sales and
    purchases do, as asked); their e-invoices carry them. To confirm whether the hospital's GSTR-1 work needs them on the
    sales vouchers too.
 
