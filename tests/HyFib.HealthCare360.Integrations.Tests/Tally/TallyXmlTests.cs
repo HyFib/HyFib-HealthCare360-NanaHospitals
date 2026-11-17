@@ -152,6 +152,121 @@ public sealed class TallyXmlTests
             .ShouldBe("amounts must be positive (IsDebit decides the side)");
     }
 
+    /// <summary>An insurer's settlement credited against the bill it settles, and a sale's payer share as a new bill.</summary>
+    private static AccountingVoucher WithBills() => new(
+        "Receipt",
+        new DateOnly(2026, 9, 25),
+        "NHRC260000001",
+        "Receipt NHRC260000001",
+        [
+            new AccountingEntry("Bank", 1_500m, IsDebit: true),
+            new AccountingEntry("Star Health", 1_000m, IsDebit: false)
+            {
+                BillAllocations = [new AccountingBillAllocation("NHOB<26>&0001", AccountingBillType.AgainstRef, 1_000m)],
+            },
+            new AccountingEntry("Sri Balaji Pharma", 500m, IsDebit: false)
+            {
+                BillAllocations =
+                [
+                    new AccountingBillAllocation("SB/2291", AccountingBillType.NewRef, 300m),
+                    new AccountingBillAllocation(" ", AccountingBillType.OnAccount, 200m),
+                ],
+            },
+        ],
+        "NHRC260000001");
+
+    [Fact]
+    public void Writes_bill_allocations_inside_the_ledger_line_with_the_lines_sign()
+    {
+        var lines = XDocument.Parse(TallyXml.BuildImport([WithBills()], Options)).Descendants("ALLLEDGERENTRIES.LIST").ToList();
+
+        lines[0].Elements("BILLALLOCATIONS.LIST").ShouldBeEmpty();
+        var against = lines[1].Elements("BILLALLOCATIONS.LIST").ShouldHaveSingleItem();
+        against.Element("NAME")!.Value.ShouldBe("NHOB<26>&0001");
+        against.Element("BILLTYPE")!.Value.ShouldBe("Agst Ref");
+        against.Element("AMOUNT")!.Value.ShouldBe("1000.00");
+        var supplier = lines[2].Elements("BILLALLOCATIONS.LIST").ToList();
+        supplier.Select(b => (b.Element("NAME")?.Value, b.Element("BILLTYPE")!.Value, b.Element("AMOUNT")!.Value))
+            .ShouldBe([("SB/2291", "New Ref", "300.00"), (null, "On Account", "200.00")]);
+    }
+
+    [Fact]
+    public void A_debit_lines_bill_allocations_are_negative_like_the_line()
+    {
+        var voucher = WithBills() with
+        {
+            Entries =
+            [
+                new AccountingEntry("Star Health", 1_000m, IsDebit: true) { BillAllocations = [new("NHOB260000001", AccountingBillType.NewRef, 1_000m)] },
+                new AccountingEntry("Hospital Service Income", 1_000m, IsDebit: false),
+            ],
+        };
+
+        var line = XDocument.Parse(TallyXml.BuildImport([voucher], Options)).Descendants("ALLLEDGERENTRIES.LIST").First();
+
+        line.Element("AMOUNT")!.Value.ShouldBe("-1000.00");
+        line.Element("BILLALLOCATIONS.LIST")!.Element("AMOUNT")!.Value.ShouldBe("-1000.00");
+        line.Element("BILLALLOCATIONS.LIST")!.Element("BILLTYPE")!.Value.ShouldBe("New Ref");
+    }
+
+    [Fact]
+    public void Bill_names_are_escaped_like_every_other_value()
+    {
+        var xml = TallyXml.BuildImport([WithBills()], Options);
+
+        xml.ShouldContain("<NAME>NHOB&lt;26&gt;&amp;0001</NAME>");
+        xml.ShouldNotContain("NHOB<26>");
+    }
+
+    [Theory]
+    [InlineData(AccountingBillType.NewRef, "New Ref")]
+    [InlineData(AccountingBillType.AgainstRef, "Agst Ref")]
+    [InlineData(AccountingBillType.Advance, "Advance")]
+    [InlineData(AccountingBillType.OnAccount, "On Account")]
+    public void Names_each_kind_of_bill_reference_as_tally_does(AccountingBillType type, string name) => TallyXml.BillType(type).ShouldBe(name);
+
+    [Fact]
+    public void A_voucher_whose_bill_allocations_add_up_is_valid() => TallyXml.Validate(WithBills()).ShouldBeNull();
+
+    [Fact]
+    public void Refuses_bill_allocations_that_do_not_add_up_to_their_line()
+    {
+        var voucher = WithBills();
+        var shortOfIt = voucher with
+        {
+            Entries = [voucher.Entries[0], voucher.Entries[1] with { BillAllocations = [new("NHOB260000001", AccountingBillType.AgainstRef, 999.99m)] }, voucher.Entries[2]],
+        };
+
+        TallyXml.Validate(shortOfIt).ShouldBe("the bill allocations of Star Health (999.99) do not add up to its amount (1000.00)");
+    }
+
+    [Fact]
+    public void Refuses_bill_allocations_that_are_not_positive_or_name_no_bill()
+    {
+        var voucher = WithBills();
+        AccountingVoucher With(params AccountingBillAllocation[] bills) =>
+            voucher with { Entries = [voucher.Entries[0], voucher.Entries[1] with { BillAllocations = bills }, voucher.Entries[2]] };
+
+        TallyXml.Validate(With(
+                new AccountingBillAllocation("NHOB260000001", AccountingBillType.AgainstRef, 1_200m),
+                new AccountingBillAllocation("NHOB260000002", AccountingBillType.AgainstRef, -200m)))
+            .ShouldBe("the bill allocations of Star Health must be positive (the line decides the side)");
+        TallyXml.Validate(With(new AccountingBillAllocation(" ", AccountingBillType.NewRef, 1_000m)))
+            .ShouldBe("every bill allocation of Star Health except On Account needs the bill's name");
+        TallyXml.Validate(With(new AccountingBillAllocation(null, AccountingBillType.OnAccount, 1_000m))).ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_voucher_with_bill_allocations_reads_back_with_its_lines_amounts_and_matches()
+    {
+        var voucher = WithBills();
+        var copy = TallyVoucherReader.Parse(TallyXml.Voucher(voucher, Options));
+
+        copy.Lines.Select(l => (l.Ledger, l.Amount, l.IsDebit)).ShouldBe([("Bank", 1_500m, true), ("Star Health", 1_000m, false), ("Sri Balaji Pharma", 500m, false)]);
+        var check = TallyReadBack.Compare(voucher.Date, [voucher], [copy], Options).Vouchers.ShouldHaveSingleItem();
+        check.Match.ShouldBe(AccountingVoucherMatch.Matched);
+    }
+
     [Fact]
     public void Builds_the_company_list_health_check()
     {

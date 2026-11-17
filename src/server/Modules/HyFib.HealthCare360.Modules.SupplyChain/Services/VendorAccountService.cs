@@ -393,12 +393,14 @@ internal sealed class VendorAccountsDayBookSource(HospitalDbContext db) : IVendo
     {
         var (start, end) = HospitalClock.Range(date, date);
         var vendors = db.Set<Vendor>().AsNoTracking();
+        var receipts = db.Set<GoodsReceiptNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking();
         var notes = await db.Set<VendorDebitNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(n => n.FacilityId == facilityId && n.Status == VendorDocumentStatus.Posted && n.PostedAt >= start && n.PostedAt < end)
             .OrderBy(n => n.PostedAt)
             .Select(n => new VendorDebitNoteEntry(
                 n.Number, vendors.Where(v => v.Id == n.VendorId).Select(v => v.Name).FirstOrDefault() ?? string.Empty, n.VendorReference,
-                n.TaxableAmount, n.CgstAmount, n.SgstAmount, n.IgstAmount))
+                n.TaxableAmount, n.CgstAmount, n.SgstAmount, n.IgstAmount,
+                receipts.Where(g => g.Id == n.GoodsReceiptId).Select(g => g.VendorInvoiceNumber).FirstOrDefault()))
             .ToListAsync(cancellationToken);
         var adjustments = await db.Set<VendorPayableAdjustment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(a => a.FacilityId == facilityId && a.Status == VendorDocumentStatus.Posted && a.PostedAt >= start && a.PostedAt < end)

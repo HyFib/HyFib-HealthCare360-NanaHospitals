@@ -373,7 +373,37 @@ public interface IAadhaarAuthenticator
 }
 
 // ---------- Accounting (Tally) ----------
-public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null);
+
+/// <summary>How a part of a line on a party's ledger stands against the party's bills (Tally's bill-wise details).</summary>
+public enum AccountingBillType
+{
+    /// <summary>A new bill of the party: what is owed on it starts here (Tally's "New Ref").</summary>
+    NewRef = 0,
+
+    /// <summary>Settles or reduces a bill the party already has (Tally's "Agst Ref").</summary>
+    AgainstRef,
+
+    /// <summary>Paid before the bill it will be set against (Tally's "Advance").</summary>
+    Advance,
+
+    /// <summary>Set against no bill (Tally's "On Account"); it has no name.</summary>
+    OnAccount,
+}
+
+/// <summary>
+/// A part of a ledger line on a party's ledger (a payer, a supplier) set against one of the party's bills, so the party's
+/// outstanding shows bill by bill (Tally's <c>BILLALLOCATIONS.LIST</c>). <paramref name="Amount"/> is positive and takes
+/// the line's side; a line's allocations add up to its amount.
+/// </summary>
+/// <param name="Name">The bill: a bill number, a supplier's invoice number; none for <see cref="AccountingBillType.OnAccount"/>.</param>
+public sealed record AccountingBillAllocation(string? Name, AccountingBillType Type, decimal Amount);
+
+/// <param name="CostCentre">The cost centre the line is allocated to, under the configured cost category.</param>
+public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null)
+{
+    /// <summary>How the line stands against the party's bills; empty for a ledger without bills. The amounts add up to the line's.</summary>
+    public IReadOnlyList<AccountingBillAllocation> BillAllocations { get; init; } = [];
+}
 
 /// <param name="Reference">
 /// HC360's stable key for the voucher (a bill, receipt or refund number). The accounting system keeps it as the voucher's

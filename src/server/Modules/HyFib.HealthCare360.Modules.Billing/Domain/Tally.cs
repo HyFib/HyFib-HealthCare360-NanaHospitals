@@ -333,9 +333,16 @@ public sealed record TallyReceipt(string Number, DateOnly Date, ReceiptPurpose P
 {
     /// <summary>The patient the receipt was recorded for, for its narration.</summary>
     public TallyPatient? Patient { get; init; }
+
+    /// <summary>The bill an insurer's settlement settles: its ledger line is set against that bill.</summary>
+    public string? BillNumber { get; init; }
 }
 
-public sealed record TallyDisallowance(string Reference, DateOnly Date, string? PayerName, decimal Amount);
+public sealed record TallyDisallowance(string Reference, DateOnly Date, string? PayerName, decimal Amount)
+{
+    /// <summary>The bill whose claim the payer settled less: the deduction is set against it on the payer's ledger.</summary>
+    public string? BillNumber { get; init; }
+}
 
 public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Purpose, PaymentMode Mode, decimal Amount)
 {
@@ -475,7 +482,9 @@ public static class TallyVoucherBuilder
     private static AccountingVoucher? VendorDebitNote(VendorDebitNoteEntry note, DateOnly date, TallyLedgerMap map)
     {
         var entries = new EntryList();
-        entries.Debit(map.VendorLedger(note.VendorName), note.Total);
+
+        // Against the supplier's invoice the goods came on, when the note names its goods receipt.
+        entries.Debit(map.VendorLedger(note.VendorName), note.Total, bill: TallyBillRef.Against(note.SupplierInvoiceNumber));
         entries.Credit(map.PurchaseReturns, note.Taxable);
         entries.Credit(map.InputCgst, note.Cgst);
         entries.Credit(map.InputSgst, note.Sgst);
@@ -487,16 +496,17 @@ public static class TallyVoucherBuilder
     /// <summary>A supplier payable adjustment: the supplier's ledger against the adjustments ledger, whichever way it goes.</summary>
     private static AccountingVoucher? VendorAdjustment(VendorPayableAdjustmentEntry adjustment, DateOnly date, TallyLedgerMap map)
     {
+        // HC360 does not link an adjustment to an invoice: it stands on the supplier's account.
         var entries = new EntryList();
         if (adjustment.Reduce)
         {
-            entries.Debit(map.VendorLedger(adjustment.VendorName), adjustment.Amount);
+            entries.Debit(map.VendorLedger(adjustment.VendorName), adjustment.Amount, bill: TallyBillRef.OnAccount);
             entries.Credit(map.VendorAdjustments, adjustment.Amount);
         }
         else
         {
             entries.Debit(map.VendorAdjustments, adjustment.Amount);
-            entries.Credit(map.VendorLedger(adjustment.VendorName), adjustment.Amount);
+            entries.Credit(map.VendorLedger(adjustment.VendorName), adjustment.Amount, bill: TallyBillRef.OnAccount);
         }
 
         return entries.ToVoucher(JournalType, date, adjustment.Number, $"Supplier payable adjustment {adjustment.Number}", adjustment.Number);
@@ -557,7 +567,9 @@ public static class TallyVoucherBuilder
     {
         var entries = new EntryList();
         entries.Debit(map.PatientDebtors, sale.PatientAmount);
-        entries.Debit(map.PayerLedger(sale.PayerName), sale.PayerAmount);
+
+        // The payer's share is a bill of the payer's (New Ref); its cancellation takes it off that bill (Agst Ref).
+        entries.Debit(map.PayerLedger(sale.PayerName), sale.PayerAmount, bill: sale.IsCancellation ? TallyBillRef.Against(sale.BillNumber) : TallyBillRef.New(sale.BillNumber));
         entries.Debit(map.Discount, sale.Lines.Sum(l => l.Discount));
         foreach (var department in sale.Lines.GroupBy(l => (l.DepartmentCode, l.DepartmentName)))
         {
@@ -618,7 +630,7 @@ public static class TallyVoucherBuilder
 
     private static AccountingVoucher? Receipt(TallyReceipt receipt, TallyLedgerMap map)
     {
-        var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map);
+        var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map, receipt.BillNumber);
         return IsAdjustment(receipt.Payments)
             ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, Narrate(receipt.Patient, map, $"Advance adjusted, receipt {receipt.Number}"), receipt.Number)
             : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, Narrate(receipt.Patient, map, $"Receipt {receipt.Number}"), receipt.Number);
@@ -636,7 +648,8 @@ public static class TallyVoucherBuilder
         return entries.ToVoucher(JournalType, reversal.Date, reversal.Number, narration, reversal.Number);
     }
 
-    private static EntryList ReceiptEntries(ReceiptPurpose purpose, string? payerName, IReadOnlyList<TallyPayment> payments, TallyLedgerMap map)
+    /// <param name="billNumber">For an insurer's settlement, the bill it settles: the payer's ledger is credited against it.</param>
+    private static EntryList ReceiptEntries(ReceiptPurpose purpose, string? payerName, IReadOnlyList<TallyPayment> payments, TallyLedgerMap map, string? billNumber = null)
     {
         var entries = new EntryList();
         foreach (var mode in payments.GroupBy(p => p.Mode))
@@ -644,13 +657,20 @@ public static class TallyVoucherBuilder
             entries.Debit(map.ModeLedger(mode.Key), mode.Sum(p => p.Amount));
         }
 
-        var counterLedger = purpose switch
+        var total = payments.Sum(p => p.Amount);
+        switch (purpose)
         {
-            ReceiptPurpose.Deposit or ReceiptPurpose.Advance => map.PatientAdvances,
-            ReceiptPurpose.PayerSettlement => map.PayerLedger(payerName),
-            _ => map.PatientDebtors,
-        };
-        entries.Credit(counterLedger, payments.Sum(p => p.Amount));
+            case ReceiptPurpose.Deposit or ReceiptPurpose.Advance:
+                entries.Credit(map.PatientAdvances, total);
+                break;
+            case ReceiptPurpose.PayerSettlement:
+                entries.Credit(map.PayerLedger(payerName), total, bill: TallyBillRef.Against(billNumber));
+                break;
+            default:
+                entries.Credit(map.PatientDebtors, total);
+                break;
+        }
+
         return entries;
     }
 
@@ -660,7 +680,7 @@ public static class TallyVoucherBuilder
     {
         var entries = new EntryList();
         entries.Debit(map.InsuranceDisallowances, disallowance.Amount);
-        entries.Credit(map.PayerLedger(disallowance.PayerName), disallowance.Amount);
+        entries.Credit(map.PayerLedger(disallowance.PayerName), disallowance.Amount, bill: TallyBillRef.Against(disallowance.BillNumber));
         return entries.ToVoucher(JournalType, disallowance.Date, disallowance.Reference, $"Claim deductions {disallowance.Reference}", disallowance.Reference);
     }
 
@@ -768,30 +788,37 @@ public static class TallyVoucherBuilder
         return entries.ToVoucher(PaymentType, payout.Date, payout.Number, $"Doctor payout {payout.Number}", payout.Number);
     }
 
-    /// <summary>Collects entries, merging repeats of the same ledger/side and turning negative amounts into the opposite side.</summary>
+    /// <summary>
+    /// Collects entries, merging repeats of the same ledger/side and turning negative amounts into the opposite side. A
+    /// line on a party's ledger may name the bill it is set against (<see cref="TallyBillRef"/>); merged lines keep each
+    /// bill's part, and a merged line some of whose parts named no bill has the rest on account, so its allocations
+    /// always add up to it.
+    /// </summary>
     internal sealed class EntryList
     {
         private readonly List<AccountingEntry> _entries = [];
 
-        public void Debit(string ledger, decimal amount, string? costCentre = null) => Add(ledger, amount, isDebit: true, costCentre);
+        public void Debit(string ledger, decimal amount, string? costCentre = null, TallyBillRef? bill = null) =>
+            Add(ledger, amount, isDebit: true, costCentre, bill);
 
-        public void Credit(string ledger, decimal amount, string? costCentre = null) => Add(ledger, amount, isDebit: false, costCentre);
+        public void Credit(string ledger, decimal amount, string? costCentre = null, TallyBillRef? bill = null) =>
+            Add(ledger, amount, isDebit: false, costCentre, bill);
 
         public EntryList Reversed()
         {
             var reversed = new EntryList();
             foreach (var entry in _entries)
             {
-                reversed.Add(entry.LedgerName, entry.Amount, !entry.IsDebit, entry.CostCentre);
+                reversed.Add(entry with { IsDebit = !entry.IsDebit });
             }
 
             return reversed;
         }
 
         public AccountingVoucher? ToVoucher(string type, DateOnly date, string number, string narration, string reference) =>
-            _entries.Count == 0 ? null : new AccountingVoucher(type, date, number, narration, _entries.ToList(), reference);
+            _entries.Count == 0 ? null : new AccountingVoucher(type, date, number, narration, _entries.Select(Complete).ToList(), reference);
 
-        private void Add(string ledger, decimal amount, bool isDebit, string? costCentre)
+        private void Add(string ledger, decimal amount, bool isDebit, string? costCentre, TallyBillRef? bill)
         {
             amount = Money.Round(amount);
             if (amount == 0)
@@ -805,15 +832,59 @@ public static class TallyVoucherBuilder
                 isDebit = !isDebit;
             }
 
-            var index = _entries.FindIndex(e => e.LedgerName == ledger && e.IsDebit == isDebit && e.CostCentre == costCentre);
-            if (index >= 0)
+            Add(new AccountingEntry(ledger, amount, isDebit, costCentre)
             {
-                _entries[index] = _entries[index] with { Amount = _entries[index].Amount + amount };
-            }
-            else
-            {
-                _entries.Add(new AccountingEntry(ledger, amount, isDebit, costCentre));
-            }
+                BillAllocations = bill is null ? [] : [new AccountingBillAllocation(bill.Name, bill.Type, amount)],
+            });
         }
+
+        private void Add(AccountingEntry entry)
+        {
+            var index = _entries.FindIndex(e => e.LedgerName == entry.LedgerName && e.IsDebit == entry.IsDebit && e.CostCentre == entry.CostCentre);
+            if (index < 0)
+            {
+                _entries.Add(entry);
+                return;
+            }
+
+            var held = _entries[index];
+            var merged = held with { Amount = held.Amount + entry.Amount };
+            if (held.BillAllocations.Count + entry.BillAllocations.Count > 0)
+            {
+                merged = merged with { BillAllocations = Bills([.. Complete(held).BillAllocations, .. Complete(entry).BillAllocations]) };
+            }
+
+            _entries[index] = merged;
+        }
+
+        /// <summary>The line with what its allocations leave out put on account (a part merged in without a bill).</summary>
+        private static AccountingEntry Complete(AccountingEntry entry)
+        {
+            var rest = entry.Amount - entry.BillAllocations.Sum(b => b.Amount);
+            return entry.BillAllocations.Count == 0 || rest <= 0
+                ? entry
+                : entry with { BillAllocations = Bills([.. entry.BillAllocations, new AccountingBillAllocation(null, AccountingBillType.OnAccount, rest)]) };
+        }
+
+        /// <summary>One part per bill and kind of reference, in the order they came.</summary>
+        private static List<AccountingBillAllocation> Bills(IEnumerable<AccountingBillAllocation> parts) =>
+            parts.GroupBy(b => (b.Name, b.Type))
+                .Select(g => new AccountingBillAllocation(g.Key.Name, g.Key.Type, g.Sum(b => b.Amount)))
+                .ToList();
     }
+}
+
+/// <summary>
+/// The bill a line on a party's ledger (a payer, a supplier) is set against, so the party's outstanding shows bill by bill
+/// in Tally (T14): a new bill (a sale's payer share, a purchase), against a bill (a settlement, a deduction, a return), or
+/// on account when the bill is not known.
+/// </summary>
+public sealed record TallyBillRef(string? Name, AccountingBillType Type)
+{
+    public static TallyBillRef OnAccount { get; } = new(null, AccountingBillType.OnAccount);
+
+    public static TallyBillRef New(string name) => new(name.Trim(), AccountingBillType.NewRef);
+
+    /// <summary>Against the bill <paramref name="name"/>, or on account when it is not known.</summary>
+    public static TallyBillRef Against(string? name) => string.IsNullOrWhiteSpace(name) ? OnAccount : new(name.Trim(), AccountingBillType.AgainstRef);
 }

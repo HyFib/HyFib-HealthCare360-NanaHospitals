@@ -5,8 +5,12 @@ namespace HyFib.HealthCare360.Platform.Contracts;
 /// takes back. The supplier is owed that much less.
 /// </summary>
 /// <param name="VendorReference">The supplier's own reference for the return, when given.</param>
+/// <param name="SupplierInvoiceNumber">
+/// The supplier's invoice the goods came on, when the note names its goods receipt: the return is set against that bill
+/// on the supplier's ledger.
+/// </param>
 public sealed record VendorDebitNoteEntry(
-    string Number, string VendorName, string? VendorReference, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst)
+    string Number, string VendorName, string? VendorReference, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst, string? SupplierInvoiceNumber = null)
 {
     public decimal Total => Taxable + Cgst + Sgst + Igst;
 }

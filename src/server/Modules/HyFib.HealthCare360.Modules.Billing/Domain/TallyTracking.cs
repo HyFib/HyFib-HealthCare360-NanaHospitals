@@ -176,7 +176,10 @@ public static class TallyTracking
     /// <summary>The longest reference a voucher record keeps (the <c>key</c> column).</summary>
     public const int MaxKey = 200;
 
-    /// <summary>SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines.</summary>
+    /// <summary>
+    /// SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines. What a voucher has only
+    /// sometimes (a line's bill allocations) is added only when it has it, so a voucher without it keeps its fingerprint.
+    /// </summary>
     public static string Fingerprint(AccountingVoucher voucher)
     {
         var text = new StringBuilder()
@@ -186,7 +189,8 @@ public static class TallyTracking
             .Append(voucher.Key).Append('|')
             .Append(voucher.Narration.Trim()).Append('\n');
         foreach (var entry in voucher.Entries
-                     .Select(e => string.Create(CultureInfo.InvariantCulture, $"{e.LedgerName.Trim()}|{(e.IsDebit ? "Dr" : "Cr")}|{Money.Round(e.Amount):0.00}|{e.CostCentre?.Trim()}"))
+                     .Select(e => string.Create(CultureInfo.InvariantCulture, $"{e.LedgerName.Trim()}|{(e.IsDebit ? "Dr" : "Cr")}|{Money.Round(e.Amount):0.00}|{e.CostCentre?.Trim()}")
+                                  + Bills(e))
                      .Order(StringComparer.Ordinal))
         {
             text.Append(entry).Append('\n');
@@ -194,6 +198,13 @@ public static class TallyTracking
 
         return Hex(text.ToString());
     }
+
+    private static string Bills(AccountingEntry entry) =>
+        entry.BillAllocations.Count == 0
+            ? string.Empty
+            : "|bills:" + string.Join(';', entry.BillAllocations
+                .Select(b => string.Create(CultureInfo.InvariantCulture, $"{b.Type}:{b.Name?.Trim()}:{Money.Round(b.Amount):0.00}"))
+                .Order(StringComparer.Ordinal));
 
     /// <summary>Fingerprint of a whole day book: changes when any voucher is added, removed or changed.</summary>
     public static string Fingerprint(IReadOnlyList<AccountingVoucher> vouchers) =>

@@ -67,7 +67,7 @@ public sealed class TallyService(
                 from s in db.Set<ClaimSettlement>()
                 join c in db.Set<InsuranceClaim>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on s.ClaimId equals c.Id
                 where c.FacilityId == facilityId && s.RecordedAt >= start && s.RecordedAt < end && s.DeductionAmount > 0
-                select new { c.ClaimNumber, c.PayerId, s.ClaimId, s.DeductionAmount, s.Id })
+                select new { c.ClaimNumber, c.PayerId, c.BillId, s.ClaimId, s.DeductionAmount, s.Id })
             .ToListAsync(ct);
         var claimIds = disallowances.Select(d => d.ClaimId).Distinct().ToList();
         var settlementsByClaim = (await db.Set<ClaimSettlement>().AsNoTracking().Where(s => claimIds.Contains(s.ClaimId)).Select(s => new { s.ClaimId, s.Id }).ToListAsync(ct))
@@ -120,6 +120,18 @@ public sealed class TallyService(
             .Distinct()
             .ToList();
         var patients = await PatientsAsync(patientIds, ct);
+
+        // The bills insurers' settlements and deductions are set against on their ledgers (bill-wise in Tally).
+        var settledBillIds = receipts.Where(r => r.Purpose == ReceiptPurpose.PayerSettlement && r.BillId is not null).Select(r => r.BillId!.Value)
+            .Concat(disallowances.Select(d => d.BillId))
+            .Distinct()
+            .ToList();
+        var billNumbers = settledBillIds.Count == 0
+            ? []
+            : await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(b => settledBillIds.Contains(b.Id) && b.BillNumber != null)
+                .Select(b => new { b.Id, Number = b.BillNumber! })
+                .ToDictionaryAsync(b => b.Id, b => b.Number, ct);
         var legacy = await db.Set<TallyExport>()
             .AnyAsync(e => e.FacilityId == facilityId && e.Date == date && e.LegacyReferences, ct);
 
@@ -164,9 +176,13 @@ public sealed class TallyService(
                 r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)).ToList())
             {
                 Patient = patients.GetValueOrDefault(r.PatientId),
+                BillNumber = r.Purpose == ReceiptPurpose.PayerSettlement && r.BillId is { } billId ? billNumbers.GetValueOrDefault(billId) : null,
             }).ToList(),
             disallowances.Select(d => new TallyDisallowance(
-                TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)).ToList(),
+                TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)
+            {
+                BillNumber = billNumbers.GetValueOrDefault(d.BillId),
+            }).ToList(),
             refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount) { Patient = patients.GetValueOrDefault(r.PatientId) }).ToList(),
             creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)
             {
