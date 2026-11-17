@@ -134,7 +134,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.category.support.purpose':
       'To prepare meals that suit your treatment, and to trace instruments used in your care.',
     'myPrivacy.category.billing.title': 'Bills, payments and insurance',
-    'myPrivacy.category.billing.description': 'Your bills, payments, refunds, deposits, insurance policies and claims.',
+    'myPrivacy.category.billing.description':
+      "Your bills, payments, refunds, deposits, insurance policies and claims. The hospital's accounts (Tally) record your name and UHID with your bills and payments, or only your UHID if your record is restricted or confidential.",
     'myPrivacy.category.billing.purpose': 'To bill you, take payments and handle insurance claims.',
     'myPrivacy.category.billing.basis': 'Needed to provide the service; tax law requires financial records to be kept.',
     'myPrivacy.category.virtual.title': 'Video consultations and remote monitoring',
@@ -633,7 +634,8 @@ export const myPrivacyMessages = defineMessages({
     'myPrivacy.category.support.purpose':
       'आपके इलाज के अनुसार भोजन बनाने, और आपकी देखभाल में इस्तेमाल हुए उपकरणों का पता रखने के लिए।',
     'myPrivacy.category.billing.title': 'बिल, भुगतान और बीमा',
-    'myPrivacy.category.billing.description': 'आपके बिल, भुगतान, रिफ़ंड, जमा राशि, बीमा पॉलिसी और क्लेम।',
+    'myPrivacy.category.billing.description':
+      'आपके बिल, भुगतान, रिफ़ंड, जमा राशि, बीमा पॉलिसी और क्लेम। अस्पताल के खातों (Tally) में आपके बिलों और भुगतानों के साथ आपका नाम और UHID दर्ज होता है; अगर आपका रिकॉर्ड प्रतिबंधित या गोपनीय है, तो सिर्फ़ आपका UHID।',
     'myPrivacy.category.billing.purpose': 'बिल बनाने, भुगतान लेने और बीमा क्लेम संभालने के लिए।',
     'myPrivacy.category.billing.basis': 'सेवा देने के लिए ज़रूरी; टैक्स कानून के अनुसार वित्तीय रिकॉर्ड रखने होते हैं।',
     'myPrivacy.category.virtual.title': 'वीडियो परामर्श और घर से निगरानी',
@@ -1145,7 +1147,7 @@ export const myPrivacyMessages = defineMessages({
       'உங்கள் சிகிச்சைக்கு ஏற்ற உணவைத் தயாரிக்கவும், உங்கள் சிகிச்சையில் பயன்படுத்தப்பட்ட கருவிகளைக் கண்டறியவும்.',
     'myPrivacy.category.billing.title': 'பில்கள், கட்டணங்கள் மற்றும் காப்பீடு',
     'myPrivacy.category.billing.description':
-      'உங்கள் பில்கள், கட்டணங்கள், பணத்திருப்பங்கள், முன்பணங்கள், காப்பீட்டுப் பாலிசிகள் மற்றும் கோரிக்கைகள் (க்ளெய்ம்கள்).',
+      'உங்கள் பில்கள், கட்டணங்கள், பணத்திருப்பங்கள், முன்பணங்கள், காப்பீட்டுப் பாலிசிகள் மற்றும் கோரிக்கைகள் (க்ளெய்ம்கள்). மருத்துவமனையின் கணக்குகளில் (Tally) உங்கள் பில்கள் மற்றும் கட்டணங்களுடன் உங்கள் பெயரும் UHID-யும் பதிவாகும்; உங்கள் பதிவு கட்டுப்படுத்தப்பட்டதாகவோ ரகசியமானதாகவோ இருந்தால் UHID மட்டும்.',
     'myPrivacy.category.billing.purpose':
       'உங்களுக்கு பில் வழங்கவும், கட்டணம் பெறவும், காப்பீட்டுக் கோரிக்கைகளைக் கையாளவும்.',
     'myPrivacy.category.billing.basis': 'சேவையை வழங்கத் தேவை; நிதிப் பதிவுகளை வைத்திருக்க வரிச் சட்டம் கோருகிறது.',

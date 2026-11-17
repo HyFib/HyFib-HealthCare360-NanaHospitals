@@ -116,6 +116,9 @@ The request records what was erased and until when the rest is kept. The retenti
   emergencyContact, abhaNumber` (masked), `abhaAddress, aadhaarLast4` (`XXXX-XXXX-1234`), `hasPhoto, registeredAt,
   registeredAtFacility`.
 - **`categories[]`**: `{key, title, description, purpose, basis, retention, retentionKind, items[{key, label, count, first, last}]}`.
+  - `billing` says that the hospital's accounts in Tally record the patient's name and UHID with their bills and
+    payments, or only the UHID for a VIP or a record in a protected category: the Tally day book's narrations carry them
+    ([billing.md](billing.md#the-tally-day-book)). Tally is the hospital's own accounting system, not a processor.
   - `retention` is the English sentence. `retentionKind` (`MedicalRecords, Finance, MessageLog, Audit, WhileInUse,
     WithRecords`) and `periods {outpatientYears, inpatientYears, financeYears, messageLogDays, auditYears}` let a client
     say it in another language.

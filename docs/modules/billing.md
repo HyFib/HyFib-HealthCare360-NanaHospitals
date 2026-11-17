@@ -1660,7 +1660,14 @@ reconciliation screen (the gateway's).
   [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos)).
 
 Every voucher carries a reference; Tally keeps it as `REMOTEID="HC360-<reference>"`, so posting a day again alters its
-vouchers instead of adding new ones. Narrations carry document numbers, never patient names.
+vouchers instead of adding new ones. Narrations carry document numbers, and a patient's voucher (a bill, its
+cancellation, the patient's receipts, refunds, credit notes and write-offs) names the patient first, as
+`patientInNarration` allows: the name and UHID by default (`NameAndUhid`: "Ravi Kumar (UHID NHU26000123): Bill
+NHOB260000001", the hospital's decision of 17 November 2026), the UHID only (`UhidOnly`), or nothing (`None`). A VIP,
+or a patient in a protected category (HIV, mental health, MTP, sexual violence), is named by UHID only whatever the
+setting, by the rule search, reports and the portal withhold names by (`Patient.IsVip`, `Patient.SensitiveCategories`).
+The day book reads the day's patients in one query. Changing the setting changes the vouchers' content: days posted
+before show their patients' vouchers as changed since sent until they are posted again.
 
 **Per-voucher tracking.** Every voucher sent is a `TallyVoucherRecord` (`billing.tally_vouchers`): type, number,
 remote id, amount, a SHA-256 of its content, what Tally answered (created, altered, accepted, refused, not confirmed,

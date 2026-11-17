@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Integrations;
 
 namespace HyFib.HealthCare360.Modules.Billing.Domain;
@@ -187,6 +188,14 @@ public sealed record TallyLedgerMap
     public TallyVoucherTypes VoucherTypes { get; init; } = new();
 
     /// <summary>
+    /// What the narration of a patient's voucher says of the patient, before the document numbers: a bill, its
+    /// cancellation, the patient's receipts, refunds, credit notes and write-offs, and the pharmacy's invoices, returns and
+    /// balances collected. The name and UHID by default (the hospital's decision of 17 November 2026); a patient whose
+    /// name is withheld (<see cref="TallyPatient.Restricted"/>) is named by UHID only, whatever this says.
+    /// </summary>
+    public TallyNarrationPatient PatientInNarration { get; init; } = TallyNarrationPatient.NameAndUhid;
+
+    /// <summary>
     /// The version of the facility's saved names, shown with them and sent back with a change (REL-04); none while the
     /// facility uses the hospital-wide names. Never saved with the names.
     /// </summary>
@@ -241,6 +250,60 @@ public sealed record TallyVoucherTypes
     public string Pharmacy { get; init; } = "Pharmacy Sales";
 }
 
+/// <summary>How much of the patient a voucher's narration names (<see cref="TallyLedgerMap.PatientInNarration"/>).</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<TallyNarrationPatient>))]
+public enum TallyNarrationPatient
+{
+    /// <summary>Document numbers only.</summary>
+    None = 0,
+
+    /// <summary>The patient's UHID, never the name.</summary>
+    UhidOnly,
+
+    /// <summary>The patient's name and UHID; the UHID alone for a patient whose name is withheld.</summary>
+    NameAndUhid,
+}
+
+/// <summary>
+/// The patient a voucher belongs to, as its narration may name them: the UHID and name from the registration, or, for a
+/// walk-in pharmacy customer without a UHID, the name given at the counter.
+/// </summary>
+/// <param name="Restricted">
+/// The name is never written: a restricted (VIP) record, or one in a protected category (HIV, mental health, MTP, sexual
+/// violence). <see cref="Registered"/> applies the rule HC360 withholds names by elsewhere (search, reports, the portal).
+/// </param>
+public sealed record TallyPatient(string? Uhid, string? Name, bool Restricted = false)
+{
+    /// <summary>A registered patient, restricted when the record is a VIP's or in a protected category.</summary>
+    public static TallyPatient Registered(string uhid, string fullName, bool isVip, SensitiveCategory categories) =>
+        new(uhid, fullName, isVip || categories != SensitiveCategory.None);
+
+    /// <summary>
+    /// What the narration says of the patient, or null when it says nothing: "Ravi Kumar (UHID NHU26000123)", "UHID
+    /// NHU26000123", or a walk-in customer's name.
+    /// </summary>
+    public string? Describe(TallyNarrationPatient shown)
+    {
+        var uhid = OneLine(Uhid);
+        var name = Restricted ? null : OneLine(Name);
+        return shown switch
+        {
+            TallyNarrationPatient.UhidOnly => uhid is null ? null : $"UHID {uhid}",
+            TallyNarrationPatient.NameAndUhid when uhid is null => name,
+            TallyNarrationPatient.NameAndUhid => name is null ? $"UHID {uhid}" : $"{name} (UHID {uhid})",
+            _ => null,
+        };
+    }
+
+    /// <summary>The text on one line, its spaces collapsed; null when nothing is left.</summary>
+    private static string? OneLine(string? value)
+    {
+        var text = string.Join(' ', (value ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        text = new string(text.Where(c => !char.IsControl(c)).ToArray());
+        return text.Length == 0 ? null : text;
+    }
+}
+
 /// <summary>Which of the hospital's sales voucher types a bill goes to.</summary>
 public enum TallySaleKind
 {
@@ -259,15 +322,26 @@ public sealed record TallySale(
 {
     /// <summary>The voucher type the bill's sale goes to (<see cref="TallyVoucherBuilder.KindOf"/>); its cancellation is a Credit Note whatever it is.</summary>
     public TallySaleKind Kind { get; init; }
+
+    /// <summary>The bill's patient, for the narrations of its sale and its cancellation.</summary>
+    public TallyPatient? Patient { get; init; }
 }
 
 public sealed record TallyPayment(PaymentMode Mode, decimal Amount);
 
-public sealed record TallyReceipt(string Number, DateOnly Date, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments);
+public sealed record TallyReceipt(string Number, DateOnly Date, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments)
+{
+    /// <summary>The patient the receipt was recorded for, for its narration.</summary>
+    public TallyPatient? Patient { get; init; }
+}
 
 public sealed record TallyDisallowance(string Reference, DateOnly Date, string? PayerName, decimal Amount);
 
-public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Purpose, PaymentMode Mode, decimal Amount);
+public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Purpose, PaymentMode Mode, decimal Amount)
+{
+    /// <summary>The patient paid back, for the narration.</summary>
+    public TallyPatient? Patient { get; init; }
+}
 
 /// <summary>
 /// Money receipt <paramref name="ReceiptNumber"/> recorded that never arrived, reversed on <paramref name="Date"/>
@@ -285,7 +359,11 @@ public sealed record TallyRefundReversal(string Number, DateOnly Date, string Re
 /// A credit note or write-off of the day. <paramref name="Cgst"/>, <paramref name="Sgst"/> and <paramref name="Igst"/>: the
 /// output GST a credit note takes back (CGST Act s.34), from the lines it corrects; none on a write-off.
 /// </summary>
-public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount, decimal Cgst = 0m, decimal Sgst = 0m, decimal Igst = 0m);
+public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKind Kind, decimal Amount, decimal Cgst = 0m, decimal Sgst = 0m, decimal Igst = 0m)
+{
+    /// <summary>The patient of the bill the note corrects or writes off, for the narration.</summary>
+    public TallyPatient? Patient { get; init; }
+}
 
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
 /// <param name="PractitionerId">Tells apart two doctors who share a code (or, without codes, a name).</param>
@@ -358,7 +436,7 @@ public sealed record TallyDayBook(
 /// Credit Notes for cancellations, credit notes and write-offs, Receipts by payment mode, Payments for refunds and doctor
 /// payouts (with TDS) and Journals for advance adjustments, insurance disallowances, doctor-fee accruals and reversals of
 /// money that did not move (each the entries of its receipt or refund turned round, on the day of the reversal).
-/// Narrations carry document numbers, never patient names.
+/// Narrations carry document numbers; a patient's voucher names the patient first (<see cref="Narrate"/>).
 /// </summary>
 public static class TallyVoucherBuilder
 {
@@ -493,9 +571,17 @@ public static class TallyVoucherBuilder
 
         // The reversal needs a reference of its own: with the bill's, Tally would alter the sale into the credit note.
         return sale.IsCancellation
-            ? entries.Reversed().ToVoucher(CreditNoteType, sale.Date, CancellationNumber(sale.BillNumber), $"Cancellation of bill {sale.BillNumber}", CancellationNumber(sale.BillNumber))
-            : entries.ToVoucher(SaleType(sale.Kind, map), sale.Date, sale.BillNumber, $"Bill {sale.BillNumber}", sale.BillNumber);
+            ? entries.Reversed().ToVoucher(
+                CreditNoteType, sale.Date, CancellationNumber(sale.BillNumber), Narrate(sale.Patient, map, $"Cancellation of bill {sale.BillNumber}"), CancellationNumber(sale.BillNumber))
+            : entries.ToVoucher(SaleType(sale.Kind, map), sale.Date, sale.BillNumber, Narrate(sale.Patient, map, $"Bill {sale.BillNumber}"), sale.BillNumber);
     }
+
+    /// <summary>
+    /// A patient's voucher's narration: what <see cref="TallyLedgerMap.PatientInNarration"/> lets it say of the patient,
+    /// then <paramref name="text"/> ("Ravi Kumar (UHID NHU26000123): Bill NHOB260000001").
+    /// </summary>
+    public static string Narrate(TallyPatient? patient, TallyLedgerMap map, string text) =>
+        patient?.Describe(map.PatientInNarration) is { } who ? $"{who}: {text}" : text;
 
     /// <summary>
     /// The voucher type a bill goes to: an in-patient bill is IP; an out-patient bill whose every line is a laboratory
@@ -534,8 +620,8 @@ public static class TallyVoucherBuilder
     {
         var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map);
         return IsAdjustment(receipt.Payments)
-            ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, $"Advance adjusted, receipt {receipt.Number}", receipt.Number)
-            : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, $"Receipt {receipt.Number}", receipt.Number);
+            ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, Narrate(receipt.Patient, map, $"Advance adjusted, receipt {receipt.Number}"), receipt.Number)
+            : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, Narrate(receipt.Patient, map, $"Receipt {receipt.Number}"), receipt.Number);
     }
 
     /// <summary>The receipt's entries for the payments reversed, turned round: the money is owed again, or the advance holds less.</summary>
@@ -585,10 +671,11 @@ public static class TallyVoucherBuilder
         {
             entries.Debit(map.PatientDebtors, refund.Amount);
             entries.Credit(map.PatientAdvances, refund.Amount);
-            return entries.ToVoucher(JournalType, refund.Date, refund.Number, $"Advance restored, refund {refund.Number}", refund.Number);
+            return entries.ToVoucher(JournalType, refund.Date, refund.Number, Narrate(refund.Patient, map, $"Advance restored, refund {refund.Number}"), refund.Number);
         }
 
-        return RefundEntries(refund.Purpose, refund.Mode, refund.Amount, map).ToVoucher(PaymentType, refund.Date, refund.Number, $"Refund {refund.Number}", refund.Number);
+        return RefundEntries(refund.Purpose, refund.Mode, refund.Amount, map)
+            .ToVoucher(PaymentType, refund.Date, refund.Number, Narrate(refund.Patient, map, $"Refund {refund.Number}"), refund.Number);
     }
 
     /// <summary>The refund's payment turned round: the money is back with the hospital, owed to the patient again.</summary>
@@ -626,7 +713,7 @@ public static class TallyVoucherBuilder
             CreditNoteKind.PayerShare => "Payer credit note",
             _ => "Credit note",
         };
-        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, $"{words} {note.Number}", note.Number);
+        return entries.ToVoucher(CreditNoteType, note.Date, note.Number, Narrate(note.Patient, map, $"{words} {note.Number}"), note.Number);
     }
 
     /// <summary>

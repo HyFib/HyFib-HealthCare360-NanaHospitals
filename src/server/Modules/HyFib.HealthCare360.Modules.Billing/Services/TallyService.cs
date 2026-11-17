@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Settings;
@@ -110,6 +111,15 @@ public sealed class TallyService(
         var doctorIds = fees.Select(f => f.PractitionerId).Concat(payouts.Select(p => p.PractitionerId)).Distinct().ToList();
         var doctors = await db.Set<Practitioner>().Where(p => doctorIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.DisplayName, p.Code }, ct);
         var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
+
+        // The patients of the day's bills, receipts, refunds and credit notes, in one read, for the narrations.
+        var patientIds = bills.Select(b => b.PatientId)
+            .Concat(receipts.Select(r => r.PatientId))
+            .Concat(refunds.Select(r => r.PatientId))
+            .Concat(creditNotes.Select(c => c.PatientId))
+            .Distinct()
+            .ToList();
+        var patients = await PatientsAsync(patientIds, ct);
         var legacy = await db.Set<TallyExport>()
             .AnyAsync(e => e.FacilityId == facilityId && e.Date == date && e.LegacyReferences, ct);
 
@@ -133,6 +143,7 @@ public sealed class TallyService(
                 bill.RoundOffAmount, lines, IsCancellation: false)
             {
                 Kind = TallyVoucherBuilder.KindOf(bill.Type, bill.Lines.Select(l => l.Category).ToList()),
+                Patient = patients.GetValueOrDefault(bill.PatientId),
             };
             if (bill.FinalizedAt >= start && bill.FinalizedAt < end)
             {
@@ -150,11 +161,17 @@ public sealed class TallyService(
             sales,
             receipts.Select(r => new TallyReceipt(
                 r.ReceiptNumber, date, r.Purpose, r.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null,
-                r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)).ToList())).ToList(),
+                r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)).ToList())
+            {
+                Patient = patients.GetValueOrDefault(r.PatientId),
+            }).ToList(),
             disallowances.Select(d => new TallyDisallowance(
                 TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)).ToList(),
-            refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)).ToList(),
-            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)).ToList(),
+            refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount) { Patient = patients.GetValueOrDefault(r.PatientId) }).ToList(),
+            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)
+            {
+                Patient = patients.GetValueOrDefault(c.PatientId),
+            }).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",
                 f.Amount,
@@ -176,6 +193,19 @@ public sealed class TallyService(
             Vendors = await VendorsAsync(facilityId, date, ct),
         };
     }
+
+    /// <summary>
+    /// The patients a day book's vouchers name, with what their narration may show (<see cref="TallyPatient.Registered"/>),
+    /// read in one go. A merged or inactive registration is still the one the document was made for.
+    /// </summary>
+    private async Task<Dictionary<Guid, TallyPatient>> PatientsAsync(IReadOnlyCollection<Guid> patientIds, CancellationToken ct) =>
+        patientIds.Count == 0
+            ? []
+            : (await db.Set<Patient>().IgnoreQueryFilters().AsNoTracking()
+                .Where(p => patientIds.Contains(p.Id))
+                .Select(p => new { p.Id, p.Uhid, p.FullName, p.IsVip, p.SensitiveCategories })
+                .ToListAsync(ct))
+            .ToDictionary(p => p.Id, p => TallyPatient.Registered(p.Uhid, p.FullName, p.IsVip, p.SensitiveCategories));
 
     public async Task<TallyLedgerMap> LedgersAsync(Guid facilityId, CancellationToken ct) =>
         await settings.GetAsync<TallyLedgerMap>(LedgerSetting, facilityId, ct) ?? new TallyLedgerMap();
