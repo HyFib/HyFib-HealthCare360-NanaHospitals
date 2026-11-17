@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Laboratory;
@@ -122,8 +123,12 @@ public sealed class LabCalculatedResultTests(HospitalServer server)
         var order = await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{sheet.LabOrderId}");
         var reportId = order.ReportId.ShouldNotBeNull();
 
-        await pathologist.PostAsync<AmendmentOutcome>($"/api/v1/lab/reports/{reportId}/amend", new AmendReportRequest(
-            "Total protein re-read from the analyser printout", [new AmendmentChange(Line(sheet, "TP").ResultId, "6.8", null, null, null)], null));
+        // The lab asks for no second pathologist: the correction is made at once, and the endpoint answers 204 with no body.
+        using (var amended = await pathologist.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/reports/{reportId}/amend", new AmendReportRequest(
+                   "Total protein re-read from the analyser printout", [new AmendmentChange(Line(sheet, "TP").ResultId, "6.8", null, null, null)], null)))
+        {
+            amended.StatusCode.ShouldBe(HttpStatusCode.NoContent, await amended.Content.ReadAsStringAsync(Ct));
+        }
 
         var report = await pathologist.GetAsync<LabReportView>($"/api/v1/lab/reports/{reportId}");
         var changes = report.Amendments.ShouldHaveSingleItem().Changes;
