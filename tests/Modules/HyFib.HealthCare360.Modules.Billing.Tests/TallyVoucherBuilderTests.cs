@@ -375,7 +375,8 @@ public sealed class TallyVoucherBuilderTests
         var sales = vouchers[0];
         Entry(sales, "Pharmacy Sales @ 12%").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(1_100m), e => e.IsDebit.ShouldBeFalse());
         Entry(sales, "Pharmacy Sales @ 5%").Amount.ShouldBe(400m);
-        Entry(sales, "Output CGST").Amount.ShouldBe(76m);
+        Entry(sales, "Output CGST @ 6%").Amount.ShouldBe(66m);
+        Entry(sales, "Output CGST @ 2.5%").Amount.ShouldBe(10m);
         Entry(sales, "Round Off").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(0.40m), e => e.IsDebit.ShouldBeFalse());
         Entry(sales, "Cash").Amount.ShouldBe(1_000m);
         Entry(sales, "UPI Settlement Account").Amount.ShouldBe(252.40m);

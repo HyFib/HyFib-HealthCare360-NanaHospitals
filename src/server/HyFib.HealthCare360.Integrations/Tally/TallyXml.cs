@@ -15,8 +15,10 @@ internal sealed record TallyImportOptions(string? CompanyName, string CostCatego
 
 /// <summary>
 /// Tally Prime XML: voucher import envelopes (<c>ENVELOPE/HEADER/TALLYREQUEST=Import Data</c>, <c>IMPORTDATA/REQUESTDESC</c>
-/// with <c>SVCURRENTCOMPANY</c>, one <c>TALLYMESSAGE/VOUCHER</c> per voucher), the company-list request used as a health
-/// check and the day's voucher collection read back for reconciliation. Built with LINQ to XML so every value is escaped.
+/// with <c>SVCURRENTCOMPANY</c>, one <c>TALLYMESSAGE/VOUCHER</c> per voucher, with the GST party and the supplier's
+/// invoice when the voucher has them, and each ledger line's bank and bill allocations), the company-list request used as
+/// a health check and the day's voucher collection read back for reconciliation. Built with LINQ to XML so every value is
+/// escaped.
 /// </summary>
 internal static class TallyXml
 {
@@ -142,6 +144,11 @@ internal static class TallyXml
             return "every entry needs a ledger";
         }
 
+        if (voucher.Party is { } party && string.IsNullOrWhiteSpace(party.LedgerName))
+        {
+            return "the party needs its ledger";
+        }
+
         if (voucher.Entries.Any(e => e.Amount <= 0))
         {
             return "amounts must be positive (IsDebit decides the side)";
@@ -234,9 +241,37 @@ internal static class TallyXml
             new XElement("EFFECTIVEDATE", date),
             new XElement("VOUCHERTYPENAME", type),
             new XElement("VOUCHERNUMBER", Clean(voucher.Number)),
+            string.IsNullOrWhiteSpace(voucher.SupplierInvoiceNumber) ? null : new XElement("REFERENCE", Clean(voucher.SupplierInvoiceNumber)),
+            voucher.SupplierInvoiceDate is { } invoiceDate ? new XElement("REFERENCEDATE", Date(invoiceDate)) : null,
+            Party(voucher.Party, options),
             new XElement("PERSISTEDVIEW", AccountingVoucherView),
             string.IsNullOrWhiteSpace(voucher.Narration) ? null : new XElement("NARRATION", Clean(voucher.Narration)),
             voucher.Entries.Select(entry => LedgerEntry(entry, options)));
+    }
+
+    /// <summary>The GST party of a B2B sale or a purchase: its ledger (renamed by the ledger map), GSTIN, state and place of supply.</summary>
+    private static IEnumerable<XElement> Party(AccountingParty? party, TallyImportOptions options)
+    {
+        if (party is null)
+        {
+            yield break;
+        }
+
+        yield return new XElement("PARTYLEDGERNAME", Clean(options.MapLedger(party.LedgerName)));
+        if (!string.IsNullOrWhiteSpace(party.Gstin))
+        {
+            yield return new XElement("PARTYGSTIN", Clean(party.Gstin));
+        }
+
+        if (!string.IsNullOrWhiteSpace(party.StateName))
+        {
+            yield return new XElement("STATENAME", Clean(party.StateName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(party.PlaceOfSupply))
+        {
+            yield return new XElement("PLACEOFSUPPLY", Clean(party.PlaceOfSupply));
+        }
     }
 
     private static XElement LedgerEntry(AccountingEntry entry, TallyImportOptions options)

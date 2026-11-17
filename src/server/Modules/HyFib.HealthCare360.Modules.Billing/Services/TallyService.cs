@@ -77,7 +77,7 @@ public sealed class TallyService(
             .Where(r => r.FacilityId == facilityId && r.Status == RefundStatus.Paid && r.Mode != null && r.PaidAt >= start && r.PaidAt < end)
             .OrderBy(r => r.PaidAt)
             .ToListAsync(ct);
-        var creditNotes = await db.Set<CreditNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+        var creditNotes = await db.Set<CreditNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(c => c.Lines)
             .Where(c => c.FacilityId == facilityId && c.IssuedAt >= start && c.IssuedAt < end)
             .OrderBy(c => c.IssuedAt)
             .ToListAsync(ct);
@@ -157,7 +157,7 @@ public sealed class TallyService(
                 return new TallySaleLine(
                     department?.Code, department?.Name, income,
                     bill.FreeTreatmentReason is null ? l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare : income,
-                    l.CgstAmount, l.SgstAmount, l.IgstAmount);
+                    l.CgstAmount, l.SgstAmount, l.IgstAmount, l.TaxRate);
             }).ToList();
             var sale = new TallySale(
                 bill.BillNumber!, date, bill.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null, bill.PatientAmount, bill.PayerAmount,
@@ -206,6 +206,7 @@ public sealed class TallyService(
             creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)
             {
                 Patient = patients.GetValueOrDefault(c.PatientId),
+                Gst = c.Lines.Where(l => l.GstAmount != 0).Select(l => new TallyGstLine(l.GstRate, l.CgstAmount, l.SgstAmount, l.IgstAmount)).ToList(),
             }).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",

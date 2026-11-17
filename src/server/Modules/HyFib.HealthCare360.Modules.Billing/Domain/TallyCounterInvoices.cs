@@ -9,7 +9,7 @@ namespace HyFib.HealthCare360.Modules.Billing.Domain;
 /// <list type="bullet">
 /// <item>each invoice a sales voucher of the pharmacy's voucher type (<see cref="TallyVoucherTypes.Pharmacy"/>), numbered
 /// and referenced by the invoice: the money taken with it by mode, and what went on the customer's account, against income
-/// by GST rate, output GST and round-off;</item>
+/// and output GST by GST rate, and round-off; a B2B invoice carries its buyer's GST details;</item>
 /// <item>each return a Credit Note numbered by the return: the reverse, the money paid back and what was set against the
 /// balance due;</item>
 /// <item>each invoice's balances paid on a day a Receipt (<see cref="CollectionNumber"/>).</item>
@@ -48,10 +48,12 @@ public static class TallyCounterInvoices
                 Money(entries, invoice.Payments, ledgers, map, day.Date);
                 entries.Debit(ledgers.OnAccount!, invoice.OnAccount);
                 Income(entries, invoice.Tax, invoice.RoundOff, ledgers, map);
-                yield return entries.ToVoucher(
-                    map.VoucherTypes.Pharmacy, day.Date, invoice.Number,
-                    TallyVoucherBuilder.Narrate(Patient(day, invoice.PatientId, invoice.CustomerName), map, $"{TallyCounters.NameOf(counter.Counter)} invoice {invoice.Number}"),
-                    invoice.Number);
+                yield return WithBuyer(
+                    entries.ToVoucher(
+                        map.VoucherTypes.Pharmacy, day.Date, invoice.Number,
+                        TallyVoucherBuilder.Narrate(Patient(day, invoice.PatientId, invoice.CustomerName), map, $"{TallyCounters.NameOf(counter.Counter)} invoice {invoice.Number}"),
+                        invoice.Number),
+                    invoice.Buyer, invoice.OnAccount, invoice.Payments, ledgers, map);
             }
 
             foreach (var credit in counter.Returns)
@@ -61,10 +63,12 @@ public static class TallyCounterInvoices
                 Money(entries, credit.PaidBack, ledgers, map, day.Date);
                 entries.Debit(ledgers.OnAccount!, credit.AgainstDue);
                 Income(entries, credit.Tax, 0m, ledgers, map);
-                yield return entries.Reversed().ToVoucher(
-                    TallyVoucherBuilder.CreditNoteType, day.Date, credit.Number,
-                    TallyVoucherBuilder.Narrate(Patient(day, credit.PatientId, credit.CustomerName), map, $"Return {credit.Number} of {name} invoice {credit.InvoiceNumber}"),
-                    credit.Number);
+                yield return WithBuyer(
+                    entries.Reversed().ToVoucher(
+                        TallyVoucherBuilder.CreditNoteType, day.Date, credit.Number,
+                        TallyVoucherBuilder.Narrate(Patient(day, credit.PatientId, credit.CustomerName), map, $"Return {credit.Number} of {name} invoice {credit.InvoiceNumber}"),
+                        credit.Number),
+                    credit.Buyer, credit.AgainstDue, credit.PaidBack, ledgers, map);
             }
 
             foreach (var collection in counter.Collections)
@@ -79,6 +83,26 @@ public static class TallyCounterInvoices
                     number);
             }
         }
+    }
+
+    /// <summary>
+    /// A B2B invoice or return with its buyer's GST details (T13): the buyer's GSTIN, state and the place of supply, and as
+    /// the party ledger the one the buyer's side of it is in: the customer account when any of it went on (or came off)
+    /// the account, else the ledger of the mode that took (or paid back) most of the money.
+    /// </summary>
+    private static AccountingVoucher? WithBuyer(
+        AccountingVoucher? voucher, CounterBuyer? buyer, decimal onAccount, IReadOnlyList<CounterPayment> money, TallyCounterLedgers ledgers, TallyLedgerMap map)
+    {
+        if (voucher is null || buyer is null)
+        {
+            return voucher;
+        }
+
+        var ledger = onAccount > 0
+            ? ledgers.OnAccount!
+            : money.GroupBy(p => p.Mode).OrderByDescending(g => g.Sum(p => p.Amount)).ThenBy(g => g.Key).Select(g => TallyCounters.ModeLedger(ledgers, map, g.Key)).FirstOrDefault()
+              ?? ledgers.OnAccount!;
+        return voucher with { Party = TallyGst.Party(ledger, buyer.Gstin, null, buyer.PlaceOfSupply) };
     }
 
     /// <summary>The registered patient by id, or a walk-in customer by the name given at the counter.</summary>
@@ -113,9 +137,7 @@ public static class TallyCounterInvoices
             entries.Credit(TallyCounters.SalesLedger(ledgers, map, rate.Key), rate.Sum(t => t.Taxable));
         }
 
-        entries.Credit(map.OutputCgst, tax.Sum(t => t.Cgst));
-        entries.Credit(map.OutputSgst, tax.Sum(t => t.Sgst));
-        entries.Credit(map.OutputIgst, tax.Sum(t => t.Igst));
+        TallyGst.Output(entries, map, tax.Select(t => new TallyGstLine(t.GstRate, t.Cgst, t.Sgst, t.Igst)));
         entries.Credit(map.RoundOff, roundOff);
     }
 }

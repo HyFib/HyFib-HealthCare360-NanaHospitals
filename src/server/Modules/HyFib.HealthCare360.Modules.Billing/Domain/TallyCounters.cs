@@ -28,7 +28,7 @@ public sealed record TallyCounterLedgers
 /// <summary>
 /// The pharmacy's and the canteen's days in the day book (INT-TALLY), as summaries. Each counter day gives up to three
 /// summary vouchers, numbered by counter, facility and date so a re-post alters them: a Sales voucher (money by mode and
-/// what went on account, against income by GST rate, output CGST/SGST and round-off), a Credit Note for returns and
+/// what went on account, against income and output GST by GST rate, and round-off), a Credit Note for returns and
 /// cancellations (the reverse), and a Receipt for balances paid later. The pharmacy's day goes invoice by invoice instead
 /// (<see cref="TallyCounterInvoices"/>) unless the facility keeps it summarised.
 /// </summary>
@@ -135,9 +135,7 @@ public static class TallyCounters
             entries.Credit(SalesLedger(ledgers, map, rate.Key), rate.Sum(t => t.Taxable));
         }
 
-        entries.Credit(map.OutputCgst, part.Tax.Sum(t => t.Cgst));
-        entries.Credit(map.OutputSgst, part.Tax.Sum(t => t.Sgst));
-        entries.Credit(map.OutputIgst, part.Tax.Sum(t => t.Igst));
+        TallyGst.Output(entries, map, part.Tax.Select(t => new TallyGstLine(t.GstRate, t.Cgst, t.Sgst, t.Igst)));
         entries.Credit(map.RoundOff, part.RoundOff);
         return reverse ? entries.Reversed() : entries;
     }

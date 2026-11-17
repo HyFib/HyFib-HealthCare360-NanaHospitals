@@ -178,8 +178,8 @@ public static class TallyTracking
 
     /// <summary>
     /// SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines. What a voucher has only
-    /// sometimes (a line's bill or bank allocations) is added only when it has it, so a voucher without it keeps its
-    /// fingerprint.
+    /// sometimes (its GST party, the supplier's invoice, a line's bill or bank allocations) is added only when it has it,
+    /// so a voucher without it keeps its fingerprint.
     /// </summary>
     public static string Fingerprint(AccountingVoucher voucher)
     {
@@ -189,6 +189,18 @@ public static class TallyTracking
             .Append(voucher.Number.Trim()).Append('|')
             .Append(voucher.Key).Append('|')
             .Append(voucher.Narration.Trim()).Append('\n');
+        if (voucher.Party is { } party)
+        {
+            text.Append("party|").Append(party.LedgerName.Trim()).Append('|').Append(party.Gstin?.Trim()).Append('|')
+                .Append(party.StateName?.Trim()).Append('|').Append(party.PlaceOfSupply?.Trim()).Append('\n');
+        }
+
+        if (voucher.SupplierInvoiceNumber is not null || voucher.SupplierInvoiceDate is not null)
+        {
+            text.Append("invoice|").Append(voucher.SupplierInvoiceNumber?.Trim()).Append('|')
+                .Append(voucher.SupplierInvoiceDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n');
+        }
+
         foreach (var entry in voucher.Entries
                      .Select(e => string.Create(CultureInfo.InvariantCulture, $"{e.LedgerName.Trim()}|{(e.IsDebit ? "Dr" : "Cr")}|{Money.Round(e.Amount):0.00}|{e.CostCentre?.Trim()}")
                                   + Bills(e) + Bank(e))

@@ -185,6 +185,13 @@ public sealed record TallyLedgerMap
     public bool SalesLedgerPerGstRate { get; init; } = true;
 
     /// <summary>
+    /// Output and input CGST, SGST and IGST go to a ledger per tax and rate ("Output CGST @ 6%" for a 12% supply, "Output
+    /// IGST @ 12%"), as the hospital's GST reconciliation needs (T13), wherever the document gives the rate; else, and
+    /// when this is off, to one ledger per tax (<see cref="OutputCgst"/> and the rest).
+    /// </summary>
+    public bool GstLedgerPerRate { get; init; } = true;
+
+    /// <summary>
     /// The pharmacy's day goes to Tally one voucher per invoice, return and balance paid (T17: "one voucher per invoice"),
     /// under <see cref="TallyVoucherTypes.Pharmacy"/>. Off: as the day's summary vouchers (<c>PH-…</c>), as before.
     /// </summary>
@@ -235,6 +242,20 @@ public sealed record TallyLedgerMap
 
     public string PayerLedger(string? payerName) => LedgerPerPayer && !string.IsNullOrWhiteSpace(payerName) ? payerName.Trim() : PayerReceivables;
 
+    /// <summary>The output CGST ledger of a supply taxed at <paramref name="gstRate"/> (the whole GST rate): "Output CGST @ 6%" for 12%.</summary>
+    public string OutputCgstAt(decimal? gstRate) => AtRate(OutputCgst, gstRate / 2);
+
+    public string OutputSgstAt(decimal? gstRate) => AtRate(OutputSgst, gstRate / 2);
+
+    /// <summary>The output IGST ledger of a supply taxed at <paramref name="gstRate"/>: "Output IGST @ 12%".</summary>
+    public string OutputIgstAt(decimal? gstRate) => AtRate(OutputIgst, gstRate);
+
+    public string InputCgstAt(decimal? gstRate) => AtRate(InputCgst, gstRate / 2);
+
+    public string InputSgstAt(decimal? gstRate) => AtRate(InputSgst, gstRate / 2);
+
+    public string InputIgstAt(decimal? gstRate) => AtRate(InputIgst, gstRate);
+
     /// <summary>
     /// The ledgers HC360 posts bank money to: the net banking and insurance mode ledgers, the doctors' payout bank, and
     /// the banks the payment gateway and the card acquirer settle into.
@@ -253,6 +274,13 @@ public sealed record TallyLedgerMap
     public string DoctorPayable(string doctorName) => DoctorPayablePrefix + doctorName;
 
     public string VendorLedger(string? vendorName) => LedgerPerVendor && !string.IsNullOrWhiteSpace(vendorName) ? vendorName.Trim() : SundryCreditors;
+
+    /// <summary>
+    /// <paramref name="ledger"/> at the tax's own rate, with no trailing zeros ("Output CGST @ 2.5%"), when GST goes per
+    /// rate and the rate is known; the one ledger otherwise.
+    /// </summary>
+    private string AtRate(string ledger, decimal? taxRate) =>
+        GstLedgerPerRate && taxRate is { } rate && rate > 0 ? $"{ledger} @ {TallyGst.Percent(rate)}%" : ledger;
 
     private static string? Find(Dictionary<string, string>? map, string key) =>
         map?.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value)).Value;
@@ -343,7 +371,9 @@ public enum TallySaleKind
 }
 
 /// <summary>Income of one bill line: <paramref name="Income"/> excludes the package-covered part; discounts include tariff concessions.</summary>
-public sealed record TallySaleLine(string? DepartmentCode, string? DepartmentName, decimal Income, decimal Discount, decimal Cgst, decimal Sgst, decimal Igst = 0);
+/// <param name="GstRate">The line's GST rate, which names its output GST ledgers when they go per rate.</param>
+public sealed record TallySaleLine(
+    string? DepartmentCode, string? DepartmentName, decimal Income, decimal Discount, decimal Cgst, decimal Sgst, decimal Igst = 0, decimal? GstRate = null);
 
 public sealed record TallySale(
     string BillNumber, DateOnly Date, string? PayerName, decimal PatientAmount, decimal PayerAmount, decimal RoundOff, IReadOnlyList<TallySaleLine> Lines, bool IsCancellation)
@@ -410,6 +440,9 @@ public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKin
 {
     /// <summary>The patient of the bill the note corrects or writes off, for the narration.</summary>
     public TallyPatient? Patient { get; init; }
+
+    /// <summary>The GST the note takes back, by the rate of the lines it corrects (adding up to its CGST, SGST and IGST); empty when the note names no lines.</summary>
+    public IReadOnlyList<TallyGstLine> Gst { get; init; } = [];
 }
 
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
@@ -540,9 +573,9 @@ public static class TallyVoucherBuilder
         // Against the supplier's invoice the goods came on, when the note names its goods receipt.
         entries.Debit(map.VendorLedger(note.VendorName), note.Total, bill: TallyBillRef.Against(note.SupplierInvoiceNumber));
         entries.Credit(map.PurchaseReturns, note.Taxable);
-        entries.Credit(map.InputCgst, note.Cgst);
-        entries.Credit(map.InputSgst, note.Sgst);
-        entries.Credit(map.InputIgst, note.Igst);
+        TallyGst.Input(entries, map,
+            note.Tax is { Count: > 0 } byRate ? byRate.Select(t => new TallyGstLine(t.GstRate, t.Cgst, t.Sgst, t.Igst)) : [new TallyGstLine(null, note.Cgst, note.Sgst, note.Igst)],
+            debit: false);
         var narration = note.VendorReference is { Length: > 0 } reference ? $"Purchase return {note.Number} (supplier's ref. {reference})" : $"Purchase return {note.Number}";
         return entries.ToVoucher(DebitNoteType, date, note.Number, narration, note.Number);
     }
@@ -630,9 +663,7 @@ public static class TallyVoucherBuilder
             entries.Credit(map.IncomeFor(department.Key.DepartmentCode), department.Sum(l => l.Income), department.Key.DepartmentName);
         }
 
-        entries.Credit(map.OutputCgst, sale.Lines.Sum(l => l.Cgst));
-        entries.Credit(map.OutputSgst, sale.Lines.Sum(l => l.Sgst));
-        entries.Credit(map.OutputIgst, sale.Lines.Sum(l => l.Igst));
+        TallyGst.Output(entries, map, sale.Lines.Select(l => new TallyGstLine(l.GstRate, l.Cgst, l.Sgst, l.Igst)));
         entries.Credit(map.RoundOff, sale.RoundOff);
 
         // The reversal needs a reference of its own: with the bill's, Tally would alter the sale into the credit note.
@@ -807,9 +838,7 @@ public static class TallyVoucherBuilder
         var entries = new EntryList();
         var gst = note.Cgst + note.Sgst + note.Igst;
         entries.Debit(note.Kind == CreditNoteKind.WriteOff ? map.WriteOffs : map.CreditNotes, note.Amount - gst);
-        entries.Debit(map.OutputCgst, note.Cgst);
-        entries.Debit(map.OutputSgst, note.Sgst);
-        entries.Debit(map.OutputIgst, note.Igst);
+        TallyGst.Output(entries, map, note.Gst.Count > 0 ? note.Gst : [new TallyGstLine(null, note.Cgst, note.Sgst, note.Igst)], debit: true);
         // A payer credit note turns the settlement's deduction (already debited to insurance disallowances, the payer
         // credited) into a GST credit note: the disallowance comes back out, and sales returns and output GST take it.
         entries.Credit(note.Kind == CreditNoteKind.PayerShare ? map.InsuranceDisallowances : map.PatientDebtors, note.Amount);

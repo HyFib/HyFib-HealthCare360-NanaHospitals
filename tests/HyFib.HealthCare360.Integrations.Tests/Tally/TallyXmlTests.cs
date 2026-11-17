@@ -363,6 +363,99 @@ public sealed class TallyXmlTests
         TallyReadBack.Compare(voucher.Date, [voucher], [copy], Options).Vouchers.ShouldHaveSingleItem().Match.ShouldBe(AccountingVoucherMatch.Matched);
     }
 
+    /// <summary>A purchase from a supplier in the state, with the supplier's invoice and GST details.</summary>
+    private static AccountingVoucher Purchase() => new(
+        "Purchase",
+        new DateOnly(2026, 9, 25),
+        "NHGRN260000001",
+        "Purchase NHGRN260000001",
+        [
+            new AccountingEntry("Purchase Accounts @ 12%", 1_000m, IsDebit: true),
+            new AccountingEntry("Input CGST @ 6%", 60m, IsDebit: true),
+            new AccountingEntry("Input SGST @ 6%", 60m, IsDebit: true),
+            new AccountingEntry("Sri Balaji Pharma", 1_120m, IsDebit: false) { BillAllocations = [new("SB/2291", AccountingBillType.NewRef, 1_120m)] },
+        ],
+        "NHGRN260000001")
+    {
+        Party = new AccountingParty("Sri Balaji Pharma", "33AABCS1234K1Z5", "Tamil Nadu", "Tamil Nadu"),
+        SupplierInvoiceNumber = "SB/2291",
+        SupplierInvoiceDate = new DateOnly(2026, 9, 23),
+    };
+
+    [Fact]
+    public void Writes_the_party_gst_details_and_the_suppliers_invoice()
+    {
+        var voucher = XDocument.Parse(TallyXml.BuildImport([Purchase()], Options)).Descendants("VOUCHER").ShouldHaveSingleItem();
+
+        voucher.Element("REFERENCE")!.Value.ShouldBe("SB/2291");
+        voucher.Element("REFERENCEDATE")!.Value.ShouldBe("20260923");
+        voucher.Element("PARTYLEDGERNAME")!.Value.ShouldBe("Sri Balaji Pharma");
+        voucher.Element("PARTYGSTIN")!.Value.ShouldBe("33AABCS1234K1Z5");
+        voucher.Element("STATENAME")!.Value.ShouldBe("Tamil Nadu");
+        voucher.Element("PLACEOFSUPPLY")!.Value.ShouldBe("Tamil Nadu");
+        voucher.Element("VOUCHERNUMBER")!.Value.ShouldBe("NHGRN260000001");
+        voucher.Attribute("REMOTEID")!.Value.ShouldBe("HC360-NHGRN260000001");
+    }
+
+    [Fact]
+    public void The_party_ledger_is_renamed_by_the_ledger_map_and_what_is_not_known_is_left_out()
+    {
+        var voucher = Purchase() with
+        {
+            Party = new AccountingParty("Cash", null, null, "Kerala"),
+            SupplierInvoiceNumber = null,
+            SupplierInvoiceDate = null,
+        };
+
+        var element = XDocument.Parse(TallyXml.BuildImport([voucher], Options)).Descendants("VOUCHER").ShouldHaveSingleItem();
+
+        element.Element("PARTYLEDGERNAME")!.Value.ShouldBe("Cash-in-Hand (Main Counter)");
+        element.Element("PARTYGSTIN").ShouldBeNull();
+        element.Element("STATENAME").ShouldBeNull();
+        element.Element("PLACEOFSUPPLY")!.Value.ShouldBe("Kerala");
+        element.Element("REFERENCE").ShouldBeNull();
+        element.Element("REFERENCEDATE").ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_voucher_without_a_party_writes_none_of_its_elements()
+    {
+        var voucher = XDocument.Parse(TallyXml.BuildImport([Sales()], Options)).Descendants("VOUCHER").ShouldHaveSingleItem();
+
+        foreach (var name in new[] { "PARTYLEDGERNAME", "PARTYGSTIN", "STATENAME", "PLACEOFSUPPLY", "REFERENCE", "REFERENCEDATE" })
+        {
+            voucher.Element(name).ShouldBeNull(name);
+        }
+    }
+
+    [Fact]
+    public void Party_details_are_escaped()
+    {
+        var voucher = Purchase() with { Party = new AccountingParty("Sri Balaji <Pharma> & Co", "33AABCS1234K1Z5"), SupplierInvoiceNumber = "SB<1>&2" };
+
+        var xml = TallyXml.BuildImport([voucher], Options);
+
+        xml.ShouldContain("<PARTYLEDGERNAME>Sri Balaji &lt;Pharma&gt; &amp; Co</PARTYLEDGERNAME>");
+        xml.ShouldContain("<REFERENCE>SB&lt;1&gt;&amp;2</REFERENCE>");
+    }
+
+    [Fact]
+    public void A_purchase_is_valid_and_a_party_without_its_ledger_is_refused()
+    {
+        TallyXml.Validate(Purchase()).ShouldBeNull();
+        TallyXml.Validate(Purchase() with { Party = new AccountingParty(" ") }).ShouldBe("the party needs its ledger");
+    }
+
+    [Fact]
+    public void A_purchase_reads_back_by_its_ledgers_and_matches()
+    {
+        var voucher = Purchase();
+        var copy = TallyVoucherReader.Parse(TallyXml.Voucher(voucher, Options));
+
+        copy.VoucherType.ShouldBe("Purchase");
+        TallyReadBack.Compare(voucher.Date, [voucher], [copy], Options).Vouchers.ShouldHaveSingleItem().Match.ShouldBe(AccountingVoucherMatch.Matched);
+    }
+
     [Fact]
     public void Builds_the_company_list_health_check()
     {

@@ -1,6 +1,15 @@
 namespace HyFib.HealthCare360.Platform.Contracts;
 
 /// <summary>
+/// Taxable value and input GST at one rate of a supplier's document: CGST and SGST from a supplier in the state, IGST from
+/// one in another state.
+/// </summary>
+public sealed record SupplierTaxLine(decimal GstRate, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst = 0)
+{
+    public decimal Total => Taxable + Cgst + Sgst + Igst;
+}
+
+/// <summary>
 /// A purchase return posted on the day: what was handed back at cost (<paramref name="Taxable"/>) and the input GST it
 /// takes back. The supplier is owed that much less.
 /// </summary>
@@ -9,8 +18,10 @@ namespace HyFib.HealthCare360.Platform.Contracts;
 /// The supplier's invoice the goods came on, when the note names its goods receipt: the return is set against that bill
 /// on the supplier's ledger.
 /// </param>
+/// <param name="Tax">The note's taxable value and GST by rate (they add up to its totals); empty when not known.</param>
 public sealed record VendorDebitNoteEntry(
-    string Number, string VendorName, string? VendorReference, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst, string? SupplierInvoiceNumber = null)
+    string Number, string VendorName, string? VendorReference, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst, string? SupplierInvoiceNumber = null,
+    IReadOnlyList<SupplierTaxLine>? Tax = null)
 {
     public decimal Total => Taxable + Cgst + Sgst + Igst;
 }

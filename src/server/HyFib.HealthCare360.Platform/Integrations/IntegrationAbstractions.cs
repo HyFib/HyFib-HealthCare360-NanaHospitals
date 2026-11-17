@@ -439,12 +439,31 @@ public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsD
     public override int GetHashCode() => HashCode.Combine(LedgerName, Amount, IsDebit, CostCentre, BillAllocations.Count, BankAllocations.Count);
 }
 
+/// <summary>
+/// The other party of a voucher registered for GST (a B2B buyer, a supplier), as the accounting system's GST reports and
+/// the matching with GSTR-2B need it.
+/// </summary>
+/// <param name="LedgerName">The party's ledger (Tally's <c>PARTYLEDGERNAME</c>); renamed by the ledger map like any other.</param>
+/// <param name="Gstin">The party's GSTIN (<c>PARTYGSTIN</c>), when it has one.</param>
+/// <param name="StateName">The party's state as GST names it (<c>STATENAME</c>).</param>
+/// <param name="PlaceOfSupply">The state of supply as GST names it (<c>PLACEOFSUPPLY</c>).</param>
+public sealed record AccountingParty(string LedgerName, string? Gstin = null, string? StateName = null, string? PlaceOfSupply = null);
+
 /// <param name="Reference">
 /// HC360's stable key for the voucher (a bill, receipt or refund number). The accounting system keeps it as the voucher's
 /// remote id (<see cref="RemoteId"/>), so sending the same voucher again alters it instead of adding a copy.
 /// </param>
 public sealed record AccountingVoucher(string VoucherType, DateOnly Date, string Number, string Narration, IReadOnlyList<AccountingEntry> Entries, string? Reference = null)
 {
+    /// <summary>The party registered for GST: the buyer of a B2B sale, the supplier of a purchase.</summary>
+    public AccountingParty? Party { get; init; }
+
+    /// <summary>A purchase's bill as the supplier numbered it (Tally's <c>REFERENCE</c>, the supplier's invoice number).</summary>
+    public string? SupplierInvoiceNumber { get; init; }
+
+    /// <summary>The date of the supplier's invoice (Tally's <c>REFERENCEDATE</c>).</summary>
+    public DateOnly? SupplierInvoiceDate { get; init; }
+
     /// <summary>Starts every remote id HC360 gives the accounting system, which tells HC360's vouchers from the hospital's own.</summary>
     public const string RemoteIdPrefix = "HC360-";
 
