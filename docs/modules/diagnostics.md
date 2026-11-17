@@ -316,9 +316,17 @@ cardiology section headings are in the language the report is made in (PP-06): E
 portal and in the "report ready" message (print-templates.md, *The patient's language*). Test and section names,
 values, units, reference intervals, flag codes, the modality and the cardiology measurements stay as written.
 
+**High and low arrows** (Nana Hospitals, L7: "Reports view in High, Low in arrow mark"). On the lab report (and the lab
+results of the health check-up report), a high flag reads `↑ H` or `↑ HH` and a low one `↓ L` or `↓ LL`, in the Flag
+column. The letter stays, with its words in the flag's tooltip and in the report's language, so the meaning never rests
+on the arrow (and screen readers skip the arrow, `aria-hidden`). The staff app's flags show the same (`FlagChip`, the
+result sheet, the report preview and the amendment dialog). The arrows print in a font the document carries: Inter's
+two arrows, cut down to them (`DocumentFonts.Arrows`, "HC360 Arrows", SIL OFL 1.1), embedded in every document that has
+one, so they render whatever fonts the server or the reader's computer has.
+
 | Document | Made from | File name | What it prints |
 |---|---|---|---|
-| Lab report | `LabReportView` | `lab-report-<accession>` | Tests by section with value, flag, unit and reference interval; cultures with organism and antibiogram; interpretations, amendments; notes for partial, auto-verified and amended reports. Banner "Preliminary copy for the laboratory: not released" on an unreleased copy |
+| Lab report | `LabReportView` | `lab-report-<accession>` | Tests by section with value, flag, unit and reference interval; cultures with organism and antibiogram; interpretations, amendments; notes for partial, auto-verified and amended reports. Banner "Preliminary copy for the laboratory: not released" on an unreleased copy. A high result's flag has an up arrow before its letter and a low one's a down arrow (`↑ H`, `↑ HH`, `↓ L`, `↓ LL`; none beside `A` or `C`) |
 | Radiology report | `RadiologyReportView` | `radiology-report-<accession>` | Study, modality and body part; clinical history, technique, comparison, findings and impression (empty sections left out); the critical finding note; signed addenda. Note: the report is a professional opinion. Banner "Signed, not yet released" or "Draft: not signed by the radiologist" |
 | Cardiology report | `CardiologyReportView` | `cardiology-report-<accession>` | Titled "ECG report", "Echo report", "TMT report", "Holter report" or "ABPM report" ("Cardiology report" for other tests). The measurements of the study type with units (unrecorded ones left out), conclusion and recommendations, the critical finding note. Device recordings are not printed; a note says how many are stored with the report. Banner "Signed, not yet released" or "Draft: not signed by the cardiologist" |
 | Health check-up report | Clinical's `CheckupReport` and the booking's diagnostics results | `health-checkup-report-<booking no.>` | Patient, booking, package (and company), check-up date and completion; the doctor's summary and recommendations; the package's investigations with their status; the stations of the day with their notes. Then every released lab, radiology and cardiology result of the booking (work items with its `PackageBookingId`), printed exactly as in its own report under its report number and release time; then "Results pending" with the investigations not yet released; then the signatories of those results and the reviewing doctor (or a space for one), and the end line. Until the check-up is completed, a banner gives its status, for example "In progress — not final" |

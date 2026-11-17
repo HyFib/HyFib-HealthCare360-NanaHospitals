@@ -9,6 +9,9 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Documents;
 /// organism and antibiogram; interpretations, amendments and footnotes, in the shared report frame with QR
 /// verification. A value that is not verified is never printed as a result on a released copy. Headings and labels are
 /// in the language it is made in (PP-06); test names, values, units, reference intervals and flag codes print as they are.
+/// A high result's flag has an up arrow beside its letter and a low one's a down arrow (↑ H, ↑ HH, ↓ L, ↓ LL), as Nana
+/// Hospitals reads its reports; the letter and its words stay, so the meaning never rests on the arrow alone, and the
+/// document carries the arrows' font (<see cref="DocumentFonts.Arrows"/>).
 /// </summary>
 internal static class LabReportDocument
 {
@@ -17,6 +20,7 @@ internal static class LabReportDocument
         .group { break-after: avoid; }
         .abg { width: auto; min-width: 60%; margin: 4px 0; }
         .abg th, .abg td { padding: 1px 6px; font-size: 9pt; }
+        .dir { font-family: "HC360 Arrows", "Segoe UI", sans-serif; }
 
         """;
 
@@ -185,8 +189,23 @@ internal static class LabReportDocument
     private static Html Flag(ResultFlag? flag, DocumentText text)
     {
         var (code, label, critical) = FlagDisplay(flag);
-        return code.Length == 0 ? Html.Empty : Html.Of($"<span class=\"{(critical ? "crit" : "flag")}\" title=\"{text[label]}\">{code}</span>");
+        if (code.Length == 0)
+        {
+            return Html.Empty;
+        }
+
+        // The arrow goes before the letter; screen readers read the letter and its words, not the arrow.
+        var arrow = Arrow(flag) is { } direction ? Html.Of($"<span class=\"dir\" aria-hidden=\"true\">{direction}</span> ") : Html.Empty;
+        return Html.Of($"<span class=\"{(critical ? "crit" : "flag")}\" title=\"{text[label]}\">{arrow}{code}</span>");
     }
+
+    /// <summary>↑ beside a high flag (H, HH) and ↓ beside a low one (L, LL); none beside A or C, which have no direction.</summary>
+    internal static string? Arrow(ResultFlag? flag) => flag switch
+    {
+        ResultFlag.High or ResultFlag.CriticalHigh => DocumentFonts.Up.ToString(),
+        ResultFlag.Low or ResultFlag.CriticalLow => DocumentFonts.Down.ToString(),
+        _ => null,
+    };
 
     private static Html Culture(LabReportResultLine line, DocumentText text)
     {

@@ -11,32 +11,48 @@ export type FlagTone = 'normal' | 'low' | 'high' | 'abnormal' | 'critical';
 export interface FlagDisplay {
   /** Printed code next to the value: H, L, HH, LL, A, C. Empty for normal results. */
   code: string;
+  /**
+   * The arrow shown before the code, as the printed report has it: ↑ for a high result (H, HH), ↓ for a low one (L, LL),
+   * empty for the rest. The code and words always stay, so the meaning never rests on the arrow.
+   */
+  arrow: '↑' | '↓' | '';
   /** Words for screen readers and tooltips. */
   label: string;
   tone: FlagTone;
   critical: boolean;
 }
 
-/** How a flag is shown: code + words + tone. Colour is never the only signal (the code and words are always there). */
+/**
+ * How a flag is shown: arrow + code + words + tone. Colour is never the only signal, nor is the arrow (the code and words
+ * are always there).
+ */
 export function flagDisplay(flag: ResultFlag | null | undefined): FlagDisplay | null {
   switch (flag) {
     case 'Normal':
-      return { code: '', label: 'Within the reference range', tone: 'normal', critical: false };
+      return { code: '', arrow: '', label: 'Within the reference range', tone: 'normal', critical: false };
     case 'Low':
-      return { code: 'L', label: 'Low', tone: 'low', critical: false };
+      return { code: 'L', arrow: '↓', label: 'Low', tone: 'low', critical: false };
     case 'High':
-      return { code: 'H', label: 'High', tone: 'high', critical: false };
+      return { code: 'H', arrow: '↑', label: 'High', tone: 'high', critical: false };
     case 'CriticalLow':
-      return { code: 'LL', label: 'Critically low', tone: 'critical', critical: true };
+      return { code: 'LL', arrow: '↓', label: 'Critically low', tone: 'critical', critical: true };
     case 'CriticalHigh':
-      return { code: 'HH', label: 'Critically high', tone: 'critical', critical: true };
+      return { code: 'HH', arrow: '↑', label: 'Critically high', tone: 'critical', critical: true };
     case 'Abnormal':
-      return { code: 'A', label: 'Abnormal', tone: 'abnormal', critical: false };
+      return { code: 'A', arrow: '', label: 'Abnormal', tone: 'abnormal', critical: false };
     case 'Critical':
-      return { code: 'C', label: 'Critical', tone: 'critical', critical: true };
+      return { code: 'C', arrow: '', label: 'Critical', tone: 'critical', critical: true };
     default:
       return null;
   }
+}
+
+/** The flag as it reads beside a value: "↑ H", "↓ LL", "A"; empty for a normal result. */
+export function flagText(display: FlagDisplay | null): string {
+  if (!display?.code) {
+    return '';
+  }
+  return display.arrow ? `${display.arrow} ${display.code}` : display.code;
 }
 
 export function isCriticalFlag(flag: ResultFlag | null | undefined): boolean {
