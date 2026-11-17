@@ -127,7 +127,7 @@ public sealed class TallyCounterInvoicesTests
 
         vouchers.Select(v => (v.VoucherType, v.Number)).ShouldBe(
         [
-            (TallyVoucherBuilder.SalesType, "PH-NH-20260925"),
+            ("Pharmacy Sales", "PH-NH-20260925"),
             (TallyVoucherBuilder.CreditNoteType, "PH-NH-20260925-R"),
             (TallyVoucherBuilder.ReceiptType, "PH-NH-20260925-C"),
         ]);

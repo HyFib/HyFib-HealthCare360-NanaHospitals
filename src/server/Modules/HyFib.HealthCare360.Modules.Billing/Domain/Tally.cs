@@ -324,7 +324,7 @@ public sealed record TallyVoucherTypes
     /// <summary>Out-patient bills whose every service is a laboratory test.</summary>
     public string Laboratory { get; init; } = "Lab Sales";
 
-    /// <summary>The pharmacy counter's invoices, each a voucher of its own.</summary>
+    /// <summary>The pharmacy counter's sales: each invoice a voucher of its own, or the day's summary when the facility keeps it.</summary>
     public string Pharmacy { get; init; } = "Pharmacy Sales";
 
     /// <summary>Goods receipts, each a purchase from its supplier.</summary>
@@ -578,7 +578,7 @@ public sealed record TallyDayBook(
 /// </summary>
 public static class TallyVoucherBuilder
 {
-    /// <summary>The voucher type of the canteen's (and, summarised, the pharmacy's) day of sales.</summary>
+    /// <summary>The voucher type of the canteen's day of sales.</summary>
     public const string SalesType = "Sales";
     public const string CreditNoteType = "Credit Note";
     public const string ReceiptType = "Receipt";

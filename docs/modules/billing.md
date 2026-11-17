@@ -1666,9 +1666,10 @@ bank references, one voucher per pharmacy invoice, GST by rate, purchases) are r
   `<invoice>/<yyyyMMdd>`. A B2B invoice or return carries its buyer's GSTIN, state and place of supply, with the
   account (or, when nothing went on account, the ledger of the mode that took most of the money) as its party ledger;
 * the canteen's day, and the pharmacy's when the facility keeps its summary (`pharmacyPerInvoice: false`), read
-  through `ICounterSalesSource` (implemented by Pharmacy and SupportServices): one summary Sales voucher
-  (`PH-<facility>-<yyyyMMdd>`, `CT-…`) with income by GST rate, a Credit Note for returns (`…-R`) and a Receipt for
-  balances paid later (`…-C`). A counter can be left out with `pharmacy.include` / `canteen.include` while its sales are
+  through `ICounterSalesSource` (implemented by Pharmacy and SupportServices): one summary sales voucher
+  (`PH-<facility>-<yyyyMMdd>` under `voucherTypes.pharmacy`, `CT-…` under Sales) with income by GST rate, a Credit
+  Note for returns (`…-R`) and a Receipt for balances paid later (`…-C`). A counter can be left out with
+  `pharmacy.include` / `canteen.include` while its sales are
   still entered in Tally by hand. A facility that switches between the two after days were posted sees the vouchers of
   the other way on those days as "No longer in HC360", to delete in Tally, and posts the days again; HC360 was not yet
   live when the per-invoice way came, so no day had been posted as a summary;

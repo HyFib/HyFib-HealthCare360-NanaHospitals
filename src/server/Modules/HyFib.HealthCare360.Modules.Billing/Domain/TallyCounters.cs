@@ -27,10 +27,11 @@ public sealed record TallyCounterLedgers
 
 /// <summary>
 /// The pharmacy's and the canteen's days in the day book (INT-TALLY), as summaries. Each counter day gives up to three
-/// summary vouchers, numbered by counter, facility and date so a re-post alters them: a Sales voucher (money by mode and
-/// what went on account, against income and output GST by GST rate, and round-off), a Credit Note for returns and
-/// cancellations (the reverse), and a Receipt for balances paid later. The pharmacy's day goes invoice by invoice instead
-/// (<see cref="TallyCounterInvoices"/>) unless the facility keeps it summarised.
+/// summary vouchers, numbered by counter, facility and date so a re-post alters them: a sales voucher (the pharmacy's
+/// under its own voucher type, the canteen's under Sales: money by mode and what went on account, against income and
+/// output GST by GST rate, and round-off), a Credit Note for returns and cancellations (the reverse), and a Receipt for
+/// balances paid later. The pharmacy's day goes invoice by invoice instead (<see cref="TallyCounterInvoices"/>) unless
+/// the facility keeps it summarised.
 /// </summary>
 public static class TallyCounters
 {
@@ -88,7 +89,7 @@ public static class TallyCounters
             {
                 var number = Number(counter.Counter, day.FacilityCode, day.Date);
                 yield return Documents(counter.Sales, ledgers, map, reverse: false)
-                    .ToVoucher(TallyVoucherBuilder.SalesType, day.Date, number, $"{name} sales of {date}: {Count(counter.Sales.Count, "invoice")}", number);
+                    .ToVoucher(SalesTypeOf(counter.Counter, map), day.Date, number, $"{name} sales of {date}: {Count(counter.Sales.Count, "invoice")}", number);
             }
 
             if (counter.Returns.Count > 0)
@@ -109,6 +110,13 @@ public static class TallyCounters
             yield return entries.ToVoucher(TallyVoucherBuilder.ReceiptType, day.Date, collected, $"{name} balances collected on {date}", collected);
         }
     }
+
+    /// <summary>
+    /// The voucher type of a counter's summary of sales: the pharmacy's own (<see cref="TallyVoucherTypes.Pharmacy"/>, N12),
+    /// summarised or not; Sales for the canteen.
+    /// </summary>
+    private static string SalesTypeOf(string counter, TallyLedgerMap map) =>
+        string.Equals(counter, Pharmacy, StringComparison.OrdinalIgnoreCase) ? map.VoucherTypes.Pharmacy : TallyVoucherBuilder.SalesType;
 
     /// <summary>A part of the code safe in a voucher number: letters, digits and hyphens, at most 20; null when nothing is left.</summary>
     public static string? CodeOf(string? value)

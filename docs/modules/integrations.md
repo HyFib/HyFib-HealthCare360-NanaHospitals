@@ -671,7 +671,7 @@ builds the import file.
   `OBJVIEW="Accounting Voucher View"`), and `ALLLEDGERENTRIES.LIST` lines, built with LINQ to XML so every value is
   escaped.
 * Voucher types are the facility's (Billing's `voucherTypes`): the bills' sales under "IP Sales", "OP Sales" or "Lab
-  Sales", the pharmacy's invoices under "Pharmacy Sales", goods receipts under "Purchase", by default; the canteen's
+  Sales", the pharmacy's invoices (or its day's summary) under "Pharmacy Sales", goods receipts under "Purchase", by default; the canteen's
   sales "Sales", and "Credit Note", "Receipt", "Payment", "Journal" and "Debit Note" as before. Tally refuses a voucher
   whose type it does not have, so they are created there first.
 * A voucher with a GST party (a B2B pharmacy invoice or return, a purchase) carries `PARTYLEDGERNAME` (renamed with
