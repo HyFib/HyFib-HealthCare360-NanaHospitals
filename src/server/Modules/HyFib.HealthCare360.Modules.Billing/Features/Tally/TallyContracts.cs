@@ -107,7 +107,8 @@ public sealed class PostDayBookRequestValidator : AbstractValidator<PostDayBookR
 /// <summary>
 /// Validates the ledger names an accountant sets for the day book (<c>billing.tally.ledgers</c>): every name present,
 /// one line, at most 100 characters (Tally takes longer names, but HC360 keeps them readable), only known payment
-/// modes in the mode maps, and the sales voucher types named, each on one line and at most 32 characters.
+/// modes in the mode maps, the sales voucher types named, each on one line and at most 32 characters, and at most 50
+/// bank ledgers.
 /// </summary>
 public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
 {
@@ -153,7 +154,11 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
         RuleFor(x => x.Pharmacy).NotNull().SetValidator(new CounterValidator());
         RuleFor(x => x.Canteen).NotNull().SetValidator(new CounterValidator());
         RuleFor(x => x.VoucherTypes).NotNull().SetValidator(new VoucherTypesValidator());
+        RuleFor(x => x.BankLedgers).Must(list => list is null || list.Count <= MaxBankLedgers).WithMessage($"List at most {MaxBankLedgers} bank ledgers.");
+        RuleForEach(x => x.BankLedgers).Must(BeALedgerName).WithMessage(LedgerMessage);
     }
+
+    private const int MaxBankLedgers = 50;
 
     private static string LedgerMessage => $"Enter the ledger name as it is in Tally, on one line and at most {MaxName} characters.";
 

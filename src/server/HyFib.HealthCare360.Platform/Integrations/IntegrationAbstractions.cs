@@ -398,11 +398,45 @@ public enum AccountingBillType
 /// <param name="Name">The bill: a bill number, a supplier's invoice number; none for <see cref="AccountingBillType.OnAccount"/>.</param>
 public sealed record AccountingBillAllocation(string? Name, AccountingBillType Type, decimal Amount);
 
+/// <summary>How money moved through the bank (Tally's <c>TRANSACTIONTYPE</c> of a bank allocation).</summary>
+public enum AccountingBankTransaction
+{
+    /// <summary>Anything else: a card or wallet settlement, cash, a transfer HC360 has no reference for.</summary>
+    Others = 0,
+
+    Cheque,
+
+    /// <summary>A transfer the bank identifies by its UTR: NEFT, RTGS, IMPS or UPI (Tally's "e-Fund Transfer").</summary>
+    EFundTransfer,
+}
+
+/// <summary>
+/// The bank details of a part of a line on a bank ledger (Tally's <c>BANKALLOCATIONS.LIST</c>), which the bank
+/// reconciliation in Tally matches with the statement: the cheque's number or the transfer's UTR and the instrument's
+/// date. <paramref name="Amount"/> is positive and takes the line's side; a line's bank allocations add up to its amount.
+/// </summary>
+/// <param name="Date">The voucher's date.</param>
+/// <param name="InstrumentDate">The cheque's date; a transfer's is its day. The voucher's date when not given.</param>
+/// <param name="BankName">The bank a cheque is drawn on, when known.</param>
+public sealed record AccountingBankAllocation(
+    DateOnly Date, AccountingBankTransaction TransactionType, decimal Amount, string? InstrumentNumber = null, DateOnly? InstrumentDate = null, string? BankName = null);
+
 /// <param name="CostCentre">The cost centre the line is allocated to, under the configured cost category.</param>
 public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null)
 {
     /// <summary>How the line stands against the party's bills; empty for a ledger without bills. The amounts add up to the line's.</summary>
     public IReadOnlyList<AccountingBillAllocation> BillAllocations { get; init; } = [];
+
+    /// <summary>The cheques and transfers a line on a bank ledger is made of; empty for any other ledger. The amounts add up to the line's.</summary>
+    public IReadOnlyList<AccountingBankAllocation> BankAllocations { get; init; } = [];
+
+    /// <summary>Two lines are the same when everything sent for them is, their allocations compared part by part.</summary>
+    public bool Equals(AccountingEntry? other) =>
+        other is not null
+        && LedgerName == other.LedgerName && Amount == other.Amount && IsDebit == other.IsDebit && CostCentre == other.CostCentre
+        && BillAllocations.SequenceEqual(other.BillAllocations) && BankAllocations.SequenceEqual(other.BankAllocations);
+
+    public override int GetHashCode() => HashCode.Combine(LedgerName, Amount, IsDebit, CostCentre, BillAllocations.Count, BankAllocations.Count);
 }
 
 /// <param name="Reference">

@@ -189,6 +189,11 @@ public static class TallyLedgerMaps
         ModeLedgers = Clean(map.ModeLedgers, key => key),
         Pharmacy = Counter(map.Pharmacy),
         Canteen = Counter(map.Canteen),
+        BankLedgers = map.BankLedgers?
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList(),
         VoucherTypes = map.VoucherTypes with
         {
             InPatient = map.VoucherTypes.InPatient.Trim(),

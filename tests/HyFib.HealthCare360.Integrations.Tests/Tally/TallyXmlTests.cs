@@ -267,6 +267,102 @@ public sealed class TallyXmlTests
         check.Match.ShouldBe(AccountingVoucherMatch.Matched);
     }
 
+    /// <summary>A receipt of a cheque and a transfer into the bank, and a refund by transfer out of it.</summary>
+    private static AccountingVoucher WithBank() => new(
+        "Receipt",
+        new DateOnly(2026, 9, 25),
+        "NHRC260000003",
+        "Receipt NHRC260000003",
+        [
+            new AccountingEntry("Bank", 5_000m, IsDebit: true)
+            {
+                BankAllocations =
+                [
+                    new AccountingBankAllocation(new DateOnly(2026, 9, 25), AccountingBankTransaction.Cheque, 2_000m, "123456", new DateOnly(2026, 9, 20), "State Bank <of> India & Co"),
+                    new AccountingBankAllocation(new DateOnly(2026, 9, 25), AccountingBankTransaction.EFundTransfer, 3_000m, "HDFCR52026092512345"),
+                ],
+            },
+            new AccountingEntry("Patient Receivables", 5_000m, IsDebit: false),
+        ],
+        "NHRC260000003");
+
+    [Fact]
+    public void Writes_bank_allocations_with_the_instrument_its_date_and_the_lines_sign()
+    {
+        var line = XDocument.Parse(TallyXml.BuildImport([WithBank()], Options)).Descendants("ALLLEDGERENTRIES.LIST").First();
+
+        var parts = line.Elements("BANKALLOCATIONS.LIST").ToList();
+        parts.Count.ShouldBe(2);
+        parts[0].Element("DATE")!.Value.ShouldBe("20260925");
+        parts[0].Element("INSTRUMENTDATE")!.Value.ShouldBe("20260920");
+        parts[0].Element("TRANSACTIONTYPE")!.Value.ShouldBe("Cheque");
+        parts[0].Element("INSTRUMENTNUMBER")!.Value.ShouldBe("123456");
+        parts[0].Element("BANKNAME")!.Value.ShouldBe("State Bank <of> India & Co");
+        parts[0].Element("AMOUNT")!.Value.ShouldBe("-2000.00");
+        parts[1].Element("INSTRUMENTDATE")!.Value.ShouldBe("20260925");
+        parts[1].Element("TRANSACTIONTYPE")!.Value.ShouldBe("e-Fund Transfer");
+        parts[1].Element("INSTRUMENTNUMBER")!.Value.ShouldBe("HDFCR52026092512345");
+        parts[1].Element("BANKNAME").ShouldBeNull();
+        parts[1].Element("AMOUNT")!.Value.ShouldBe("-3000.00");
+        XDocument.Parse(TallyXml.BuildImport([WithBank()], Options)).Descendants("ALLLEDGERENTRIES.LIST").Last().Elements("BANKALLOCATIONS.LIST").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void A_credit_lines_bank_allocation_is_positive_and_an_unknown_instrument_is_left_out()
+    {
+        var refund = WithBank() with
+        {
+            Entries =
+            [
+                new AccountingEntry("Patient Advances", 700m, IsDebit: true),
+                new AccountingEntry("Bank", 700m, IsDebit: false) { BankAllocations = [new(new DateOnly(2026, 9, 25), AccountingBankTransaction.Others, 700m)] },
+            ],
+        };
+
+        var part = XDocument.Parse(TallyXml.BuildImport([refund], Options)).Descendants("BANKALLOCATIONS.LIST").ShouldHaveSingleItem();
+
+        part.Element("TRANSACTIONTYPE")!.Value.ShouldBe("Others");
+        part.Element("INSTRUMENTNUMBER").ShouldBeNull();
+        part.Element("AMOUNT")!.Value.ShouldBe("700.00");
+    }
+
+    [Fact]
+    public void Bank_names_and_instruments_are_escaped() =>
+        TallyXml.BuildImport([WithBank()], Options).ShouldContain("<BANKNAME>State Bank &lt;of&gt; India &amp; Co</BANKNAME>");
+
+    [Theory]
+    [InlineData(AccountingBankTransaction.Cheque, "Cheque")]
+    [InlineData(AccountingBankTransaction.EFundTransfer, "e-Fund Transfer")]
+    [InlineData(AccountingBankTransaction.Others, "Others")]
+    public void Names_each_kind_of_bank_transaction_as_tally_does(AccountingBankTransaction type, string name) => TallyXml.TransactionType(type).ShouldBe(name);
+
+    [Fact]
+    public void A_voucher_whose_bank_allocations_add_up_is_valid() => TallyXml.Validate(WithBank()).ShouldBeNull();
+
+    [Fact]
+    public void Refuses_bank_allocations_that_do_not_add_up_or_are_not_positive()
+    {
+        var voucher = WithBank();
+        AccountingVoucher With(params AccountingBankAllocation[] parts) => voucher with { Entries = [voucher.Entries[0] with { BankAllocations = parts }, voucher.Entries[1]] };
+
+        TallyXml.Validate(With(new AccountingBankAllocation(voucher.Date, AccountingBankTransaction.Cheque, 4_000m, "123456")))
+            .ShouldBe("the bank allocations of Bank (4000.00) do not add up to its amount (5000.00)");
+        TallyXml.Validate(With(
+                new AccountingBankAllocation(voucher.Date, AccountingBankTransaction.Cheque, 6_000m, "123456"),
+                new AccountingBankAllocation(voucher.Date, AccountingBankTransaction.Others, -1_000m)))
+            .ShouldBe("the bank allocations of Bank must be positive (the line decides the side)");
+    }
+
+    [Fact]
+    public void A_voucher_with_bank_allocations_reads_back_with_its_lines_amounts_and_matches()
+    {
+        var voucher = WithBank();
+        var copy = TallyVoucherReader.Parse(TallyXml.Voucher(voucher, Options));
+
+        copy.Lines.Select(l => (l.Ledger, l.Amount, l.IsDebit)).ShouldBe([("Bank", 5_000m, true), ("Patient Receivables", 5_000m, false)]);
+        TallyReadBack.Compare(voucher.Date, [voucher], [copy], Options).Vouchers.ShouldHaveSingleItem().Match.ShouldBe(AccountingVoucherMatch.Matched);
+    }
+
     [Fact]
     public void Builds_the_company_list_health_check()
     {

@@ -101,6 +101,14 @@ internal static class TallyXml
         return (isDebit ? -rounded : rounded).ToString("0.00", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>Tally's name of how money moved through the bank (<c>TRANSACTIONTYPE</c>).</summary>
+    public static string TransactionType(AccountingBankTransaction type) => type switch
+    {
+        AccountingBankTransaction.Cheque => "Cheque",
+        AccountingBankTransaction.EFundTransfer => "e-Fund Transfer",
+        _ => "Others",
+    };
+
     /// <summary>Tally's name of a bill-wise reference type (<c>BILLTYPE</c>).</summary>
     public static string BillType(AccountingBillType type) => type switch
     {
@@ -146,7 +154,29 @@ internal static class TallyXml
             return string.Create(CultureInfo.InvariantCulture, $"debits ({debits:0.00}) and credits ({credits:0.00}) do not balance");
         }
 
-        return voucher.Entries.Select(BillProblem).FirstOrDefault(problem => problem is not null);
+        return voucher.Entries.Select(e => BillProblem(e) ?? BankProblem(e)).FirstOrDefault(problem => problem is not null);
+    }
+
+    /// <summary>Why a line's bank allocations would not stand in Tally: a part not positive, or parts that do not add up to the line.</summary>
+    private static string? BankProblem(AccountingEntry entry)
+    {
+        var parts = entry.BankAllocations;
+        if (parts.Count == 0)
+        {
+            return null;
+        }
+
+        var ledger = entry.LedgerName.Trim();
+        if (parts.Any(b => b.Amount <= 0))
+        {
+            return $"the bank allocations of {ledger} must be positive (the line decides the side)";
+        }
+
+        var allocated = parts.Sum(b => Money.Round(b.Amount));
+        return allocated == Money.Round(entry.Amount)
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"the bank allocations of {ledger} ({allocated:0.00}) do not add up to its amount ({Money.Round(entry.Amount):0.00})");
     }
 
     /// <summary>Why a line's bill allocations would not stand in Tally: a part not positive, a bill without a name, or parts that do not add up to the line.</summary>
@@ -216,6 +246,13 @@ internal static class TallyXml
             new XElement("LEDGERNAME", Clean(options.MapLedger(entry.LedgerName))),
             new XElement("ISDEEMEDPOSITIVE", entry.IsDebit ? "Yes" : "No"),
             new XElement("AMOUNT", amount),
+            entry.BankAllocations.Select(bank => new XElement("BANKALLOCATIONS.LIST",
+                new XElement("DATE", Date(bank.Date)),
+                new XElement("INSTRUMENTDATE", Date(bank.InstrumentDate ?? bank.Date)),
+                new XElement("TRANSACTIONTYPE", TransactionType(bank.TransactionType)),
+                string.IsNullOrWhiteSpace(bank.InstrumentNumber) ? null : new XElement("INSTRUMENTNUMBER", Clean(bank.InstrumentNumber)),
+                string.IsNullOrWhiteSpace(bank.BankName) ? null : new XElement("BANKNAME", Clean(bank.BankName)),
+                new XElement("AMOUNT", Signed(bank.Amount, entry.IsDebit)))),
             entry.BillAllocations.Select(bill => new XElement("BILLALLOCATIONS.LIST",
                 string.IsNullOrWhiteSpace(bill.Name) ? null : new XElement("NAME", Clean(bill.Name)),
                 new XElement("BILLTYPE", BillType(bill.Type)),
@@ -228,6 +265,8 @@ internal static class TallyXml
                         new XElement("NAME", Clean(entry.CostCentre)),
                         new XElement("AMOUNT", amount))));
     }
+
+    private static string Date(DateOnly date) => date.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
     /// <summary>Removes control characters XML cannot carry (they would throw while serialising).</summary>
     private static string Clean(string value) =>

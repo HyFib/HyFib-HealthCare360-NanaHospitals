@@ -173,7 +173,13 @@ public sealed class TallyService(
             sales,
             receipts.Select(r => new TallyReceipt(
                 r.ReceiptNumber, date, r.Purpose, r.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null,
-                r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)).ToList())
+                r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)
+                {
+                    Reference = p.Reference,
+                    ChequeNumber = p.ChequeNumber,
+                    ChequeBank = p.ChequeBank,
+                    ChequeDate = p.ChequeDate,
+                }).ToList())
             {
                 Patient = patients.GetValueOrDefault(r.PatientId),
                 BillNumber = r.Purpose == ReceiptPurpose.PayerSettlement && r.BillId is { } billId ? billNumbers.GetValueOrDefault(billId) : null,
@@ -183,7 +189,11 @@ public sealed class TallyService(
             {
                 BillNumber = billNumbers.GetValueOrDefault(d.BillId),
             }).ToList(),
-            refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount) { Patient = patients.GetValueOrDefault(r.PatientId) }).ToList(),
+            refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)
+            {
+                Patient = patients.GetValueOrDefault(r.PatientId),
+                Reference = r.Reference,
+            }).ToList(),
             creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)
             {
                 Patient = patients.GetValueOrDefault(c.PatientId),
@@ -194,7 +204,11 @@ public sealed class TallyService(
                 doctors.GetValueOrDefault(f.PractitionerId)?.Code,
                 f.PractitionerId)).ToList(),
             payouts.Select(p => new TallyPayout(
-                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList(),
+                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)
+            {
+                Mode = p.PaymentMode,
+                Reference = p.PaidReference,
+            }).ToList(),
             gatewaySettlements)
         {
             FacilityCode = facilityCode,

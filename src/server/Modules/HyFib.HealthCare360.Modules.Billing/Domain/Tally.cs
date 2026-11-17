@@ -196,6 +196,13 @@ public sealed record TallyLedgerMap
     public TallyNarrationPatient PatientInNarration { get; init; } = TallyNarrationPatient.NameAndUhid;
 
     /// <summary>
+    /// The ledgers HC360 posts to that are bank accounts in Tally: their lines carry the cheque or UTR and its date (Tally's
+    /// bank allocations, T15). Null: the ledgers HC360 posts bank money to (<see cref="DefaultBankLedgers"/>), as they are
+    /// named now. A cheque ledger gets bank details only when it is listed here.
+    /// </summary>
+    public List<string>? BankLedgers { get; init; }
+
+    /// <summary>
     /// The version of the facility's saved names, shown with them and sent back with a change (REL-04); none while the
     /// facility uses the hospital-wide names. Never saved with the names.
     /// </summary>
@@ -221,6 +228,21 @@ public sealed record TallyLedgerMap
     };
 
     public string PayerLedger(string? payerName) => LedgerPerPayer && !string.IsNullOrWhiteSpace(payerName) ? payerName.Trim() : PayerReceivables;
+
+    /// <summary>
+    /// The ledgers HC360 posts bank money to: the net banking and insurance mode ledgers, the doctors' payout bank, and
+    /// the banks the payment gateway and the card acquirer settle into.
+    /// </summary>
+    public IReadOnlyList<string> DefaultBankLedgers() =>
+        new[] { ModeLedger(PaymentMode.NetBanking), ModeLedger(PaymentMode.Insurance), PayoutBank, GatewaySettlementBank, PosSettlementBank }
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>Whether <paramref name="ledger"/> is a bank account in Tally (<see cref="BankLedgers"/>), ignoring case as Tally does.</summary>
+    public bool IsBankLedger(string ledger) =>
+        (BankLedgers ?? DefaultBankLedgers()).Any(l => string.Equals(l?.Trim(), ledger.Trim(), StringComparison.OrdinalIgnoreCase));
 
     public string DoctorPayable(string doctorName) => DoctorPayablePrefix + doctorName;
 
@@ -327,7 +349,16 @@ public sealed record TallySale(
     public TallyPatient? Patient { get; init; }
 }
 
-public sealed record TallyPayment(PaymentMode Mode, decimal Amount);
+/// <summary>A payment of a receipt in one mode, with what identifies it at the bank.</summary>
+public sealed record TallyPayment(PaymentMode Mode, decimal Amount)
+{
+    /// <summary>The UTR, transaction id or RRN.</summary>
+    public string? Reference { get; init; }
+
+    public string? ChequeNumber { get; init; }
+    public string? ChequeBank { get; init; }
+    public DateOnly? ChequeDate { get; init; }
+}
 
 public sealed record TallyReceipt(string Number, DateOnly Date, ReceiptPurpose Purpose, string? PayerName, IReadOnlyList<TallyPayment> Payments)
 {
@@ -348,6 +379,9 @@ public sealed record TallyRefund(string Number, DateOnly Date, RefundPurpose Pur
 {
     /// <summary>The patient paid back, for the narration.</summary>
     public TallyPatient? Patient { get; init; }
+
+    /// <summary>The cheque number, UTR or transaction reference the money went out under.</summary>
+    public string? Reference { get; init; }
 }
 
 /// <summary>
@@ -377,7 +411,14 @@ public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKin
 public sealed record TallyDoctorFee(
     string PractitionerName, decimal Amount, string? PractitionerCode = null, Guid? PractitionerId = null);
 
-public sealed record TallyPayout(string Number, DateOnly Date, string PractitionerName, decimal Gross, decimal Tds, decimal Deductions, decimal Net);
+public sealed record TallyPayout(string Number, DateOnly Date, string PractitionerName, decimal Gross, decimal Tds, decimal Deductions, decimal Net)
+{
+    /// <summary>How the doctor was paid: a bank transfer, a cheque, UPI or cash.</summary>
+    public PaymentMode? Mode { get; init; }
+
+    /// <summary>The transfer's UTR or the cheque's number.</summary>
+    public string? Reference { get; init; }
+}
 
 /// <summary>
 /// One facility's part of a payment-gateway settlement: <paramref name="Net"/> reached the bank, <paramref name="Charges"/>
@@ -531,7 +572,7 @@ public static class TallyVoucherBuilder
     private static AccountingVoucher? SettlementVoucher(TallyGatewaySettlement settlement, TallyLedgerMap map)
     {
         var entries = new EntryList();
-        entries.Debit(map.GatewaySettlementBank, settlement.Net);
+        entries.Debit(map.GatewaySettlementBank, settlement.Net, bank: Transfer(map, map.GatewaySettlementBank, settlement.Date, settlement.Net, settlement.Utr));
         entries.Debit(map.GatewayCharges, settlement.Charges);
         entries.Debit(map.GatewayInputGst, settlement.Tax);
         entries.Credit(map.ModeLedger(PaymentMode.PaymentGateway), settlement.Gross);
@@ -549,7 +590,7 @@ public static class TallyVoucherBuilder
     private static AccountingVoucher? PosSettlementVoucher(TallyPosSettlement settlement, TallyLedgerMap map)
     {
         var entries = new EntryList();
-        entries.Debit(map.PosSettlementBank, settlement.Net);
+        entries.Debit(map.PosSettlementBank, settlement.Net, bank: Transfer(map, map.PosSettlementBank, settlement.Date, settlement.Net, settlement.Utr));
         entries.Debit(map.PosCharges, settlement.Charges);
         entries.Debit(map.GatewayInputGst, settlement.Tax);
         foreach (var clearing in settlement.Clears)
@@ -630,7 +671,7 @@ public static class TallyVoucherBuilder
 
     private static AccountingVoucher? Receipt(TallyReceipt receipt, TallyLedgerMap map)
     {
-        var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map, receipt.BillNumber);
+        var entries = ReceiptEntries(receipt.Purpose, receipt.PayerName, receipt.Payments, map, receipt.BillNumber, bankDate: receipt.Date);
         return IsAdjustment(receipt.Payments)
             ? entries.ToVoucher(JournalType, receipt.Date, receipt.Number, Narrate(receipt.Patient, map, $"Advance adjusted, receipt {receipt.Number}"), receipt.Number)
             : entries.ToVoucher(ReceiptType, receipt.Date, receipt.Number, Narrate(receipt.Patient, map, $"Receipt {receipt.Number}"), receipt.Number);
@@ -649,12 +690,16 @@ public static class TallyVoucherBuilder
     }
 
     /// <param name="billNumber">For an insurer's settlement, the bill it settles: the payer's ledger is credited against it.</param>
-    private static EntryList ReceiptEntries(ReceiptPurpose purpose, string? payerName, IReadOnlyList<TallyPayment> payments, TallyLedgerMap map, string? billNumber = null)
+    /// <param name="bankDate">The receipt's day: the lines on bank ledgers carry each payment's cheque or UTR. None for a reversal.</param>
+    private static EntryList ReceiptEntries(
+        ReceiptPurpose purpose, string? payerName, IReadOnlyList<TallyPayment> payments, TallyLedgerMap map, string? billNumber = null, DateOnly? bankDate = null)
     {
         var entries = new EntryList();
         foreach (var mode in payments.GroupBy(p => p.Mode))
         {
-            entries.Debit(map.ModeLedger(mode.Key), mode.Sum(p => p.Amount));
+            var ledger = map.ModeLedger(mode.Key);
+            entries.Debit(ledger, mode.Sum(p => p.Amount),
+                bank: bankDate is { } day && map.IsBankLedger(ledger) ? mode.Select(p => BankPart(p, day)).ToList() : null);
         }
 
         var total = payments.Sum(p => p.Amount);
@@ -694,7 +739,7 @@ public static class TallyVoucherBuilder
             return entries.ToVoucher(JournalType, refund.Date, refund.Number, Narrate(refund.Patient, map, $"Advance restored, refund {refund.Number}"), refund.Number);
         }
 
-        return RefundEntries(refund.Purpose, refund.Mode, refund.Amount, map)
+        return RefundEntries(refund.Purpose, refund.Mode, refund.Amount, map, (refund.Date, refund.Reference))
             .ToVoucher(PaymentType, refund.Date, refund.Number, Narrate(refund.Patient, map, $"Refund {refund.Number}"), refund.Number);
     }
 
@@ -703,13 +748,41 @@ public static class TallyVoucherBuilder
         RefundEntries(reversal.Purpose, reversal.Mode, reversal.Amount, map).Reversed()
             .ToVoucher(JournalType, reversal.Date, reversal.Number, $"Refund {reversal.RefundNumber} not paid out, {reversal.Number}", reversal.Number);
 
-    private static EntryList RefundEntries(RefundPurpose purpose, PaymentMode mode, decimal amount, TallyLedgerMap map)
+    /// <param name="paidOut">The refund's day and reference: a line on a bank ledger carries them. None for a reversal.</param>
+    private static EntryList RefundEntries(RefundPurpose purpose, PaymentMode mode, decimal amount, TallyLedgerMap map, (DateOnly Date, string? Reference)? paidOut = null)
     {
         var entries = new EntryList();
         entries.Debit(purpose is RefundPurpose.Deposit or RefundPurpose.Advance ? map.PatientAdvances : map.PatientDebtors, amount);
-        entries.Credit(map.ModeLedger(mode), amount);
+        var ledger = map.ModeLedger(mode);
+        entries.Credit(ledger, amount,
+            bank: paidOut is { } paid && map.IsBankLedger(ledger) ? [new AccountingBankAllocation(paid.Date, TransactionOf(mode), amount, Clean(paid.Reference))] : null);
         return entries;
     }
+
+    /// <summary>How a payment in <paramref name="mode"/> moved at the bank: a cheque, a UTR-based transfer (net banking, UPI, an insurer's NEFT), or something else.</summary>
+    public static AccountingBankTransaction TransactionOf(PaymentMode mode) => mode switch
+    {
+        PaymentMode.Cheque => AccountingBankTransaction.Cheque,
+        PaymentMode.NetBanking or PaymentMode.Upi or PaymentMode.Insurance => AccountingBankTransaction.EFundTransfer,
+        _ => AccountingBankTransaction.Others,
+    };
+
+    /// <summary>A received payment's bank details: a cheque's number, date and bank; a transfer's UTR on the receipt's day.</summary>
+    private static AccountingBankAllocation BankPart(TallyPayment payment, DateOnly date) =>
+        payment.Mode == PaymentMode.Cheque
+            ? new(date, AccountingBankTransaction.Cheque, payment.Amount, Clean(payment.ChequeNumber) ?? Clean(payment.Reference), payment.ChequeDate, Clean(payment.ChequeBank))
+            : new(date, TransactionOf(payment.Mode), payment.Amount, Clean(payment.Reference));
+
+    /// <summary>
+    /// A settlement's credit to the bank, by its UTR (an e-fund transfer, else "Others"), when <paramref name="ledger"/>
+    /// is a bank ledger. <paramref name="amount"/> carries the journal's sign (a reversal's is negative).
+    /// </summary>
+    private static IReadOnlyList<AccountingBankAllocation>? Transfer(TallyLedgerMap map, string ledger, DateOnly date, decimal amount, string? utr) =>
+        map.IsBankLedger(ledger)
+            ? [new AccountingBankAllocation(date, Clean(utr) is null ? AccountingBankTransaction.Others : AccountingBankTransaction.EFundTransfer, amount, Clean(utr))]
+            : null;
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     /// <summary>
     /// A credit note takes back what it credits: the taxable part from sales returns and the GST from the output GST
@@ -784,25 +857,31 @@ public static class TallyVoucherBuilder
         entries.Debit(map.DoctorPayable(payout.PractitionerName), payout.Gross);
         entries.Credit(map.TdsPayable, payout.Tds);
         entries.Credit(map.DoctorRecoveries, payout.Deductions);
-        entries.Credit(map.PayoutBank, payout.Net);
+        entries.Credit(map.PayoutBank, payout.Net,
+            bank: map.IsBankLedger(map.PayoutBank)
+                ? [new AccountingBankAllocation(payout.Date, payout.Mode is { } mode ? TransactionOf(mode) : AccountingBankTransaction.Others, payout.Net, Clean(payout.Reference))]
+                : null);
         return entries.ToVoucher(PaymentType, payout.Date, payout.Number, $"Doctor payout {payout.Number}", payout.Number);
     }
 
     /// <summary>
     /// Collects entries, merging repeats of the same ledger/side and turning negative amounts into the opposite side. A
-    /// line on a party's ledger may name the bill it is set against (<see cref="TallyBillRef"/>); merged lines keep each
-    /// bill's part, and a merged line some of whose parts named no bill has the rest on account, so its allocations
-    /// always add up to it.
+    /// line on a party's ledger may name the bill it is set against (<see cref="TallyBillRef"/>), and a line on a bank
+    /// ledger the cheques and transfers it is made of. Merged lines keep each part; a merged line some of whose parts
+    /// named no bill has the rest on account, and one some of whose parts brought no bank details has the rest as
+    /// "Others", so a line's allocations always add up to it.
     /// </summary>
     internal sealed class EntryList
     {
         private readonly List<AccountingEntry> _entries = [];
 
-        public void Debit(string ledger, decimal amount, string? costCentre = null, TallyBillRef? bill = null) =>
-            Add(ledger, amount, isDebit: true, costCentre, bill);
+        /// <param name="bank">The line's cheques and transfers, their amounts signed like <paramref name="amount"/>.</param>
+        public void Debit(string ledger, decimal amount, string? costCentre = null, TallyBillRef? bill = null, IReadOnlyList<AccountingBankAllocation>? bank = null) =>
+            Add(ledger, amount, isDebit: true, costCentre, bill, bank);
 
-        public void Credit(string ledger, decimal amount, string? costCentre = null, TallyBillRef? bill = null) =>
-            Add(ledger, amount, isDebit: false, costCentre, bill);
+        /// <param name="bank">The line's cheques and transfers, their amounts signed like <paramref name="amount"/>.</param>
+        public void Credit(string ledger, decimal amount, string? costCentre = null, TallyBillRef? bill = null, IReadOnlyList<AccountingBankAllocation>? bank = null) =>
+            Add(ledger, amount, isDebit: false, costCentre, bill, bank);
 
         public EntryList Reversed()
         {
@@ -816,9 +895,9 @@ public static class TallyVoucherBuilder
         }
 
         public AccountingVoucher? ToVoucher(string type, DateOnly date, string number, string narration, string reference) =>
-            _entries.Count == 0 ? null : new AccountingVoucher(type, date, number, narration, _entries.Select(Complete).ToList(), reference);
+            _entries.Count == 0 ? null : new AccountingVoucher(type, date, number, narration, _entries.Select(e => Complete(e, date)).ToList(), reference);
 
-        private void Add(string ledger, decimal amount, bool isDebit, string? costCentre, TallyBillRef? bill)
+        private void Add(string ledger, decimal amount, bool isDebit, string? costCentre, TallyBillRef? bill, IReadOnlyList<AccountingBankAllocation>? bank)
         {
             amount = Money.Round(amount);
             if (amount == 0)
@@ -826,6 +905,7 @@ public static class TallyVoucherBuilder
                 return;
             }
 
+            var sign = amount < 0 ? -1 : 1;
             if (amount < 0)
             {
                 amount = -amount;
@@ -835,6 +915,10 @@ public static class TallyVoucherBuilder
             Add(new AccountingEntry(ledger, amount, isDebit, costCentre)
             {
                 BillAllocations = bill is null ? [] : [new AccountingBillAllocation(bill.Name, bill.Type, amount)],
+                BankAllocations = (bank ?? [])
+                    .Select(b => b with { Amount = Money.Round(sign * b.Amount) })
+                    .Where(b => b.Amount != 0)
+                    .ToList(),
             });
         }
 
@@ -851,14 +935,37 @@ public static class TallyVoucherBuilder
             var merged = held with { Amount = held.Amount + entry.Amount };
             if (held.BillAllocations.Count + entry.BillAllocations.Count > 0)
             {
-                merged = merged with { BillAllocations = Bills([.. Complete(held).BillAllocations, .. Complete(entry).BillAllocations]) };
+                merged = merged with { BillAllocations = Bills([.. CompleteBills(held).BillAllocations, .. CompleteBills(entry).BillAllocations]) };
+            }
+
+            if (held.BankAllocations.Count + entry.BankAllocations.Count > 0)
+            {
+                // Parts without bank details are completed when the voucher's date is known.
+                merged = merged with { BankAllocations = [.. held.BankAllocations, .. entry.BankAllocations, .. Unknown(held), .. Unknown(entry)] };
             }
 
             _entries[index] = merged;
         }
 
-        /// <summary>The line with what its allocations leave out put on account (a part merged in without a bill).</summary>
-        private static AccountingEntry Complete(AccountingEntry entry)
+        /// <summary>A part merged in without bank details, as a placeholder dated when the voucher is made.</summary>
+        private static IEnumerable<AccountingBankAllocation> Unknown(AccountingEntry entry) =>
+            entry.BankAllocations.Count == 0 ? [new AccountingBankAllocation(DateOnly.MinValue, AccountingBankTransaction.Others, entry.Amount)] : [];
+
+        /// <summary>The line with what its allocations leave out on account, or as "Others" on <paramref name="date"/>.</summary>
+        private static AccountingEntry Complete(AccountingEntry entry, DateOnly date)
+        {
+            entry = CompleteBills(entry);
+            if (entry.BankAllocations.Count == 0)
+            {
+                return entry;
+            }
+
+            var parts = entry.BankAllocations.Select(b => b.Date == DateOnly.MinValue ? b with { Date = date } : b).ToList();
+            var rest = entry.Amount - parts.Sum(b => b.Amount);
+            return entry with { BankAllocations = rest > 0 ? [.. parts, new AccountingBankAllocation(date, AccountingBankTransaction.Others, rest)] : parts };
+        }
+
+        private static AccountingEntry CompleteBills(AccountingEntry entry)
         {
             var rest = entry.Amount - entry.BillAllocations.Sum(b => b.Amount);
             return entry.BillAllocations.Count == 0 || rest <= 0

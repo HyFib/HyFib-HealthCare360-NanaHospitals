@@ -178,7 +178,8 @@ public static class TallyTracking
 
     /// <summary>
     /// SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines. What a voucher has only
-    /// sometimes (a line's bill allocations) is added only when it has it, so a voucher without it keeps its fingerprint.
+    /// sometimes (a line's bill or bank allocations) is added only when it has it, so a voucher without it keeps its
+    /// fingerprint.
     /// </summary>
     public static string Fingerprint(AccountingVoucher voucher)
     {
@@ -190,7 +191,7 @@ public static class TallyTracking
             .Append(voucher.Narration.Trim()).Append('\n');
         foreach (var entry in voucher.Entries
                      .Select(e => string.Create(CultureInfo.InvariantCulture, $"{e.LedgerName.Trim()}|{(e.IsDebit ? "Dr" : "Cr")}|{Money.Round(e.Amount):0.00}|{e.CostCentre?.Trim()}")
-                                  + Bills(e))
+                                  + Bills(e) + Bank(e))
                      .Order(StringComparer.Ordinal))
         {
             text.Append(entry).Append('\n');
@@ -198,6 +199,14 @@ public static class TallyTracking
 
         return Hex(text.ToString());
     }
+
+    private static string Bank(AccountingEntry entry) =>
+        entry.BankAllocations.Count == 0
+            ? string.Empty
+            : "|bank:" + string.Join(';', entry.BankAllocations
+                .Select(b => string.Create(CultureInfo.InvariantCulture,
+                    $"{b.TransactionType}:{b.InstrumentNumber?.Trim()}:{b.Date:yyyy-MM-dd}:{b.InstrumentDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}:{b.BankName?.Trim()}:{Money.Round(b.Amount):0.00}"))
+                .Order(StringComparer.Ordinal));
 
     private static string Bills(AccountingEntry entry) =>
         entry.BillAllocations.Count == 0
