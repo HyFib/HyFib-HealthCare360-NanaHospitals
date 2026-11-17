@@ -36,7 +36,7 @@ All of it is set on the Tally screen's **Ledgers and voucher types** tab (Billin
 | T3 | The connector: "College" as the facility's code, one Tally company per facility | "Yes" | A requirement for the connector. HC360's Tally settings (`integrations.tally`, with the company's name) are per facility, and its own voucher numbers carry the facility's code, so facilities can share a company or have one each |
 | T4 | The connector: voucher types per call, and whether "Collection" means receipts | "Multiple voucher type, yes": several voucher types per call, and "Collection" means receipts | A requirement for the connector. HC360's Receipts are what "Collection" asks for |
 | T5 | The connector: decimals in amounts, and whether a rounding difference is allowed | "2 decimals, yes rounding allowed" | Already so: every amount is sent with two decimals, every voucher balances to the paisa, and a document's rounding goes to the round-off ledger |
-| T6 | The connector: fetching the same dates twice, and altering a voucher it holds instead of importing it again | "In case of changes, confirm before the alteration" | A requirement for the connector. Today a day posted again alters the vouchers Tally holds (same REMOTEID) without asking: the post is started by staff, by the nightly job, or by HC360 itself when an online payment or a settlement is recorded for a day already sent (`TallyCorrections`). Whether HC360's own post should ask first too is open (section 5) |
+| T6 | The connector: fetching the same dates twice, and altering a voucher it holds instead of importing it again | "In case of changes, confirm before the alteration" | A requirement for the connector. Today a day posted again alters the vouchers Tally holds (same REMOTEID) without asking: the post is started by staff, by the nightly job, or by HC360 itself when an online payment, a settlement or a goods receipt is recorded for a day already sent (`TallyCorrections`). Whether HC360's own post should ask first too is open (section 5) |
 | T7 | The connector: a voucher changed in HC360 after it was posted: served again with the same id, or a "changed since" query | "Yes" | Read as the first: serve it again with the same id (to confirm, as the question offered two ways). Already so for the XML post: a voucher keeps its REMOTEID (`HC360-<reference>`), and the day's records show it "changed since sent" until it is sent again. A requirement for the connector too |
 | T8 | The connector: deleting or cancelling a voucher it imported, or a new voucher for every reversal | "Should not delete or cancel without approval" | Already so: HC360 never deletes or cancels in Tally. A voucher that leaves the day book is listed "No longer in HC360" for the accountant to delete. A requirement for the connector |
 | T9 | Whether the connector tells HC360 which vouchers it imported and which it rejected, and why, and how | Not answered | Open: ask again |
@@ -107,7 +107,7 @@ sample JSON have not arrived, so the connector is not built. The answers recorde
    the accountant checks each against Tally before the first post (section 3).
 3. **Confirm before altering (T6) for HC360's own post.** The hospital asked it of the connector. HC360's XML post alters
    the vouchers of a day sent again without asking, including when HC360 sends a day again itself for a late online
-   payment or settlement. To ask the accountant whether that is acceptable until the connector takes over.
+   payment, settlement or goods receipt. To ask the accountant whether that is acceptable until the connector takes over.
 4. **T7's "Yes"** answered a question that offered two ways; it is read as "serve a changed voucher again with the same
    id". To confirm with the Tally partner.
 5. **Expenses booked in HC360 (N11.4):** HC360 has no expense booking. Recorded as a gap by HyFib's decision; expenses
@@ -119,7 +119,8 @@ sample JSON have not arrived, so the connector is not built. The answers recorde
 ## 6. Things to know
 
 - **Goods receipts are dated by the day the goods were received**, as GSTR-3B takes their input credit. A receipt posted
-  into stock after that day joins that day's day book: post that day again.
+  into stock after that day joins that day's day book, and HC360 sends that day to Tally again by itself when it went
+  already.
 - **Pharmacy per invoice or summarised.** A facility that switches after days were posted sees the other way's vouchers
   on those days as "No longer in HC360", to delete in Tally, and posts the days again. HC360 was not yet live when the
   per-invoice way came, so no day had been posted as a summary.

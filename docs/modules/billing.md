@@ -1327,6 +1327,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `AppointmentCancelled` | For a cancelled (not rescheduled) prepaid booking, queues the same message to refund it |
 | `BillFinalized`, `BillPaid`, `BillCancelled`, `BillPaymentReversed` | Doctor-fee accrual (idempotent per bill line; a line whose accrual was reversed accrues again) and reversal |
 | `BillFinalized` | A bill with GST to a payer with a GSTIN queues `billing.einvoice.generate` ([Automatic IRNs](#automatic-irns)) |
+| `GoodsReceiptPosted` (Supply chain) | A goods receipt of an earlier day queues `billing.tally.late-purchase`: its day goes to Tally again if it went already ([The Tally day book](#the-tally-day-book)) |
 
 ### Appointment prepayments (OA-03)
 Scheduling posts nothing to billing. The outbox handler `billing.appointment.prepayment` (retried with back-off)
@@ -1436,7 +1437,9 @@ request may take over after five minutes with the same key.
 
 **Dates.** A gateway receipt is dated when the gateway took the money (`PaymentStatusResult.PaidAt`, never later than
 now), so a payment recorded late belongs to the day the patient paid. When that day's day book was already posted to
-Tally, it is queued again (`TallyCorrections`); vouchers keep their numbers, so Tally alters rather than duplicates.
+Tally, it is queued again (`TallyCorrections`); vouchers keep their numbers, so Tally alters rather than duplicates. A
+goods receipt posted into stock after the day its goods came does the same for that day (see the goods receipts in
+[The Tally day book](#the-tally-day-book)).
 
 **Settlement journal.** Each processed settlement is a Journal in the day book of its IST settlement day, numbered
 with the settlement id (a shared account's other facilities add a suffix): the bank (`gatewaySettlementBank`) is
@@ -1681,8 +1684,9 @@ bank references, one voucher per pharmacy invoice, GST by rate, purchases) are r
   purchases (`purchases`, "Purchase Accounts", per GST rate with `salesLedgerPerGstRate`: "Purchase Accounts @ 12%")
   and input GST by rate are debited, with the round-off. It carries the supplier's GSTIN and state and the facility's
   state as the place of supply. `purchasesFrom` chooses the stores: `Pharmacy` (stores of type Pharmacy, the default),
-  `All` or `None`. A goods receipt posted after the day it was received joins that day's day book: post that day again
-  (its vouchers show it as not sent);
+  `All` or `None`. A goods receipt posted after the day it was received joins that day's day book. When that day went
+  to Tally already, posting the receipt (Platform event `GoodsReceiptPosted`) queues `billing.tally.late-purchase`, and
+  `TallyCorrections` queues the day again if the facility posts that receipt as a purchase;
 * a Debit Note per purchase return and a Journal per supplier payable adjustment posted on the day
   (`IVendorAccountsSource`, see [supplychain.md](supplychain.md)): input GST taken back by rate;
 * a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg));
@@ -1823,6 +1827,9 @@ the bill's day again, never to delete it.
   `TallyDayBookScheduler` queues yesterday after 00:30 IST (`billing.tally.dailyPost.enabled`, only where
   `PlatformOptions.RunsJobs`), posts again a day someone posted before it ended, and queues again days stuck in Queued.
 * `billing.tally.check` — reconciles a posted day with its records and with Tally; not retried.
+* `billing.tally.late-purchase` — a goods receipt of an earlier day was posted into stock (queued by
+  `GoodsReceiptPostedHandler` in Supply chain's transaction): its day is queued again when it went to Tally already and
+  the facility posts the receipt as a purchase. Local lane.
 * `billing.appointment.prepayment` — see above.
 * `billing.einvoice.generate` — asks the portal for a document's IRN once it is final, retried while the portal does not
   answer or a note's invoice waits for its IRN, not after a refusal; see [Automatic IRNs](#automatic-irns).

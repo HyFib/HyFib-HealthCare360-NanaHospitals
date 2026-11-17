@@ -216,7 +216,8 @@ invoice number and date, GSTIN and state (the GSTIN's, else the address's), whet
 `NetAmount`. Billing posts each as a Purchase voucher from the supplier's ledger, against a new bill of the supplier's
 invoice, for the stores `billing.tally.ledgers` `purchasesFrom` names (the pharmacy stores by default); see
 [billing.md, The Tally day book](billing.md#the-tally-day-book). A receipt posted after the day it was received joins
-that day's day book, which is posted again.
+that day's day book: posting it raises the Platform event `GoodsReceiptPosted`, and Billing queues that day for Tally
+again when it went already.
 
 ### Assets — `/api/v1/assets` (AST-01/02/06, tag Assets)
 | Method | Path | Permission | Request → response |
@@ -387,6 +388,7 @@ and `ExpiringAsync(db, storeIds, today, days, includeExpired)` (`ExpiringBatch` 
 | Event | Direction | When / use |
 |---|---|---|
 | `ControlledStockMoved` (domain event, same transaction) | raised | Every ledger row of a register item (Schedule H1/X or `IsControlled`), with ledger id, batch, signed quantity, balance after and reference. Handled by Pharmacy, which writes the controlled-drug register line for movements made outside pharmacy screens (GRN, transfers, adjustments, write-offs, OT consumption) |
+| `GoodsReceiptPosted` (Platform contract, same transaction) | raised | A goods receipt posted into stock, with its number and the day its goods were received. Handled by Billing, which sends that day to Tally again when it went already (the purchase is dated by that day) |
 
 The module handles no events from other modules, and publishes no real-time events. Cold-chain alerts go through the
 outbox (`supplychain.cold-chain-alert`), so they are sent only once the reading is saved.

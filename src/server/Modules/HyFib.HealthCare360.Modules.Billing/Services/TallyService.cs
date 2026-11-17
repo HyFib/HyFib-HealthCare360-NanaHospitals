@@ -761,6 +761,17 @@ public sealed class TallyService(
         return days;
     }
 
+    /// <summary>
+    /// Whether the day book of <paramref name="date"/> holds goods receipt <paramref name="number"/> as a purchase: posted,
+    /// received that day, and into a store whose purchases the facility posts (<see cref="TallyLedgerMap.PostsPurchase"/>).
+    /// </summary>
+    internal async Task<bool> PostsPurchaseAsync(Guid facilityId, DateOnly date, string number, CancellationToken ct)
+    {
+        var map = await LedgersAsync(facilityId, ct);
+        return (await PurchasesAsync(facilityId, date, ct))
+            .Any(p => string.Equals(p.Number, number, StringComparison.Ordinal) && map.PostsPurchase(p.PharmacyStore));
+    }
+
     /// <summary>The day's goods receipts, from Supply chain (<see cref="IPurchaseAccountsSource"/>).</summary>
     private async Task<IReadOnlyList<PurchaseEntry>> PurchasesAsync(Guid facilityId, DateOnly date, CancellationToken ct)
     {

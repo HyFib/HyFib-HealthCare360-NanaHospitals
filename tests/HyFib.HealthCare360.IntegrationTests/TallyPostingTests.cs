@@ -131,7 +131,8 @@ public sealed class TallyPostingTests(HospitalServer server)
     /// N11 and T14: a goods receipt into the pharmacy, entered and approved through the API, is in its day's day book as a
     /// purchase from its supplier (read through Supply chain's source), crediting the supplier's ledger against a new bill
     /// of the supplier's invoice, with the supplier's GST details. The simulator takes it as Tally would, party details and
-    /// allocations included, and reads it back as sent. No setting changes, so other tests' posts are not disturbed.
+    /// allocations included, and reads it back as sent. Its day went to Tally before it was posted into stock, so posting it
+    /// puts that day back in the Tally queue. No setting changes, so other tests' posts are not disturbed.
     /// </summary>
     [Fact]
     public async Task A_pharmacy_goods_receipt_is_a_purchase_from_its_supplier_that_the_simulator_keeps_and_reads_back()
@@ -147,10 +148,20 @@ public sealed class TallyPostingTests(HospitalServer server)
             GstRate: 12m, Schedule: DrugSchedule.Otc, IsControlled: false, IsColdChain: false, VedClass: VedClass.Essential, ReorderLevel: 0, ReorderQuantity: 0,
             MinimumStock: 0, MaximumStock: 0, Manufacturer: "Test Pharma", Barcode: null, IsActive: true, Version: null))).GetProperty("id").GetGuid();
         var invoice = $"SB/{Letters(8)}".ToUpperInvariant();
+        var started = DateTimeOffset.UtcNow;
+        await AddDayAsync(facilityId, received, TallyExportStatus.Posted, queuedAt: started.AddDays(-30));
         var grn = await GoodsReceipts.IntoStockAsync(server, store, new CreateGoodsReceiptRequest(
             vendor.Id, pharmacy, null, invoice, received.AddDays(-2), received, null,
             [new GoodsReceiptLineInput(item, null, $"B{Letters(8)}", null, received.AddYears(2), 25m, 0m, 18.30m, 30m, 0m, null, AcceptShortExpiry: false)],
             SendForApproval: true));
+
+        // The purchase joined a day that went to Tally already: the day is queued again (billing.tally.late-purchase).
+        await EventuallyAsync(async () =>
+        {
+            await using var check = server.Services.CreateAsyncScope();
+            var day = await Db(check).Set<TallyExport>().AsNoTracking().SingleAsync(e => e.FacilityId == facilityId && e.Date == received, Ct);
+            return day.QueuedAt >= started ? day : null;
+        }, "Posting a goods receipt of a day that went to Tally should queue that day again.");
 
         await using var scope = server.Services.CreateAsyncScope();
         var vouchers = await scope.ServiceProvider.GetRequiredService<TallyService>().BuildVouchersAsync(facilityId, received, Ct);
@@ -226,6 +237,23 @@ public sealed class TallyPostingTests(HospitalServer server)
     }
 
     private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
+
+    /// <summary>Polls until the outbox has delivered (it runs every two seconds), for at most a minute.</summary>
+    private static async Task<T> EventuallyAsync<T>(Func<Task<T?>> read, string failure)
+        where T : class
+    {
+        for (var waited = TimeSpan.Zero; waited < TimeSpan.FromMinutes(1); waited += TimeSpan.FromSeconds(1))
+        {
+            if (await read() is { } value)
+            {
+                return value;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), Ct);
+        }
+
+        throw new ShouldAssertException(failure);
+    }
 
     private static HospitalDbContext Db(AsyncServiceScope scope) => scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
 
