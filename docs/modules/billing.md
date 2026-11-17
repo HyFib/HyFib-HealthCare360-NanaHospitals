@@ -571,8 +571,8 @@ holds and how posting, the checks and the transition for older days work.
 | GET | `/days/{date}/check` | `billing.tally.export` | → `TallyDayCheckDto`, the records check as it stands now (nothing kept) |
 | POST | `/days/{date}/check?againstTally` | `billing.tally.export` | → `TallyDayCheckDto`; runs the records check, and with `againstTally=true` reads the day back from Tally; keeps the results on the day. Audited as `billing.tally.checked` when Tally is read |
 | POST | `/days/{date}/imported` | `billing.tally.export` | → `TallyExportDto`; marks the downloaded file imported (see below). Audited as `billing.tally.imported` |
-| GET | `/ledgers` | `billing.tally.export` or `billing.tally.configure` | → `TallyLedgerMap` in effect, built-in names filled in |
-| PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes). Audited as `billing.tally.ledgers` |
+| GET | `/ledgers` | `billing.tally.export` or `billing.tally.configure` | → `TallyLedgerMap` in effect, built-in names filled in; `bankLedgers` null while the facility uses the ledgers HC360 posts bank money to |
+| PUT | `/ledgers` | `billing.tally.configure` | `TallyLedgerMap` → 204; validated (every name present, one line, at most 100 characters, known payment modes; voucher types one line of at most 32 characters; at most 50 bank ledgers). Audited as `billing.tally.ledgers` |
 
 ### GST e-invoices — `/api/v1/billing/einvoices` (`billing.einvoice`)
 See [GST e-invoicing](#gst-e-invoicing). `{source}` is `bill`, `creditnote` (a bill's credit note), `debitnote` (a
@@ -1634,16 +1634,22 @@ reconciliation screen (the gateway's).
 
 ## The Tally day book
 
-`TallyService` builds one facility's day as balanced vouchers (`TallyVoucherBuilder`) with the ledger names of
-`billing.tally.ledgers`:
+`TallyService` builds one facility's day as balanced vouchers (`TallyVoucherBuilder`) with the ledger names and choices
+of `billing.tally.ledgers`. The hospital's answers of 17 November 2026 (voucher types, patients in narrations, bill and
+bank references, one voucher per pharmacy invoice, GST by rate, purchases) are recorded with what is still open in
+[NANA-THENI-ANSWERS-ACCOUNTS.md](../deployment/NANA-THENI-ANSWERS-ACCOUNTS.md).
 
-* a Sales voucher per bill finalised (income by department, discount, CGST/SGST, round-off, patient and payer
-  receivables), and a Credit Note `<bill>/C` for a bill cancelled on the day;
+* a sales voucher per bill finalised (income by department, discount, output GST, round-off, patient and payer
+  receivables), under the facility's sales voucher types (`voucherTypes`, N11/N12): an in-patient bill (`Bill.Type`
+  InPatient) under `inPatient` ("IP Sales"), an out-patient bill whose every line is a laboratory test
+  (`ServiceCategory.Laboratory`) under `laboratory` ("Lab Sales"), any other out-patient bill under `outPatient` ("OP
+  Sales"). The bill number stays the voucher's number. A bill cancelled on the day is a Credit Note `<bill>/C`, whatever
+  its type;
 * a Receipt per receipt (a Journal for an advance adjustment), a Payment per refund paid, a Credit Note per credit note
   or write-off, a Journal per claim deduction (`<claim>/<six hex digits of the settlement>`). A credit note debits sales
-  returns with its taxable value and the output CGST, SGST or IGST ledgers with the GST it takes back
-  ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)); a write-off debits write-offs with the
-  whole amount;
+  returns with its taxable value and the output CGST, SGST or IGST ledgers with the GST it takes back, at the rate of the
+  lines it corrects ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)); a write-off debits
+  write-offs with the whole amount;
 * a Journal per reversal made on the day, numbered by the reversal: money not received (`RR…`) turns the receipt's
   entries round for the lines taken back, and a refund not paid out (`RX…`) turns its payment round. The day the
   receipt or refund was recorded keeps its own voucher;
@@ -1651,26 +1657,99 @@ reconciliation screen (the gateway's).
   (`DF-NH-20260925-DR005`). A doctor without a code is numbered by an eight-digit hash of the name. Two doctors whose
   numbers would be the same (a shared code) both add the last eight hex digits of their practitioner id, so neither
   number depends on the order the doctors come in. Payouts are Payments with TDS and recoveries;
-* the pharmacy's and the canteen's day, read through the Platform contract `ICounterSalesSource` (implemented by
-  Pharmacy and SupportServices): one summary Sales voucher (`PH-<facility>-<yyyyMMdd>`, `CT-…`) with income by GST
-  rate, a Credit Note for returns (`…-R`) and a Receipt for balances paid later (`…-C`). A counter can be left out with
-  `pharmacy.include` / `canteen.include` while its sales are still entered in Tally by hand;
+* the pharmacy's day **one voucher per invoice** (T17), read through the Platform contract `ICounterInvoiceSource`
+  (implemented by Pharmacy, by the same rules as its summary): each invoice a voucher under `voucherTypes.pharmacy`
+  ("Pharmacy Sales"), numbered and referenced by the invoice, debiting the money by mode (the pharmacy's own mode
+  ledgers, else the hospital's) and what went on the customer's account (`pharmacy.onAccount`), crediting income by GST
+  rate, output GST and the round-off; each return a Credit Note numbered by the return (what was paid back leaves its
+  mode ledgers, the rest comes off the account); an invoice's balances paid on a day a Receipt numbered
+  `<invoice>/<yyyyMMdd>`. A B2B invoice or return carries its buyer's GSTIN, state and place of supply, with the
+  account (or, when nothing went on account, the ledger of the mode that took most of the money) as its party ledger;
+* the canteen's day, and the pharmacy's when the facility keeps its summary (`pharmacyPerInvoice: false`), read
+  through `ICounterSalesSource` (implemented by Pharmacy and SupportServices): one summary Sales voucher
+  (`PH-<facility>-<yyyyMMdd>`, `CT-…`) with income by GST rate, a Credit Note for returns (`…-R`) and a Receipt for
+  balances paid later (`…-C`). A counter can be left out with `pharmacy.include` / `canteen.include` while its sales are
+  still entered in Tally by hand. A facility that switches between the two after days were posted sees the vouchers of
+  the other way on those days as "No longer in HC360", to delete in Tally, and posts the days again; HC360 was not yet
+  live when the per-invoice way came, so no day had been posted as a summary;
+* a voucher per **goods receipt** (N11, party ledger wise), read through `IPurchaseAccountsSource` (implemented by
+  Supply chain): those posted into stock and received on the day, as GSTR-3B takes their input credit. Each is a
+  voucher under `voucherTypes.purchase` ("Purchase"), numbered and referenced by the goods receipt, with the supplier's
+  invoice number and date as `REFERENCE` and `REFERENCEDATE`: the supplier's ledger (`VendorLedger`: the supplier's
+  name, or `sundryCreditors`) is credited with the invoice's total as a new bill of the supplier's invoice, and
+  purchases (`purchases`, "Purchase Accounts", per GST rate with `salesLedgerPerGstRate`: "Purchase Accounts @ 12%")
+  and input GST by rate are debited, with the round-off. It carries the supplier's GSTIN and state and the facility's
+  state as the place of supply. `purchasesFrom` chooses the stores: `Pharmacy` (stores of type Pharmacy, the default),
+  `All` or `None`. A goods receipt posted after the day it was received joins that day's day book: post that day again
+  (its vouchers show it as not sent);
+* a Debit Note per purchase return and a Journal per supplier payable adjustment posted on the day
+  (`IVendorAccountsSource`, see [supplychain.md](supplychain.md)): input GST taken back by rate;
 * a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg));
 * a Journal per card and UPI payout of the day, from the acquirer's reports (see
   [Card and UPI reconciliation](#card-and-upi-reconciliation-int-pos)).
 
 Every voucher carries a reference; Tally keeps it as `REMOTEID="HC360-<reference>"`, so posting a day again alters its
-vouchers instead of adding new ones. Narrations carry document numbers, and a patient's voucher (a bill, its
-cancellation, the patient's receipts, refunds, credit notes and write-offs) names the patient first, as
-`patientInNarration` allows: the name and UHID by default (`NameAndUhid`: "Ravi Kumar (UHID NHU26000123): Bill
-NHOB260000001", the hospital's decision of 17 November 2026), the UHID only (`UhidOnly`), or nothing (`None`). A VIP,
-or a patient in a protected category (HIV, mental health, MTP, sexual violence), is named by UHID only whatever the
-setting, by the rule search, reports and the portal withhold names by (`Patient.IsVip`, `Patient.SensitiveCategories`).
-The day book reads the day's patients in one query. Changing the setting changes the vouchers' content: days posted
-before show their patients' vouchers as changed since sent until they are posted again.
+vouchers instead of adding new ones. Every voucher balances to the paisa: amounts are the documents' own, rounded to two
+decimals, and a document's rounding goes to the round-off ledger.
+
+**Narrations.** Narrations carry document numbers, and a patient's voucher (a bill, its cancellation, the patient's
+receipts, an insurer's settlement of the patient's bill included, refunds, credit notes and write-offs, and the
+pharmacy's invoices, returns and balances paid) names the patient first (N12), as `patientInNarration` allows: the name and UHID by default (`NameAndUhid`: "Ravi Kumar (UHID
+NHU26000123): Bill NHOB260000001", the hospital's decision of 17 November 2026), the UHID only (`UhidOnly`), or nothing
+(`None`). A VIP, or a patient in a protected category (HIV, mental health, MTP, sexual violence), is named by UHID only
+whatever the setting, by the rule search, reports and the portal withhold names by (`Patient.IsVip`,
+`Patient.SensitiveCategories`). A walk-in pharmacy customer without a UHID is named as given at the counter. Reversals,
+claim deductions, doctors' and suppliers' vouchers name no patient. The day book reads the day's patients in one query.
+Changing the setting changes the vouchers' content: days posted before show their patients' vouchers as changed since
+sent until they are posted again. The patient's data summary says that the hospital's accounts hold the name and UHID
+([privacy.md](privacy.md#data-summary-datasummary)).
+
+**Bill references** (T14). A line on a payer's or supplier's ledger says which of the party's bills it stands against,
+so their outstandings show bill by bill in Tally (`BILLALLOCATIONS.LIST`):
+
+| Voucher | Line | Reference |
+|---|---|---|
+| Sales voucher of a bill | the payer's share | New Ref, the bill number |
+| Its cancellation, an insurer's settlement receipt, a claim deduction | the payer | Agst Ref, the bill number |
+| Purchase | the supplier | New Ref, the supplier's invoice number |
+| Purchase return (Debit Note) | the supplier | Agst Ref, the supplier's invoice of the goods receipt the note names; On Account when it names none |
+| Supplier payable adjustment | the supplier | On Account: HC360 ties an adjustment to no invoice |
+
+A payer credit note posts nothing to the payer's ledger: the claim deduction it converts already reduced the bill. The
+patients' ledgers carry no references. A line merged with a part that names no bill (two shares on one ledger) has that
+part On Account, so a line's allocations always add up to it.
+
+**Bank details** (T15). A line on a ledger listed as a bank account in Tally (`bankLedgers`) carries the cheque or UTR
+and its date (`BANKALLOCATIONS.LIST`), for the bank reconciliation in Tally. Left unset, the list is the ledgers HC360
+posts bank money to: the `NetBanking` and `Insurance` mode ledgers, `payoutBank`, `gatewaySettlementBank` and
+`posSettlementBank` (all "Bank" by default), as they are named at the time. Receipts give each payment's cheque number,
+date and bank (transaction type Cheque) or its UTR or transaction id (e-Fund Transfer for net banking, UPI and
+insurers' transfers, Others for the rest); insurers' settlements their UTR; refunds and doctor payouts their reference
+in their mode; gateway and card settlements their UTR (e-Fund Transfer, or Others without one); the pharmacy's money
+its references. The cheque mode ledger ("Cheques in Hand") gets bank details only when it is listed. Reversals of money
+not received or not paid out carry none.
+
+**GST by rate** (T13). With `gstLedgerPerRate` (on by default) output and input CGST, SGST and IGST go to a ledger per tax
+and rate, named by the tax's own rate without trailing zeros: "Output CGST @ 6%" and "Output SGST @ 6%" for a 12%
+supply, "Output CGST @ 2.5%", "Output IGST @ 12%", "Input CGST @ 9%". Bills (by the rate of each line), credit notes
+(by the lines they correct), the pharmacy's invoices and returns, the counters' summaries, purchases and purchase
+returns use it; a document without a rate (a credit note that names no lines, the gateway's charges) keeps the single
+ledger (`outputCgst` and the rest). The amounts are the documents' own, so the totals and the balance are as before.
+Party GST details go with a B2B pharmacy invoice or return and with a purchase (`PARTYLEDGERNAME`, `PARTYGSTIN`,
+`STATENAME`, `PLACEOFSUPPLY`). Per-line HSN is not sent: it waits for the formats the hospital enclosed (T10), which have
+not been received.
+
+**Settings** (`billing.tally.ledgers`, per facility, `GET`/`PUT /ledgers`, the staff screen's "Ledgers and voucher
+types"): beside the ledger names, `voucherTypes` (`inPatient`, `outPatient`, `laboratory`, `pharmacy`, `purchase`; each
+one line of at most 32 characters, what a voucher's record keeps), `patientInNarration`, `bankLedgers` (null, or at most
+50 names), `gstLedgerPerRate`, `pharmacyPerInvoice`, `purchases`, `purchasesFrom` and the supplier ledgers
+(`purchaseReturns`, `inputCgst`, `inputSgst`, `inputIgst`, `vendorAdjustments`, `ledgerPerVendor`, `sundryCreditors`).
+The accountant's steps in Tally before the first post are in
+[NANA-THENI-ANSWERS-ACCOUNTS.md](../deployment/NANA-THENI-ANSWERS-ACCOUNTS.md#3-the-accountants-steps-in-tally-before-go-live).
 
 **Per-voucher tracking.** Every voucher sent is a `TallyVoucherRecord` (`billing.tally_vouchers`): type, number,
-remote id, amount, a SHA-256 of its content, what Tally answered (created, altered, accepted, refused, not confirmed,
+remote id, amount, a SHA-256 of its content (its party, supplier's invoice and allocations included where it has them,
+so a voucher without them keeps its fingerprint), what Tally answered (created, altered, accepted, refused, not confirmed,
 not sent, or imported from the file) and the result of the last check against Tally. A voucher that leaves the day
 book after Tally confirmed it stays listed as "No longer in HC360" until it is deleted in Tally. The staff screen shows
 each voucher's status and what to do about it. A reference longer than 200 characters, or two vouchers with the same
@@ -1709,7 +1788,9 @@ bills finalised and cancelled (count and amount), money received and paid back p
 day-end report, deposits and advances, advance adjustments, insurer settlements, claim deductions, credit notes,
 write-offs, doctor-fee accruals and payouts. Open shifts and cash shortages or excesses are listed as notes (the day
 book has no voucher for them). The pharmacy and canteen lines are totals only: the day book takes them from the
-counter's own day, which HC360 has no second record of, so they are shown but never counted as matched or different.
+counter's own day, which HC360 has no second record of, so they are shown but never counted as matched or different;
+the pharmacy's totals are the same whether its day goes invoice by invoice or summarised. Purchases are not in the
+records check: Supply chain's goods receipts are their only record.
 Vouchers not in Tally (not sent, refused, changed since sent, no longer in HC360) count as differences too.
 
 **Check against Tally** (read-back). `IAccountingExporter.ReadBackAsync` reads the day's vouchers from Tally (22
