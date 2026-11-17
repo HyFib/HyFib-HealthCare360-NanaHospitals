@@ -7,8 +7,9 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Tests.Laboratory;
 
 /// <summary>
 /// The results HC360 calculates from others on the same order and sample (N7: "Some parameters are not run, which means
-/// calculated: indirect bilirubin, globulin, A/G ratio, VLDL"), with worked examples: the value, rounded to the test's
-/// decimals, the note the verifier reads, and when a value measured, typed in, or not calculable stands instead.
+/// calculated: indirect bilirubin, globulin, A/G ratio, VLDL"; N8: the blood gas's P/F ratio and A-a gradient), with
+/// worked examples: the value, rounded to the test's decimals, the note the verifier reads, and when a value measured,
+/// typed in, or not calculable stands instead.
 /// </summary>
 public sealed class CalculatedResultsTests
 {
@@ -229,7 +230,95 @@ public sealed class CalculatedResultsTests
             }
         }
 
-        ResultFormulas.ByCode.Keys.ShouldBe(["IBIL", "GLOB", "AGR", "VLDL", "LDL"], ignoreOrder: true);
+        ResultFormulas.ByCode.Keys.ShouldBe(["IBIL", "GLOB", "AGR", "VLDL", "LDL", "ABG-PF", "ABG-AAGRAD"], ignoreOrder: true);
+    }
+
+    [Theory]
+    [InlineData("92.0", "21", "438", "92.0 ÷ 0.21")]
+    [InlineData("68.0", "40", "170", "68.0 ÷ 0.4")]
+    [InlineData("75.0", "100", "75", "75.0 ÷ 1")]
+    public void The_pf_ratio_is_the_po2_over_the_fio2_entered_as_a_fraction(string po2, string fio2, string ratio, string worked)
+    {
+        var tube = Abg(("ABG-PO2", po2), ("ABG-FIO2", fio2));
+
+        Fill(tube, "ABG-PF").ShouldBe(new CalculationStep.Fill(
+            ratio, $"Calculated by HC360: pO2 ÷ (FiO2/100) = {worked} = {ratio} mmHg.", Reopen: false));
+    }
+
+    /// <summary>
+    /// The alveolar gas equation, worked: on room air at sea level, (0.21 × (760 − 47) − 40.0/0.8) − 90.0 = 149.73 − 50 −
+    /// 90 = 9.73, printed 10; at Theni's 733 mmHg the same blood gives (0.21 × 686 − 50) − 90 = 4.06, printed 4.
+    /// </summary>
+    [Theory]
+    [InlineData(760, "90.0", "40.0", "21", "10", "(0.21 × (760 − 47) − 40.0/0.8) − 90.0")]
+    [InlineData(733, "90.0", "40.0", "21", "4", "(0.21 × (733 − 47) − 40.0/0.8) − 90.0")]
+    [InlineData(760, "70.0", "45.0", "40", "159", "(0.4 × (760 − 47) − 45.0/0.8) − 70.0")]
+    public void The_aa_gradient_follows_the_alveolar_gas_equation_at_the_laboratorys_pressure(
+        int pressure, string po2, string pco2, string fio2, string gradient, string worked)
+    {
+        var tube = Abg(("ABG-PO2", po2), ("ABG-PCO2", pco2), ("ABG-FIO2", fio2));
+
+        Fill(tube, "ABG-AAGRAD", pressure).ShouldBe(new CalculationStep.Fill(
+            gradient, $"Calculated by HC360: (FiO2/100 × (Patm − 47) − pCO2/0.8) − pO2 = {worked} = {gradient} mmHg.", Reopen: false));
+    }
+
+    [Fact]
+    public void Nothing_is_calculated_from_a_fio2_nobody_entered_and_room_air_is_only_offered()
+    {
+        var tube = Abg(("ABG-PO2", "92.0"), ("ABG-PCO2", "38.0"));
+
+        Fill(tube, "ABG-PF").ShouldBe(CalculationStep.Nothing, "the FiO2 is never assumed");
+        Fill(tube, "ABG-AAGRAD").ShouldBe(CalculationStep.Nothing);
+        ResultFormulas.SuggestedValue("ABG-FIO2").ShouldBe("21", "the result sheet offers room air for a person to confirm");
+        ResultFormulas.SuggestedValue("ABG-PO2").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("0.4")]
+    [InlineData("120")]
+    public void A_fio2_that_cannot_be_a_percentage_is_left_for_a_person(string fio2)
+    {
+        var tube = Abg(("ABG-PO2", "92.0"), ("ABG-PCO2", "38.0"), ("ABG-FIO2", fio2));
+        var why = $"Not calculated: The FiO2 entered, {fio2} %, is not between 21 (room air) and 100: enter it in % (40, not 0.40).";
+
+        Fill(tube, "ABG-PF").ShouldBe(new CalculationStep.NotCalculated(why, Reopen: false));
+        Fill(tube, "ABG-AAGRAD").ShouldBe(new CalculationStep.NotCalculated(why, Reopen: false));
+    }
+
+    [Fact]
+    public void A_gradient_below_zero_is_left_for_a_person()
+    {
+        // (0.21 × 713 − 40.0/0.8) − 110.0 = −10.27: room air cannot give that pO2, so the FiO2 entered is suspect.
+        var tube = Abg(("ABG-PO2", "110.0"), ("ABG-PCO2", "40.0"), ("ABG-FIO2", "21"));
+
+        Fill(tube, "ABG-AAGRAD").ShouldBe(new CalculationStep.NotCalculated(
+            "Not calculated: The gradient comes out below zero: check the FiO2 entered, the pO2 and the pCO2.", Reopen: false));
+    }
+
+    [Theory]
+    [InlineData(101.3)]
+    [InlineData(1013)]
+    public void A_barometric_pressure_that_is_not_in_mmhg_leaves_the_gradient_for_a_person(decimal pressure)
+    {
+        var tube = Abg(("ABG-PO2", "90.0"), ("ABG-PCO2", "40.0"), ("ABG-FIO2", "21"));
+
+        Fill(tube, "ABG-AAGRAD", pressure).ShouldBeOfType<CalculationStep.NotCalculated>().Why.ShouldBe(
+            $"Not calculated: The laboratory's barometric pressure (lab.barometricPressureMmHg) is {pressure.ToString(CultureInfo.InvariantCulture)} mmHg, not between 400 and 800: correct the setting.");
+        Fill(tube, "ABG-PF", pressure).ShouldBeOfType<CalculationStep.Fill>().ValueText.ShouldBe("429", "the ratio does not read the pressure");
+    }
+
+    [Fact]
+    public void A_corrected_fio2_calculates_the_ratio_and_the_gradient_again()
+    {
+        var tube = Abg(("ABG-PO2", "90.0"), ("ABG-PCO2", "40.0"), ("ABG-FIO2", "21"));
+        Apply(tube, "ABG-PF", Fill(tube, "ABG-PF"));
+        Apply(tube, "ABG-AAGRAD", Fill(tube, "ABG-AAGRAD"));
+
+        // The patient was on a 35 % venturi mask, not on room air.
+        Set(tube, "ABG-FIO2", "35");
+
+        Fill(tube, "ABG-PF").ShouldBeOfType<CalculationStep.Fill>().ValueText.ShouldBe("257");
+        Fill(tube, "ABG-AAGRAD").ShouldBeOfType<CalculationStep.Fill>().ValueText.ShouldBe("110");
     }
 
     /// <summary>The seeded LFT's analytes on one tube, the given ones entered by hand; IBIL, GLOB and AGR pending.</summary>
@@ -237,6 +326,10 @@ public sealed class CalculatedResultsTests
         Tube(["TBIL", "DBIL", "IBIL", "TP", "ALB", "GLOB", "AGR"], entered);
 
     private List<LabResult> Lipid(params (string Code, string Value)[] entered) => Tube(["CHOL", "TG", "HDL", "LDL", "VLDL"], entered);
+
+    /// <summary>The seeded arterial blood gas's analytes on one syringe, the given ones entered by hand.</summary>
+    private List<LabResult> Abg(params (string Code, string Value)[] entered) => Tube(
+        ["ABG-PH", "ABG-PCO2", "ABG-HCO3", "ABG-BE", "ABG-PO2", "ABG-SO2", "ABG-FIO2", "ABG-PF", "ABG-AAGRAD"], entered);
 
     private List<LabResult> Tube(string[] codes, (string Code, string Value)[] entered)
     {
@@ -277,9 +370,13 @@ public sealed class CalculatedResultsTests
         result.HeldReasons = [];
     }
 
-    /// <summary>What the calculation step plans for <paramref name="code"/>, with the seeded test's decimals.</summary>
-    private static CalculationStep Fill(List<LabResult> tube, string code) =>
-        CalculatedResults.Plan(tube.Single(r => r.TestCode == code), ResultFormulas.For(code)!, tube, LabCatalog.Analytes.Single(a => a.Code == code).Result.Decimals);
+    /// <summary>
+    /// What the calculation step plans for <paramref name="code"/>, with the seeded test's decimals, at the laboratory's
+    /// <paramref name="pressure"/> (mmHg; sea level unless given).
+    /// </summary>
+    private static CalculationStep Fill(List<LabResult> tube, string code, decimal pressure = ResultFormulas.SeaLevelPressure) =>
+        CalculatedResults.Plan(
+            tube.Single(r => r.TestCode == code), ResultFormulas.For(code)!, tube, LabCatalog.Analytes.Single(a => a.Code == code).Result.Decimals, pressure);
 
     /// <summary>Applies a calculation as the calculator does: the value, entered by nobody, with its note.</summary>
     private static void Apply(List<LabResult> tube, string code, CalculationStep step)

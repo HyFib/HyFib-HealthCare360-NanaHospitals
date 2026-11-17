@@ -33,6 +33,23 @@ public sealed class LabReportDocumentTests
         body.ShouldContain("Whole blood · Method: Flow cytometry · Tested at Metro Labs");
     }
 
+    /// <summary>An arterial blood gas (N8) names its specimen on the report as arterial blood.</summary>
+    [Fact]
+    public void An_arterial_blood_gas_names_its_specimen_arterial_blood()
+    {
+        var abg = Report().Sections[0].Tests[0] with
+        {
+            Code = "LAB-ABG",
+            Name = "Arterial blood gas (ABG)",
+            SpecimenType = SpecimenType.ArterialBlood,
+            Method = null,
+            ReferralLabName = null,
+        };
+        var report = Report() with { Sections = [new LabReportSection(LabSection.Biochemistry, [abg])] };
+
+        LabReportDocument.Body(report, releasedOnly: true).ToString().ShouldContain("Arterial blood");
+    }
+
     /// <summary>
     /// Nana Hospitals reads high and low results by an arrow (L7): ↑ beside H and HH, ↓ beside L and LL. The letter and its
     /// words stay, so the meaning never rests on the arrow, and the report brings the arrows' font.

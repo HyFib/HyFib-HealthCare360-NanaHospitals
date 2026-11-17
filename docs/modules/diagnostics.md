@@ -120,7 +120,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
-| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), isCalculated and formula (a result HC360 calculated from others: see Calculated results), susceptibilities, hasCriticalCall, version) |
+| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), isCalculated and formula (a result HC360 calculated from others: see Calculated results), suggestedValue (a value the sheet fills in for a person to confirm: an arterial blood gas's FiO2, `21`; never stored until entered), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
 | POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
@@ -341,9 +341,11 @@ diagnostics screen.
 ## Workflow rules
 
 * **Tube planning**: tests share a tube when container, specimen, bench (section) and destination (in-house or reference
-  lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`: LAB-PPBS, LAB-GCT) always get
+  lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`: LAB-PPBS, LAB-GCT, LAB-ABG) always get
   their own tube. So the glucose tests that share the analyser's glucose channel (GLU: fasting, post-prandial and the
-  glucose challenge test) never share a tube, and a GLU result goes on the test its tube was drawn for. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
+  glucose challenge test) never share a tube, and a GLU result goes on the test its tube was drawn for. An arterial
+  blood gas (specimen `ArterialBlood`, a heparinised blood-gas syringe: container `Heparin`) is a syringe of its own
+  moment and of the FiO2 the patient breathed then, so two on one order are two syringes. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
   1000000000 on, never with a leading zero (series `lab.sample`). Where the lab uses no barcodes (Nana Hospitals), the
   technician writes the number on the tube and types it on the analyser as its sample id; the analyser's results come
   back under it and are matched to the tube by the exact number, as a scanned barcode is.
@@ -392,9 +394,16 @@ diagnostics screen.
   | `AGR` Albumin/globulin ratio | `ALB` ÷ `GLOB` | the globulin is above zero |
   | `VLDL` VLDL cholesterol (calculated) | `TG` ÷ 5 (mg/dL) | the triglycerides are below 400 mg/dL |
   | `LDL` LDL cholesterol (calculated) | `CHOL` − `HDL` − `TG` ÷ 5 (mg/dL) | the triglycerides are below 400 mg/dL |
+  | `ABG-PF` P/F ratio (pO2/FiO2) | `ABG-PO2` ÷ (`ABG-FIO2`/100) (mmHg) | a FiO2 from 21 to 100 % was entered |
+  | `ABG-AAGRAD` A-a gradient | (`ABG-FIO2`/100 × (Patm − 47) − `ABG-PCO2`/0.8) − `ABG-PO2` (mmHg) | the same, the gradient is not below zero, and Patm is 400 - 800 mmHg |
 
   VLDL and LDL follow Friedewald (Friedewald WT, Levy RI, Fredrickson DS, Clin Chem 1972;18(6):499-502), which does
-  not hold from 400 mg/dL of triglycerides up. After results are entered by hand, sent by an analyser or assigned from
+  not hold from 400 mg/dL of triglycerides up. The A-a gradient is the alveolar gas equation (water vapour 47 mmHg at
+  37 °C, respiratory quotient 0.8; Curran-Everett D, Adv Physiol Educ 2006;30(2):58-62) with Patm the laboratory's
+  barometric pressure, `lab.barometricPressureMmHg` (760, sea level, while none is set). The FiO2 is the one a person
+  entered for the sample: HC360 never assumes room air. The result sheet fills in 21 (room air) on an arterial blood
+  gas still awaiting its FiO2, with a note to change it if the patient was on oxygen; it is saved, and the ratio and
+  the gradient calculated, only when the technician saves it. A FiO2 typed as a fraction (0.40) is refused with why. After results are entered by hand, sent by an analyser or assigned from
   the unmatched results, the results a formula fills on the same tubes are calculated in the same unit of work, the
   globulin before the ratio that reads it. A calculated result is stored as a result entered by nobody, rounded to the
   test's decimals, then read against its reference interval and flagged like any result. Its first held reason marks it
@@ -591,6 +600,7 @@ either way. SMS never carries it. Only released content is ever made into these 
 | `lab.requirePaymentBeforeCollection` | `true` | OP/external collection requires payment |
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
+| `lab.barometricPressureMmHg` | `760` | The laboratory's barometric pressure in mmHg, the Patm of the arterial blood gas's A-a gradient (alveolar gas equation). 760 is sea level; at about 300 m, as at Theni, it is about 733. A value outside 400 - 800 leaves the gradient uncalculated, with why. Read when a gradient is calculated, so a change applies from the next result entered |
 | `radiology.pacs.autoLink` | `true` | Link the facility's new imaging studies with PACS every five minutes (`PacsLinkJob`) |
 | `pcpndt.registrationNumber` | none | The facility's PCPNDT registration (Form B), printed on every Form F. Until it is set, no Form F is recorded and ultrasounds in pregnancy cannot start |
 | `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal. Use a WhatsApp template without a document header then: a template with one can't go without its PDF, so the WhatsApp message is skipped (the notification log says why) while the SMS and e-mail still go |
@@ -624,7 +634,18 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
   and the doctors give it, each a channel: `VITD`, `VIT-D`, `VIT D-25`, `VIT-D3`, `VIT D3`, `VIT 25 OH`; the order screen
   finds tests by code, name and short name only, so those names are not search words there: open, see
   NANA-THENI-ANSWERS-LAB.md), LAB-VITB12 ₹1,000, LAB-PSA ₹800,
-  LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700.
+  LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700, LAB-ABG ₹1,200
+  (arterial blood gas, last in the catalogue so that a database seeded before keeps every test's place: pH, pCO2,
+  bicarbonate and base excess under *Acid-base*; pO2, sO2, FiO2, P/F ratio and A-a gradient under *Oxygenation*. Arterial
+  blood in a heparinised syringe, drawn on its own, TAT 1 hour. Adult intervals pH 7.35 - 7.45, pCO2 35 - 45 mmHg, pO2
+  80 - 100 mmHg (room air), HCO3 22 - 26 mmol/L, BE -2 to +2 mmol/L (Habib T et al., S Afr Fam Pract 2025;67(1):e1-e7,
+  table 1); critical pH below 7.21 or above 7.59, pCO2 below 19 or above 67 mmHg, pO2 below 43 mmHg (Kost GJ, JAMA
+  1990;263(5):704-707); sO2 95 - 100 %, the interval commonly printed (no cited source); P/F ratio flagged at 300 or
+  less (the Berlin definition of ARDS, JAMA 2012;307(23):2526-2533); A-a gradient up to 15 mmHg on room air (Sood P et
+  al., Indian J Crit Care Med 2010;14(2):57-64). The FiO2 is entered by a person and has no interval. The blood gas
+  analyser is not interfaced, so the results are entered by hand; each measured analyte has the channel a blood gas
+  analyser names it by (`pH`, `pCO2`, `HCO3`, `BE`, `pO2`, `sO2`, `FiO2`) should one be. Defaults the laboratory
+  reviews; a child's results are read against no interval).
 * **Radiology** (procedures with modality, body part, duration, contrast, preparation): RAD-XR-CHEST ₹400,
   RAD-XR-SPINE-LS ₹700, RAD-USG-ABD ₹1,200, RAD-USG-PELVIS ₹1,000, RAD-CT-HEAD ₹3,000, RAD-CT-ABD ₹6,500 (contrast),
   RAD-MRI-BRAIN ₹7,500, RAD-MRI-SPINE ₹8,000, RAD-MAMMO ₹2,000.

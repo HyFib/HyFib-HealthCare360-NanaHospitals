@@ -54,9 +54,11 @@ internal static class CalculatedResults
 
     /// <summary>
     /// What to do with <paramref name="result"/>, filled by <paramref name="formula"/>, given the results of its order and
-    /// sample (<paramref name="sameSample"/>, which may include it). <paramref name="decimals"/> are its test's.
+    /// sample (<paramref name="sameSample"/>, which may include it). <paramref name="decimals"/> are its test's;
+    /// <paramref name="barometricPressure"/> is the laboratory's, in mmHg, for a formula that reads it.
     /// </summary>
-    public static CalculationStep Plan(LabResult result, ResultFormula formula, IReadOnlyCollection<LabResult> sameSample, int decimals)
+    public static CalculationStep Plan(
+        LabResult result, ResultFormula formula, IReadOnlyCollection<LabResult> sameSample, int decimals, decimal barometricPressure)
     {
         var calculated = IsCalculated(result);
         if (result.Status != LabResultStatus.Pending && !calculated)
@@ -95,7 +97,7 @@ internal static class CalculatedResults
             return Refuse(result, $"{result.TestName} is in {result.Unit ?? "no unit"}; the formula gives {unit}.", verified);
         }
 
-        var values = new FormulaValues(inputs);
+        var values = new FormulaValues(inputs, barometricPressure);
         var outcome = formula.Compute(values);
         if (outcome.Value is not { } computed)
         {

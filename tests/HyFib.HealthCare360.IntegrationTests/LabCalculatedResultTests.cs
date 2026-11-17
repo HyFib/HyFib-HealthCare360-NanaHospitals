@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using HyFib.HealthCare360.Integrations.Domain;
 using HyFib.HealthCare360.Integrations.Laboratory;
 using HyFib.HealthCare360.Integrations.Laboratory.Astm;
@@ -6,6 +7,8 @@ using HyFib.HealthCare360.Modules.Diagnostics.Features.LabOrders;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabReports;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Platform.Contracts;
+using HyFib.HealthCare360.Platform.Identity;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace HyFib.HealthCare360.IntegrationTests;
@@ -15,7 +18,7 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// A/G ratio, VLDL") over the real API: calculated from what is entered on the same order and sample, marked calculated
 /// with the formula and its inputs for the verifier, never verified automatically, calculated again when an input
 /// changes (and taken back to unverified when it was verified), corrected with an amendment of an input, and replaced by
-/// a value measured for it.
+/// a value measured for it. And the arterial blood gas's P/F ratio and A-a gradient (N8), only from a FiO2 a person entered.
 /// </summary>
 public sealed class LabCalculatedResultTests(HospitalServer server)
 {
@@ -128,6 +131,47 @@ public sealed class LabCalculatedResultTests(HospitalServer server)
         changes.ShouldContain("Albumin/globulin ratio: 1.32 -> 1.52, calculated from the corrected results");
         sheet = await SheetAsync(lab, tube);
         (Line(sheet, "GLOB").Value, Line(sheet, "GLOB").Status, Line(sheet, "GLOB").IsCalculated).ShouldBe(("2.7", LabResultStatus.Verified, true));
+    }
+
+    [Fact]
+    public async Task An_arterial_blood_gas_gives_the_pf_ratio_and_the_aa_gradient_only_from_a_fio2_a_person_entered()
+    {
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ABG");
+
+        var sheet = await SheetAsync(lab, tube);
+        var fio2 = Line(sheet, "ABG-FIO2");
+        (fio2.SuggestedValue, fio2.Value, fio2.Status).ShouldBe(("21", null, LabResultStatus.Pending), "room air is offered to confirm, not stored");
+
+        await EnterAsync(lab, tube, new() { ["ABG-PH"] = "7.41", ["ABG-PCO2"] = "40.0", ["ABG-PO2"] = "90.0" });
+        sheet = await SheetAsync(lab, tube);
+        (Line(sheet, "ABG-PF").Value, Line(sheet, "ABG-AAGRAD").Value).ShouldBe((null, null), "without a FiO2 entered, nothing is calculated");
+
+        // Room air, confirmed by the technician; the gradient at sea level's pressure while the laboratory has set none.
+        await EnterAsync(lab, tube, new() { ["ABG-FIO2"] = "21" });
+        sheet = await SheetAsync(lab, tube);
+        (Line(sheet, "ABG-PF").Value, Line(sheet, "ABG-PF").IsCalculated, Line(sheet, "ABG-PF").Status).ShouldBe(("429", true, LabResultStatus.Entered));
+        Line(sheet, "ABG-AAGRAD").HeldReasons.ShouldBe(
+            ["Calculated by HC360: (FiO2/100 × (Patm − 47) − pCO2/0.8) − pO2 = (0.21 × (760 − 47) − 40.0/0.8) − 90.0 = 10 mmHg."]);
+        Line(sheet, "ABG-AAGRAD").Flag.ShouldBe(ResultFlag.Normal);
+
+        // The laboratory sets its own pressure (Theni, some 300 m up): the next calculation is worked with it.
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var facilityId = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId
+                         ?? throw new InvalidOperationException("The hospital administrator has no facility.");
+        await server.SaveSettingAsync(admin, "lab.barometricPressureMmHg", new SaveSettingRequest(JsonValue.Create(733), facilityId, false, null));
+        try
+        {
+            await EnterAsync(lab, tube, new() { ["ABG-PO2"] = "88.0" });
+            sheet = await SheetAsync(lab, tube);
+            Line(sheet, "ABG-AAGRAD").HeldReasons.ShouldBe(
+                ["Calculated by HC360: (FiO2/100 × (Patm − 47) − pCO2/0.8) − pO2 = (0.21 × (733 − 47) − 40.0/0.8) − 88.0 = 6 mmHg."]);
+            Line(sheet, "ABG-PF").Value.ShouldBe("419");
+        }
+        finally
+        {
+            await server.SaveSettingAsync(admin, "lab.barometricPressureMmHg", new SaveSettingRequest(JsonValue.Create(760), facilityId, false, null));
+        }
     }
 
     private static ResultSheetLine Line(ResultSheet sheet, string code) => sheet.Lines.Single(l => l.TestCode == code);

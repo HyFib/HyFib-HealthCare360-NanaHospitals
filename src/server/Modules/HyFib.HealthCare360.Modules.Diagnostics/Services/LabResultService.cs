@@ -403,6 +403,7 @@ internal sealed class LabResultService(
                 {
                     IsCalculated = CalculatedResults.IsCalculated(r),
                     Formula = ResultFormulas.For(r.TestCode)?.Expression,
+                    SuggestedValue = ResultFormulas.SuggestedValue(r.TestCode),
                 };
             })
             .ToList();

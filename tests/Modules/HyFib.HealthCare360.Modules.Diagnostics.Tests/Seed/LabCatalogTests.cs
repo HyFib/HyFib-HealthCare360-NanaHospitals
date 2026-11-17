@@ -29,6 +29,9 @@ public sealed class LabCatalogTests
     /// <summary>Analytes reported against one sex only (no interval for the other sex is intended).</summary>
     private static readonly string[] SexSpecificTests = ["LAB-PSA"];
 
+    /// <summary>What a person states about the patient rather than measures: the FiO2 breathed (N8) has no interval.</summary>
+    private static readonly string[] StatedNotMeasured = ["ABG-FIO2"];
+
     [Fact]
     public void Every_code_other_modules_depend_on_is_seeded()
     {
@@ -226,7 +229,7 @@ public sealed class LabCatalogTests
     {
         var adult = TestData.Years(35);
         var missing = ResultDefinitions()
-            .Where(d => d.Result.Type == LabResultType.Numeric && !SexSpecificTests.Contains(d.Code))
+            .Where(d => d.Result.Type == LabResultType.Numeric && !SexSpecificTests.Contains(d.Code) && !StatedNotMeasured.Contains(d.Code))
             .SelectMany(d => new[] { Gender.Male, Gender.Female }
                 .Where(g => ReferenceRangeSelector.Select(d.Result.Ranges.Select(r => r.ToEntity(Guid.Empty)), g, adult) is null)
                 .Select(g => $"{d.Code} ({g})"))
@@ -313,7 +316,7 @@ public sealed class LabCatalogTests
         fasting.Result!.QcGroup.ShouldBe("GLU");
         postPrandial.Result!.QcGroup.ShouldBe("GLU");
         postPrandial.DrawSeparately.ShouldBeTrue();
-        LabCatalog.Orderables.Where(o => o.DrawSeparately).Select(o => o.Code).ShouldBe(["LAB-PPBS", "LAB-GCT"], ignoreOrder: true);
+        LabCatalog.Orderables.Where(o => o.DrawSeparately).Select(o => o.Code).ShouldBe(["LAB-PPBS", "LAB-GCT", "LAB-ABG"], ignoreOrder: true);
     }
 
     /// <summary>
@@ -341,6 +344,47 @@ public sealed class LabCatalogTests
         ResultInterpreter.Interpret(test, range, "140").Value.Flag.ShouldBe(ResultFlag.High, "140 mg/dL is a positive screen");
         ResultInterpreter.Interpret(test, range, "460").Value.Flag.ShouldBe(ResultFlag.CriticalHigh);
         range.Text.ShouldNotBeNull().ShouldStartWith("< 140");
+    }
+
+    /// <summary>
+    /// The arterial blood gas (N8): one heparinised syringe of arterial blood, drawn on its own, with the FiO2 a person
+    /// enters and the P/F ratio and A-a gradient HC360 calculates from it; channels for a blood gas analyser, though none is
+    /// interfaced; adult intervals and critical limits from the cited sources.
+    /// </summary>
+    [Fact]
+    public void The_arterial_blood_gas_is_a_syringe_of_arterial_blood_with_the_fio2_and_what_is_calculated_from_it()
+    {
+        var abg = LabCatalog.Orderables.Single(o => o.Code == "LAB-ABG");
+        (abg.Name, abg.Specimen, abg.Container, abg.Section, abg.DrawSeparately).ShouldBe(
+            ("Arterial blood gas (ABG)", SpecimenType.ArterialBlood, ContainerType.Heparin, LabSection.Biochemistry, true));
+        abg.Components.Select(c => c.Code).ShouldBe(
+            ["ABG-PH", "ABG-PCO2", "ABG-HCO3", "ABG-BE", "ABG-PO2", "ABG-SO2", "ABG-FIO2", "ABG-PF", "ABG-AAGRAD"]);
+
+        var analytes = abg.Components.Select(c => LabCatalog.Analytes.Single(a => a.Code == c.Code)).ToDictionary(a => a.Code);
+        analytes.Values.ShouldAllBe(a => a.Specimen == SpecimenType.ArterialBlood && a.Container == ContainerType.Heparin);
+        string[] measured = ["ABG-PH", "ABG-PCO2", "ABG-HCO3", "ABG-BE", "ABG-PO2", "ABG-SO2", "ABG-FIO2"];
+        measured.Select(code => analytes[code].Result.Channels!.Single()).ShouldBe(["pH", "pCO2", "HCO3", "BE", "pO2", "sO2", "FiO2"]);
+        analytes["ABG-PF"].Result.Channels.ShouldBeNull("HC360 calculates it");
+        ResultFormulas.For("ABG-PF").ShouldNotBeNull();
+        ResultFormulas.For("ABG-AAGRAD").ShouldNotBeNull();
+        (analytes["ABG-FIO2"].Result.Unit, analytes["ABG-FIO2"].Result.Ranges.Count).ShouldBe(("%", 0), "the FiO2 is stated, not measured");
+
+        ReferenceRange Adult(string code) => ReferenceRangeSelector.Select(
+            analytes[code].Result.Ranges.Select(r => r.ToEntity(Guid.Empty)), Gender.Male, TestData.Years(45)).ShouldNotBeNull(code);
+        Adult("ABG-PH").ShouldSatisfyAllConditions(
+            r => (r.Low, r.High, r.CriticalLow, r.CriticalHigh).ShouldBe((7.35m, 7.45m, 7.21m, 7.59m)));
+        Adult("ABG-PCO2").ShouldSatisfyAllConditions(r => (r.Low, r.High, r.CriticalLow, r.CriticalHigh).ShouldBe((35m, 45m, 19m, 67m)));
+        Adult("ABG-PO2").ShouldSatisfyAllConditions(r => (r.Low, r.High, r.CriticalLow).ShouldBe((80m, 100m, 43m)));
+        (Adult("ABG-HCO3").Low, Adult("ABG-HCO3").High).ShouldBe((22m, 26m));
+        (Adult("ABG-BE").Low, Adult("ABG-BE").High).ShouldBe((-2m, 2m));
+
+        // The P/F ratio flags the Berlin definition's 300 or less; the gradient, more than 15 on room air.
+        var ratio = new LabTest { Code = "ABG-PF", Name = "P/F ratio", ResultType = LabResultType.Numeric, Unit = "mmHg" };
+        ResultInterpreter.Interpret(ratio, Adult("ABG-PF"), "300").Value.Flag.ShouldBe(ResultFlag.Low);
+        ResultInterpreter.Interpret(ratio, Adult("ABG-PF"), "301").Value.Flag.ShouldBe(ResultFlag.Normal);
+        var gradient = new LabTest { Code = "ABG-AAGRAD", Name = "A-a gradient", ResultType = LabResultType.Numeric, Unit = "mmHg" };
+        ResultInterpreter.Interpret(gradient, Adult("ABG-AAGRAD"), "15").Value.Flag.ShouldBe(ResultFlag.Normal);
+        ResultInterpreter.Interpret(gradient, Adult("ABG-AAGRAD"), "16").Value.Flag.ShouldBe(ResultFlag.High);
     }
 
     [Fact]

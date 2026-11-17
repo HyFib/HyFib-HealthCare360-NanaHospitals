@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
+using HyFib.HealthCare360.Platform.Settings;
 using Microsoft.Extensions.Logging;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -12,9 +13,12 @@ internal sealed record CalculatedAmendment(LabResult Result, string Before);
 /// entered by hand, sent by an analyser or assigned from the unmatched results, the results a formula fills on the same
 /// tubes are calculated again, in the same unit of work, which the caller saves. A result whose test is cancelled or
 /// released, or whose tube is not in the lab, is left alone: a released one changes only with an amendment, which
-/// calculates it again from the corrected values (<see cref="AmendCalculatedAsync"/>).
+/// calculates it again from the corrected values (<see cref="AmendCalculatedAsync"/>). The alveolar-arterial gradient
+/// reads the facility's barometric pressure (<see cref="ResultFormulas.BarometricPressureSetting"/>, sea level's 760 mmHg
+/// while none is set).
 /// </summary>
-internal sealed class ResultCalculator(HospitalDbContext db, ResultEvaluator evaluator, IAuditLogger audit, ILogger<ResultCalculator> logger)
+internal sealed class ResultCalculator(
+    HospitalDbContext db, ResultEvaluator evaluator, ISettingsService settings, IAuditLogger audit, ILogger<ResultCalculator> logger)
 {
     /// <summary>
     /// Calculates the results formulas fill on the tubes <paramref name="sampleIds"/> (tracked, not saved).
@@ -38,6 +42,7 @@ internal sealed class ResultCalculator(HospitalDbContext db, ResultEvaluator eva
         }
 
         var context = await evaluator.LoadAsync(targets, ct);
+        var pressure = await BarometricPressureAsync(targets, ct);
         var changed = new List<LabResult>();
         foreach (var result in targets)
         {
@@ -48,7 +53,7 @@ internal sealed class ResultCalculator(HospitalDbContext db, ResultEvaluator eva
             }
 
             var sameSample = onTubes.Where(r => r.SampleId == result.SampleId).ToList();
-            switch (CalculatedResults.Plan(result, formula, sameSample, test.Decimals))
+            switch (CalculatedResults.Plan(result, formula, sameSample, test.Decimals, pressure))
             {
                 case CalculationStep.Fill fill:
                     var capture = context.Capture(result, fill.ValueText, remarks: null, organism: null, colonyCount: null, instrumentCode: null);
@@ -107,6 +112,7 @@ internal sealed class ResultCalculator(HospitalDbContext db, ResultEvaluator eva
         }
 
         var context = await evaluator.LoadAsync(targets, ct);
+        var pressure = await BarometricPressureAsync(targets, ct);
         var amended = new List<CalculatedAmendment>();
         foreach (var result in targets)
         {
@@ -117,7 +123,7 @@ internal sealed class ResultCalculator(HospitalDbContext db, ResultEvaluator eva
             }
 
             var sameSample = onOrder.Where(r => r.SampleId == result.SampleId).ToList();
-            switch (CalculatedResults.Plan(result, formula, sameSample, test.Decimals))
+            switch (CalculatedResults.Plan(result, formula, sameSample, test.Decimals, pressure))
             {
                 case CalculationStep.Fill fill:
                     var capture = context.Capture(result, fill.ValueText, remarks: null, organism: null, colonyCount: null, instrumentCode: null);
@@ -147,6 +153,12 @@ internal sealed class ResultCalculator(HospitalDbContext db, ResultEvaluator eva
 
         return Result<IReadOnlyList<CalculatedAmendment>>.Ok(amended);
     }
+
+    /// <summary>The facility's barometric pressure, read only when a formula among <paramref name="targets"/> needs it.</summary>
+    private async Task<decimal> BarometricPressureAsync(IReadOnlyList<LabResult> targets, CancellationToken ct) =>
+        targets.FirstOrDefault(r => ResultFormulas.For(r.TestCode)?.ReadsBarometricPressure == true) is { } reader
+            ? await settings.GetAsync<decimal?>(ResultFormulas.BarometricPressureSetting, reader.FacilityId, ct) ?? ResultFormulas.SeaLevelPressure
+            : ResultFormulas.SeaLevelPressure;
 
     private void Reopened(LabResult result, string why) =>
         audit.Add(new AuditEntry(AuditCategories.Clinical, "lab.result.reopened", $"Reopened {result.TestName} ({result.Describe()}): {why}")

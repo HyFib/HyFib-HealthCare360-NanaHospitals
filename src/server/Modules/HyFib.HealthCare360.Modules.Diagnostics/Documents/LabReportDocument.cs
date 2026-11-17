@@ -244,6 +244,7 @@ internal static class LabReportDocument
     private static string SpecimenLabel(SpecimenType specimen) => specimen switch
     {
         SpecimenType.WholeBlood => "Whole blood",
+        SpecimenType.ArterialBlood => "Arterial blood",
         SpecimenType.Csf => "CSF",
         SpecimenType.BodyFluid => "Body fluid",
         _ => specimen.ToString(),

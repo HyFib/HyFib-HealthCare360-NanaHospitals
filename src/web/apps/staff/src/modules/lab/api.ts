@@ -29,6 +29,7 @@ export type LabSection = (typeof LAB_SECTIONS)[number];
 
 export const SPECIMEN_TYPES = [
   'WholeBlood',
+  'ArterialBlood',
   'Serum',
   'Plasma',
   'Urine',
@@ -777,6 +778,11 @@ export interface ResultSheetLine {
   isCalculated?: boolean;
   /** The formula that fills this test ("Total protein − Albumin"); null for one that is measured. */
   formula?: string | null;
+  /**
+   * A value the sheet fills in for a person to confirm before saving (an arterial blood gas's FiO2: 21, room air); the
+   * server neither stores it nor calculates from it until it is entered.
+   */
+  suggestedValue?: string | null;
   method: string | null;
   remarks: string | null;
   organism: string | null;

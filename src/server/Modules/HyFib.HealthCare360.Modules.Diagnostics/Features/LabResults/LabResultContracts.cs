@@ -79,6 +79,12 @@ public sealed record ResultSheetLine(
 
     /// <summary>The formula that fills this analyte ("Total protein − Albumin"); null for one that is measured.</summary>
     public string? Formula { get; init; }
+
+    /// <summary>
+    /// A value the result sheet fills in for a person to confirm before saving (the FiO2: 21, room air); null for most
+    /// tests. The server never stores it, nor calculates from it, until it is entered.
+    /// </summary>
+    public string? SuggestedValue { get; init; }
 }
 
 public sealed record ResultSheet(
