@@ -12,7 +12,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 
 /// <summary>
 /// Tally day book (INT-TALLY, business side): gathers one facility's day of bills, cancellations, receipts, refunds,
-/// credit notes, claim disallowances, doctor-fee accruals and payouts, and the pharmacy's and canteen's days
+/// credit notes, claim disallowances, doctor-fee accruals and payouts, purchases and supplier documents from Supply chain,
+/// and the pharmacy's and canteen's days
 /// (<see cref="ICounterSalesSource"/>, and the pharmacy's invoice by invoice, <see cref="ICounterInvoiceSource"/>);
 /// builds balanced vouchers with the ledger mapping from the
 /// <c>billing.tally.ledgers</c> setting; and pushes them through <see cref="IAccountingExporter"/>, tracking what Tally
@@ -111,7 +112,8 @@ public sealed class TallyService(
             .ToDictionaryAsync(d => d.Id, d => new { d.Code, d.Name }, ct);
         var doctorIds = fees.Select(f => f.PractitionerId).Concat(payouts.Select(p => p.PractitionerId)).Distinct().ToList();
         var doctors = await db.Set<Practitioner>().Where(p => doctorIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.DisplayName, p.Code }, ct);
-        var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
+        var facility = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => new { f.Code, f.Gstin, f.Address.State }).FirstOrDefaultAsync(ct);
+        var facilityCode = facility?.Code;
 
         var counters = await CountersAsync(facilityId, date, ct);
         var counterInvoices = await CounterInvoicesAsync(facilityId, date, ct);
@@ -233,6 +235,8 @@ public sealed class TallyService(
                 r.Reason == ReversalReason.Chargeback)).ToList(),
             RefundReversals = refundReversals.Select(r => new TallyRefundReversal(r.Number, date, r.RefundNumber, r.Purpose, r.Mode, r.Amount)).ToList(),
             Vendors = await VendorsAsync(facilityId, date, ct),
+            Purchases = await PurchasesAsync(facilityId, date, ct),
+            FacilityStateCode = facility?.Gstin is { Length: >= 2 } gstin ? gstin[..2] : IndianStates.Code(facility?.State),
         };
     }
 
@@ -755,6 +759,18 @@ public sealed class TallyService(
         }
 
         return days;
+    }
+
+    /// <summary>The day's goods receipts, from Supply chain (<see cref="IPurchaseAccountsSource"/>).</summary>
+    private async Task<IReadOnlyList<PurchaseEntry>> PurchasesAsync(Guid facilityId, DateOnly date, CancellationToken ct)
+    {
+        List<PurchaseEntry> purchases = [];
+        foreach (var source in services.GetServices<IPurchaseAccountsSource>())
+        {
+            purchases.AddRange(await source.GetDayAsync(facilityId, date, ct));
+        }
+
+        return purchases;
     }
 
     /// <summary>The day's purchase returns and supplier payable adjustments, from Supply chain (<see cref="IVendorAccountsSource"/>).</summary>

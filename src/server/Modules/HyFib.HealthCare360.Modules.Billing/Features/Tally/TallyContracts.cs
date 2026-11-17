@@ -107,8 +107,8 @@ public sealed class PostDayBookRequestValidator : AbstractValidator<PostDayBookR
 /// <summary>
 /// Validates the ledger names an accountant sets for the day book (<c>billing.tally.ledgers</c>): every name present,
 /// one line, at most 100 characters (Tally takes longer names, but HC360 keeps them readable), only known payment
-/// modes in the mode maps, the sales voucher types named, each on one line and at most 32 characters, and at most 50
-/// bank ledgers.
+/// modes in the mode maps, the voucher types named, each on one line and at most 32 characters, and at most 50 bank
+/// ledgers.
 /// </summary>
 public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
 {
@@ -145,6 +145,8 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
         RuleFor(x => x.InputIgst).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.VendorAdjustments).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.SundryCreditors).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.Purchases).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.PurchasesFrom).IsInEnum().WithMessage("Choose the pharmacy stores, every store or none.");
 
         RuleFor(x => x.IncomeByDepartment).Must(map => map is null || map.Count <= MaxEntries).WithMessage($"Map at most {MaxEntries} departments.");
         RuleForEach(x => x.IncomeByDepartment).Must(pair => BeACode(pair.Key) && BeALedgerName(pair.Value))
@@ -181,6 +183,7 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
             RuleFor(x => x.OutPatient).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
             RuleFor(x => x.Laboratory).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
             RuleFor(x => x.Pharmacy).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
+            RuleFor(x => x.Purchase).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
         }
     }
 

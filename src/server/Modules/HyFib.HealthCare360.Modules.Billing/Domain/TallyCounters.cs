@@ -188,6 +188,7 @@ public static class TallyLedgerMaps
         InputIgst = map.InputIgst.Trim(),
         VendorAdjustments = map.VendorAdjustments.Trim(),
         SundryCreditors = map.SundryCreditors.Trim(),
+        Purchases = map.Purchases.Trim(),
         IncomeByDepartment = Clean(map.IncomeByDepartment, key => key.ToUpperInvariant()),
         ModeLedgers = Clean(map.ModeLedgers, key => key),
         Pharmacy = Counter(map.Pharmacy),
@@ -203,6 +204,7 @@ public static class TallyLedgerMaps
             OutPatient = map.VoucherTypes.OutPatient.Trim(),
             Laboratory = map.VoucherTypes.Laboratory.Trim(),
             Pharmacy = map.VoucherTypes.Pharmacy.Trim(),
+            Purchase = map.VoucherTypes.Purchase.Trim(),
         },
     };
 

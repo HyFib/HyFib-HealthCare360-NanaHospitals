@@ -45,3 +45,33 @@ public interface IVendorAccountsSource
 {
     Task<VendorAccountsDay> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken);
 }
+
+/// <summary>A supplier's invoice received into stock (a goods receipt posted), as a purchase for the accounts.</summary>
+/// <param name="Number">The goods receipt's number: the voucher's number and HC360's reference.</param>
+/// <param name="ReceivedOn">The day the goods were received.</param>
+/// <param name="VendorGstin">The supplier's GSTIN, when registered.</param>
+/// <param name="VendorStateCode">The supplier's GST state code: its GSTIN's, else its address's; null when neither says.</param>
+/// <param name="SupplierInvoiceNumber">The supplier's own invoice number.</param>
+/// <param name="SupplierInvoiceDate">The supplier's invoice date, when entered.</param>
+/// <param name="PharmacyStore">The goods went into a pharmacy store (the facility chooses which stores' purchases reach the accounts).</param>
+/// <param name="Tax">Taxable value and input GST by rate.</param>
+/// <param name="RoundOff">The invoice's rounding to the rupee.</param>
+public sealed record PurchaseEntry(
+    string Number, DateOnly ReceivedOn, string VendorName, string? VendorGstin, string? VendorStateCode, string SupplierInvoiceNumber,
+    DateOnly? SupplierInvoiceDate, bool PharmacyStore, IReadOnlyList<SupplierTaxLine> Tax, decimal RoundOff)
+{
+    /// <summary>What the hospital owes the supplier for it: the invoice's total.</summary>
+    public decimal Total => Tax.Sum(t => t.Total) + RoundOff;
+}
+
+/// <summary>
+/// The purchases of a day for the Tally day book (INT-TALLY, N11: pharmacy purchases party ledger wise): the goods
+/// receipts posted into stock, by the day the goods were received, as GSTR-3B takes their input credit
+/// (<see cref="IGstPurchaseSource"/>). A receipt posted after its day joins that day. Supply chain implements it and
+/// Billing reads it, so Billing never references Supply chain. Read in the background, where no facility filter applies:
+/// implementations filter by the facility given.
+/// </summary>
+public interface IPurchaseAccountsSource
+{
+    Task<IReadOnlyList<PurchaseEntry>> GetDayAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken);
+}

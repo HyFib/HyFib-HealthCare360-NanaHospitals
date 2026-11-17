@@ -175,13 +175,22 @@ public sealed record TallyLedgerMap
     public bool LedgerPerVendor { get; init; } = true;
     public string SundryCreditors { get; init; } = "Sundry Creditors";
 
+    /// <summary>Goods bought (a goods receipt's taxable value): one ledger per GST rate ("Purchase Accounts @ 12%") with <see cref="SalesLedgerPerGstRate"/>.</summary>
+    public string Purchases { get; init; } = "Purchase Accounts";
+
+    /// <summary>Which stores' goods receipts reach the day book as purchases: the pharmacy stores' (N11), every store's, or none.</summary>
+    public TallyPurchaseStores PurchasesFrom { get; init; } = TallyPurchaseStores.Pharmacy;
+
     /// <summary>Pharmacy counter sales and returns (their own income ledger; GST on the output GST ledgers).</summary>
     public TallyCounterLedgers Pharmacy { get; init; } = new();
 
     /// <summary>Canteen sales; staff credit goes to <see cref="TallyCounterLedgers.OnAccount"/>.</summary>
     public TallyCounterLedgers Canteen { get; init; } = new();
 
-    /// <summary>Pharmacy and canteen sales go to one income ledger per GST rate ("Pharmacy Sales @ 12%"), which Tally's GST reports need.</summary>
+    /// <summary>
+    /// Pharmacy and canteen sales, and purchases, go to one ledger per GST rate ("Pharmacy Sales @ 12%", "Purchase Accounts
+    /// @ 12%"), which Tally's GST reports need.
+    /// </summary>
     public bool SalesLedgerPerGstRate { get; init; } = true;
 
     /// <summary>
@@ -197,7 +206,7 @@ public sealed record TallyLedgerMap
     /// </summary>
     public bool PharmacyPerInvoice { get; init; } = true;
 
-    /// <summary>The voucher types the hospital's sales are entered under in Tally: one each for IP, OP, laboratory and pharmacy sales.</summary>
+    /// <summary>The voucher types the hospital's sales (one each for IP, OP, laboratory and pharmacy sales) and purchases are entered under in Tally.</summary>
     public TallyVoucherTypes VoucherTypes { get; init; } = new();
 
     /// <summary>
@@ -241,6 +250,18 @@ public sealed record TallyLedgerMap
     };
 
     public string PayerLedger(string? payerName) => LedgerPerPayer && !string.IsNullOrWhiteSpace(payerName) ? payerName.Trim() : PayerReceivables;
+
+    /// <summary>The ledger goods bought at <paramref name="gstRate"/> go to: "Purchase Accounts @ 12%" while ledgers go per rate.</summary>
+    public string PurchaseLedger(decimal gstRate) =>
+        SalesLedgerPerGstRate ? $"{Purchases} @ {gstRate.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}%" : Purchases;
+
+    /// <summary>Whether a goods receipt into a pharmacy store (or another store) reaches the day book (<see cref="PurchasesFrom"/>).</summary>
+    public bool PostsPurchase(bool pharmacyStore) => PurchasesFrom switch
+    {
+        TallyPurchaseStores.All => true,
+        TallyPurchaseStores.None => false,
+        _ => pharmacyStore,
+    };
 
     /// <summary>The output CGST ledger of a supply taxed at <paramref name="gstRate"/> (the whole GST rate): "Output CGST @ 6%" for 12%.</summary>
     public string OutputCgstAt(decimal? gstRate) => AtRate(OutputCgst, gstRate / 2);
@@ -287,9 +308,10 @@ public sealed record TallyLedgerMap
 }
 
 /// <summary>
-/// The names of the voucher types (under Sales in Tally) that the day book's sales go to (setting <c>billing.tally.ledgers</c>,
-/// under <c>voucherTypes</c>): the hospital keeps IP, OP, laboratory and pharmacy sales apart. The accountant creates
-/// them in Tally before the first post; Tally refuses a voucher whose type it does not have.
+/// The names of the voucher types (under Sales in Tally) that the day book's sales go to, and of the purchase voucher type
+/// (setting <c>billing.tally.ledgers</c>, under <c>voucherTypes</c>): the hospital keeps IP, OP, laboratory and pharmacy
+/// sales apart. The accountant creates them in Tally before the first post; Tally refuses a voucher whose type it does not
+/// have.
 /// </summary>
 public sealed record TallyVoucherTypes
 {
@@ -304,6 +326,23 @@ public sealed record TallyVoucherTypes
 
     /// <summary>The pharmacy counter's invoices, each a voucher of its own.</summary>
     public string Pharmacy { get; init; } = "Pharmacy Sales";
+
+    /// <summary>Goods receipts, each a purchase from its supplier.</summary>
+    public string Purchase { get; init; } = "Purchase";
+}
+
+/// <summary>Which stores' goods receipts the day book posts as purchases.</summary>
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<TallyPurchaseStores>))]
+public enum TallyPurchaseStores
+{
+    /// <summary>The pharmacy stores' (store type Pharmacy): the hospital's pharmacy purchases (N11).</summary>
+    Pharmacy = 0,
+
+    /// <summary>Every store's.</summary>
+    All,
+
+    /// <summary>None: purchases are still entered in Tally by hand.</summary>
+    None,
 }
 
 /// <summary>How much of the patient a voucher's narration names (<see cref="TallyLedgerMap.PatientInNarration"/>).</summary>
@@ -517,9 +556,15 @@ public sealed record TallyDayBook(
     /// <summary>Purchase returns (debit notes) and supplier payable adjustments posted on the day, each approved by a second person.</summary>
     public VendorAccountsDay Vendors { get; init; } = VendorAccountsDay.None;
 
+    /// <summary>The goods receipts of the day (posted, received on the day), from Supply chain.</summary>
+    public IReadOnlyList<PurchaseEntry> Purchases { get; init; } = [];
+
+    /// <summary>The facility's GST state code (its GSTIN's, else its address's): the place of supply of what it buys.</summary>
+    public string? FacilityStateCode { get; init; }
+
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
                            + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count
-                           + Vendors.DebitNotes.Count + Vendors.Adjustments.Count == 0
+                           + Vendors.DebitNotes.Count + Vendors.Adjustments.Count + Purchases.Count == 0
                            && Counters.All(c => c.IsEmpty) && CounterInvoices.All(c => c.IsEmpty);
 }
 
@@ -557,9 +602,43 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(TallyCounterInvoices.Vouchers(day, map));
         vouchers.AddRange((day.GatewaySettlements ?? []).Select(s => SettlementVoucher(s, map)));
         vouchers.AddRange(day.PosSettlements.Select(s => PosSettlementVoucher(s, map)));
+        vouchers.AddRange(day.Purchases.Where(p => map.PostsPurchase(p.PharmacyStore)).Select(p => Purchase(p, day, map)));
         vouchers.AddRange(day.Vendors.DebitNotes.Select(n => VendorDebitNote(n, day.Date, map)));
         vouchers.AddRange(day.Vendors.Adjustments.Select(a => VendorAdjustment(a, day.Date, map)));
         return vouchers.OfType<AccountingVoucher>().ToList();
+    }
+
+    /// <summary>
+    /// A goods receipt as a purchase from its supplier (N11, party ledger wise), under the purchase voucher type, numbered and
+    /// referenced by the receipt: the supplier's ledger is credited with the invoice's total as a new bill named by the
+    /// supplier's invoice number, and purchases (by GST rate) and input GST (by rate) are debited, with the round-off. It
+    /// carries the supplier's invoice number and date, GSTIN and state, and the facility's state as the place of supply, so
+    /// Tally's purchase register matches GSTR-2B.
+    /// </summary>
+    private static AccountingVoucher? Purchase(PurchaseEntry purchase, TallyDayBook day, TallyLedgerMap map)
+    {
+        var supplier = map.VendorLedger(purchase.VendorName);
+        var invoice = string.IsNullOrWhiteSpace(purchase.SupplierInvoiceNumber) ? purchase.Number : purchase.SupplierInvoiceNumber.Trim();
+        var entries = new EntryList();
+        foreach (var rate in purchase.Tax.GroupBy(t => t.GstRate).OrderBy(g => g.Key))
+        {
+            entries.Debit(map.PurchaseLedger(rate.Key), rate.Sum(t => t.Taxable));
+        }
+
+        TallyGst.Input(entries, map, purchase.Tax.Select(t => new TallyGstLine(t.GstRate, t.Cgst, t.Sgst, t.Igst)));
+        entries.Debit(map.RoundOff, purchase.RoundOff);
+        entries.Credit(supplier, purchase.Total, bill: TallyBillRef.New(invoice));
+
+        var dated = purchase.SupplierInvoiceDate is { } date ? " of " + date.ToString("dd-MMM-yyyy", System.Globalization.CultureInfo.InvariantCulture) : string.Empty;
+        var narration = $"Goods receipt {purchase.Number}: {purchase.VendorName.Trim()} invoice {invoice}{dated}";
+        return entries.ToVoucher(map.VoucherTypes.Purchase, day.Date, purchase.Number, narration, purchase.Number) is { } voucher
+            ? voucher with
+            {
+                Party = TallyGst.Party(supplier, purchase.VendorGstin, purchase.VendorStateCode, day.FacilityStateCode),
+                SupplierInvoiceNumber = invoice,
+                SupplierInvoiceDate = purchase.SupplierInvoiceDate,
+            }
+            : null;
     }
 
     /// <summary>
