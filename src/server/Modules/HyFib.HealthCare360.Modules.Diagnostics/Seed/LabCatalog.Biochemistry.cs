@@ -63,6 +63,13 @@ internal static partial class LabCatalog
         yield return new("K", "Potassium", Section, Serum, Plain, "2823-3",
             Numeric("mmol/L", 1, [Ages(0, 30, 3.7m, 5.9m, 2.5m, 7.0m), Ages(30, null, 3.5m, 5.1m, 2.5m, 6.5m)], "K", delta: 20m));
         yield return new("CL", "Chloride", Section, Serum, Plain, "2075-0", Numeric("mmol/L", 0, [All(98, 107, 80, 120)], "CL"));
+
+        // Bicarbonate (total CO2), measured on the EXIAS e|1 electrolyte analyser, which is not interfaced: entered by hand,
+        // as Nana Hospitals enters its other electrolytes ("Manual measure the all reports, bicarbonate is automated in
+        // machine"), with the channel HCO3 should it ever be. Adult interval 22 - 29 mmol/L (serum total carbon dioxide:
+        // Tietz Textbook of Clinical Chemistry and Molecular Diagnostics, 5th ed., Burtis CA, Ashwood ER, Bruns DE, eds.;
+        // Elsevier, 2012, reference intervals), a default the laboratory reviews.
+        yield return new("HCO3", "Bicarbonate (total CO2)", Section, Serum, Plain, "1963-8", Numeric("mmol/L", 0, [Ages(adult, null, 22, 29)], "HCO3"));
     }
 
     private static IEnumerable<OrderableSeed> BiochemistryTests()
@@ -145,11 +152,11 @@ internal static partial class LabCatalog
         };
 
         yield return new OrderableSeed(
-            "LAB-ELECTROLYTES", "Serum electrolytes (Na, K, Cl)", "ELECTROLYTES", 450m, Section, SpecimenType.Serum, ContainerType.Plain, 2,
+            "LAB-ELECTROLYTES", "Serum electrolytes (Na, K, Cl, HCO3)", "ELECTROLYTES", 450m, Section, SpecimenType.Serum, ContainerType.Plain, 2,
             "Indirect ion-selective electrode", null,
-            Preparation: "Avoid haemolysis and prolonged tourniquet; separate serum within an hour (potassium rises in stored blood).")
+            Preparation: "Avoid haemolysis and prolonged tourniquet; separate serum within an hour (potassium rises in stored blood). Keep the tube capped: bicarbonate falls in an open tube.")
         {
-            Components = [("NA", null), ("K", null), ("CL", null)],
+            Components = [("NA", null), ("K", null), ("CL", null), ("HCO3", null)],
         };
 
         yield return new OrderableSeed(

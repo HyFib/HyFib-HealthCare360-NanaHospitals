@@ -60,6 +60,7 @@ public sealed class LabCatalogTests
     [InlineData("LAB-KFT", new[] { "UREA", "CREA", "UA", "NA", "K", "CL" })]
     [InlineData("LAB-TFT", new[] { "T3", "T4", "TSH" })]
     [InlineData("LAB-COAG", new[] { "PT", "INR", "APTT" })]
+    [InlineData("LAB-ELECTROLYTES", new[] { "NA", "K", "CL", "HCO3" })]
     public void Panels_report_the_analytes_clinicians_expect(string code, string[] analytes) =>
         LabCatalog.Orderables.Single(o => o.Code == code).Components.Select(c => c.Code).ShouldBe(analytes, ignoreOrder: true);
 
@@ -130,6 +131,25 @@ public sealed class LabCatalogTests
             r => r.Low.ShouldBe(2.00m), r => r.High.ShouldBe(7.00m));
         LabCatalog.Analytes.Single(a => a.Code == "PCT").Result.ShouldSatisfyAllConditions(
             r => r.Unit.ShouldBe("%"), r => r.Decimals.ShouldBe(3), r => r.Ranges.ShouldHaveSingleItem().High.ShouldBe(0.620m));
+    }
+
+    /// <summary>
+    /// Bicarbonate, measured on the EXIAS e|1, which is not interfaced: on the electrolytes panel, entered by hand like the
+    /// panel's other tests, with a channel should the analyser ever be interfaced.
+    /// </summary>
+    [Fact]
+    public void Bicarbonate_is_on_the_electrolytes_panel_in_mmol_per_litre_with_an_adult_interval()
+    {
+        var bicarbonate = LabCatalog.Analytes.Single(a => a.Code == "HCO3");
+
+        (bicarbonate.Name, bicarbonate.Specimen, bicarbonate.Container, bicarbonate.Loinc).ShouldBe(("Bicarbonate (total CO2)", SpecimenType.Serum, ContainerType.Plain, "1963-8"));
+        bicarbonate.Result.ShouldSatisfyAllConditions(
+            r => r.Type.ShouldBe(LabResultType.Numeric),
+            r => r.Unit.ShouldBe("mmol/L"),
+            r => r.Channels.ShouldBe(["HCO3"]));
+        var range = ReferenceRangeSelector.Select(bicarbonate.Result.Ranges.Select(r => r.ToEntity(Guid.Empty)), Gender.Male, TestData.Years(40)).ShouldNotBeNull();
+        (range.Low, range.High).ShouldBe((22m, 29m));
+        LabCatalog.Orderables.Single(o => o.Code == "LAB-ELECTROLYTES").Name.ShouldBe("Serum electrolytes (Na, K, Cl, HCO3)");
     }
 
     [Fact]

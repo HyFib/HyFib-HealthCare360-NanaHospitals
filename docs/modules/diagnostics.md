@@ -587,9 +587,11 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
   plasma in its own tube, read on the glucose channel GLU with the glucose QC; 140 mg/dL or more is a positive screen,
   per ACOG Practice Bulletin 190 and the ADA's two-step approach, a default the lab reviews), LAB-HBA1C ₹550,
   LAB-LIPID ₹600 (TC, TG, HDL, LDL, VLDL), LAB-LFT ₹650, LAB-KFT ₹700 (urea, creatinine, uric acid, Na, K, Cl),
+  LAB-ELECTROLYTES ₹450 (Na, K, Cl and bicarbonate: HCO3, mmol/L, adult 22 - 29 after Tietz, measured on the EXIAS e|1
+  and entered by hand as the lab enters its other electrolytes, with the channel `HCO3` should it ever be interfaced),
   LAB-TFT ₹600 (T3, T4, TSH), LAB-URINE-RE ₹150, LAB-ESR ₹120, LAB-CRP ₹500, LAB-DENGUE-NS1 ₹700, LAB-MALARIA ₹350,
   LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400, LAB-VITB12 ₹1,000, LAB-PSA ₹800,
-  LAB-ELECTROLYTES ₹450, LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700.
+  LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700.
 * **Radiology** (procedures with modality, body part, duration, contrast, preparation): RAD-XR-CHEST ₹400,
   RAD-XR-SPINE-LS ₹700, RAD-USG-ABD ₹1,200, RAD-USG-PELVIS ₹1,000, RAD-CT-HEAD ₹3,000, RAD-CT-ABD ₹6,500 (contrast),
   RAD-MRI-BRAIN ₹7,500, RAD-MRI-SPINE ₹8,000, RAD-MAMMO ₹2,000.
