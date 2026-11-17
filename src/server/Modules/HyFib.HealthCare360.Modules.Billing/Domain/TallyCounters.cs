@@ -26,10 +26,11 @@ public sealed record TallyCounterLedgers
 }
 
 /// <summary>
-/// The pharmacy's and the canteen's days in the day book (INT-TALLY). Each counter day gives up to three summary vouchers,
-/// numbered by counter, facility and date so a re-post alters them: a Sales voucher (money by mode and what went on
-/// account, against income by GST rate, output CGST/SGST and round-off), a Credit Note for returns and cancellations
-/// (the reverse), and a Receipt for balances paid later. The invoices themselves stay in their modules' registers.
+/// The pharmacy's and the canteen's days in the day book (INT-TALLY), as summaries. Each counter day gives up to three
+/// summary vouchers, numbered by counter, facility and date so a re-post alters them: a Sales voucher (money by mode and
+/// what went on account, against income by GST rate, output CGST/SGST and round-off), a Credit Note for returns and
+/// cancellations (the reverse), and a Receipt for balances paid later. The pharmacy's day goes invoice by invoice instead
+/// (<see cref="TallyCounterInvoices"/>) unless the facility keeps it summarised.
 /// </summary>
 public static class TallyCounters
 {
@@ -76,7 +77,7 @@ public static class TallyCounters
         foreach (var counter in day.Counters.Where(c => !c.IsEmpty).OrderBy(c => c.Counter, StringComparer.Ordinal))
         {
             var ledgers = Ledgers(map, counter.Counter);
-            if (!ledgers.Include)
+            if (!ledgers.Include || TallyCounterInvoices.PerInvoice(day, map, counter.Counter))
             {
                 continue;
             }
@@ -131,8 +132,7 @@ public static class TallyCounters
         entries.Debit(ledgers.OnAccount!, part.OnAccount);
         foreach (var rate in part.Tax.GroupBy(t => t.GstRate).OrderBy(g => g.Key))
         {
-            entries.Credit(map.SalesLedgerPerGstRate ? $"{ledgers.Sales} @ {rate.Key.ToString("0.##", CultureInfo.InvariantCulture)}%" : ledgers.Sales!,
-                rate.Sum(t => t.Taxable));
+            entries.Credit(SalesLedger(ledgers, map, rate.Key), rate.Sum(t => t.Taxable));
         }
 
         entries.Credit(map.OutputCgst, part.Tax.Sum(t => t.Cgst));
@@ -142,7 +142,12 @@ public static class TallyCounters
         return reverse ? entries.Reversed() : entries;
     }
 
-    private static string ModeLedger(TallyCounterLedgers ledgers, TallyLedgerMap map, CounterPaymentMode mode) =>
+    /// <summary>The counter's income ledger for sales at <paramref name="rate"/>: one per rate when the setting asks ("Pharmacy Sales @ 12%").</summary>
+    internal static string SalesLedger(TallyCounterLedgers ledgers, TallyLedgerMap map, decimal rate) =>
+        map.SalesLedgerPerGstRate ? $"{ledgers.Sales} @ {rate.ToString("0.##", CultureInfo.InvariantCulture)}%" : ledgers.Sales!;
+
+    /// <summary>The counter's own cash or bank ledger for <paramref name="mode"/>, else the hospital's.</summary>
+    internal static string ModeLedger(TallyCounterLedgers ledgers, TallyLedgerMap map, CounterPaymentMode mode) =>
         ledgers.ModeLedgers.FirstOrDefault(kv => string.Equals(kv.Key, mode.ToString(), StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value)).Value?.Trim()
         ?? map.ModeLedger(mode switch
         {

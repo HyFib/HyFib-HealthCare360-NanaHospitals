@@ -184,6 +184,12 @@ public sealed record TallyLedgerMap
     /// <summary>Pharmacy and canteen sales go to one income ledger per GST rate ("Pharmacy Sales @ 12%"), which Tally's GST reports need.</summary>
     public bool SalesLedgerPerGstRate { get; init; } = true;
 
+    /// <summary>
+    /// The pharmacy's day goes to Tally one voucher per invoice, return and balance paid (T17: "one voucher per invoice"),
+    /// under <see cref="TallyVoucherTypes.Pharmacy"/>. Off: as the day's summary vouchers (<c>PH-…</c>), as before.
+    /// </summary>
+    public bool PharmacyPerInvoice { get; init; } = true;
+
     /// <summary>The voucher types the hospital's sales are entered under in Tally: one each for IP, OP, laboratory and pharmacy sales.</summary>
     public TallyVoucherTypes VoucherTypes { get; init; } = new();
 
@@ -455,6 +461,12 @@ public sealed record TallyDayBook(
     /// <summary>The day of each counter that bills its own sales (pharmacy, canteen), from their modules.</summary>
     public IReadOnlyList<CounterSalesDay> Counters { get; init; } = [];
 
+    /// <summary>The day, invoice by invoice, of each counter that reports it (the pharmacy), for one voucher per invoice.</summary>
+    public IReadOnlyList<CounterInvoicesDay> CounterInvoices { get; init; } = [];
+
+    /// <summary>The registered patients the counters' invoices, returns and balances paid name, by id, for their narrations.</summary>
+    public IReadOnlyDictionary<Guid, TallyPatient> Patients { get; init; } = new Dictionary<Guid, TallyPatient>();
+
     /// <summary>
     /// The day was posted before HC360 tracked each voucher: doctor-fee journals keep their old numbers.
     /// </summary>
@@ -475,7 +487,7 @@ public sealed record TallyDayBook(
     public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
                            + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count
                            + Vendors.DebitNotes.Count + Vendors.Adjustments.Count == 0
-                           && Counters.All(c => c.IsEmpty);
+                           && Counters.All(c => c.IsEmpty) && CounterInvoices.All(c => c.IsEmpty);
 }
 
 /// <summary>
@@ -509,6 +521,7 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(DoctorFees(day, map));
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
         vouchers.AddRange(TallyCounters.Vouchers(day, map));
+        vouchers.AddRange(TallyCounterInvoices.Vouchers(day, map));
         vouchers.AddRange((day.GatewaySettlements ?? []).Select(s => SettlementVoucher(s, map)));
         vouchers.AddRange(day.PosSettlements.Select(s => PosSettlementVoucher(s, map)));
         vouchers.AddRange(day.Vendors.DebitNotes.Select(n => VendorDebitNote(n, day.Date, map)));

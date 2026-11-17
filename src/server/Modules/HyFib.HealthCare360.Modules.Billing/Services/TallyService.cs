@@ -13,7 +13,8 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 /// <summary>
 /// Tally day book (INT-TALLY, business side): gathers one facility's day of bills, cancellations, receipts, refunds,
 /// credit notes, claim disallowances, doctor-fee accruals and payouts, and the pharmacy's and canteen's days
-/// (<see cref="ICounterSalesSource"/>); builds balanced vouchers with the ledger mapping from the
+/// (<see cref="ICounterSalesSource"/>, and the pharmacy's invoice by invoice, <see cref="ICounterInvoiceSource"/>);
+/// builds balanced vouchers with the ledger mapping from the
 /// <c>billing.tally.ledgers</c> setting; and pushes them through <see cref="IAccountingExporter"/>, tracking what Tally
 /// answered for every voucher (<see cref="TallyVoucherRecord"/>). The same vouchers are available as an import file for
 /// sites without a Tally connection, where an accountant marks the day imported after loading it.
@@ -112,11 +113,19 @@ public sealed class TallyService(
         var doctors = await db.Set<Practitioner>().Where(p => doctorIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.DisplayName, p.Code }, ct);
         var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
 
-        // The patients of the day's bills, receipts, refunds and credit notes, in one read, for the narrations.
+        var counters = await CountersAsync(facilityId, date, ct);
+        var counterInvoices = await CounterInvoicesAsync(facilityId, date, ct);
+
+        // The patients of the day's bills, receipts, refunds and credit notes, and of the counters' invoices, returns and
+        // balances paid, in one read, for the narrations.
         var patientIds = bills.Select(b => b.PatientId)
             .Concat(receipts.Select(r => r.PatientId))
             .Concat(refunds.Select(r => r.PatientId))
             .Concat(creditNotes.Select(c => c.PatientId))
+            .Concat(counterInvoices.SelectMany(c => c.Invoices.Select(i => i.PatientId)
+                .Concat(c.Returns.Select(r => r.PatientId))
+                .Concat(c.Collections.Select(x => x.PatientId)))
+                .OfType<Guid>())
             .Distinct()
             .ToList();
         var patients = await PatientsAsync(patientIds, ct);
@@ -212,7 +221,9 @@ public sealed class TallyService(
             gatewaySettlements)
         {
             FacilityCode = facilityCode,
-            Counters = await CountersAsync(facilityId, date, ct),
+            Counters = counters,
+            CounterInvoices = counterInvoices,
+            Patients = patients,
             LegacyDoctorFeeNumbers = legacy,
             PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
             // An insurer's settlement is never reversed (ReversalRules), so no reversal posts to a payer's ledger.
@@ -728,6 +739,18 @@ public sealed class TallyService(
         foreach (var source in services.GetServices<ICounterSalesSource>())
         {
             days.Add(await source.GetDayAsync(facilityId, date, ct));
+        }
+
+        return days;
+    }
+
+    /// <summary>The day invoice by invoice of each counter that reports it (the pharmacy, <see cref="ICounterInvoiceSource"/>).</summary>
+    private async Task<IReadOnlyList<CounterInvoicesDay>> CounterInvoicesAsync(Guid facilityId, DateOnly date, CancellationToken ct)
+    {
+        var days = new List<CounterInvoicesDay>();
+        foreach (var source in services.GetServices<ICounterInvoiceSource>())
+        {
+            days.Add(await source.GetInvoicesAsync(facilityId, date, ct));
         }
 
         return days;
