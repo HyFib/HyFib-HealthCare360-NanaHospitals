@@ -60,6 +60,7 @@ import {
   type SusceptibilityDto,
   type VerifyResultsRequest,
 } from './api';
+import { answerFor, STRIP_KEYS, typeStripKey, type StripTyping } from './answers';
 import { FlagChip, SampleStatusBadge } from './badges';
 import { calculationNote, enteredLabel } from './calculated';
 import { CultureDialog, type CultureValue } from './CultureDialog';
@@ -329,6 +330,8 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   const [rejecting, setRejecting] = useState(false);
   const inputs = useRef(new Map<string, HTMLElement>());
   const scanState = useRef<{ timer: KeystrokeTimer; before: string } | null>(null);
+  // A strip's word typed into an answer list ("-", "+-", "++"), key by key.
+  const stripTyping = useRef<StripTyping | null>(null);
 
   // Typing is kept on this computer as it happens, so switching tubes, a crash or a WiFi drop never loses results. A
   // value filled in and never confirmed is not: it is filled in again.
@@ -652,6 +655,20 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
           value={value}
           onChange={(_, data) => setEdit(line, { value: data.value })}
           {...common}
+          onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+            // The strip's own words choose the test's answer: "-" Nil, "+-" Trace, "++" 2+.
+            if (STRIP_KEYS.has(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+              event.preventDefault();
+              const typed = typeStripKey(stripTyping.current, line.resultId, event.key, event.timeStamp);
+              stripTyping.current = typed;
+              const answer = answerFor(line.options, typed.word);
+              if (answer) {
+                setEdit(line, { value: answer });
+              }
+              return;
+            }
+            common.onKeyDown(event);
+          }}
         >
           <option value="">—</option>
           {line.options.map((option) => (

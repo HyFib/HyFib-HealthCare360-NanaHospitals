@@ -361,9 +361,12 @@ diagnostics screen.
   prints "6.5" but is CriticalHigh against 6.5). Comparator values (`<0.005`, `>600`, `≤`/`≥`) and Indian digit grouping
   (`1,20,000`) are parsed. Answer-type results flag Abnormal/Critical from the interval's normal/critical answer lists.
   An answer written as strip readers and immunoassay analysers write it is read as the test's own answer
-  (`AnalyserAnswers`) when it names the same grade and exactly one of the test's answers does: `Neg`, `Negative`,
-  `Absent` or `Not detected` for Nil or Negative, `+-`, `±` or `TR` for Trace, `+`, `++`, `+++`, `++++` (or `+1`…`+4`)
-  for 1+ to 4+, `Pos`, `Present` or `Detected` for Positive, `Norm` for Normal. A grade the test does not offer (`1+`
+  (`AnalyserAnswers`) when it names the same grade and exactly one of the test's answers does: `-`, `Neg`, `Negative`,
+  `Absent` or `Not detected` for Nil or Negative, `+-`, `+/-`, `±` or `TR` for Trace, `+`, `++`, `+++`, `++++` (or
+  `+1`…`+4`) for 1+ to 4+, `Pos`, `Present` or `Detected` for Positive, `Norm` for Normal. A value entered by hand is
+  read the same way (Nana Hospitals writes `-` for nil, `+-` for trace and `++` for 2+), and on the result sheet those
+  keys typed into a test's answer list choose its answer (`+` then `-` within a second is Trace). The server and the
+  staff app are tested against one list of words (`src/web/apps/staff/src/modules/lab/answerWords.json`). A grade the test does not offer (`1+`
   for a test answered Negative or Positive) or a concentration (`250 mg/dL`) is not turned into an answer: that needs
   the strip maker's chart, so the result waits among the unmatched results. An analyser's own word for an answer read
   this way is kept on the result (`instrumentValue`, shown on the result sheet as "Analyser sent “NEG”").

@@ -1,19 +1,39 @@
+using System.Text.Json;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Tests.Laboratory;
 
 /// <summary>
 /// A strip reader's word is read as the test's answer when it names the same grade and only one of the test's answers
-/// does; a grade the test does not offer, or a concentration, is not read as anything.
+/// does; a grade the test does not offer, or a concentration, is not read as anything. Nana Hospitals' words: "-" is
+/// nil, "+-" trace, "++" 2+. The words are the staff app's too (src/web/apps/staff/src/modules/lab/answerWords.json,
+/// read by answers.test.ts), so a word typed on the result sheet is read as the server reads it.
 /// </summary>
 public sealed class AnalyserAnswersTests
 {
+    public static TheoryData<string, string[], string?> SharedWords
+    {
+        get
+        {
+            using var document = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+                RepositoryRoot(), "src", "web", "apps", "staff", "src", "modules", "lab", "answerWords.json")));
+            var data = new TheoryData<string, string[], string?>();
+            foreach (var row in document.RootElement.GetProperty("read").EnumerateArray())
+            {
+                data.Add(row[0].GetString()!, [.. row[1].EnumerateArray().Select(o => o.GetString()!)], row[2].GetString());
+            }
+
+            return data;
+        }
+    }
+
     private static readonly string[] StripGrades = ["Nil", "Trace", "1+", "2+", "3+", "4+"];
     private static readonly string[] NegativePositive = ["Negative", "Positive"];
     private static readonly string[] Esterase = ["Negative", "Trace", "1+", "2+", "3+"];
     private static readonly string[] Urobilinogen = ["Normal", "Increased"];
 
     [Theory]
+    [InlineData("-", "Nil")]
     [InlineData("Neg", "Nil")]
     [InlineData("NEGATIVE", "Nil")]
     [InlineData("not detected", "Nil")]
@@ -28,6 +48,7 @@ public sealed class AnalyserAnswersTests
         AnalyserAnswers.Match(StripGrades, word).ShouldBe(answer);
 
     [Theory]
+    [InlineData("-", "Negative")]
     [InlineData("NEG", "Negative")]
     [InlineData("Nil", "Negative")]
     [InlineData("POS", "Positive")]
@@ -53,16 +74,34 @@ public sealed class AnalyserAnswersTests
     [Theory]
     [InlineData("15 mg/dL")]
     [InlineData("3.2 umol/L")]
-    [InlineData("-")]
+    [InlineData("--")]
     [InlineData("Reactive")]
     [InlineData("")]
     public void A_concentration_or_a_word_of_no_grade_is_not_read(string word) =>
         AnalyserAnswers.Match(StripGrades, word).ShouldBeNull();
+
+    [Theory]
+    [MemberData(nameof(SharedWords))]
+    public void Every_word_is_read_as_the_staff_app_reads_it(string word, string[] options, string? answer) =>
+        AnalyserAnswers.Match(options, word).ShouldBe(answer, $"{word} against {string.Join(", ", options)}");
 
     [Fact]
     public void A_word_two_of_the_tests_answers_share_is_not_guessed()
     {
         AnalyserAnswers.Match(["Nil", "Absent", "Present"], "NEG").ShouldBeNull();
         AnalyserAnswers.Match(["Nil", "Absent", "Present"], "POS").ShouldBe("Present");
+    }
+
+    private static string RepositoryRoot()
+    {
+        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "HyFib.HealthCare360.slnx")))
+            {
+                return directory.FullName;
+            }
+        }
+
+        throw new InvalidOperationException("The repository root (HyFib.HealthCare360.slnx) was not found above the test's folder.");
     }
 }
