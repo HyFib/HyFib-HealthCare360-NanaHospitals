@@ -179,8 +179,63 @@ internal sealed class DiagnosticsSeeder : ISeeder
         }
 
         await JoinPanelsAsync(db, tests, created, newPanels.Select(p => p.Panel.Code).ToHashSet(StringComparer.Ordinal), ct);
+        if (created.Contains(ChannelsAddedWith))
+        {
+            await AddChannelsAsync(db, ct);
+        }
+
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>
+    /// Channel codes that tests already in the seed gained after databases were seeded (Nana Hospitals' answers of 17
+    /// November 2026): the Yumizen H500's codes for the differential, put first because its host queries ask for a test's
+    /// first code, and the names the i-CHROMA and the doctors give vitamin D.
+    /// </summary>
+    internal static readonly IReadOnlyList<(string Test, string[] Channels, bool First)> ChannelsAdded =
+    [
+        ("NEUT", ["NEU%"], true), ("LYMPH", ["LYM%"], true), ("MONO", ["MON%"], true), ("EOS", ["EOS%"], true), ("BASO", ["BAS%"], true),
+        ("LAB-VITD", ["VIT-D", "VIT D-25", "VIT-D3", "VIT D3", "VIT 25 OH"], false),
+    ];
+
+    /// <summary>An analyte that came with <see cref="ChannelsAdded"/>: a run that creates it is upgrading a database from before them.</summary>
+    internal const string ChannelsAddedWith = "NEUT-ABS";
+
+    /// <summary>
+    /// A database seeded before <see cref="ChannelsAdded"/> gets them in the run that creates the CBC's new parameters,
+    /// which happens once, so a code the lab takes off a test later is never put back. A code that a test maps already
+    /// (plainly or as an analyser's own) or that the lab chose to ignore is left out, so none of the lab's decisions changes.
+    /// </summary>
+    private static async Task AddChannelsAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        var tests = await db.Set<LabTest>().IgnoreQueryFilters().ToListAsync(ct);
+        var ignored = await db.Set<IgnoredAnalyserChannel>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Select(c => c.ChannelCode).ToListAsync(ct);
+        var taken = tests.SelectMany(t => t.InstrumentChannelCodes).Select(ChannelOf).Concat(ignored).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (code, channels, first) in ChannelsAdded)
+        {
+            if (tests.FirstOrDefault(t => string.Equals(t.Code, code, StringComparison.Ordinal)) is { } test)
+            {
+                var upgraded = WithChannels(test.InstrumentChannelCodes, channels, first, taken);
+                if (upgraded.Count != test.InstrumentChannelCodes.Count)
+                {
+                    test.InstrumentChannelCodes = upgraded;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A test's channel codes with those of <paramref name="added"/> that are not <paramref name="taken"/> (mapped by a test
+    /// or ignored by the lab): before its own when <paramref name="first"/>, else after them.
+    /// </summary>
+    internal static List<string> WithChannels(IReadOnlyList<string> current, IReadOnlyList<string> added, bool first, IReadOnlySet<string> taken)
+    {
+        var missing = added.Where(c => !taken.Contains(c)).ToList();
+        return first ? [.. missing, .. current] : [.. current, .. missing];
+    }
+
+    /// <summary>The channel a mapping names: "NEU%" for both "NEU%" and "H500:NEU%".</summary>
+    private static string ChannelOf(string mapping) => mapping[(mapping.IndexOf(':', StringComparison.Ordinal) + 1)..];
 
     /// <summary>
     /// Analytes new to this database join the seeded panels it already has that list them, in the seed's place: the

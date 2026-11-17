@@ -6,8 +6,9 @@ decisions were confirmed by HyFib. The server and the lab PC are in [NANA-THENI-
 how each feature works is in [diagnostics.md](../modules/diagnostics.md) and [integrations.md](../modules/integrations.md).
 
 Nothing is live yet, so the go-live database is seeded with everything below. An installation seeded before these
-changes keeps its own catalogue (the seeder only adds what is missing): there, the new channel codes are added in
-Lab setup.
+changes gets, on its first start with them, the new tests, the CBC's new parameters in its CBC, and the new channel
+codes on its differential and vitamin D tests (a code the lab maps elsewhere, or ignored, stays as the lab left it);
+after that its catalogue is its own.
 
 ## Summary
 

@@ -832,9 +832,11 @@ unit `1E03/mm3` (`1E06/mm3` for red cells) and cell volumes in `µm3`: both read
 so they hold no result back from auto-validation.
 
 On a database seeded before these analytes, the seeder adds them to the CBC it has, each after the analyte the seed puts
-before it (the CBC's own analytes keep their order): the lab cannot have taken out an analyte it never had. The
-differential's H500 codes (NEU%, LYM%, MON%, EOS%, BAS%) are not added to analytes it already has: Lab setup › Analysers
-lists them among the channels no test maps, with the mapping to add (`H500:NEU%` on Neutrophils, and so on).
+before it (the CBC's own analytes keep their order): the lab cannot have taken out an analyte it never had. In the same
+run, once (`DiagnosticsSeeder.ChannelsAdded`, when it creates `NEUT-ABS`), the analytes it has get the codes they gained
+since: the differential's H500 codes (NEU%, LYM%, MON%, EOS%, BAS%) before their own, as the H500's host queries ask
+for a test's first code, and the names of vitamin D on LAB-VITD. A code a test maps already (plainly or as an
+analyser's own) or that the lab ignored is left out, and a code the lab takes off a test later is never put back.
 
 **Order download** (`AnalyserOrders`, LIS-04). In the same unit of work as the change, Diagnostics adds one
 `lab.analyser.order` outbox message (`InstrumentOrderRequest`: barcode, action, analysers with channel codes), so
