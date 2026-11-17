@@ -13,6 +13,10 @@ photographs: the server's again, and the lab PC's. One server serves every clien
 the rest), and every machine is on the hospital's **cabled LAN**. Section 7 covers the network and the lab PC, and what
 changed in HC360 for a cabled LAN.
 
+On 17 November 2026 the hospital answered the laboratory's questions: its analysers are on RS-232 cables to the lab PC,
+and the lab PC has a plug point of its own. Every laboratory answer, and what HC360 does about it, is in
+[NANA-THENI-ANSWERS-LAB.md](NANA-THENI-ANSWERS-LAB.md).
+
 The printouts name patients and doctors. None of them is copied here.
 
 ## 1. Are the Schedule H and H1 registers in HC360, and where?
@@ -415,8 +419,10 @@ The hospital's answers of 12 November 2026:
 Still open:
 1. Does the pharmacist-in-charge want Doctor before Patient, and "Drug Report" as the title? Which signature lines?
 2. Will the hospital buy a dedicated server, or run HC360 on this PC under the conditions in section 3?
-3. Are the lab's analysers connected by serial (RS-232) cable to the lab PC, or to the network? Section 7 says what each
-   needs.
+3. ~~Are the lab's analysers connected by serial (RS-232) cable to the lab PC, or to the network?~~ **Answered on 17
+   November 2026: serial.** "RS 232 Cable connected" (L4): the analysers are on RS-232 cables to the lab PC, which runs
+   the HC360 lab agent (section 7). Their connections and line settings are in
+   [NANA-THENI-ANSWERS-LAB.md](NANA-THENI-ANSWERS-LAB.md).
 4. Which Windows, and which version, is the lab PC on (section 7)?
 
 ## 7. The cabled LAN and the lab PC (12 November 2026)
@@ -467,8 +473,9 @@ About › Windows specifications), and check that Windows Update has installed t
 *Check:* Windows Update shows the 10 November 2026 security update installed, and Windows is activated. If it cannot be
 kept updated, give the lab a PC that can be, or keep this one off everything but the hospital LAN.
 
-**Its analysers.** For analysers on **serial** cables, this PC runs the HC360 lab agent (DEPLOYMENT.md section 6,
-*Lab analysers*). A PC asleep relays nothing, and an analyser may give up on a result nobody takes, so while the agent
+**Its analysers.** The analysers are on **serial** cables to this PC (the hospital's answer of 17 November 2026), so it
+runs the HC360 lab agent (DEPLOYMENT.md section 6, *Lab analysers*; the H500's and the C150's line settings are in
+NANA-THENI-ANSWERS-LAB.md). A PC asleep relays nothing, and an analyser may give up on a result nobody takes, so while the agent
 relays an analyser it keeps the PC from sleeping when nobody uses it. It does not stop someone putting the PC to sleep:
 staff leave it on.
 *Check:* once the analyser is set up (Lab setup › Analysers › Connection), as Administrator:
@@ -483,6 +490,14 @@ listed, the Application event log (source *HyFib HC360 Lab Agent*) says why: set
 (`powercfg /change standby-timeout-ac 0`). For analysers on the
 **network**, the lab PC needs nothing more than HC360 Desktop: each analyser connects to the server, with a fixed
 address, through the firewall rule `-LabPorts` and `-LabAnalyserAddresses` open (DEPLOYMENT.md section 6).
+
+**Its power.** The lab PC is on a plug point of its own ("Lab PC connected to separate plug point", 17 November 2026),
+which keeps other loads off its socket. A socket is not a UPS: in a power cut the PC goes off, and the lab agent relays
+nothing until it is back. A result an analyser sends meanwhile reaches no one: send it again from the analyser once
+the PC is up, or enter it by hand. A small UPS for the lab PC (and the analysers, if they have none of their own) keeps
+results flowing through short cuts and the generator's changeover.
+*Check:* switch the lab PC's mains off and on; once Windows is up, the agent shows as online in Lab setup › Analysers
+within a minute, without anyone signing in.
 
 ### The release itself
 
