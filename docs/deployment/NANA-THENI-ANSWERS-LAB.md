@@ -1,7 +1,7 @@
 # Laboratory: the hospital's answers of 17 November 2026
 
 Nana Hospitals, Theni, answered HyFib's questions about its laboratory on 17 November 2026. This file lists every
-answer in the hospital's own words, what HC360 now does about it, what is set up at go-live, and what stays open. The
+answer in the hospital's own words (a misspelling or two corrected), what HC360 now does about it, what is set up at go-live, and what stays open. The
 decisions were confirmed by HyFib. The server and the lab PC are in [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md);
 how each feature works is in [diagnostics.md](../modules/diagnostics.md) and [integrations.md](../modules/integrations.md).
 
@@ -21,6 +21,7 @@ Lab setup.
 | L9 | No reruns | No change | — | — |
 | L10 | "Sent to real images" | Nothing | — | What is meant |
 | H500-1, H500-2, N6 | Every H500 parameter on the report | The CBC has all of them | Review the intervals | — |
+| C150-1 | Every C150 parameter interfaced | Each result goes on the test its channel names | Map or ignore the channels no test maps | — |
 | C150-2 | GCT on the GLU code | LAB-GCT on channel GLU | — | — |
 | EXIAS e\|1 | Bicarbonate | HCO3 on the electrolytes panel | — | — |
 | i-CHROMA, N10 (second part) | VIT-D, VIT D-25, VIT-D3, VIT 25 OH are one test | Channels of LAB-VITD | — | Search words on the order screen |
@@ -71,9 +72,9 @@ is matched to the tube by the exact number. See [numbering.md](../modules/number
 
 ## The report
 
-**L7: "Reports view in High, Low in arrow mark".** The PDF report prints ↑ before H and HH and ↓ before L and LL, and the
-staff app's flags show the same. The letter and its words stay, so the meaning never rests on the arrow, and the
-report carries the arrows' font, so every server prints them.
+**L7: "Reports view in High, Low in Aeromark"** (an arrow mark). The PDF report prints ↑ before H and HH and ↓ before
+L and LL, and the staff app's flags show the same. The letter and its words stay, so the meaning never rests on the
+arrow, and the report carries the arrows' font, so every server prints them.
 
 **L8: "Qc Run passed"; L9: "No reruns if need report clarification after rerun sample".** No change.
 
@@ -91,6 +92,11 @@ research-use parameters (ALY, LIC, MIC, MAC) and the large platelet count (P-LCC
 have adult intervals only, from the sources named in the seed (Dacie and Lewis, 12th ed.; Sachdev et al. 2014; Monteiro
 et al. 2021), as defaults the lab reviews: the H500 counts platelets by impedance and may give PDW in %, so compare with
 HORIBA's intervals for the H500.
+
+**C150-1: "Yes, all the parameters are interface".** Every result the C150 sends goes on the test of the tube whose
+channel it names. A parameter none of the seeded tests maps is listed in Lab setup › Analysers among the *channels no
+test maps* ([diagnostics.md](../modules/diagnostics.md)), with the mapping to add, from the first day the C150 sends
+it: map each to its test, or ignore it.
 
 **C150-2: "GCT sample marked for –GLU code not one code".** LAB-GCT, "Glucose challenge test (50 g, 1 hour)", ₹80, is
 read on the C150's glucose channel GLU. It is fluoride plasma drawn into its own tube, as the post-prandial sugar is,
