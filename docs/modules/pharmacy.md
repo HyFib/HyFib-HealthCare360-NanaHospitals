@@ -170,6 +170,15 @@ which the acquirer reports it. Billing's card and UPI settlement matches the acq
 and a refund with the refund, by it, and lists a payment no settlement carries (through the Platform contract
 `ICounterSalesSource`; see *Card and UPI reconciliation* in [billing.md](billing.md)).
 
+**The day in Tally.** The pharmacy gives Billing its day for the Tally day book two ways, by the same rules: summed
+(`ICounterSalesSource.GetDayAsync`) and invoice by invoice (`ICounterInvoiceSource`, `PharmacyDayBook.Invoices`). Invoice
+by invoice, each invoice comes with its GST by rate, round-off, the money taken with it (each payment with its RRN or
+UTR) and its buyer's GSTIN and place of supply when it is a B2B sale; each return with the GST carved out of its refund
+at each line's rate (the value alone once the sale's GST can no longer be reduced) and the money paid back for it in the
+modes it went back in (the sale's refunds made with the return); and each invoice's balances paid on the day. A
+same-day cancellation leaves the invoice out. Billing posts one voucher per invoice, return and balance paid by default
+(T17), or the day's summary when the facility keeps it ([billing.md, The Tally day book](billing.md#the-tally-day-book)).
+
 **Card and UPI on the terminal.** The pharmacy takes card and UPI payments on the hospital's Pine Labs terminal through
 the Platform contract `ICounterTerminal`, which Billing implements (see
 [integrations.md](integrations.md#cardupi-pos-int-pos)). The counter starts the sale on `/terminal-sales`, follows it

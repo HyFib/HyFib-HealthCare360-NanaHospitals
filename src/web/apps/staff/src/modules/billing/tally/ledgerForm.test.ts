@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { TallyLedgerMap } from '../tallyApi';
-import { counterSalesLedger, isOneLine, ledgerFormSchema, toLedgerForm, toLedgerMap } from './ledgerForm';
+import {
+  counterSalesLedger,
+  defaultBankLedgers,
+  gstLedger,
+  isOneLine,
+  ledgerFormSchema,
+  toLedgerForm,
+  toLedgerMap,
+} from './ledgerForm';
 
 /** The map as the server returns it: built-in names filled in, the pharmacy with a cash ledger of its own. */
 const map: TallyLedgerMap = {
@@ -37,6 +45,26 @@ const map: TallyLedgerMap = {
   },
   canteen: { include: false, sales: 'Canteen Sales', onAccount: 'Staff Canteen Recoverable', modeLedgers: {} },
   salesLedgerPerGstRate: true,
+  purchaseReturns: 'Purchase Returns',
+  inputCgst: 'Input CGST',
+  inputSgst: 'Input SGST',
+  inputIgst: 'Input IGST',
+  vendorAdjustments: 'Purchase Rate Differences',
+  ledgerPerVendor: true,
+  sundryCreditors: 'Sundry Creditors',
+  purchases: 'Purchase Accounts',
+  purchasesFrom: 'Pharmacy',
+  gstLedgerPerRate: true,
+  pharmacyPerInvoice: true,
+  voucherTypes: {
+    inPatient: 'IP Sales',
+    outPatient: 'OP Sales',
+    laboratory: 'Lab Sales',
+    pharmacy: 'Pharmacy Sales',
+    purchase: 'Purchase',
+  },
+  patientInNarration: 'NameAndUhid',
+  bankLedgers: null,
 };
 
 describe('ledger names form', () => {
@@ -105,6 +133,108 @@ describe('ledger names form', () => {
 
     const saved = toLedgerMap(ledgerFormSchema.parse({ ...form, doctorPayablePrefix: '  Dr Payable - ' }));
     expect(saved.doctorPayablePrefix).toBe('Dr Payable - ');
+  });
+
+  it('keeps the voucher types, the narration, purchases and the supplier ledgers as they are', () => {
+    const saved = toLedgerMap(ledgerFormSchema.parse(toLedgerForm(map)));
+
+    expect(saved.voucherTypes).toEqual(map.voucherTypes);
+    expect(saved.patientInNarration).toBe('NameAndUhid');
+    expect(saved.bankLedgers).toBeNull();
+    expect(saved.pharmacyPerInvoice).toBe(true);
+    expect(saved.gstLedgerPerRate).toBe(true);
+    expect(saved.purchasesFrom).toBe('Pharmacy');
+    expect(saved).toMatchObject({
+      purchases: 'Purchase Accounts',
+      purchaseReturns: 'Purchase Returns',
+      inputCgst: 'Input CGST',
+      inputSgst: 'Input SGST',
+      inputIgst: 'Input IGST',
+      vendorAdjustments: 'Purchase Rate Differences',
+      ledgerPerVendor: true,
+      sundryCreditors: 'Sundry Creditors',
+    });
+  });
+
+  it('refuses a voucher type that is empty, on two lines or longer than 32 characters', () => {
+    const form = toLedgerForm(map);
+
+    const result = ledgerFormSchema.safeParse({
+      ...form,
+      voucherTypes: { ...form.voucherTypes, inPatient: ' ', laboratory: 'Lab\nSales', purchase: 'P'.repeat(33) },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error!.issues.map((issue) => [issue.path.join('.'), issue.message])).toEqual(
+      expect.arrayContaining([
+        ['voucherTypes.inPatient', 'Enter the voucher type as it is named in Tally.'],
+        ['voucherTypes.laboratory', 'Keep the voucher type on one line.'],
+        ['voucherTypes.purchase', 'Use at most 32 characters.'],
+      ]),
+    );
+    expect(
+      toLedgerMap(ledgerFormSchema.parse({ ...form, voucherTypes: { ...form.voucherTypes, outPatient: ' OP ' } }))
+        .voucherTypes.outPatient,
+    ).toBe('OP');
+  });
+
+  it('lists bank ledgers by hand only when asked, each once and named', () => {
+    const form = { ...toLedgerForm(map), bankLedgersDefault: false };
+
+    const listed = toLedgerMap(
+      ledgerFormSchema.parse({
+        ...form,
+        bankLedgers: [{ ledger: ' HDFC Current Account ' }, { ledger: 'Cheques in Hand' }],
+      }),
+    );
+    expect(listed.bankLedgers).toEqual(['HDFC Current Account', 'Cheques in Hand']);
+    expect(toLedgerMap(ledgerFormSchema.parse({ ...form, bankLedgers: [] })).bankLedgers).toEqual([]);
+
+    const wrong = ledgerFormSchema.safeParse({
+      ...form,
+      bankLedgers: [{ ledger: 'Bank' }, { ledger: ' bank ' }, { ledger: '' }],
+    });
+    expect(wrong.success).toBe(false);
+    expect(wrong.error!.issues.map((issue) => [issue.path.join('.'), issue.message])).toEqual([
+      ['bankLedgers.1.ledger', 'This ledger is already in the list.'],
+      ['bankLedgers.2.ledger', 'Enter the ledger name as it is in Tally.'],
+    ]);
+
+    const tooMany = ledgerFormSchema.safeParse({
+      ...form,
+      bankLedgers: Array.from({ length: 51 }, (_, i) => ({ ledger: `Bank ${i}` })),
+    });
+    expect(tooMany.error!.issues.map((issue) => issue.message)).toEqual(['List at most 50 bank ledgers.']);
+
+    // While the defaults are used, rows left from before are neither checked nor saved.
+    const byDefault = ledgerFormSchema.parse({ ...form, bankLedgersDefault: true, bankLedgers: [{ ledger: '' }] });
+    expect(toLedgerMap(byDefault).bankLedgers).toBeNull();
+  });
+
+  it("shows a facility's own bank ledgers as listed", () => {
+    const form = toLedgerForm({ ...map, bankLedgers: ['HDFC Current Account'] });
+
+    expect(form.bankLedgersDefault).toBe(false);
+    expect(form.bankLedgers).toEqual([{ ledger: 'HDFC Current Account' }]);
+  });
+
+  it('works out the default bank ledgers as the server does', () => {
+    const form = toLedgerForm(map);
+
+    expect(defaultBankLedgers(form)).toEqual(['Bank', 'HDFC Current Account']);
+    expect(
+      defaultBankLedgers({
+        ...form,
+        modes: { ...form.modes, NetBanking: 'SBI Current', Insurance: ' ' },
+        payoutBank: 'sbi current',
+      }),
+    ).toEqual(['SBI Current', 'Bank', 'HDFC Current Account']);
+  });
+
+  it('names GST ledgers by tax and rate when asked', () => {
+    expect(gstLedger('Output CGST', true, 6)).toBe('Output CGST @ 6%');
+    expect(gstLedger('Output CGST', true, 2.5)).toBe('Output CGST @ 2.5%');
+    expect(gstLedger('Output CGST', false, 6)).toBe('Output CGST');
   });
 
   it('names counter sales ledgers by GST rate when asked', () => {

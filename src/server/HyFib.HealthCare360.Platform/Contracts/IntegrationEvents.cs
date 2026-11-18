@@ -318,3 +318,13 @@ public sealed record WhatsAppOptOutChanged(
 /// moves the retention date of the charts already completed by the difference, so every chart follows the schedule.
 /// </summary>
 public sealed record RecordRetentionChanged(bool Inpatient, int PreviousYears, int Years) : DomainEvent;
+
+/// <summary>
+/// A goods receipt was posted into stock (raised by Supply chain, in the posting's transaction). The Tally day book dates
+/// a purchase by the day its goods were received (<see cref="IPurchaseAccountsSource"/>), so a receipt posted after that
+/// day joins a day book that may have gone to Tally already: Billing then puts that day back in the Tally queue, as it
+/// does for an online payment recorded late.
+/// </summary>
+/// <param name="Number">The goods receipt's number, which its purchase voucher carries.</param>
+/// <param name="ReceivedOn">The day the goods were received: the day book the purchase is in.</param>
+public sealed record GoodsReceiptPosted(Guid GoodsReceiptId, string Number, Guid FacilityId, DateOnly ReceivedOn, DateTimeOffset PostedAt) : DomainEvent;
