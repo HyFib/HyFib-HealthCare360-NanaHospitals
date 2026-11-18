@@ -8,8 +8,7 @@ This assessment adds what the earlier ones did not have:
 - an independent review of the code on the paths where a defect harms a patient, money or privacy: medication, the
   laboratory, identity and access, and billing;
 - mechanical scans of the whole server for the faults that hit hospital systems;
-- mutation testing of the safety rules, to see whether the tests catch a fault. Its run had not finished when this
-  was written, so this report claims nothing from it yet (section 3.5).
+- mutation testing of the safety rules, to see whether the tests catch a fault (section 3.5).
 
 **The review found 3 blockers and 12 high-severity defects** (section 1.1). Each was traced in the code by the
 reviewer, then checked again by the author of this report. None of them is caught by today's tests, and none is in
@@ -118,6 +117,11 @@ release can be made until the signing key exists.
     - a refund is bounded by what was paid, and a second person approves it;
     - card and UPI payments are recorded once;
     - two concurrent edits of a bill conflict rather than both apply.
+- **Mutation testing** (section 3.5). Of 137 faults seeded one at a time into six safety rules, the tests caught 88
+  (64%).
+  - They caught every fault in the rule that decides what laboratory results are released without a person (14 of
+    14), and in the money rounding and the GST split (5 of 5).
+  - The faults they missed are at boundaries and in rarer paths. Section 3.5 lists them, with the tests to add.
 
 **What stops it.**
 
@@ -128,8 +132,9 @@ release can be made until the signing key exists.
 **Recommendation**
 
 1. **Fix wave 1's findings first:** M4 (the controlled-drug registers after a downtime), P3 (sessions after a facility
-   is taken away), and B3 if wave 1 uses Tally. Then fix the rest wave by wave (section 1.2). Each fix comes with a
-   test that fails before it.
+   is taken away), and B3 if wave 1 uses Tally. Then fix the rest wave by wave (section 1.2).
+   - Each fix comes with a test that fails before it.
+   - Before each wave, also add the tests section 3.5 names for the rules that wave uses.
 2. **HyFib's own steps:** make the signing key (R2), read Dependabot's alerts (R6), and have the two CodeQL alerts
    dismissed (R10).
 3. **Make a release candidate.** Tag `1.0.0-rc.1` on a commit with the wave-1 fixes whose CI passed. Install it on the
@@ -375,9 +380,52 @@ These were run on the whole server (`src/server`, `src/shared`, migrations left 
 Mutation testing changes a rule in a small way and checks that some test fails. A change no test notices is a fault the
 tests would let through.
 
-*The run had not finished when this was written.* Until its results are here, this report claims nothing from it.
-The rules it covers are the laboratory's flags, reference ranges, auto-validation and calculated results, and the bill
-totals and GST.
+**How it was done.**
+
+- Each fault was a one-line change to a rule at `31eb025f`, made one at a time.
+- After each change, the module's whole unit test project was built and run, and then the file was put back.
+- A fault counts as caught when any test failed.
+- The baselines passed before and after: Diagnostics 917 tests, Billing 828, Pharmacy 118.
+- Stryker.NET 5.1.0 was tried first and set aside. With xUnit v3 on Microsoft Testing Platform it could not capture
+  coverage, and it reported every fault in `ResultInterpreter.cs` as missed. The faults made by hand disprove that.
+
+| Rule | File | Faults | Caught | Score |
+|---|---|---|---|---|
+| What laboratory results may be released without a person | `Modules.Diagnostics/Domain/Laboratory/Rules/AutoValidationPolicy.cs` | 14 | 14 | 100% |
+| Money: rounding to the paisa, and splitting GST into CGST and SGST | `Money` (`ValueObjects.cs`) | 5 | 5 | 100% |
+| The calculated results' formulas | `ResultFormulas.cs` | 24 | 17 | 71% |
+| The reference interval, by age and sex | `ReferenceRangeSelector.cs` | 15 | 9 | 60% |
+| Bill totals: concessions, discounts, packages, the payer's share | `Modules.Billing/Domain/BillTotalsCalculator.cs` | 36 | 21 | 58% |
+| Calculated results: inputs, refusals, taking a result back | `CalculatedResults.cs` | 12 | 7 | 58% |
+| A pharmacy sale: returns, cancellation, who may refund | `Modules.Pharmacy/Domain/PharmacySale.cs` | 12 | 6 | 50% |
+| The flags: H, L, HH and LL from a value | `ResultInterpreter.cs` | 19 | 9 | 47% |
+| **All** | | **137** | **88** | **64%** |
+
+Eleven of the missed faults change nothing a test could see, such as a guard repeated a line later. Without them, 88
+of 126 were caught (70%).
+
+**What the score says.** Two of the rules are fully pinned by their tests:
+- **auto-validation**, the gate between a result and its release: dropping any one of its conditions fails a test;
+- **the paisa rounding and the GST split.**
+
+Each fault the tests missed is not a defect: the code as it stands was right in every case. Each is a place where a
+later change could break the rule without a test noticing. They cluster at boundaries (a value exactly at a limit) and
+in rarer paths.
+
+**The missed faults that matter, and the tests to add before the wave that uses each rule**
+
+| Missed | What a test should hold | Where | Wave |
+|---|---|---|---|
+| CR8, CR7 | A calculated result is never taken from an input on another tube, or on another ordered item, of the same order | `CalculatedResults.cs:124, 127` | 4 |
+| CR10, CR11 | A verified calculated result goes back to unverified when its input is withdrawn, or when it can no longer be calculated | `CalculatedResults.cs:78, 104` | 4 |
+| CR4 | A formula never writes into a result kept in another unit | `CalculatedResults.cs:95` | 4 |
+| RI6 | A value read against an interval with no numeric limits is not flagged Normal. Normal is the only flag auto-validation accepts | `ResultInterpreter.cs:104` | 4 |
+| RI8 to RI11, RI14 | Values written "<=x" or "≤x"; values exactly at a "<x" or ">x" limit; critical text typed in another case | `ResultInterpreter.cs:124–198` | 4 |
+| RS15 | A critical answer listed only for the female interval still counts when a patient is read against both | `ReferenceRangeSelector.cs:81` | 4 |
+| RF7, RF8, RF10, RF11, RF19, RF22, RF23 | Each formula's refusal exactly at its limit. For example, changing the globulin check from `<= 0` to `< 0` would divide by zero when globulin is exactly 0 | `ResultFormulas.cs` | 4 |
+| PH11, PH12 | Whoever sold an invoice, or took its payment, cannot cancel or refund it: the separation of duties | `PharmacySale.cs:180` | 1 |
+| PH1, PH7, PH8 | An item that expires today; each half of the "has returns" check before a cancellation | `PharmacySale.cs:209, 257` | 1 |
+| BT27, BT8, BT6, BT7, BT2, BT3, BT14 | A discount larger than the bill or the line; a concession on a line that allows none; a discount on a free-treatment bill; a package cover above the gross or below zero; a co-pay outside 0 to 100% | `BillTotalsCalculator.cs:99–135, 203` | 2 |
 
 ### 3.6 What CI does not prove, and what does
 
