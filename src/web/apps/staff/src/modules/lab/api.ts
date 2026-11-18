@@ -29,6 +29,7 @@ export type LabSection = (typeof LAB_SECTIONS)[number];
 
 export const SPECIMEN_TYPES = [
   'WholeBlood',
+  'ArterialBlood',
   'Serum',
   'Plasma',
   'Urine',
@@ -768,8 +769,20 @@ export interface ResultSheetLine {
   instrumentComment: string | null;
   /** The analyser's own word for an answer the server read as one of the test's ("Neg" kept as Nil). */
   instrumentValue?: string | null;
-  /** Why the analyser's result was not auto-verified, as the server found it when the result came. */
+  /**
+   * Why the analyser's result was not auto-verified, as the server found it when the result came. For a result HC360
+   * calculated, the first is the formula with the inputs it was worked from, for the verifier.
+   */
   heldReasons: string[];
+  /** HC360 calculated the value from other results of the order and sample: never verified automatically. */
+  isCalculated?: boolean;
+  /** The formula that fills this test ("Total protein − Albumin"); null for one that is measured. */
+  formula?: string | null;
+  /**
+   * A value the sheet fills in for a person to confirm before saving (an arterial blood gas's FiO2: 21, room air); the
+   * server neither stores it nor calculates from it until it is entered.
+   */
+  suggestedValue?: string | null;
   method: string | null;
   remarks: string | null;
   organism: string | null;

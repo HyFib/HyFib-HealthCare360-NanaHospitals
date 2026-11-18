@@ -67,7 +67,7 @@ internal sealed record OrderableSeed(
     /// <summary>Result definition of a single-analyte test.</summary>
     public ResultSeed? Result { get; init; }
 
-    /// <summary>Timed specimen that always gets its own tube (post-prandial glucose).</summary>
+    /// <summary>Timed specimen that always gets its own tube (post-prandial glucose, an arterial blood gas).</summary>
     public bool DrawSeparately { get; init; }
 
     public bool IsPanel => Components.Count > 0;
@@ -82,11 +82,12 @@ internal sealed record OrderableSeed(
 /// </summary>
 internal static partial class LabCatalog
 {
+    // The blood gases come last: a database seeded before them keeps the place of every test it has (DisplayOrder).
     public static IReadOnlyList<AnalyteSeed> Analytes { get; } =
-        [.. HaematologyAnalytes(), .. BiochemistryAnalytes(), .. ImmunologyAnalytes(), .. ClinicalPathologyAnalytes()];
+        [.. HaematologyAnalytes(), .. BiochemistryAnalytes(), .. ImmunologyAnalytes(), .. ClinicalPathologyAnalytes(), .. BloodGasAnalytes()];
 
     public static IReadOnlyList<OrderableSeed> Orderables { get; } =
-        [.. HaematologyTests(), .. BiochemistryTests(), .. ImmunologyTests(), .. ClinicalPathologyTests()];
+        [.. HaematologyTests(), .. BiochemistryTests(), .. ImmunologyTests(), .. ClinicalPathologyTests(), .. BloodGasTests()];
 
     // ------------------------------------------------------------------ interval helpers (ages in days)
 

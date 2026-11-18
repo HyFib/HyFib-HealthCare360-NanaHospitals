@@ -138,6 +138,12 @@ public static class NumberFormat
         string.Equals(currentPeriod, PeriodFor(policy, localNow), StringComparison.Ordinal) ? currentValue : 0;
 
     /// <summary>
+    /// The running number the next allocation issues after <paramref name="lastIssued"/>: the one after it, or the series'
+    /// first number (<see cref="NumberSeriesDefinition.FirstNumber"/>) when the counter is below that, as the allocation does.
+    /// </summary>
+    public static long NextNumber(long lastIssued, long firstNumber) => Math.Max(lastIssued + 1, Math.Max(firstNumber, 1));
+
+    /// <summary>
     /// The counter after an administrator's change. A new next number counts from there in the current period. A new
     /// reset keeps counting in the current period and starts again from 1 only at its next boundary, so no number already
     /// issued this period is issued again. Otherwise the counter is left as it is.

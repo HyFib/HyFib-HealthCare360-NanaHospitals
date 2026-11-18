@@ -60,7 +60,9 @@ import {
   type SusceptibilityDto,
   type VerifyResultsRequest,
 } from './api';
+import { answerFor, STRIP_KEYS, typeStripKey, type StripTyping } from './answers';
 import { FlagChip, SampleStatusBadge } from './badges';
+import { calculationNote, enteredLabel } from './calculated';
 import { CultureDialog, type CultureValue } from './CultureDialog';
 import {
   flagDisplay,
@@ -71,6 +73,7 @@ import {
   reviewHints,
   type LineInterpretation,
 } from './flags';
+import { isUntouchedPrefill, prefilledEdits, prefillNote, typedEdits, withRestoredDraft } from './prefill';
 import { QcOverrideDialog } from './QcOverrideDialog';
 import { RejectSampleDialog } from './RejectSampleDialog';
 import { isSampleBarcode, KeystrokeTimer, normalizeScan } from './scan';
@@ -304,14 +307,15 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   }
 
   const draftKey = userId ? draftStorageKey(userId, `lab-results:${sheet.sampleId}`) : null;
-  const [edits, setEdits] = useState<Edits>({});
+  // An arterial blood gas's FiO2 opens filled in with room air, for the user to confirm by saving (or change).
+  const [edits, setEdits] = useState<Edits>(() => prefilledEdits(sheet.lines, canEnter && inLab));
   const [restorable, setRestorable] = useState<SavedDraft | null>(() => readDraft(draftKey));
   // The user's drafts open once the server's key has come, which can be after the sheet: it looks again then.
   const draftsOpen = useDrafts((s) => userId !== undefined && s.openFor === userId);
   const [lookedOpen, setLookedOpen] = useState(draftsOpen);
   if (draftsOpen !== lookedOpen) {
     setLookedOpen(draftsOpen);
-    if (draftsOpen && restorable === null && Object.keys(edits).length === 0) {
+    if (draftsOpen && restorable === null && Object.keys(typedEdits(edits, sheet.lines)).length === 0) {
       setRestorable(readDraft(draftKey));
     }
   }
@@ -326,18 +330,22 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   const [rejecting, setRejecting] = useState(false);
   const inputs = useRef(new Map<string, HTMLElement>());
   const scanState = useRef<{ timer: KeystrokeTimer; before: string } | null>(null);
+  // A strip's word typed into an answer list ("-", "+-", "++"), key by key.
+  const stripTyping = useRef<StripTyping | null>(null);
 
-  // Typing is kept on this computer as it happens, so switching tubes, a crash or a WiFi drop never loses results.
+  // Typing is kept on this computer as it happens, so switching tubes, a crash or a WiFi drop never loses results. A
+  // value filled in and never confirmed is not: it is filled in again.
   useEffect(() => {
     if (!draftKey) {
       return;
     }
-    if (Object.keys(edits).length > 0) {
-      writeDraft(draftKey, edits);
+    const typed = typedEdits(edits, sheet.lines);
+    if (Object.keys(typed).length > 0) {
+      writeDraft(draftKey, typed);
     } else if (!restorable) {
       removeDraft(draftKey);
     }
-  }, [draftKey, edits, restorable]);
+  }, [draftKey, edits, restorable, sheet.lines]);
 
   const lines = sheet.lines;
   const interpretation = new Map<string, LineInterpretation>();
@@ -647,6 +655,20 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
           value={value}
           onChange={(_, data) => setEdit(line, { value: data.value })}
           {...common}
+          onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+            // The strip's own words choose the test's answer: "-" Nil, "+-" Trace, "++" 2+.
+            if (STRIP_KEYS.has(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+              event.preventDefault();
+              const typed = typeStripKey(stripTyping.current, line.resultId, event.key, event.timeStamp);
+              stripTyping.current = typed;
+              const answer = answerFor(line.options, typed.word);
+              if (answer) {
+                setEdit(line, { value: answer });
+              }
+              return;
+            }
+            common.onKeyDown(event);
+          }}
         >
           <option value="">—</option>
           {line.options.map((option) => (
@@ -730,7 +752,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
     if (line.status === 'Entered') {
       return (
         <Badge appearance="tint" color="brand" shape="rounded">
-          {line.instrumentCode ? `From ${line.instrumentCode}` : 'Entered'}
+          {enteredLabel(line)}
         </Badge>
       );
     }
@@ -769,7 +791,11 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
   };
 
   // Leaving the screen or closing the window with unsaved changes asks first (SRS UX-08).
-  useLeaveGuard({ dirty: dirtyLines.length > 0, busy: save.isPending, leaveQuestion: LEAVE_KEEPING_DRAFT });
+  useLeaveGuard({
+    dirty: dirtyLines.some((line) => !isUntouchedPrefill(line, edits[line.resultId])),
+    busy: save.isPending,
+    leaveQuestion: LEAVE_KEEPING_DRAFT,
+  });
 
   return (
     <div className={styles.root}>
@@ -857,7 +883,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
               size="small"
               onClick={() => {
                 const saved = restorable.value;
-                setEdits((current) => ({ ...saved, ...current }));
+                setEdits((current) => withRestoredDraft(current, saved, sheet.lines));
                 setRestorable(null);
               }}
             >
@@ -867,7 +893,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
               size="small"
               onClick={() => {
                 setRestorable(null);
-                if (Object.keys(edits).length === 0) {
+                if (Object.keys(typedEdits(edits, sheet.lines)).length === 0) {
                   removeDraft(draftKey);
                 }
               }}
@@ -967,13 +993,22 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
                                 Large change from the previous result: check the sample
                               </span>
                             )}
-                            {line.status === 'Entered' && line.heldReasons.length > 0 && (
-                              <Caption1 className={styles.muted}>
-                                Not auto-verified: {line.heldReasons.join(' ')}
-                              </Caption1>
+                            {prefillNote(line, edits[line.resultId]) && (
+                              <Caption1 className={styles.muted}>{prefillNote(line, edits[line.resultId])}</Caption1>
                             )}
-                            {line.status === 'Pending' && line.heldReasons.length > 0 && (
-                              <Caption1 className={styles.muted}>{line.heldReasons.join(' ')}</Caption1>
+                            {calculationNote(line) ? (
+                              <Caption1 className={styles.muted}>{calculationNote(line)}</Caption1>
+                            ) : (
+                              <>
+                                {line.status === 'Entered' && line.heldReasons.length > 0 && (
+                                  <Caption1 className={styles.muted}>
+                                    Not auto-verified: {line.heldReasons.join(' ')}
+                                  </Caption1>
+                                )}
+                                {line.status === 'Pending' && line.heldReasons.length > 0 && (
+                                  <Caption1 className={styles.muted}>{line.heldReasons.join(' ')}</Caption1>
+                                )}
+                              </>
                             )}
                           </div>
                         </td>

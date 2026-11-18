@@ -42,6 +42,7 @@ export const sectionShort: Record<LabSection, string> = {
 
 export const specimenLabel: Record<SpecimenType, string> = {
   WholeBlood: 'Whole blood',
+  ArterialBlood: 'Arterial blood',
   Serum: 'Serum',
   Plasma: 'Plasma',
   Urine: 'Urine',

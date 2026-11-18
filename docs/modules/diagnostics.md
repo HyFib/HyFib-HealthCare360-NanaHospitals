@@ -120,7 +120,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
-| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), susceptibilities, hasCriticalCall, version) |
+| GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), isCalculated and formula (a result HC360 calculated from others: see Calculated results), suggestedValue (a value the sheet fills in for a person to confirm: an arterial blood gas's FiO2, `21`; never stored until entered), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
 | POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
@@ -141,7 +141,7 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/{id}/document` | `lab.orders.read` | → `PrintableDocumentDto` (title, fileName, pageSize `A4`, landscape, html): the A4 report for the staff app to print. Same released-only rule and guard as `/{id}`; audit "Printed lab report …" |
 | GET | `/{id}/pdf` | `lab.orders.read` | → the same report as `application/pdf` (`lab-report-<number>.pdf`); 503 `pdf.unavailable` when the server can't make PDFs. Audit "Downloaded lab report … as a PDF" |
 | POST | `/{id}/release` | `lab.results.verify` | → `ReleaseOutcome` (releasedItemIds, isPartial, verificationCode); a released HIV result outside its normal answers puts the patient's record in the HIV category (R-4): an HIV test's result, or one reported under an HIV panel (a band of an HIV confirmation), not another test beside an HIV test in a panel |
-| POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced; an HIV result corrected to reactive puts the record in the HIV category, and one corrected to non-reactive leaves it there. Where the facility sets `lab.separateVerifier`: 202 `ApprovalRequestDto` (kind `diagnostics.lab_amendment`), every check made and nothing changed; another pathologist makes it by approving, on the report as it was asked for (`approval.stale` otherwise). `LabReportView.amendmentWaitingSince` says one waits, and each `LabAmendmentView.requestedBy` names who asked |
+| POST | `/{id}/amend` | `lab.results.verify` | `AmendReportRequest` (reason, `AmendmentChange[]` resultId/value/remarks, criticalCall) → 204; revision + 1, old → new values recorded and re-announced; the released results HC360 calculated from a corrected one are calculated again in the same amendment (422 `lab.calculated_result` when one cannot be: correct it too); an HIV result corrected to reactive puts the record in the HIV category, and one corrected to non-reactive leaves it there. Where the facility sets `lab.separateVerifier`: 202 `ApprovalRequestDto` (kind `diagnostics.lab_amendment`), every check made and nothing changed; another pathologist makes it by approving, on the report as it was asked for (`approval.stale` otherwise). `LabReportView.amendmentWaitingSince` says one waits, and each `LabAmendmentView.requestedBy` names who asked |
 
 ### Quality control — `/api/v1/lab/qc`
 | Method | Path | Permission | Request → response |
@@ -316,9 +316,17 @@ cardiology section headings are in the language the report is made in (PP-06): E
 portal and in the "report ready" message (print-templates.md, *The patient's language*). Test and section names,
 values, units, reference intervals, flag codes, the modality and the cardiology measurements stay as written.
 
+**High and low arrows** (Nana Hospitals, L7: "Reports view in High, Low in arrow mark"). On the lab report (and the lab
+results of the health check-up report), a high flag reads `↑ H` or `↑ HH` and a low one `↓ L` or `↓ LL`, in the Flag
+column. The letter stays, with its words in the flag's tooltip and in the report's language, so the meaning never rests
+on the arrow (and screen readers skip the arrow, `aria-hidden`). The staff app's flags show the same (`FlagChip`, the
+result sheet, the report preview and the amendment dialog). The arrows print in a font the document carries: Inter's
+two arrows, cut down to them (`DocumentFonts.Arrows`, "HC360 Arrows", SIL OFL 1.1), embedded in every document that has
+one, so they render whatever fonts the server or the reader's computer has.
+
 | Document | Made from | File name | What it prints |
 |---|---|---|---|
-| Lab report | `LabReportView` | `lab-report-<accession>` | Tests by section with value, flag, unit and reference interval; cultures with organism and antibiogram; interpretations, amendments; notes for partial, auto-verified and amended reports. Banner "Preliminary copy for the laboratory: not released" on an unreleased copy |
+| Lab report | `LabReportView` | `lab-report-<accession>` | Tests by section with value, flag, unit and reference interval; cultures with organism and antibiogram; interpretations, amendments; notes for partial, auto-verified and amended reports. Banner "Preliminary copy for the laboratory: not released" on an unreleased copy. A high result's flag has an up arrow before its letter and a low one's a down arrow (`↑ H`, `↑ HH`, `↓ L`, `↓ LL`; none beside `A` or `C`) |
 | Radiology report | `RadiologyReportView` | `radiology-report-<accession>` | Study, modality and body part; clinical history, technique, comparison, findings and impression (empty sections left out); the critical finding note; signed addenda. Note: the report is a professional opinion. Banner "Signed, not yet released" or "Draft: not signed by the radiologist" |
 | Cardiology report | `CardiologyReportView` | `cardiology-report-<accession>` | Titled "ECG report", "Echo report", "TMT report", "Holter report" or "ABPM report" ("Cardiology report" for other tests). The measurements of the study type with units (unrecorded ones left out), conclusion and recommendations, the critical finding note. Device recordings are not printed; a note says how many are stored with the report. Banner "Signed, not yet released" or "Draft: not signed by the cardiologist" |
 | Health check-up report | Clinical's `CheckupReport` and the booking's diagnostics results | `health-checkup-report-<booking no.>` | Patient, booking, package (and company), check-up date and completion; the doctor's summary and recommendations; the package's investigations with their status; the stations of the day with their notes. Then every released lab, radiology and cardiology result of the booking (work items with its `PackageBookingId`), printed exactly as in its own report under its report number and release time; then "Results pending" with the investigations not yet released; then the signatories of those results and the reviewing doctor (or a space for one), and the end line. Until the check-up is completed, a banner gives its status, for example "In progress — not final" |
@@ -333,8 +341,14 @@ diagnostics screen.
 ## Workflow rules
 
 * **Tube planning**: tests share a tube when container, specimen, bench (section) and destination (in-house or reference
-  lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`, e.g. LAB-PPBS) always get
-  their own tube. Barcodes are numeric and unique across facilities.
+  lab) match, and only while the tube is still Pending. Timed specimens (`drawSeparately`: LAB-PPBS, LAB-GCT, LAB-ABG) always get
+  their own tube. So the glucose tests that share the analyser's glucose channel (GLU: fasting, post-prandial and the
+  glucose challenge test) never share a tube, and a GLU result goes on the test its tube was drawn for. An arterial
+  blood gas (specimen `ArterialBlood`, a heparinised blood-gas syringe: container `Heparin`) is a syringe of its own
+  moment and of the FiO2 the patient breathed then, so two on one order are two syringes. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
+  1000000000 on, never with a leading zero (series `lab.sample`). Where the lab uses no barcodes (Nana Hospitals), the
+  technician writes the number on the tube and types it on the analyser as its sample id; the analyser's results come
+  back under it and are matched to the tube by the exact number, as a scanned barcode is.
 * **Sample state machine**: Pending → Collected → Received → InProcess → Completed; Rejected from Collected/Received/
   InProcess (reason; remarks required for Other) with a linked recollection tube; Cancelled when every test on it is
   cancelled. A second scan at receipt returns 409 `sample.already_received`; receipt before collection is refused.
@@ -347,9 +361,12 @@ diagnostics screen.
   prints "6.5" but is CriticalHigh against 6.5). Comparator values (`<0.005`, `>600`, `≤`/`≥`) and Indian digit grouping
   (`1,20,000`) are parsed. Answer-type results flag Abnormal/Critical from the interval's normal/critical answer lists.
   An answer written as strip readers and immunoassay analysers write it is read as the test's own answer
-  (`AnalyserAnswers`) when it names the same grade and exactly one of the test's answers does: `Neg`, `Negative`,
-  `Absent` or `Not detected` for Nil or Negative, `+-`, `±` or `TR` for Trace, `+`, `++`, `+++`, `++++` (or `+1`…`+4`)
-  for 1+ to 4+, `Pos`, `Present` or `Detected` for Positive, `Norm` for Normal. A grade the test does not offer (`1+`
+  (`AnalyserAnswers`) when it names the same grade and exactly one of the test's answers does: `-`, `Neg`, `Negative`,
+  `Absent` or `Not detected` for Nil or Negative, `+-`, `+/-`, `±` or `TR` for Trace, `+`, `++`, `+++`, `++++` (or
+  `+1`…`+4`) for 1+ to 4+, `Pos`, `Present` or `Detected` for Positive, `Norm` for Normal. A value entered by hand is
+  read the same way (Nana Hospitals writes `-` for nil, `+-` for trace and `++` for 2+), and on the result sheet those
+  keys typed into a test's answer list choose its answer (`+` then `-` within a second is Trace). The server and the
+  staff app are tested against one list of words (`src/web/apps/staff/src/modules/lab/answerWords.json`). A grade the test does not offer (`1+`
   for a test answered Negative or Positive) or a concentration (`250 mg/dL`) is not turned into an answer: that needs
   the strip maker's chart, so the result waits among the unmatched results. An analyser's own word for an answer read
   this way is kept on the result (`instrumentValue`, shown on the result sheet as "Analyser sent “NEG”").
@@ -359,9 +376,9 @@ diagnostics screen.
   QC accepted today on that analyser (below), delta passed, and the analyser raised no flag (none or `N`), sent the
   value in the test's unit and reported it as final. A unit is the test's however it is spelt (`AnalyserUnits`):
   whatever the case, the spaces and the micro sign (`mg/dl` is `mg/dL`, `µIU/mL` is `uIU/mL`); powers of ten written
-  10³, `10^3`, `10*3` (UCUM), `10E3` or `x10^3`; `K/uL` and `10^9/L` for 10³/µL, `M/uL` and `10^12/L` for 10⁶/µL;
-  `/cumm` and `/mm3` for `/µL`; `s`, `sec` and `seconds`; `mm/h` for `mm/hr`; `mg%` for mg/dL and `gm%` for g/dL;
-  `IU/L` for U/L. Only spellings of the same quantity in the same scale are taken as the test's unit: g/L, mmol/L or
+  10³, `10^3`, `10*3` (UCUM), `10E3`, `x10^3` or HORIBA's `1E03`; `K/uL` and `10^9/L` for 10³/µL, `M/uL` and `10^12/L`
+  for 10⁶/µL; `/cumm` and `/mm3` for `/µL` (so the H500's `1E03/mm3` is 10³/µL); `µm3` for fL; `s`, `sec` and
+  `seconds`; `mm/h` for `mm/hr`; `mg%` for mg/dL and `gm%` for g/dL; `IU/L` for U/L. Only spellings of the same quantity in the same scale are taken as the test's unit: g/L, mmol/L or
   mEq/L against g/dL, mg/dL or mmol/L are not. The staff app's review hints read units with the same rule, and both are
   tested against one list of spellings (`src/web/apps/staff/src/modules/lab/unitSpellings.json`). An analyser that
   sends no unit is not compared. The final status is
@@ -369,6 +386,42 @@ diagnostics screen.
   (correction), HL7 `R` (not verified on the analyser) or any other is not taken as final. Anything else waits for a
   pathologist: the reasons are stored on the result (`heldReasons`) and the result sheet shows them under the test,
   with the analyser's flag, status, unit and comment among the hints that keep a result out of bulk verification.
+* **Calculated results** (`ResultFormulas`, `CalculatedResults`, `ResultCalculator`; Nana Hospitals N7). Some analytes
+  are calculated, not measured, from others on the same order and sample. The formulas are kept in code, keyed by test
+  code (the lab renames a test freely; its code is what the formula means):
+
+  | Test | Formula | Calculated when |
+  |---|---|---|
+  | `IBIL` Bilirubin, indirect (unconjugated) | `TBIL` − `DBIL` (mg/dL) | the direct is not above the total |
+  | `GLOB` Globulin (calculated) | `TP` − `ALB` (g/dL) | the albumin is below the total protein |
+  | `AGR` Albumin/globulin ratio | `ALB` ÷ `GLOB` | the globulin is above zero |
+  | `VLDL` VLDL cholesterol (calculated) | `TG` ÷ 5 (mg/dL) | the triglycerides are below 400 mg/dL |
+  | `LDL` LDL cholesterol (calculated) | `CHOL` − `HDL` − `TG` ÷ 5 (mg/dL) | the triglycerides are below 400 mg/dL |
+  | `ABG-PF` P/F ratio (pO2/FiO2) | `ABG-PO2` ÷ (`ABG-FIO2`/100) (mmHg) | a FiO2 from 21 to 100 % was entered |
+  | `ABG-AAGRAD` A-a gradient | (`ABG-FIO2`/100 × (Patm − 47) − `ABG-PCO2`/0.8) − `ABG-PO2` (mmHg) | the same, the gradient is not below zero, and Patm is 400 - 800 mmHg |
+
+  VLDL and LDL follow Friedewald (Friedewald WT, Levy RI, Fredrickson DS, Clin Chem 1972;18(6):499-502), which does
+  not hold from 400 mg/dL of triglycerides up. The A-a gradient is the alveolar gas equation (water vapour 47 mmHg at
+  37 °C, respiratory quotient 0.8; Curran-Everett D, Adv Physiol Educ 2006;30(2):58-62) with Patm the laboratory's
+  barometric pressure, `lab.barometricPressureMmHg` (760, sea level, while none is set). The FiO2 is the one a person
+  entered for the sample: HC360 never assumes room air. The result sheet fills in 21 (room air) on an arterial blood
+  gas still awaiting its FiO2, with a note to change it if the patient was on oxygen; it is saved, and the ratio and
+  the gradient calculated, only when the technician saves it. A FiO2 typed as a fraction (0.40) is refused with why. After results are entered by hand, sent by an analyser or assigned from
+  the unmatched results, the results a formula fills on the same tubes are calculated in the same unit of work, the
+  globulin before the ratio that reads it. A calculated result is stored as a result entered by nobody, rounded to the
+  test's decimals, then read against its reference interval and flagged like any result. Its first held reason marks it
+  calculated and shows the verifier the formula and the inputs it was worked from ("Calculated by HC360: Total protein
+  − Albumin = 7.2 − 4.1 = 3.1 g/dL."); the result sheet line says so (`isCalculated`, `formula`), with "Calculated" as
+  its status and the note under the test. No column was added: the marker is the held reason. A calculated result is
+  never auto-validated; a person verifies it. It is calculated again whenever an input changes before it is verified,
+  and an input reopened and corrected after it was verified takes it back to unverified (audited
+  `lab.result.reopened`). One that can no longer be calculated (an input withdrawn, the triglycerides now 400 mg/dL or
+  more) loses the value it had and waits, with why ("Not calculated: …"); so does one whose input is beyond the
+  measuring range (`<0.10`), in another unit than the formula's, or impossible (a direct bilirubin above the total).
+  A value measured by an analyser or typed in for the test stands: the formula leaves it alone, so an analyser that
+  measures VLDL or LDL wins over the calculation. An amendment of a released input calculates the released results
+  calculated from it again, in the same amendment, with old → new values ("Globulin (calculated): 3.1 g/dL -> 2.7 g/dL,
+  calculated from the corrected results").
 * **Westgard QC**: z-scores against the lot targets; 1-2s warning; 1-3s, 2-2s, R-4s, 4-1s and 10x reject (all rules are
   always checked, limits are strict). Tests in the same QC group (FBS/PPBS share `GLU`) share QC. While today's latest run
   of any lot of the assay is rejected, verification is locked (`lab.qc_lockout`) unless a pathologist records an override
@@ -416,7 +469,8 @@ diagnostics screen.
 * **Release**: tests are released as soon as they are verified (a CBC is not held back by a culture); the report is
   "Released" and `isPartial` while other tests are pending. Each released test raises `DiagnosticReportReleased` with
   the clinical `OrderItemId`. The QR code is assigned at first release. Corrections after release are numbered
-  amendments with the reason and old → new values, re-announced as "(amended)".
+  amendments with the reason and old → new values, re-announced as "(amended)"; a correction of an input carries the
+  results calculated from it (see Calculated results).
 * **Charges**: posted when the item/study is created (`diagnostics.lab`, `diagnostics.radiology`,
   `diagnostics.cardiology`; SourceReference = item/study id; quantity from the order; departments LAB, RAD, CDX) and
   reversed on cancellation. A billing failure never blocks clinical work: the error is stored and can be retried.
@@ -549,6 +603,7 @@ either way. SMS never carries it. Only released content is ever made into these 
 | `lab.requirePaymentBeforeCollection` | `true` | OP/external collection requires payment |
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
+| `lab.barometricPressureMmHg` | `760` | The laboratory's barometric pressure in mmHg, the Patm of the arterial blood gas's A-a gradient (alveolar gas equation). 760 is sea level; at about 300 m, as at Theni, it is about 733. A value outside 400 - 800 leaves the gradient uncalculated, with why. Read when a gradient is calculated, so a change applies from the next result entered |
 | `radiology.pacs.autoLink` | `true` | Link the facility's new imaging studies with PACS every five minutes (`PacsLinkJob`) |
 | `pcpndt.registrationNumber` | none | The facility's PCPNDT registration (Form B), printed on every Form F. Until it is set, no Form F is recorded and ultrasounds in pregnancy cannot start |
 | `diagnostics.reports.sendPdf` | `true` | Send the report's PDF with the "report ready" e-mail, and with the WhatsApp message when its template has a document header. When `false`, patients are told the report is ready and open it on the portal. Use a WhatsApp template without a document header then: a template with one can't go without its PDF, so the WhatsApp message is skipped (the notification log says why) while the SMS and e-mail still go |
@@ -558,7 +613,7 @@ either way. SMS never carries it. Only released content is ever made into these 
 | Key | Format | Reset | Scope |
 |---|---|---|---|
 | `lab.accession` | `{FAC}LB{YY}{SEQ:7}` (e.g. `NHLB260000123`) | Yearly | Facility |
-| `lab.sample` | `{SEQ:9}` (barcode) | Never | Global (analysers look samples up by barcode only) |
+| `lab.sample` | `{SEQ:10}` (tube number, from 1000000000: always 10 digits, no leading zero) | Never | Global (analysers look samples up by this number only) |
 | `radiology.accession` | `{FAC}RD{YY}{SEQ:7}` | Yearly | Facility |
 | `cardiology.accession` | `{FAC}CD{YY}{SEQ:7}` | Yearly | Facility |
 | `radiology.form-f` | `{FAC}FF{YY}{SEQ:6}` | Yearly | Facility |
@@ -569,11 +624,34 @@ either way. SMS never carries it. Only released content is ever made into these 
 creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
 
 * **Laboratory** (with analytes, age/sex reference intervals, critical limits, LOINC codes, analyser channels):
-  LAB-CBC ₹350 (Hb, TLC, DLC N/L/M/E/B, RBC, PCV, MCV, MCH, MCHC, platelets), LAB-FBS ₹80, LAB-PPBS ₹80, LAB-HBA1C ₹550,
+  LAB-CBC ₹350 (Hb, TLC, DLC N/L/M/E/B and immature granulocytes in % and as absolute counts, RBC, PCV, MCV, MCH, MCHC,
+  RDW-CV, RDW-SD, platelets, MPV, plateletcrit, PDW, P-LCR: every parameter the Yumizen H500 sends, see *The Yumizen
+  H500's parameters* below), LAB-FBS ₹80, LAB-PPBS ₹80, LAB-GCT ₹80 (glucose challenge test, 50 g, 1 hour: fluoride
+  plasma in its own tube, read on the glucose channel GLU with the glucose QC; 140 mg/dL or more is a positive screen,
+  per ACOG Practice Bulletin 190 and the ADA's two-step approach, a default the lab reviews), LAB-HBA1C ₹550,
   LAB-LIPID ₹600 (TC, TG, HDL, LDL, VLDL), LAB-LFT ₹650, LAB-KFT ₹700 (urea, creatinine, uric acid, Na, K, Cl),
+  LAB-ELECTROLYTES ₹450 (Na, K, Cl and bicarbonate: HCO3, mmol/L, adult 22 - 29 after Tietz, measured on the EXIAS e|1
+  and entered by hand as the lab enters its other electrolytes, with the channel `HCO3` should it ever be interfaced),
   LAB-TFT ₹600 (T3, T4, TSH), LAB-URINE-RE ₹150, LAB-ESR ₹120, LAB-CRP ₹500, LAB-DENGUE-NS1 ₹700, LAB-MALARIA ₹350,
-  LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400, LAB-VITB12 ₹1,000, LAB-PSA ₹800,
-  LAB-ELECTROLYTES ₹450, LAB-COAG ₹700 (PT, INR, APTT), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700.
+  LAB-WIDAL ₹250, LAB-HBSAG ₹350, LAB-HIV ₹450, LAB-HCV ₹600, LAB-VITD ₹1,400 (one test under every name the i-CHROMA
+  and the doctors give it, each a channel: `VITD`, `VIT-D`, `VIT D-25`, `VIT-D3`, `VIT D3`, `VIT 25 OH`; the order screen
+  finds tests by code, name and short name only, so those names are not search words there: open, see
+  NANA-THENI-ANSWERS-LAB.md), LAB-VITB12 ₹1,000, LAB-PSA ₹800,
+  LAB-COAG ₹700 (PT, INR, APTT; PT and APTT in seconds, as the Wondfo OCG-102 reports them. Open: a "Control" time
+  printed beside the patient's PT and APTT, the normal plasma time the laboratory compares them with. It belongs to a
+  reagent or control lot and changes with it, so it needs a value stored with the lot (a migration) and the report
+  line to carry it; the proposal is in docs/deployment/NANA-THENI-ANSWERS-LAB.md), LAB-BLOOD-GROUP ₹150, LAB-STOOL-RE ₹150, LAB-CULTURE-URINE ₹700, LAB-ABG ₹1,200
+  (arterial blood gas, last in the catalogue so that a database seeded before keeps every test's place: pH, pCO2,
+  bicarbonate and base excess under *Acid-base*; pO2, sO2, FiO2, P/F ratio and A-a gradient under *Oxygenation*. Arterial
+  blood in a heparinised syringe, drawn on its own, TAT 1 hour. Adult intervals pH 7.35 - 7.45, pCO2 35 - 45 mmHg, pO2
+  80 - 100 mmHg (room air), HCO3 22 - 26 mmol/L, BE -2 to +2 mmol/L (Habib T et al., S Afr Fam Pract 2025;67(1):e1-e7,
+  table 1); critical pH below 7.21 or above 7.59, pCO2 below 19 or above 67 mmHg, pO2 below 43 mmHg (Kost GJ, JAMA
+  1990;263(5):704-707); sO2 95 - 100 %, the interval commonly printed (no cited source); P/F ratio flagged at 300 or
+  less (the Berlin definition of ARDS, JAMA 2012;307(23):2526-2533); A-a gradient up to 15 mmHg on room air (Sood P et
+  al., Indian J Crit Care Med 2010;14(2):57-64). The FiO2 is entered by a person and has no interval. The blood gas
+  analyser is not interfaced, so the results are entered by hand; each measured analyte has the channel a blood gas
+  analyser names it by (`pH`, `pCO2`, `HCO3`, `BE`, `pO2`, `sO2`, `FiO2`) should one be. Defaults the laboratory
+  reviews; a child's results are read against no interval).
 * **Radiology** (procedures with modality, body part, duration, contrast, preparation): RAD-XR-CHEST ₹400,
   RAD-XR-SPINE-LS ₹700, RAD-USG-ABD ₹1,200, RAD-USG-PELVIS ₹1,000, RAD-CT-HEAD ₹3,000, RAD-CT-ABD ₹6,500 (contrast),
   RAD-MRI-BRAIN ₹7,500, RAD-MRI-SPINE ₹8,000, RAD-MAMMO ₹2,000.
@@ -722,10 +800,43 @@ and two messages at once only count a channel twice. The first time an analyser 
 `lab.masters.manage` in its facility get one notification naming every new channel (link: Lab setup › Analysers).
 Whether a channel is mapped is worked out when the list is read, so mapping it in a test is all it takes for it to
 leave the list (and un-mapping it brings it back). **Lab setup › Analysers** counts the channels to map on each
-analyser and lists them with what each last read and the mapping to add to the right test (`H500:RDW-CV`); a channel
-whose code holds characters a mapping cannot (`/`, a space, `:`) is said to be unmappable, for the analyser's engineer
-to send under another code. Whoever manages the masters can decide that a channel goes on no report (a research
+analyser and lists them with what each last read and the mapping to add to the right test (`H500:RDW-CV`). A mapping
+may hold single spaces inside, as some analysers name their tests (`VIT D-25`, `ICHROMA:VIT 25 OH`); a channel whose code
+holds characters a mapping cannot (`/`, `:`, a space at an end or two in a row) is said to be unmappable, for the
+analyser's engineer to send under another code. Whoever manages the masters can decide that a channel goes on no report (a research
 parameter, a flag sent as a channel), with the reason (`IgnoredAnalyserChannel`, audited), and take that back.
+
+**The Yumizen H500's parameters** (Nana Hospitals, H500-1 and H500-2: "Analyser sent all parameter to test code", "The
+parameter are commonly used to patient clinical diagnosis"; N6: "PCT-Plateletcrit, PLT – Platelet All parameters are show
+patient reports"). The CBC (LAB-CBC) has an analyte for each parameter the H500 reports for a CBC or DIF, and the
+analytes' channels are the H500's own codes, so its results go on them as they come:
+
+| H500 code | Analyte | Unit | Adult interval (default, for the lab to review) |
+|---|---|---|---|
+| WBC, RBC, HGB, HCT, MCV, MCH, MCHC, PLT | TLC, RBC, HB, PCV, MCV, MCH, MCHC, PLT | as before | as before |
+| NEU%, LYM%, MON%, EOS%, BAS% | NEUT, LYMPH, MONO, EOS, BASO (which keep NEUT%, LYMPH%, MONO%, EO% and BASO% as second codes) | % | as before |
+| IMG% / IMG# | IG / IG-ABS, immature granulocytes | % / 10³/µL | 0.0 - 0.6 / 0.00 - 0.06 |
+| NEU#, LYM#, MON#, EOS#, BAS# | NEUT-ABS, LYMPH-ABS, MONO-ABS, EOS-ABS, BASO-ABS, absolute counts | 10³/µL | 2.00 - 7.00, 1.00 - 3.00, 0.20 - 1.00, 0.02 - 0.50, 0.02 - 0.10 |
+| RDW-CV / RDW-SD | RDW-CV / RDW-SD | % / fL | 11.6 - 14.0 / 39.0 - 46.0 |
+| MPV, PCT, PDW, P-LCR | MPV, PCT (plateletcrit), PDW, P-LCR | fL, %, fL, % | 8.6 - 15.5, 0.150 - 0.620, 8.3 - 25.0, 11.9 - 66.9 |
+
+The intervals are adults' only (a child's result prints without one rather than against an adult's), from Dacie and
+Lewis Practical Haematology (12th ed., 2017) for the absolute counts and RDW, Sachdev et al. 2014 (945 healthy Indian
+adults, doi:10.4103/0377-4929.134676) for the platelet indices, and Monteiro et al. 2021 (doi:10.7754/Clin.Lab.2020.200439)
+for the immature granulocytes; the code comments name them. The lab enters its own, by sex (N3). The platelet indices were
+measured on a Sysmex: check them, and PDW's unit (the H500 may send it in %), against HORIBA's intervals for the H500. The
+H500's research-use parameters (ALY#/%, LIC#/%, MIC, MAC, and the others it sends with research output on) and its large
+platelet count (P-LCC, for which no adult interval was found to cite) go on no report: Lab setup › Analysers lists them
+among the channels no test maps, where the lab ignores them, or maps them to a test it adds. HORIBA writes the counts'
+unit `1E03/mm3` (`1E06/mm3` for red cells) and cell volumes in `µm3`: both read as the tests' units (10³/µL, 10⁶/µL, fL),
+so they hold no result back from auto-validation.
+
+On a database seeded before these analytes, the seeder adds them to the CBC it has, each after the analyte the seed puts
+before it (the CBC's own analytes keep their order): the lab cannot have taken out an analyte it never had. In the same
+run, once (`DiagnosticsSeeder.ChannelsAdded`, when it creates `NEUT-ABS`), the analytes it has get the codes they gained
+since: the differential's H500 codes (NEU%, LYM%, MON%, EOS%, BAS%) before their own, as the H500's host queries ask
+for a test's first code, and the names of vitamin D on LAB-VITD. A code a test maps already (plainly or as an
+analyser's own) or that the lab ignored is left out, and a code the lab takes off a test later is never put back.
 
 **Order download** (`AnalyserOrders`, LIS-04). In the same unit of work as the change, Diagnostics adds one
 `lab.analyser.order` outbox message (`InstrumentOrderRequest`: barcode, action, analysers with channel codes), so

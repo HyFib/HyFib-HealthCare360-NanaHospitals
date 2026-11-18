@@ -21,6 +21,7 @@ namespace HyFib.HealthCare360.Platform.Numbering;
 /// <param name="NextExample">The number the next allocation would make now.</param>
 /// <param name="FacilityCode">What {FAC} stands for in this series' numbers.</param>
 /// <param name="IsCustomised">The format or the reset differs from the default.</param>
+/// <param name="FirstNumber">The lowest running number the series issues (<see cref="NumberSeriesDefinition.FirstNumber"/>).</param>
 public sealed record NumberSeriesItem(
     string Key,
     string Name,
@@ -38,7 +39,8 @@ public sealed record NumberSeriesItem(
     string DefaultFormat,
     NumberResetPolicy DefaultResetPolicy,
     bool GstDocument = false,
-    string? FacilityCodeReason = null);
+    string? FacilityCodeReason = null,
+    long FirstNumber = 1);
 
 /// <summary>
 /// Every series, by area then name, with what the format rules need to know about the hospital: how many facilities it
@@ -230,8 +232,8 @@ internal static class NumberSeriesEndpoints
                 {
                     series = series.Key,
                     facilityId = scope,
-                    from = new { format = currentFormat, resetPolicy = currentReset.ToString(), nextNumber = last + 1 },
-                    to = new { format, resetPolicy = request.ResetPolicy.ToString(), nextNumber = request.StartAt ?? last + 1 },
+                    from = new { format = currentFormat, resetPolicy = currentReset.ToString(), nextNumber = NumberFormat.NextNumber(last, series.FirstNumber) },
+                    to = new { format, resetPolicy = request.ResetPolicy.ToString(), nextNumber = request.StartAt ?? NumberFormat.NextNumber(last, series.FirstNumber) },
                 },
                 // A new next number leaves a gap in the series, which auditors of bills and receipts ask about.
                 Severity = request.StartAt is null ? AuditSeverity.Info : AuditSeverity.Warning,
@@ -268,7 +270,7 @@ internal static class NumberSeriesEndpoints
             format,
             reset,
             last,
-            NumberFormat.Render(NumberSeriesService.WithFacilityCode(series, format), last + 1, facilityCode, now),
+            NumberFormat.Render(NumberSeriesService.WithFacilityCode(series, format), NumberFormat.NextNumber(last, series.FirstNumber), facilityCode, now),
             facilityCode,
             IsCustomised: !string.Equals(format, series.DefaultFormat, StringComparison.Ordinal) || reset != series.DefaultReset,
             series.IsLocked,
@@ -277,7 +279,8 @@ internal static class NumberSeriesEndpoints
             series.DefaultFormat,
             series.DefaultReset,
             series.GstDocument,
-            series.FacilityCodeReason);
+            series.FacilityCodeReason,
+            series.FirstNumber);
     }
 
     /// <summary>

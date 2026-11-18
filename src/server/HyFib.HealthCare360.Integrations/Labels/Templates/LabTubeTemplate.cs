@@ -6,7 +6,7 @@ namespace HyFib.HealthCare360.Integrations.Labels.Templates;
 /// SHARMA RAVI KUMAR                46Y/M
 /// UHID NH00012345           [STAT] or LA2600123
 /// ||||||||||||| sample barcode |||||||||||||
-/// LS2600000123                  EDTA - HAEM
+/// 1000000123                    EDTA - HAEM
 /// CBC, ESR +2                  26 Sep 10:32
 /// </code>
 /// </summary>

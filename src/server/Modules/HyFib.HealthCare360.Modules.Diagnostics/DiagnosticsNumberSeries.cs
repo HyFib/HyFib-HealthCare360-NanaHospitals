@@ -14,12 +14,17 @@ public static class DiagnosticsNumberSeries
             LockedReason = "Barcode scanners on the laboratory screens recognise accession numbers by their shape, so the format cannot change.",
         };
 
-    /// <summary>Tube barcodes: numeric and unique across facilities, because analysers look samples up by barcode only.</summary>
+    /// <summary>
+    /// Tube numbers: exactly 10 digits with no leading zero (1000000000 on), unique across facilities, because analysers
+    /// look samples up by this number only. A lab without barcodes writes it on the tube and types it on the analyser as
+    /// its sample id (the Yumizen H500 takes 16 characters).
+    /// </summary>
     public static NumberSeriesDefinition LabSample { get; } =
-        new("lab.sample", "Sample tube barcode", "Laboratory", "{SEQ:9}", NumberResetPolicy.Never, MaxLength: 20)
+        new("lab.sample", "Sample tube number", "Laboratory", "{SEQ:10}", NumberResetPolicy.Never, MaxLength: 20)
         {
             PerFacility = false,
-            LockedReason = "Laboratory analysers and barcode scanners read tube barcodes as plain 9-digit numbers, so the format cannot change.",
+            FirstNumber = 1_000_000_000,
+            LockedReason = "Tube numbers are written on the tubes, typed on the analysers and scanned as plain 10-digit numbers, which the analysers send back with each result, so the format cannot change.",
         };
 
     public static NumberSeriesDefinition RadiologyAccession { get; } =

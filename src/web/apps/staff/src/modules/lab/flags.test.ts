@@ -6,6 +6,7 @@ import {
   classifyText,
   deltaCheck,
   flagDisplay,
+  flagText,
   formatDelta,
   interpretLine,
   isBenignAnalyserFlag,
@@ -91,6 +92,25 @@ describe('flag display', () => {
     expect(flagDisplay('Critical')).toMatchObject({ code: 'C', critical: true });
     expect(flagDisplay('Normal')).toMatchObject({ code: '', tone: 'normal' });
     expect(flagDisplay(null)).toBeNull();
+  });
+
+  // Nana Hospitals reads high and low results by an arrow (L7): the letter and the words stay beside it.
+  it('puts an up arrow beside a high flag and a down arrow beside a low one, keeping the letter and the words', () => {
+    expect(flagDisplay('High')).toMatchObject({ arrow: '↑', code: 'H', label: 'High' });
+    expect(flagDisplay('CriticalHigh')).toMatchObject({ arrow: '↑', code: 'HH', label: 'Critically high' });
+    expect(flagDisplay('Low')).toMatchObject({ arrow: '↓', code: 'L', label: 'Low' });
+    expect(flagDisplay('CriticalLow')).toMatchObject({ arrow: '↓', code: 'LL', label: 'Critically low' });
+    expect(flagDisplay('Abnormal')).toMatchObject({ arrow: '' });
+    expect(flagDisplay('Critical')).toMatchObject({ arrow: '' });
+    expect(flagDisplay('Normal')).toMatchObject({ arrow: '' });
+
+    expect(flagText(flagDisplay('High'))).toBe('↑ H');
+    expect(flagText(flagDisplay('CriticalHigh'))).toBe('↑ HH');
+    expect(flagText(flagDisplay('Low'))).toBe('↓ L');
+    expect(flagText(flagDisplay('CriticalLow'))).toBe('↓ LL');
+    expect(flagText(flagDisplay('Abnormal'))).toBe('A');
+    expect(flagText(flagDisplay('Normal'))).toBe('');
+    expect(flagText(flagDisplay(null))).toBe('');
   });
 });
 

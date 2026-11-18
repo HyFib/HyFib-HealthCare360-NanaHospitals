@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
+using HyFib.HealthCare360.Modules.Diagnostics.Features.LabMasters;
 using HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Tests.Seed;
@@ -28,6 +29,9 @@ public sealed class LabCatalogTests
     /// <summary>Analytes reported against one sex only (no interval for the other sex is intended).</summary>
     private static readonly string[] SexSpecificTests = ["LAB-PSA"];
 
+    /// <summary>What a person states about the patient rather than measures: the FiO2 breathed (N8) has no interval.</summary>
+    private static readonly string[] StatedNotMeasured = ["ABG-FIO2"];
+
     [Fact]
     public void Every_code_other_modules_depend_on_is_seeded()
     {
@@ -51,13 +55,127 @@ public sealed class LabCatalogTests
     }
 
     [Theory]
-    [InlineData("LAB-CBC", new[] { "HB", "TLC", "NEUT", "LYMPH", "MONO", "EOS", "BASO", "RBC", "PCV", "MCV", "MCH", "MCHC", "PLT" })]
+    [InlineData("LAB-CBC", new[]
+    {
+        "HB", "TLC", "NEUT", "LYMPH", "MONO", "EOS", "BASO", "IG", "NEUT-ABS", "LYMPH-ABS", "MONO-ABS", "EOS-ABS", "BASO-ABS", "IG-ABS",
+        "RBC", "PCV", "MCV", "MCH", "MCHC", "RDW-CV", "RDW-SD", "PLT", "MPV", "PCT", "PDW", "P-LCR",
+    })]
     [InlineData("LAB-LIPID", new[] { "CHOL", "TG", "HDL", "LDL", "VLDL" })]
     [InlineData("LAB-KFT", new[] { "UREA", "CREA", "UA", "NA", "K", "CL" })]
     [InlineData("LAB-TFT", new[] { "T3", "T4", "TSH" })]
     [InlineData("LAB-COAG", new[] { "PT", "INR", "APTT" })]
+    [InlineData("LAB-ELECTROLYTES", new[] { "NA", "K", "CL", "HCO3" })]
     public void Panels_report_the_analytes_clinicians_expect(string code, string[] analytes) =>
         LabCatalog.Orderables.Single(o => o.Code == code).Components.Select(c => c.Code).ShouldBe(analytes, ignoreOrder: true);
+
+    /// <summary>
+    /// The Yumizen H500's CBC and DIF parameters (manual RAA085BEN, YumizenH500Tests), by its own codes: Nana Hospitals
+    /// reports all of them (H500-1, H500-2, N6).
+    /// </summary>
+    private static readonly string[] YumizenH500Parameters =
+    [
+        "WBC", "RBC", "HGB", "HCT", "MCV", "MCH", "MCHC", "RDW-CV", "RDW-SD", "PLT", "MPV", "PCT", "PDW", "P-LCR",
+        "NEU%", "LYM%", "MON%", "EOS%", "BAS%", "IMG%", "NEU#", "LYM#", "MON#", "EOS#", "BAS#", "IMG#",
+    ];
+
+    [Fact]
+    public void The_cbc_reports_every_parameter_the_yumizen_h500_sends_each_on_its_own_analyte()
+    {
+        var cbc = LabCatalog.Orderables.Single(o => o.Code == "LAB-CBC").Components.Select(c => c.Code).ToHashSet(StringComparer.Ordinal);
+        var analytes = LabCatalog.Analytes.Where(a => cbc.Contains(a.Code)).ToList();
+
+        foreach (var parameter in YumizenH500Parameters)
+        {
+            var mapping = analytes.Where(a => ChannelMappings.Score(a.Result.Channels ?? [], "H500", parameter) > 0).ToList();
+            mapping.Count.ShouldBe(1, $"{parameter} goes on exactly one CBC analyte");
+            Analyte(mapping[0]).ChannelFor("H500").ShouldBe(parameter, $"a host query asks for {mapping[0].Code} by the H500's own code");
+        }
+
+        analytes.Count.ShouldBe(cbc.Count);
+        analytes.Where(a => !YumizenH500Parameters.Any(p => ChannelMappings.Score(a.Result.Channels ?? [], "H500", p) > 0))
+            .Select(a => a.Code).ShouldBeEmpty("every CBC analyte is one the H500 measures");
+        LabCatalog.Orderables.Single(o => o.Code == "LAB-ESR").Result!.Channels.ShouldBe(["ESR"], "the H500 runs the ESR too");
+    }
+
+    [Theory]
+    [InlineData("NEUT", "NEU%", "NEUT%")]
+    [InlineData("LYMPH", "LYM%", "LYMPH%")]
+    [InlineData("MONO", "MON%", "MONO%")]
+    [InlineData("EOS", "EOS%", "EO%")]
+    [InlineData("BASO", "BAS%", "BASO%")]
+    public void The_differential_takes_the_h500s_codes_and_keeps_the_codes_it_had(string analyte, string h500, string before) =>
+        LabCatalog.Analytes.Single(a => a.Code == analyte).Result.Channels.ShouldBe([h500, before]);
+
+    [Theory]
+    [InlineData("ALY%")]
+    [InlineData("ALY#")]
+    [InlineData("LIC%")]
+    [InlineData("LIC#")]
+    [InlineData("MIC")]
+    [InlineData("MAC")]
+    [InlineData("P-LCC")]
+    public void The_h500s_research_parameters_and_its_large_platelet_count_go_on_no_report(string parameter) =>
+        LabCatalog.Analytes.Where(a => ChannelMappings.Score(a.Result.Channels ?? [], "H500", parameter) > 0).ShouldBeEmpty();
+
+    [Fact]
+    public void The_new_cbc_parameters_have_a_unit_and_an_adult_interval_but_none_for_a_child()
+    {
+        string[] added = ["IG", "NEUT-ABS", "LYMPH-ABS", "MONO-ABS", "EOS-ABS", "BASO-ABS", "IG-ABS", "RDW-CV", "RDW-SD", "MPV", "PCT", "PDW", "P-LCR"];
+        foreach (var code in added)
+        {
+            var result = LabCatalog.Analytes.Single(a => a.Code == code).Result;
+            result.Unit.ShouldNotBeNullOrWhiteSpace(code);
+            var ranges = result.Ranges.Select(r => r.ToEntity(Guid.Empty)).ToList();
+            ReferenceRangeSelector.Select(ranges, Gender.Female, TestData.Years(35)).ShouldNotBeNull(code);
+            ReferenceRangeSelector.Select(ranges, Gender.Male, TestData.Years(5)).ShouldBeNull($"{code}: a child is not read against an adult interval");
+        }
+
+        // Spot checks against the cited sources.
+        LabCatalog.Analytes.Single(a => a.Code == "NEUT-ABS").Result.Ranges.ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            r => r.Low.ShouldBe(2.00m), r => r.High.ShouldBe(7.00m));
+        LabCatalog.Analytes.Single(a => a.Code == "PCT").Result.ShouldSatisfyAllConditions(
+            r => r.Unit.ShouldBe("%"), r => r.Decimals.ShouldBe(3), r => r.Ranges.ShouldHaveSingleItem().High.ShouldBe(0.620m));
+    }
+
+    /// <summary>
+    /// Bicarbonate, measured on the EXIAS e|1, which is not interfaced: on the electrolytes panel, entered by hand like the
+    /// panel's other tests, with a channel should the analyser ever be interfaced.
+    /// </summary>
+    [Fact]
+    public void Bicarbonate_is_on_the_electrolytes_panel_in_mmol_per_litre_with_an_adult_interval()
+    {
+        var bicarbonate = LabCatalog.Analytes.Single(a => a.Code == "HCO3");
+
+        (bicarbonate.Name, bicarbonate.Specimen, bicarbonate.Container, bicarbonate.Loinc).ShouldBe(("Bicarbonate (total CO2)", SpecimenType.Serum, ContainerType.Plain, "1963-8"));
+        bicarbonate.Result.ShouldSatisfyAllConditions(
+            r => r.Type.ShouldBe(LabResultType.Numeric),
+            r => r.Unit.ShouldBe("mmol/L"),
+            r => r.Channels.ShouldBe(["HCO3"]));
+        var range = ReferenceRangeSelector.Select(bicarbonate.Result.Ranges.Select(r => r.ToEntity(Guid.Empty)), Gender.Male, TestData.Years(40)).ShouldNotBeNull();
+        (range.Low, range.High).ShouldBe((22m, 29m));
+        LabCatalog.Orderables.Single(o => o.Code == "LAB-ELECTROLYTES").Name.ShouldBe("Serum electrolytes (Na, K, Cl, HCO3)");
+    }
+
+    /// <summary>
+    /// Vitamin D under every name the i-CHROMA and the doctors give it: one test, LAB-VITD (i-CHROMA; N10), each name a
+    /// channel the master screen can save again.
+    /// </summary>
+    [Fact]
+    public void Vitamin_d_is_one_test_under_every_name_it_is_sent_as()
+    {
+        var channels = LabCatalog.Orderables.Single(o => o.Code == "LAB-VITD").Result.ShouldNotBeNull().Channels.ShouldNotBeNull();
+
+        channels.ShouldBe(["VITD", "VIT-D", "VIT D-25", "VIT-D3", "VIT D3", "VIT 25 OH"]);
+        channels.ShouldAllBe(c => MasterRules.IsChannelMapping(c));
+        foreach (var name in new[] { "VIT-D", "VIT D-25", "VIT-D3", "VIT 25 OH", "VIT D3" })
+        {
+            ResultDefinitions().Count(d => (d.Result.Channels ?? []).Contains(name, StringComparer.OrdinalIgnoreCase)).ShouldBe(1, $"{name} names one test");
+        }
+    }
+
+    [Fact]
+    public void Every_seeded_channel_is_one_the_master_screen_can_save() =>
+        ResultDefinitions().SelectMany(d => d.Result.Channels ?? []).Where(c => !MasterRules.IsChannelMapping(c)).ShouldBeEmpty();
 
     [Fact]
     public void Every_test_is_either_a_panel_of_known_analytes_or_a_single_result()
@@ -111,7 +229,7 @@ public sealed class LabCatalogTests
     {
         var adult = TestData.Years(35);
         var missing = ResultDefinitions()
-            .Where(d => d.Result.Type == LabResultType.Numeric && !SexSpecificTests.Contains(d.Code))
+            .Where(d => d.Result.Type == LabResultType.Numeric && !SexSpecificTests.Contains(d.Code) && !StatedNotMeasured.Contains(d.Code))
             .SelectMany(d => new[] { Gender.Male, Gender.Female }
                 .Where(g => ReferenceRangeSelector.Select(d.Result.Ranges.Select(r => r.ToEntity(Guid.Empty)), g, adult) is null)
                 .Select(g => $"{d.Code} ({g})"))
@@ -198,7 +316,75 @@ public sealed class LabCatalogTests
         fasting.Result!.QcGroup.ShouldBe("GLU");
         postPrandial.Result!.QcGroup.ShouldBe("GLU");
         postPrandial.DrawSeparately.ShouldBeTrue();
-        LabCatalog.Orderables.Where(o => o.DrawSeparately).Select(o => o.Code).ShouldBe(["LAB-PPBS"]);
+        LabCatalog.Orderables.Where(o => o.DrawSeparately).Select(o => o.Code).ShouldBe(["LAB-PPBS", "LAB-GCT", "LAB-ABG"], ignoreOrder: true);
+    }
+
+    /// <summary>
+    /// The 50 g glucose challenge test (C150-2: "GCT sample marked for GLU code, not one code"): read on the glucose
+    /// channel, from its own fluoride tube, with the glucose assay's QC; 140 mg/dL or more is a positive screen.
+    /// </summary>
+    [Fact]
+    public void The_glucose_challenge_test_is_read_on_the_glucose_channel_from_its_own_fluoride_tube()
+    {
+        var challenge = LabCatalog.Orderables.Single(o => o.Code == "LAB-GCT");
+        var fasting = LabCatalog.Orderables.Single(o => o.Code == "LAB-FBS");
+
+        challenge.Name.ShouldBe("Glucose challenge test (50 g, 1 hour)");
+        (challenge.Specimen, challenge.Container, challenge.Section).ShouldBe((SpecimenType.Plasma, ContainerType.Fluoride, LabSection.Biochemistry));
+        challenge.DrawSeparately.ShouldBeTrue();
+        challenge.Price.ShouldBe(fasting.Price, "its tariff is the other glucose tests'");
+        var result = challenge.Result.ShouldNotBeNull();
+        result.Channels.ShouldBe(["GLU"]);
+        result.QcGroup.ShouldBe("GLU");
+        result.Unit.ShouldBe("mg/dL");
+
+        var test = new LabTest { Code = challenge.Code, Name = challenge.Name, ResultType = LabResultType.Numeric, Unit = "mg/dL" };
+        var range = ReferenceRangeSelector.Select(result.Ranges.Select(r => r.ToEntity(Guid.Empty)), Gender.Female, TestData.Years(28)).ShouldNotBeNull();
+        ResultInterpreter.Interpret(test, range, "139").Value.Flag.ShouldBe(ResultFlag.Normal);
+        ResultInterpreter.Interpret(test, range, "140").Value.Flag.ShouldBe(ResultFlag.High, "140 mg/dL is a positive screen");
+        ResultInterpreter.Interpret(test, range, "460").Value.Flag.ShouldBe(ResultFlag.CriticalHigh);
+        range.Text.ShouldNotBeNull().ShouldStartWith("< 140");
+    }
+
+    /// <summary>
+    /// The arterial blood gas (N8): one heparinised syringe of arterial blood, drawn on its own, with the FiO2 a person
+    /// enters and the P/F ratio and A-a gradient HC360 calculates from it; channels for a blood gas analyser, though none is
+    /// interfaced; adult intervals and critical limits from the cited sources.
+    /// </summary>
+    [Fact]
+    public void The_arterial_blood_gas_is_a_syringe_of_arterial_blood_with_the_fio2_and_what_is_calculated_from_it()
+    {
+        var abg = LabCatalog.Orderables.Single(o => o.Code == "LAB-ABG");
+        (abg.Name, abg.Specimen, abg.Container, abg.Section, abg.DrawSeparately).ShouldBe(
+            ("Arterial blood gas (ABG)", SpecimenType.ArterialBlood, ContainerType.Heparin, LabSection.Biochemistry, true));
+        abg.Components.Select(c => c.Code).ShouldBe(
+            ["ABG-PH", "ABG-PCO2", "ABG-HCO3", "ABG-BE", "ABG-PO2", "ABG-SO2", "ABG-FIO2", "ABG-PF", "ABG-AAGRAD"]);
+
+        var analytes = abg.Components.Select(c => LabCatalog.Analytes.Single(a => a.Code == c.Code)).ToDictionary(a => a.Code);
+        analytes.Values.ShouldAllBe(a => a.Specimen == SpecimenType.ArterialBlood && a.Container == ContainerType.Heparin);
+        string[] measured = ["ABG-PH", "ABG-PCO2", "ABG-HCO3", "ABG-BE", "ABG-PO2", "ABG-SO2", "ABG-FIO2"];
+        measured.Select(code => analytes[code].Result.Channels!.Single()).ShouldBe(["pH", "pCO2", "HCO3", "BE", "pO2", "sO2", "FiO2"]);
+        analytes["ABG-PF"].Result.Channels.ShouldBeNull("HC360 calculates it");
+        ResultFormulas.For("ABG-PF").ShouldNotBeNull();
+        ResultFormulas.For("ABG-AAGRAD").ShouldNotBeNull();
+        (analytes["ABG-FIO2"].Result.Unit, analytes["ABG-FIO2"].Result.Ranges.Count).ShouldBe(("%", 0), "the FiO2 is stated, not measured");
+
+        ReferenceRange Adult(string code) => ReferenceRangeSelector.Select(
+            analytes[code].Result.Ranges.Select(r => r.ToEntity(Guid.Empty)), Gender.Male, TestData.Years(45)).ShouldNotBeNull(code);
+        Adult("ABG-PH").ShouldSatisfyAllConditions(
+            r => (r.Low, r.High, r.CriticalLow, r.CriticalHigh).ShouldBe((7.35m, 7.45m, 7.21m, 7.59m)));
+        Adult("ABG-PCO2").ShouldSatisfyAllConditions(r => (r.Low, r.High, r.CriticalLow, r.CriticalHigh).ShouldBe((35m, 45m, 19m, 67m)));
+        Adult("ABG-PO2").ShouldSatisfyAllConditions(r => (r.Low, r.High, r.CriticalLow).ShouldBe((80m, 100m, 43m)));
+        (Adult("ABG-HCO3").Low, Adult("ABG-HCO3").High).ShouldBe((22m, 26m));
+        (Adult("ABG-BE").Low, Adult("ABG-BE").High).ShouldBe((-2m, 2m));
+
+        // The P/F ratio flags the Berlin definition's 300 or less; the gradient, more than 15 on room air.
+        var ratio = new LabTest { Code = "ABG-PF", Name = "P/F ratio", ResultType = LabResultType.Numeric, Unit = "mmHg" };
+        ResultInterpreter.Interpret(ratio, Adult("ABG-PF"), "300").Value.Flag.ShouldBe(ResultFlag.Low);
+        ResultInterpreter.Interpret(ratio, Adult("ABG-PF"), "301").Value.Flag.ShouldBe(ResultFlag.Normal);
+        var gradient = new LabTest { Code = "ABG-AAGRAD", Name = "A-a gradient", ResultType = LabResultType.Numeric, Unit = "mmHg" };
+        ResultInterpreter.Interpret(gradient, Adult("ABG-AAGRAD"), "15").Value.Flag.ShouldBe(ResultFlag.Normal);
+        ResultInterpreter.Interpret(gradient, Adult("ABG-AAGRAD"), "16").Value.Flag.ShouldBe(ResultFlag.High);
     }
 
     [Fact]
@@ -234,6 +420,8 @@ public sealed class LabCatalogTests
         ImagingCatalog.Procedures.Single(p => p.Code == "RAD-CT-ABD").RequiresContrast.ShouldBeTrue();
         ImagingCatalog.Procedures.Single(p => p.Code == "RAD-CT-HEAD").RequiresContrast.ShouldBeFalse();
     }
+
+    private static LabTest Analyte(AnalyteSeed seed) => new() { Code = seed.Code, InstrumentChannelCodes = [.. seed.Result.Channels ?? []] };
 
     private static IEnumerable<(string Code, ResultSeed Result)> ResultDefinitions() =>
         LabCatalog.Analytes.Select(a => (a.Code, a.Result))

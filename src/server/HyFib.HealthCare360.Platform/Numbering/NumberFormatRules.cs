@@ -396,7 +396,11 @@ public static class NumberFormatRules
 
         if (change.StartAt is { } startAt)
         {
-            if (startAt < 1)
+            if (series.FirstNumber > 1 && startAt < series.FirstNumber)
+            {
+                Add(StartAtField, $"The next number must be {series.FirstNumber.ToString(CultureInfo.InvariantCulture)} or more, so that these numbers keep the shape other systems read.");
+            }
+            else if (startAt < 1)
             {
                 Add(StartAtField, "Enter a number of 1 or more.");
             }

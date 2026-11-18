@@ -1,5 +1,6 @@
 Copyright 2022 The Noto Project Authors (https://github.com/notofonts/devanagari)
 Copyright 2022 The Noto Project Authors (https://github.com/notofonts/tamil)
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) (InterArrows-*.woff2: Inter 4.0's arrows, cut down)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

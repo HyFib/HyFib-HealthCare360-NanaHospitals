@@ -12,6 +12,7 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 internal sealed class UnmatchedResultService(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     LabWorkflow workflow,
     LabResultService results,
     CriticalValueNotifier critical,
@@ -139,12 +140,15 @@ internal sealed class UnmatchedResultService(
             Details = new { unmatched.SampleBarcode, sample, resultId = target.Id, reason = unmatched.Reason.ToString() },
         });
 
+        // What HC360 calculates from the value is calculated again (N7).
+        var calculated = await calculator.CalculateAsync([target.SampleId], now, ct);
         await workflow.RefreshAsync([target.LabOrderId], now, ct);
         await db.SaveChangesAsync(ct);
 
-        if (target.IsCritical)
+        var criticals = calculated.Where(r => r.Status == LabResultStatus.Entered).Prepend(target).Where(r => r.IsCritical).Distinct().ToList();
+        if (criticals.Count > 0)
         {
-            await critical.AlertVerifiersAsync(await results.AlertsAsync([target], ct), ct);
+            await critical.AlertVerifiersAsync(await results.AlertsAsync(criticals, ct), ct);
         }
 
         await realtime.PublishAsync(target.FacilityId, "lab.results.entered", new { OrderIds = new[] { target.LabOrderId } }, ct);

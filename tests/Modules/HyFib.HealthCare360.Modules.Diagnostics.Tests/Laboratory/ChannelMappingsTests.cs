@@ -49,10 +49,39 @@ public sealed class ChannelMappingsTests
     [InlineData("H500", "NEU#", "H500:NEU#")]
     [InlineData("H500", "LYM%", "H500:LYM%")]
     [InlineData("C150", "NA/K", null)]
-    [InlineData("C150", "CA 2", null)]
+    [InlineData("C150", "CA 2", "C150:CA 2")]
+    [InlineData("ICHROMA", "VIT D-25", "ICHROMA:VIT D-25")]
+    [InlineData("C150", "CA  2", null)]
     [InlineData("C150", "A:B", null)]
     public void The_mapping_to_write_is_the_analysers_own_when_it_can_be_written(string analyser, string channel, string? mapping) =>
         LabMasterEndpoints.MappingOf(analyser, channel).ShouldBe(mapping);
+
+    /// <summary>
+    /// Some analysers name a test with spaces in it, as the i-CHROMA does vitamin D ("VIT D-25", "VIT 25 OH"): a mapping may
+    /// hold single spaces inside, never at an end, doubled, or beside the ':'.
+    /// </summary>
+    [Theory]
+    [InlineData("VIT D-25", true)]
+    [InlineData("VIT 25 OH", true)]
+    [InlineData("ICHROMA:VIT D-25", true)]
+    [InlineData(" VITD", false)]
+    [InlineData("VITD ", false)]
+    [InlineData("VIT  D", false)]
+    [InlineData("ICHROMA :VITD", false)]
+    [InlineData("ICHROMA: VITD", false)]
+    [InlineData("VIT/D", false)]
+    public void A_mapping_may_have_single_spaces_inside(string mapping, bool allowed) =>
+        MasterRules.IsChannelMapping(mapping).ShouldBe(allowed);
+
+    [Fact]
+    public void A_channel_with_a_space_is_mapped_by_the_same_words()
+    {
+        string[] vitaminD = ["VITD", "VIT-D", "VIT D-25", "VIT-D3", "VIT D3", "VIT 25 OH"];
+
+        ChannelMappings.Score(vitaminD, "ICHROMA", "VIT D-25").ShouldBe(1);
+        ChannelMappings.Score(vitaminD, "ICHROMA", "vit 25 oh").ShouldBe(1);
+        ChannelMappings.Score(vitaminD, "ICHROMA", "VITD25").ShouldBe(0);
+    }
 
     [Fact]
     public void A_channel_too_long_for_the_analysers_own_mapping_is_written_plain()

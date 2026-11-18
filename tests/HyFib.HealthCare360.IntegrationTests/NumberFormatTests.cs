@@ -129,6 +129,28 @@ public sealed class NumberFormatTests(HospitalServer server)
         (await SeriesAsync(admin, "billing.bill.op")).Format.ShouldBe(opBill.Format, "nothing refused was saved");
     }
 
+    [Fact]
+    public async Task Tube_numbers_have_ten_digits_and_the_next_one_cannot_be_set_below_1000000000()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var tubes = await SeriesAsync(admin, "lab.sample");
+
+        tubes.ShouldSatisfyAllConditions(
+            () => tubes.Format.ShouldBe("{SEQ:10}"),
+            () => tubes.DefaultFormat.ShouldBe("{SEQ:10}"),
+            () => tubes.IsLocked.ShouldBeTrue(),
+            () => tubes.IsCustomised.ShouldBeFalse(),
+            () => tubes.Scope.ShouldBe("global"),
+            () => tubes.FirstNumber.ShouldBe(1_000_000_000L),
+            () => tubes.NextExample.ShouldMatch(@"^[1-9][0-9]{9}$"));
+
+        using var tooLow = await admin.SendRawAsync(HttpMethod.Put, $"{Base}/lab.sample",
+            new SaveNumberSeriesRequest(tubes.Format, tubes.ResetPolicy, 999_999_999, tubes.Format, tubes.ResetPolicy));
+        tooLow.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await ProblemAsync(tooLow)).GetProperty("errors").GetProperty("startAt")[0].GetString()
+            .ShouldBe("The next number must be 1000000000 or more, so that these numbers keep the shape other systems read.");
+    }
+
     private static async Task<NumberSeriesItem> SeriesAsync(ApiClient admin, string key) =>
         (await admin.GetAsync<NumberSeriesList>(Base)).Series.Single(s => s.Key == key);
 

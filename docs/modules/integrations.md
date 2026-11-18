@@ -1118,12 +1118,13 @@ acknowledgements are never acknowledged in turn.
   above apply as written. An unknown name is refused on save and read as E1394 if stored.
   * **HORIBA Yumizen C150** (`YumizenC150`, clinical chemistry; HORIBA's *LIS Communication Protocol* for the C150).
     It connects to HC360 as a network client (*Server IP* and *Port* in its Maintenance › Parameter settings) or over
-    RS-232 (9600 8N1 by default). It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
+    RS-232 (9600 8N1 by default). Its glucose channel, `GLU`, serves every glucose test, the glucose challenge test
+    (LAB-GCT) included: each timed one is drawn into its own tube, so the result goes on the test its tube was drawn for. It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
     the backtick is the repeat delimiter both ways, and HC360 writes `H|`^&`. Its *Patient ID* (P.3) is the id it keys a
     sample by: it asks for orders by it and uploads results as H, P, R… L **without an O record**, so HC360 sends the
     tube's barcode in P.3 (not the UHID) and reads the sample from P.3 when no O record names one; the patient is then
     named by P.6 (and P.4/P.5 if sent), never by P.3. Lab staff therefore type or scan the tube's barcode as the
-    analyser's Patient ID. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
+    analyser's Patient ID: the 10-digit tube number (1000000000 on), which a lab without barcodes writes on the tube. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
     completion time R.14), as the result frames in the manual show (their checksums match their bytes); a record in
     the manual's table layout (status R.9) is still read. HC360 sends it a 14-digit date of birth (an 8-digit one shows
     "Invalid DateTime"), the name cut to 30 characters, O.16 always (`SERUM`, `PLASMA`, `URINE`, `CSF` or `BLOOD`;
@@ -1137,14 +1138,18 @@ acknowledgements are never acknowledged in turn.
     ordered by panel: O.5 is `^^^CBC`, `^^^DIF` (which also measures the CBC) or `^^^ESR`, and any other test name
     makes it refuse the order, so HC360 turns the channels pending on the tube into panels (DIF when a differential
     parameter such as LYM# or NEU% is pending, else CBC; ESR when ESR is), while each result still comes back under its
-    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). Map the haematology tests' analytes in
-    Lab setup to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT,
-    PDW, P-LCC, P-LCR, LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, ALY#/%, LIC#/%, MIC, MAC, ESR…). It takes orders
+    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). HC360's catalogue maps the CBC's analytes
+    to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT, PDW, P-LCR,
+    LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, and ESR on LAB-ESR), so every one of them is on the report (see *The
+    Yumizen H500's parameters* in [diagnostics.md](diagnostics.md)); its research-use parameters (ALY#/%, LIC#/%, MIC,
+    MAC…) and P-LCC are on none, listed in Lab setup among the channels no test maps. Its units `1E03/mm3`, `1E06/mm3`
+    and `µm3` read as 10³/µL, 10⁶/µL and fL. It takes orders
     **only in answer to its own query** and ignores any other, so no orders are sent unasked (queued ones are closed as
     skipped with that reason), and a queried sample with nothing pending is answered with an empty order (`P|1|`,
     `O|1|id||^^^|||||||N||||||||||||||Y`), exactly as its manual does. The answer's H.5 is a copy of the query's H.10,
     H.13 is `LIS2-A2`, O.6 is `R` or `S` (urgent goes as stat), O.16 is `BLOOD`, the name is cut to 20 characters and
-    the sample id must fit its 16. QC and technician runs (H.12 `Q` or `D`) and control samples (O.16 `CONTROL`) are
+    the sample id must fit its 16 (HC360's tube numbers have 10 digits, which a lab without barcodes writes on the tube
+    and types as the sample id). QC and technician runs (H.12 `Q` or `D`) and control samples (O.16 `CONTROL`) are
     acknowledged but not stored as patient results; R.4 `---` (no result) and `+++` (beyond the reportable range) are
     passed on as results not obtained with that note; R.7 flags (`L`, `H`, `LL`, `HH`, `<`, `>`, `A`, `N`) and R.9
     `W` (suspect) pass as sent. Its text is UTF-8 (the default for this model unless the connection names an

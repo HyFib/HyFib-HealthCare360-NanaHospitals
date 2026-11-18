@@ -2,6 +2,7 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Numbering;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
@@ -40,6 +41,24 @@ internal sealed class DiagnosticsSeeder : ISeeder
         await SeedImagingProceduresAsync(db, services, cancellationToken);
         await SeedReportTemplatesAsync(db, cancellationToken);
         await SeedNotificationTemplatesAsync(db, cancellationToken);
+        await UpgradeTubeNumberFormatAsync(db, cancellationToken);
+    }
+
+    /// <summary>
+    /// Tube numbers have 10 digits (Nana Hospitals writes them on the tubes and types them on the analysers). The series is
+    /// locked, so the format stored for it is the one it was created with: a database made before keeps {SEQ:9} until it
+    /// is brought to the definition's here. Its counter needs nothing: the series never issues a number below its first
+    /// (<c>NumberSeriesDefinition.FirstNumber</c>), so the next tube after the upgrade is 1000000000.
+    /// </summary>
+    internal static async Task UpgradeTubeNumberFormatAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        var series = DiagnosticsNumberSeries.LabSample;
+        var row = await db.Set<NumberSeries>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Key == series.Key && s.FacilityId == null, ct);
+        if (row is not null && !string.Equals(row.Format, series.DefaultFormat, StringComparison.Ordinal))
+        {
+            row.Format = series.DefaultFormat;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     private static async Task<Dictionary<string, Guid>> SeedServiceItemsAsync(
@@ -77,6 +96,7 @@ internal sealed class DiagnosticsSeeder : ISeeder
     {
         var tests = await db.Set<LabTest>().IgnoreQueryFilters().ToDictionaryAsync(t => t.Code, t => t.Id, ct);
         var newPanels = new List<(LabTest Panel, OrderableSeed Seed)>();
+        var created = new HashSet<string>(StringComparer.Ordinal);
         var displayOrder = 0;
 
         foreach (var analyte in LabCatalog.Analytes)
@@ -101,6 +121,7 @@ internal sealed class DiagnosticsSeeder : ISeeder
             ApplyResult(test, analyte.Result);
             db.Add(test);
             tests[test.Code] = test.Id;
+            created.Add(test.Code);
         }
 
         foreach (var orderable in LabCatalog.Orderables)
@@ -157,7 +178,140 @@ internal sealed class DiagnosticsSeeder : ISeeder
             }
         }
 
+        await JoinPanelsAsync(db, tests, created, newPanels.Select(p => p.Panel.Code).ToHashSet(StringComparer.Ordinal), ct);
+        if (created.Contains(ChannelsAddedWith))
+        {
+            await AddChannelsAsync(db, ct);
+        }
+
         await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Channel codes that tests already in the seed gained after databases were seeded (Nana Hospitals' answers of 17
+    /// November 2026): the Yumizen H500's codes for the differential, put first because its host queries ask for a test's
+    /// first code, and the names the i-CHROMA and the doctors give vitamin D.
+    /// </summary>
+    internal static readonly IReadOnlyList<(string Test, string[] Channels, bool First)> ChannelsAdded =
+    [
+        ("NEUT", ["NEU%"], true), ("LYMPH", ["LYM%"], true), ("MONO", ["MON%"], true), ("EOS", ["EOS%"], true), ("BASO", ["BAS%"], true),
+        ("LAB-VITD", ["VIT-D", "VIT D-25", "VIT-D3", "VIT D3", "VIT 25 OH"], false),
+    ];
+
+    /// <summary>An analyte that came with <see cref="ChannelsAdded"/>: a run that creates it is upgrading a database from before them.</summary>
+    internal const string ChannelsAddedWith = "NEUT-ABS";
+
+    /// <summary>
+    /// A database seeded before <see cref="ChannelsAdded"/> gets them in the run that creates the CBC's new parameters,
+    /// which happens once, so a code the lab takes off a test later is never put back. A code that a test maps already
+    /// (plainly or as an analyser's own) or that the lab chose to ignore is left out, so none of the lab's decisions changes.
+    /// </summary>
+    private static async Task AddChannelsAsync(HospitalDbContext db, CancellationToken ct)
+    {
+        var tests = await db.Set<LabTest>().IgnoreQueryFilters().ToListAsync(ct);
+        var ignored = await db.Set<IgnoredAnalyserChannel>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Select(c => c.ChannelCode).ToListAsync(ct);
+        var taken = tests.SelectMany(t => t.InstrumentChannelCodes).Select(ChannelOf).Concat(ignored).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (code, channels, first) in ChannelsAdded)
+        {
+            if (tests.FirstOrDefault(t => string.Equals(t.Code, code, StringComparison.Ordinal)) is { } test)
+            {
+                var upgraded = WithChannels(test.InstrumentChannelCodes, channels, first, taken);
+                if (upgraded.Count != test.InstrumentChannelCodes.Count)
+                {
+                    test.InstrumentChannelCodes = upgraded;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// A test's channel codes with those of <paramref name="added"/> that are not <paramref name="taken"/> (mapped by a test
+    /// or ignored by the lab): before its own when <paramref name="first"/>, else after them.
+    /// </summary>
+    internal static List<string> WithChannels(IReadOnlyList<string> current, IReadOnlyList<string> added, bool first, IReadOnlySet<string> taken)
+    {
+        var missing = added.Where(c => !taken.Contains(c)).ToList();
+        return first ? [.. missing, .. current] : [.. current, .. missing];
+    }
+
+    /// <summary>The channel a mapping names: "NEU%" for both "NEU%" and "H500:NEU%".</summary>
+    private static string ChannelOf(string mapping) => mapping[(mapping.IndexOf(':', StringComparison.Ordinal) + 1)..];
+
+    /// <summary>
+    /// Analytes new to this database join the seeded panels it already has that list them, in the seed's place: the
+    /// CBC's new parameters on a database seeded before them. The laboratory cannot have taken an analyte it never had out
+    /// of a panel, so this changes none of its decisions: the panel's own components stay, in their order (those after
+    /// the place move down one), and a panel it deleted is left alone.
+    /// </summary>
+    private static async Task JoinPanelsAsync(
+        HospitalDbContext db, IReadOnlyDictionary<string, Guid> tests, IReadOnlySet<string> created, IReadOnlySet<string> newPanels, CancellationToken ct)
+    {
+        var codesById = tests.ToDictionary(t => t.Value, t => t.Key);
+        foreach (var seed in LabCatalog.Orderables.Where(o => o.IsPanel && !newPanels.Contains(o.Code) && o.Components.Any(c => created.Contains(c.Code))))
+        {
+            if (!tests.TryGetValue(seed.Code, out var panelId)
+                || await db.Set<LabTest>().FirstOrDefaultAsync(t => t.Id == panelId, ct) is not { IsPanel: true })
+            {
+                continue;
+            }
+
+            var components = await db.Set<LabTestComponent>().Where(c => c.PanelTestId == panelId).OrderBy(c => c.DisplayOrder).ToListAsync(ct);
+            var current = components.Select(c => codesById.GetValueOrDefault(c.TestId) ?? c.TestId.ToString()).ToList();
+            var added = seed.Components.Where(c => created.Contains(c.Code)).ToList();
+            var order = PanelOrder(current, [.. seed.Components.Select(c => c.Code)], added.Select(c => c.Code));
+            foreach (var (component, code) in components.Zip(current))
+            {
+                var position = order.IndexOf(code) + 1;
+                if (component.DisplayOrder != position)
+                {
+                    component.DisplayOrder = position;
+                }
+            }
+
+            foreach (var (code, group) in added)
+            {
+                db.Add(new LabTestComponent { PanelTestId = panelId, TestId = tests[code], DisplayOrder = order.IndexOf(code) + 1, GroupName = group });
+            }
+        }
+    }
+
+    /// <summary>
+    /// A panel's analytes (by code) once <paramref name="added"/> join it: each goes after the nearest analyte the seed
+    /// lists before it that the panel has, or first when it has none; the panel's own keep their order.
+    /// </summary>
+    internal static List<string> PanelOrder(IReadOnlyList<string> current, IReadOnlyList<string> seed, IEnumerable<string> added)
+    {
+        var order = current.ToList();
+        foreach (var code in added)
+        {
+            if (order.Contains(code, StringComparer.Ordinal))
+            {
+                continue;
+            }
+
+            var after = -1;
+            for (var i = IndexOf(seed, code) - 1; i >= 0 && after < 0; i--)
+            {
+                after = order.IndexOf(seed[i]);
+            }
+
+            order.Insert(after + 1, code);
+        }
+
+        return order;
+
+        static int IndexOf(IReadOnlyList<string> codes, string code)
+        {
+            for (var i = 0; i < codes.Count; i++)
+            {
+                if (string.Equals(codes[i], code, StringComparison.Ordinal))
+                {
+                    return i;
+                }
+            }
+
+            return codes.Count;
+        }
     }
 
     private static void ApplyResult(LabTest test, ResultSeed result)

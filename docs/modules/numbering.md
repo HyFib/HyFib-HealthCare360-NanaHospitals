@@ -103,7 +103,7 @@ for example to carry on from an older system, within the padding of the running 
 | Series | Why |
 |---|---|
 | UHID (`uhid`) | The AI assistant recognises UHIDs by their shape (the facility code followed by 8 digits) to find patients and to keep their details private. |
-| Sample tube barcode (`lab.sample`) | Laboratory analysers and barcode scanners read tube barcodes as plain 9-digit numbers. |
+| Sample tube number (`lab.sample`) | Tube numbers are written on the tubes, typed on the analysers and scanned as plain 10-digit numbers, which the analysers send back with each result. They start at 1000000000, so every one has 10 digits and none starts with 0. |
 | Lab accession number (`lab.accession`) | Barcode scanners on the laboratory screens recognise accession numbers by their shape. |
 | Radiology accession number (`radiology.accession`) | Barcode scanners on the diagnostics screens recognise them by their shape. |
 | Cardiology accession number (`cardiology.accession`) | Barcode scanners on the diagnostics screens recognise them by their shape. |
@@ -117,6 +117,18 @@ Leave **Next number** empty to carry on counting. To continue from an older syst
 issued. It must be above the last number issued in the current period (this year for yearly numbers, and so on) and
 have at most 8 digits (or as many as `{SEQ:n}` pads to, if more). A later number leaves a gap in the series; the change
 is recorded in the audit trail as a warning, because auditors of bills and receipts ask about gaps.
+
+**A series' first number.** Most series count from 1. A series whose numbers must all have as many digits as their
+padding, with no leading zero, starts at the smallest number of that many digits instead
+(`NumberSeriesDefinition.FirstNumber`): tube numbers (`{SEQ:10}`) start at 1000000000. The allocation never issues a
+number below it, so a counter left lower (a database from before the series started there) jumps to it at the next
+number, and the next number cannot be set below it ("The next number must be 1000000000 or more, so that these numbers
+keep the shape other systems read."). The list shows the next number from there.
+
+**Tube numbers before November 2026.** They had 9 digits (`{SEQ:9}`, from 000000001). On upgrade, the Diagnostics
+seeder brings the stored format of `lab.sample` to `{SEQ:10}` (a locked series keeps the format it was created with
+otherwise), and the next tube is 1000000000 whatever the counter was; tubes numbered before keep their numbers, and
+the lab screens still find them (they accept 6 to 20 digits). Nothing was live then.
 
 ## After a restore: the high-water mark
 
@@ -183,7 +195,8 @@ Customised series and locked ones are marked.
 `NumberSeriesItem {key, name, area, scope: "facility"|"global", format, resetPolicy: Never|Yearly|Monthly|Daily,
 lastNumber (the running number last issued in the current period, 0 if none), nextExample (the number the next
 allocation would make now), facilityCode, isCustomised, isLocked, lockedReason, maxLength, defaultFormat,
-defaultResetPolicy, gstDocument}`. Hidden series are left out; a series with no row yet shows its defaults.
+defaultResetPolicy, gstDocument, facilityCodeReason, firstNumber (the lowest running number the series issues, 1 for
+most)}`. Hidden series are left out; a series with no row yet shows its defaults.
 
 The PUT creates the series' row if it has none yet, so formats can be set before the first number. `expectedFormat` and
 `expectedResetPolicy` are the values the editor started from: if they differ from those in use, someone else changed
@@ -222,6 +235,8 @@ order.AccessionNumber = await numbers.NextAsync(DiagnosticsNumberSeries.LabAcces
 * `PerFacility = false` for one counter shared by all facilities (`NextAsync` then ignores the facility).
 * `LockedReason` for numbers other code or devices read by their shape; `Hidden` for internal counters, which may
   have a key per use (queue tokens).
+* `FirstNumber` for numbers that must all have the same number of digits with no leading zero (tube numbers start at
+  1000000000); the allocation never issues a number below it.
 
 `NextAsync` refuses a definition no module declares, and the architecture tests check that every definition is declared
 and that every default format follows the rules above. Allocate inside the transaction that saves the document, so
@@ -272,7 +287,7 @@ needs nothing of its own for any of this: every row of `platform.number_series` 
 | Insurance | Insurance claim | `insurance.claim` | `{FAC}CL{YY}{SEQ:6}` | every year | per facility | 24 |
 | Insurance | Pre-authorisation | `insurance.preauth` | `{FAC}PA{YY}{SEQ:6}` | every year | per facility | 24 |
 | Laboratory | Lab accession number (locked) | `lab.accession` | `{FAC}LB{YY}{SEQ:7}` | every year | per facility | 24 |
-| Laboratory | Sample tube barcode (locked) | `lab.sample` | `{SEQ:9}` | never | shared | 20 |
+| Laboratory | Sample tube number (locked, from 1000000000) | `lab.sample` | `{SEQ:10}` | never | shared | 20 |
 | Medical records | Medical record request | `mrd-request` | `{FAC}RR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Operation theatre | Surgery booking | `ot-booking` | `{FAC}OT{YY}{SEQ:6}` | every year | per facility | 24 |
 | Patient feedback | Complaint | `feedback.complaint` | `{FAC}CMP{YY}{SEQ:5}` | every year | per facility | 24 |
