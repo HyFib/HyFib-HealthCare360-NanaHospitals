@@ -176,7 +176,11 @@ public static class TallyTracking
     /// <summary>The longest reference a voucher record keeps (the <c>key</c> column).</summary>
     public const int MaxKey = 200;
 
-    /// <summary>SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines.</summary>
+    /// <summary>
+    /// SHA-256 of everything HC360 sends for the voucher, independent of the order of its lines. What a voucher has only
+    /// sometimes (its GST party, the supplier's invoice, a line's bill or bank allocations) is added only when it has it,
+    /// so a voucher without it keeps its fingerprint.
+    /// </summary>
     public static string Fingerprint(AccountingVoucher voucher)
     {
         var text = new StringBuilder()
@@ -185,8 +189,21 @@ public static class TallyTracking
             .Append(voucher.Number.Trim()).Append('|')
             .Append(voucher.Key).Append('|')
             .Append(voucher.Narration.Trim()).Append('\n');
+        if (voucher.Party is { } party)
+        {
+            text.Append("party|").Append(party.LedgerName.Trim()).Append('|').Append(party.Gstin?.Trim()).Append('|')
+                .Append(party.StateName?.Trim()).Append('|').Append(party.PlaceOfSupply?.Trim()).Append('\n');
+        }
+
+        if (voucher.SupplierInvoiceNumber is not null || voucher.SupplierInvoiceDate is not null)
+        {
+            text.Append("invoice|").Append(voucher.SupplierInvoiceNumber?.Trim()).Append('|')
+                .Append(voucher.SupplierInvoiceDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append('\n');
+        }
+
         foreach (var entry in voucher.Entries
-                     .Select(e => string.Create(CultureInfo.InvariantCulture, $"{e.LedgerName.Trim()}|{(e.IsDebit ? "Dr" : "Cr")}|{Money.Round(e.Amount):0.00}|{e.CostCentre?.Trim()}"))
+                     .Select(e => string.Create(CultureInfo.InvariantCulture, $"{e.LedgerName.Trim()}|{(e.IsDebit ? "Dr" : "Cr")}|{Money.Round(e.Amount):0.00}|{e.CostCentre?.Trim()}")
+                                  + Bills(e) + Bank(e))
                      .Order(StringComparer.Ordinal))
         {
             text.Append(entry).Append('\n');
@@ -194,6 +211,21 @@ public static class TallyTracking
 
         return Hex(text.ToString());
     }
+
+    private static string Bank(AccountingEntry entry) =>
+        entry.BankAllocations.Count == 0
+            ? string.Empty
+            : "|bank:" + string.Join(';', entry.BankAllocations
+                .Select(b => string.Create(CultureInfo.InvariantCulture,
+                    $"{b.TransactionType}:{b.InstrumentNumber?.Trim()}:{b.Date:yyyy-MM-dd}:{b.InstrumentDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}:{b.BankName?.Trim()}:{Money.Round(b.Amount):0.00}"))
+                .Order(StringComparer.Ordinal));
+
+    private static string Bills(AccountingEntry entry) =>
+        entry.BillAllocations.Count == 0
+            ? string.Empty
+            : "|bills:" + string.Join(';', entry.BillAllocations
+                .Select(b => string.Create(CultureInfo.InvariantCulture, $"{b.Type}:{b.Name?.Trim()}:{Money.Round(b.Amount):0.00}"))
+                .Order(StringComparer.Ordinal));
 
     /// <summary>Fingerprint of a whole day book: changes when any voucher is added, removed or changed.</summary>
     public static string Fingerprint(IReadOnlyList<AccountingVoucher> vouchers) =>

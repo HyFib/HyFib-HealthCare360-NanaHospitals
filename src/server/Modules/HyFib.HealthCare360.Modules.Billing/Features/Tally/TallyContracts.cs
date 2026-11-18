@@ -106,8 +106,9 @@ public sealed class PostDayBookRequestValidator : AbstractValidator<PostDayBookR
 
 /// <summary>
 /// Validates the ledger names an accountant sets for the day book (<c>billing.tally.ledgers</c>): every name present,
-/// one line, at most 100 characters (Tally takes longer names, but HC360 keeps them readable), and only known payment
-/// modes in the mode maps.
+/// one line, at most 100 characters (Tally takes longer names, but HC360 keeps them readable), only known payment
+/// modes in the mode maps, the voucher types named, each on one line and at most 32 characters, and at most 50 bank
+/// ledgers.
 /// </summary>
 public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
 {
@@ -144,6 +145,9 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
         RuleFor(x => x.InputIgst).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.VendorAdjustments).Must(BeALedgerName).WithMessage(LedgerMessage);
         RuleFor(x => x.SundryCreditors).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.Purchases).Must(BeALedgerName).WithMessage(LedgerMessage);
+        RuleFor(x => x.PurchasesFrom).IsInEnum().WithMessage("Choose the pharmacy stores, every store or none.");
+        RuleFor(x => x.PatientInNarration).IsInEnum().WithMessage("Choose the name and UHID, the UHID only, or no patient.");
 
         RuleFor(x => x.IncomeByDepartment).Must(map => map is null || map.Count <= MaxEntries).WithMessage($"Map at most {MaxEntries} departments.");
         RuleForEach(x => x.IncomeByDepartment).Must(pair => BeACode(pair.Key) && BeALedgerName(pair.Value))
@@ -152,12 +156,37 @@ public sealed class TallyLedgerMapValidator : AbstractValidator<TallyLedgerMap>
             .WithMessage("Each payment mode needs a known mode and a ledger name of at most 100 characters.");
         RuleFor(x => x.Pharmacy).NotNull().SetValidator(new CounterValidator());
         RuleFor(x => x.Canteen).NotNull().SetValidator(new CounterValidator());
+        RuleFor(x => x.VoucherTypes).NotNull().SetValidator(new VoucherTypesValidator());
+        RuleFor(x => x.BankLedgers).Must(list => list is null || list.Count <= MaxBankLedgers).WithMessage($"List at most {MaxBankLedgers} bank ledgers.");
+        RuleForEach(x => x.BankLedgers).Must(BeALedgerName).WithMessage(LedgerMessage);
     }
+
+    private const int MaxBankLedgers = 50;
 
     private static string LedgerMessage => $"Enter the ledger name as it is in Tally, on one line and at most {MaxName} characters.";
 
+    /// <summary>The longest voucher type name: what a voucher's record keeps (<c>billing.tally_vouchers.voucher_type</c>).</summary>
+    internal const int MaxVoucherType = 32;
+
+    private static string VoucherTypeMessage => $"Enter the voucher type as it is named in Tally, on one line and at most {MaxVoucherType} characters.";
+
     internal static bool BeALedgerName(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= MaxName && !value.Any(char.IsControl);
+
+    internal static bool BeAVoucherType(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= MaxVoucherType && !value.Any(char.IsControl);
+
+    private sealed class VoucherTypesValidator : AbstractValidator<TallyVoucherTypes>
+    {
+        public VoucherTypesValidator()
+        {
+            RuleFor(x => x.InPatient).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
+            RuleFor(x => x.OutPatient).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
+            RuleFor(x => x.Laboratory).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
+            RuleFor(x => x.Pharmacy).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
+            RuleFor(x => x.Purchase).Must(BeAVoucherType).WithMessage(VoucherTypeMessage);
+        }
+    }
 
     private static bool BeACode(string? value) => !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= 20 && value.Trim().All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_');
 

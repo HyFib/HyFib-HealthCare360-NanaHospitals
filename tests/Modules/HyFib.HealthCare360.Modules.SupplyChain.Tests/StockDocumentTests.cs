@@ -1,3 +1,5 @@
+using HyFib.HealthCare360.Platform.Contracts;
+
 namespace HyFib.HealthCare360.Modules.SupplyChain.Tests;
 
 /// <summary>Rules of the stock documents: GRN lines, indents, transfers, adjustments, counts and the item master.</summary>
@@ -43,6 +45,23 @@ public sealed class StockDocumentTests
         var checker = Guid.CreateVersion7();
         grn.MarkPosted(checker, Now).IsSuccess.ShouldBeTrue();
         (grn.Status, grn.PostedByUserId).ShouldBe((GoodsReceiptStatus.Posted, (Guid?)checker));
+    }
+
+    [Fact]
+    public void Posting_a_goods_receipt_tells_billing_the_day_its_goods_came()
+    {
+        // Its purchase is in the Tally day book of that day, which may have gone to Tally already.
+        var facilityId = Guid.CreateVersion7();
+        var grn = new GoodsReceiptNote { Number = "GRN2600002", FacilityId = facilityId, ReceivedOn = Today.AddDays(-2), CreatedBy = Guid.CreateVersion7() };
+        grn.Lines.Add(GrnLine());
+
+        grn.MarkPosted(grn.CreatedBy, Now).IsFailure.ShouldBeTrue();
+        grn.DomainEvents.ShouldBeEmpty();
+
+        grn.MarkPosted(Guid.CreateVersion7(), Now).IsSuccess.ShouldBeTrue();
+        var posted = grn.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<GoodsReceiptPosted>();
+        (posted.GoodsReceiptId, posted.Number, posted.FacilityId, posted.ReceivedOn, posted.PostedAt)
+            .ShouldBe((grn.Id, "GRN2600002", facilityId, Today.AddDays(-2), Now));
     }
 
     [Fact]

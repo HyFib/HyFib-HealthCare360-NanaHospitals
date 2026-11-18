@@ -128,7 +128,8 @@ public sealed class GatewayReconciliationTests
         voucher.Narration.ShouldBe("Payment gateway settlement setl_A1B2C3D4E5, UTR UTR001");
         voucher.Entries.ShouldBe(
         [
-            new AccountingEntry("HDFC Current A/c", 776.40m, true),
+            // The bank is a bank ledger in Tally: its line carries the settlement's UTR (T15).
+            new AccountingEntry("HDFC Current A/c", 776.40m, true) { BankAllocations = [new(Day, AccountingBankTransaction.EFundTransfer, 776.40m, "UTR001")] },
             new AccountingEntry("Payment Gateway Charges", 20m, true),
             new AccountingEntry("Input GST", 3.60m, true),
             new AccountingEntry("Razorpay Clearing", 800m, false),
@@ -143,7 +144,11 @@ public sealed class GatewayReconciliationTests
 
         var voucher = TallyVoucherBuilder.Build(day, new TallyLedgerMap()).ShouldHaveSingleItem();
 
-        voucher.Entries.ShouldBe([new AccountingEntry("Bank", 200m, false), new AccountingEntry("Payment Gateway Clearing", 200m, true)]);
+        voucher.Entries.ShouldBe(
+        [
+            new AccountingEntry("Bank", 200m, false) { BankAllocations = [new(Day, AccountingBankTransaction.Others, 200m)] },
+            new AccountingEntry("Payment Gateway Clearing", 200m, true),
+        ]);
     }
 
     [Fact]
@@ -179,13 +184,17 @@ public sealed class GatewayReconciliationTests
             v => v.Number.ShouldBe("setl_A1B2C3D4E5-R1"),
             v => v.Narration.ShouldBe("Reverses journal setl_A1B2C3D4E5 of 25-09-2026: payment gateway settlement setl_A1B2C3D4E5 failed after it was paid out "
                                       + "(the bank refused or returned the transfer)"),
-            v => v.Entries.ShouldBe(journal.Entries.Select(e => e with { IsDebit = !e.IsDebit })));
+            v => v.Entries.ShouldBe(journal.Entries.Select(e => e with { IsDebit = !e.IsDebit, BankAllocations = OnDay(e, learnt) })));
         var again = TallyVoucherBuilder.Build(
             new TallyDayBook(learnt, [], [], [], [], [], [], [], [GatewaySettlementService.CorrectionOf(settlement, main, restored, learnt)]),
             new TallyLedgerMap()).ShouldHaveSingleItem();
-        again.Entries.ShouldBe(journal.Entries);
+        again.Entries.ShouldBe(journal.Entries.Select(e => e with { BankAllocations = OnDay(e, learnt) }));
+        journal.Entries.Single(e => e.LedgerName == "Bank").BankAllocations.ShouldHaveSingleItem().InstrumentNumber.ShouldBe(settlement.Utr);
         again.Narration.ShouldStartWith("Restores journal setl_A1B2C3D4E5 of 25-09-2026");
     }
+
+    /// <summary>A line's bank details as the voucher of <paramref name="date"/> carries them (a correction is dated the day it is learnt).</summary>
+    private static List<AccountingBankAllocation> OnDay(AccountingEntry entry, DateOnly date) => entry.BankAllocations.Select(b => b with { Date = date }).ToList();
 
     [Fact]
     public void A_day_book_without_settlements_builds_as_before() =>

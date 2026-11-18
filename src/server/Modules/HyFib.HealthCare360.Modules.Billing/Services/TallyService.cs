@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Settings;
@@ -11,8 +12,10 @@ namespace HyFib.HealthCare360.Modules.Billing.Services;
 
 /// <summary>
 /// Tally day book (INT-TALLY, business side): gathers one facility's day of bills, cancellations, receipts, refunds,
-/// credit notes, claim disallowances, doctor-fee accruals and payouts, and the pharmacy's and canteen's days
-/// (<see cref="ICounterSalesSource"/>); builds balanced vouchers with the ledger mapping from the
+/// credit notes, claim disallowances, doctor-fee accruals and payouts, purchases and supplier documents from Supply chain,
+/// and the pharmacy's and canteen's days
+/// (<see cref="ICounterSalesSource"/>, and the pharmacy's invoice by invoice, <see cref="ICounterInvoiceSource"/>);
+/// builds balanced vouchers with the ledger mapping from the
 /// <c>billing.tally.ledgers</c> setting; and pushes them through <see cref="IAccountingExporter"/>, tracking what Tally
 /// answered for every voucher (<see cref="TallyVoucherRecord"/>). The same vouchers are available as an import file for
 /// sites without a Tally connection, where an accountant marks the day imported after loading it.
@@ -66,7 +69,7 @@ public sealed class TallyService(
                 from s in db.Set<ClaimSettlement>()
                 join c in db.Set<InsuranceClaim>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on s.ClaimId equals c.Id
                 where c.FacilityId == facilityId && s.RecordedAt >= start && s.RecordedAt < end && s.DeductionAmount > 0
-                select new { c.ClaimNumber, c.PayerId, s.ClaimId, s.DeductionAmount, s.Id })
+                select new { c.ClaimNumber, c.PayerId, c.BillId, s.ClaimId, s.DeductionAmount, s.Id })
             .ToListAsync(ct);
         var claimIds = disallowances.Select(d => d.ClaimId).Distinct().ToList();
         var settlementsByClaim = (await db.Set<ClaimSettlement>().AsNoTracking().Where(s => claimIds.Contains(s.ClaimId)).Select(s => new { s.ClaimId, s.Id }).ToListAsync(ct))
@@ -75,7 +78,7 @@ public sealed class TallyService(
             .Where(r => r.FacilityId == facilityId && r.Status == RefundStatus.Paid && r.Mode != null && r.PaidAt >= start && r.PaidAt < end)
             .OrderBy(r => r.PaidAt)
             .ToListAsync(ct);
-        var creditNotes = await db.Set<CreditNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+        var creditNotes = await db.Set<CreditNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(c => c.Lines)
             .Where(c => c.FacilityId == facilityId && c.IssuedAt >= start && c.IssuedAt < end)
             .OrderBy(c => c.IssuedAt)
             .ToListAsync(ct);
@@ -109,7 +112,37 @@ public sealed class TallyService(
             .ToDictionaryAsync(d => d.Id, d => new { d.Code, d.Name }, ct);
         var doctorIds = fees.Select(f => f.PractitionerId).Concat(payouts.Select(p => p.PractitionerId)).Distinct().ToList();
         var doctors = await db.Set<Practitioner>().Where(p => doctorIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.DisplayName, p.Code }, ct);
-        var facilityCode = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => f.Code).FirstOrDefaultAsync(ct);
+        var facility = await db.Set<Facility>().Where(f => f.Id == facilityId).Select(f => new { f.Code, f.Gstin, f.Address.State }).FirstOrDefaultAsync(ct);
+        var facilityCode = facility?.Code;
+
+        var counters = await CountersAsync(facilityId, date, ct);
+        var counterInvoices = await CounterInvoicesAsync(facilityId, date, ct);
+
+        // The patients of the day's bills, receipts, refunds and credit notes, and of the counters' invoices, returns and
+        // balances paid, in one read, for the narrations.
+        var patientIds = bills.Select(b => b.PatientId)
+            .Concat(receipts.Select(r => r.PatientId))
+            .Concat(refunds.Select(r => r.PatientId))
+            .Concat(creditNotes.Select(c => c.PatientId))
+            .Concat(counterInvoices.SelectMany(c => c.Invoices.Select(i => i.PatientId)
+                .Concat(c.Returns.Select(r => r.PatientId))
+                .Concat(c.Collections.Select(x => x.PatientId)))
+                .OfType<Guid>())
+            .Distinct()
+            .ToList();
+        var patients = await PatientsAsync(patientIds, ct);
+
+        // The bills insurers' settlements and deductions are set against on their ledgers (bill-wise in Tally).
+        var settledBillIds = receipts.Where(r => r.Purpose == ReceiptPurpose.PayerSettlement && r.BillId is not null).Select(r => r.BillId!.Value)
+            .Concat(disallowances.Select(d => d.BillId))
+            .Distinct()
+            .ToList();
+        var billNumbers = settledBillIds.Count == 0
+            ? []
+            : await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(b => settledBillIds.Contains(b.Id) && b.BillNumber != null)
+                .Select(b => new { b.Id, Number = b.BillNumber! })
+                .ToDictionaryAsync(b => b.Id, b => b.Number, ct);
         var legacy = await db.Set<TallyExport>()
             .AnyAsync(e => e.FacilityId == facilityId && e.Date == date && e.LegacyReferences, ct);
 
@@ -126,11 +159,15 @@ public sealed class TallyService(
                 return new TallySaleLine(
                     department?.Code, department?.Name, income,
                     bill.FreeTreatmentReason is null ? l.TariffDiscountAmount + l.LineDiscountAmount + l.BillDiscountShare : income,
-                    l.CgstAmount, l.SgstAmount, l.IgstAmount);
+                    l.CgstAmount, l.SgstAmount, l.IgstAmount, l.TaxRate);
             }).ToList();
             var sale = new TallySale(
                 bill.BillNumber!, date, bill.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null, bill.PatientAmount, bill.PayerAmount,
-                bill.RoundOffAmount, lines, IsCancellation: false);
+                bill.RoundOffAmount, lines, IsCancellation: false)
+            {
+                Kind = TallyVoucherBuilder.KindOf(bill.Type, bill.Lines.Select(l => l.Category).ToList()),
+                Patient = patients.GetValueOrDefault(bill.PatientId),
+            };
             if (bill.FinalizedAt >= start && bill.FinalizedAt < end)
             {
                 sales.Add(sale);
@@ -147,22 +184,49 @@ public sealed class TallyService(
             sales,
             receipts.Select(r => new TallyReceipt(
                 r.ReceiptNumber, date, r.Purpose, r.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null,
-                r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)).ToList())).ToList(),
+                r.Payments.Select(p => new TallyPayment(p.Mode, p.Amount)
+                {
+                    Reference = p.Reference,
+                    ChequeNumber = p.ChequeNumber,
+                    ChequeBank = p.ChequeBank,
+                    ChequeDate = p.ChequeDate,
+                }).ToList())
+            {
+                Patient = patients.GetValueOrDefault(r.PatientId),
+                BillNumber = r.Purpose == ReceiptPurpose.PayerSettlement && r.BillId is { } billId ? billNumbers.GetValueOrDefault(billId) : null,
+            }).ToList(),
             disallowances.Select(d => new TallyDisallowance(
-                TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)).ToList(),
-            refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)).ToList(),
-            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)).ToList(),
+                TallyVoucherBuilder.ClaimDeductionReference(d.ClaimNumber, d.Id, settlementsByClaim[d.ClaimId]), date, payers.GetValueOrDefault(d.PayerId), d.DeductionAmount)
+            {
+                BillNumber = billNumbers.GetValueOrDefault(d.BillId),
+            }).ToList(),
+            refunds.Select(r => new TallyRefund(r.RefundNumber, date, r.Purpose, r.Mode!.Value, r.Amount)
+            {
+                Patient = patients.GetValueOrDefault(r.PatientId),
+                Reference = r.Reference,
+            }).ToList(),
+            creditNotes.Select(c => new TallyCreditNote(c.Number, date, c.Kind, c.Amount, c.CgstAmount, c.SgstAmount, c.IgstAmount)
+            {
+                Patient = patients.GetValueOrDefault(c.PatientId),
+                Gst = c.Lines.Where(l => l.GstAmount != 0).Select(l => new TallyGstLine(l.GstRate, l.CgstAmount, l.SgstAmount, l.IgstAmount)).ToList(),
+            }).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",
                 f.Amount,
                 doctors.GetValueOrDefault(f.PractitionerId)?.Code,
                 f.PractitionerId)).ToList(),
             payouts.Select(p => new TallyPayout(
-                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)).ToList(),
+                p.PayoutNumber, date, doctors.GetValueOrDefault(p.PractitionerId)?.DisplayName ?? "Doctor", p.GrossAmount, p.TdsAmount, p.DeductionAmount, p.NetAmount)
+            {
+                Mode = p.PaymentMode,
+                Reference = p.PaidReference,
+            }).ToList(),
             gatewaySettlements)
         {
             FacilityCode = facilityCode,
-            Counters = await CountersAsync(facilityId, date, ct),
+            Counters = counters,
+            CounterInvoices = counterInvoices,
+            Patients = patients,
             LegacyDoctorFeeNumbers = legacy,
             PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
             // An insurer's settlement is never reversed (ReversalRules), so no reversal posts to a payer's ledger.
@@ -171,8 +235,23 @@ public sealed class TallyService(
                 r.Reason == ReversalReason.Chargeback)).ToList(),
             RefundReversals = refundReversals.Select(r => new TallyRefundReversal(r.Number, date, r.RefundNumber, r.Purpose, r.Mode, r.Amount)).ToList(),
             Vendors = await VendorsAsync(facilityId, date, ct),
+            Purchases = await PurchasesAsync(facilityId, date, ct),
+            FacilityStateCode = facility?.Gstin is { Length: >= 2 } gstin ? gstin[..2] : IndianStates.Code(facility?.State),
         };
     }
+
+    /// <summary>
+    /// The patients a day book's vouchers name, with what their narration may show (<see cref="TallyPatient.Registered"/>),
+    /// read in one go. A merged or inactive registration is still the one the document was made for.
+    /// </summary>
+    private async Task<Dictionary<Guid, TallyPatient>> PatientsAsync(IReadOnlyCollection<Guid> patientIds, CancellationToken ct) =>
+        patientIds.Count == 0
+            ? []
+            : (await db.Set<Patient>().IgnoreQueryFilters().AsNoTracking()
+                .Where(p => patientIds.Contains(p.Id))
+                .Select(p => new { p.Id, p.Uhid, p.FullName, p.IsVip, p.SensitiveCategories })
+                .ToListAsync(ct))
+            .ToDictionary(p => p.Id, p => TallyPatient.Registered(p.Uhid, p.FullName, p.IsVip, p.SensitiveCategories));
 
     public async Task<TallyLedgerMap> LedgersAsync(Guid facilityId, CancellationToken ct) =>
         await settings.GetAsync<TallyLedgerMap>(LedgerSetting, facilityId, ct) ?? new TallyLedgerMap();
@@ -668,6 +747,41 @@ public sealed class TallyService(
         }
 
         return days;
+    }
+
+    /// <summary>The day invoice by invoice of each counter that reports it (the pharmacy, <see cref="ICounterInvoiceSource"/>).</summary>
+    private async Task<IReadOnlyList<CounterInvoicesDay>> CounterInvoicesAsync(Guid facilityId, DateOnly date, CancellationToken ct)
+    {
+        var days = new List<CounterInvoicesDay>();
+        foreach (var source in services.GetServices<ICounterInvoiceSource>())
+        {
+            days.Add(await source.GetInvoicesAsync(facilityId, date, ct));
+        }
+
+        return days;
+    }
+
+    /// <summary>
+    /// Whether the day book of <paramref name="date"/> holds goods receipt <paramref name="number"/> as a purchase: posted,
+    /// received that day, and into a store whose purchases the facility posts (<see cref="TallyLedgerMap.PostsPurchase"/>).
+    /// </summary>
+    internal async Task<bool> PostsPurchaseAsync(Guid facilityId, DateOnly date, string number, CancellationToken ct)
+    {
+        var map = await LedgersAsync(facilityId, ct);
+        return (await PurchasesAsync(facilityId, date, ct))
+            .Any(p => string.Equals(p.Number, number, StringComparison.Ordinal) && map.PostsPurchase(p.PharmacyStore));
+    }
+
+    /// <summary>The day's goods receipts, from Supply chain (<see cref="IPurchaseAccountsSource"/>).</summary>
+    private async Task<IReadOnlyList<PurchaseEntry>> PurchasesAsync(Guid facilityId, DateOnly date, CancellationToken ct)
+    {
+        List<PurchaseEntry> purchases = [];
+        foreach (var source in services.GetServices<IPurchaseAccountsSource>())
+        {
+            purchases.AddRange(await source.GetDayAsync(facilityId, date, ct));
+        }
+
+        return purchases;
     }
 
     /// <summary>The day's purchase returns and supplier payable adjustments, from Supply chain (<see cref="IVendorAccountsSource"/>).</summary>
