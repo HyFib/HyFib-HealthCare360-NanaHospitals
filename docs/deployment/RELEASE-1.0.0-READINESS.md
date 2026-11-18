@@ -8,7 +8,8 @@ This assessment adds what the earlier ones did not have:
 - an independent review of the code on the paths where a defect harms a patient, money or privacy: medication, the
   laboratory, identity and access, and billing;
 - mechanical scans of the whole server for the faults that hit hospital systems;
-- mutation testing of the safety rules, to see whether the tests catch a fault.
+- mutation testing of the safety rules, to see whether the tests catch a fault. Its run had not finished when this
+  was written, so this report claims nothing from it yet (section 3.5).
 
 **The review found 3 blockers and 12 high-severity defects** (section 1.1). Each was traced in the code by the
 reviewer, then checked again by the author of this report. None of them is caught by today's tests, and none is in
@@ -16,8 +17,8 @@ the known limits.
 
 Three things stand between this candidate and patients:
 
-1. **The code review's findings (C).** Each wave needs the findings that touch it fixed, each with a test that fails
-   before the fix (section 1.2). Wave 1 needs two at most.
+1. **The code review's findings (C).** Every blocker and high finding is fixed before the first wave it touches goes
+   live, each with a test that fails before the fix (section 1.2). Wave 1 needs three at most.
 2. **The release signing key (R2).** Only HyFib can make it. Until it exists, no release can be tagged.
 3. **The hospital's own evidence** (section 7): the machine's preflight, the UPS and backup disks, the load test on its
    hardware, a restore drill, the ASVS sign-off, and the staff's acceptance of each wave's journeys. None of these is
@@ -117,7 +118,6 @@ release can be made until the signing key exists.
     - a refund is bounded by what was paid, and a second person approves it;
     - card and UPI payments are recorded once;
     - two concurrent edits of a bill conflict rather than both apply.
-- **Mutation testing** (section 3.5) measures how many seeded faults in the safety rules the tests catch.
 
 **What stops it.**
 
@@ -127,8 +127,9 @@ release can be made until the signing key exists.
 
 **Recommendation**
 
-1. **Fix wave 1's findings first:** M4 (the controlled-drug registers after a downtime), and B3 if wave 1 uses Tally.
-   Then fix the rest wave by wave (section 1.2). Each fix comes with a test that fails before it.
+1. **Fix wave 1's findings first:** M4 (the controlled-drug registers after a downtime), P3 (sessions after a facility
+   is taken away), and B3 if wave 1 uses Tally. Then fix the rest wave by wave (section 1.2). Each fix comes with a
+   test that fails before it.
 2. **HyFib's own steps:** make the signing key (R2), read Dependabot's alerts (R6), and have the two CodeQL alerts
    dismissed (R10).
 3. **Make a release candidate.** Tag `1.0.0-rc.1` on a commit with the wave-1 fixes whose CI passed. Install it on the
@@ -168,9 +169,9 @@ release can be made until the signing key exists.
 | L2 | Laboratory | A critical value phoned to the ward before verification can be changed, then verified on the old call: the check asks only whether the result was ever called. If the new value is not critical, the ward is never told that the value it was given was wrong | `Modules.Diagnostics/Services/LabResultService.cs:183–190` | Wave 4 |
 | L3 | Laboratory | An amended report is never sent to the patient. For walk-in and outside-referral orders, no one is told at all. The patient's "report ready" message is sent only at first release, and the doctor's notice needs a doctor named on the order | `Services/LabReportService.cs:305–335, 354, 412–418` | Wave 4 |
 | P2 | Privacy | Merging a VIP's duplicate into an unrestricted record lifts the restriction without the restriction-lift approval. The merge carries the sensitive categories, ABHA and Aadhaar over, but not the VIP flag, and nothing refuses to merge a restricted record | `Modules.Patients/Services/PatientRegistrationService.cs:425–447, 536–571` | Wave 2 |
-| P3 | Access | Taking a facility away from a user leaves their open sessions working in it for up to 12 hours. Only deactivating a user ends their sessions, and a refresh issues the same facility again. At a hospital with one facility the usual step is deactivation, which does end sessions, so the risk at Theni is lower | `Platform/Identity/AccessAdminEndpoints.cs:494–501, 532–537`; `AuthService.cs:777–875`; `PlatformServiceCollectionExtensions.cs:213–229` | All waves |
+| P3 | Access | Taking a facility away from a user leaves their open sessions working in it for up to 12 hours. Only deactivating a user ends their sessions, and a refresh issues the same facility again. At a hospital with one facility the usual step is deactivation, which does end sessions, so the risk at Theni is lower | `Platform/Identity/AccessAdminEndpoints.cs:494–501, 532–537`; `AuthService.cs:777–875`; `PlatformServiceCollectionExtensions.cs:213–229` | Wave 1, as it touches every wave |
 | B1 | Billing | A bill cancelled after a credit note, a write-off, or a rejected claim's deduction is reversed again in full. Tally's ledgers end up wrong. GSTR-1 drops the invoice but still counts its credit notes, so it under-reports the GST | `Modules.Billing/Services/BillService.cs:421–457`; `TallyService.cs:164–179`; `GstReturnService.cs:144–167` | Wave 2 |
-| B2 | GST | A bill's place of supply follows the payer's GSTIN state. So taxable lines billed to a payer registered in another state carry IGST: room rent above ₹5,000 a day, for example. IGST Act s.12(4) puts health services where they are performed, so the tax is CGST and SGST of Tamil Nadu | `Services/BillPlaceOfSupply.cs`; `Domain/Bills.cs:300–315` | Wave 2 for any taxable line; mainly wave 5 |
+| B2 | GST | A bill's place of supply follows the payer's GSTIN state. So taxable lines billed to a payer registered in another state carry IGST: room rent above ₹5,000 a day, for example. IGST Act s.12(4) puts health services where they are performed, so the tax is CGST and SGST of Tamil Nadu | `Services/BillPlaceOfSupply.cs`; `Domain/Bills.cs:300–315` | Wave 2, the first that bills payers |
 | B3 | Accounts | Paper bills, receipts from the manual book and paper pharmacy sales entered after their day went to Tally never reach Tally. They are dated by the paper, and nothing sends the day again | `BillService.cs:387`; `ReceiptService.cs:80–107`; `DispensingService.cs:486`; `TallyJobs.cs:144–169` | Wave 1 if it uses Tally; wave 2 |
 | B4 | Billing | A ward return after an insured or package stay's final bill becomes a supplementary bill on self-pay terms, with a negative amount. That amount is refundable to the patient, though the insurer or the package paid for the medicine. The refund still needs a second person's approval | `Services/IpBillingService.cs:554–569`; `Modules.Pharmacy/Services/InpatientPharmacyService.cs:640–656` | Wave 5 |
 
@@ -214,21 +215,26 @@ release can be made until the signing key exists.
 
 Waves as in [MODULE-ROLLOUT-PLAN.md](MODULE-ROLLOUT-PLAN.md).
 
-| Wave | Goes live | Fix first | Fix, or cover with a written procedure until fixed |
+- **Every blocker and high finding is fixed before the first wave it touches goes live.** No wave is accepted with one
+  open, and none is in the accepted risks (section 8).
+- **A medium finding** is fixed before its wave, or the wave's department in-charge signs a written procedure for it.
+  Section 7 gates both.
+
+| Wave | Goes live | Fix first: every blocker and high | Medium: fixed, or a signed procedure |
 |---|---|---|---|
 | 0 Foundation | Install, preflight, load test, restore drill; no patient data | None (R2 for the tag) | — |
-| 1 Pharmacy and stores | Stores, pharmacy | M4; B3 if Tally is used | M7 (counter sales), M8, M10 (the item master), P3 |
-| 2 Front office and OP billing | Front office, appointments, billing, doctor fees | P1, P2, B1, B3 | B2, B5, P4, P5 |
+| 1 Pharmacy and stores | Stores, pharmacy | M4, P3; B3 if Tally is used | M7 (counter sales), M8, M10 (the item master) |
+| 2 Front office and OP billing | Front office, appointments, billing, doctor fees | P1, P2, B1, B2, B3 | B5, P4, P5 |
 | 3 Doctors | EMR and e-prescribing, emergency | None | M8 (e-prescriptions dispensed) |
 | 4 Diagnostics | Laboratory, radiology, cardiology | L1, L2, L3 | L4 to L7, P6 |
-| 5 In-patient | Wards and nursing, insurance, theatre | M1, M2, M3, M5, B2, B4 | M6, M9 |
+| 5 In-patient | Wards and nursing, insurance, theatre | M1, M2, M3, M5, B4 | M6, M9 |
 | 6 Back office | HR, support services, quality, MRD | None | B6 (the canteen) |
 | 7 Outside and insights | Portal, video, ABDM, MIS | None | — |
 
-**Until L1 is fixed:** turn auto-validation off on every analyser where tube numbers are typed by hand. Have the
-technician check the patient's name on the analyser's screen against the tube's label before each run. A check digit
-inside the 10 digits (9 digits and a Damm or Verhoeff digit, checked before the tube is looked up) would catch every
-single wrong digit and every swap of two neighbouring digits.
+**Fixing L1.** A check digit inside the 10 digits (9 digits and a Damm or Verhoeff digit, checked before the tube is
+looked up) catches every single wrong digit and every swap of two neighbouring digits. While tube numbers are typed by
+hand, also keep auto-validation off on those analysers. Have the technician check the patient's name on the analyser's
+screen against the tube's label before each run.
 
 ## 2. What the release is
 
@@ -369,7 +375,9 @@ These were run on the whole server (`src/server`, `src/shared`, migrations left 
 Mutation testing changes a rule in a small way and checks that some test fails. A change no test notices is a fault the
 tests would let through.
 
-*The results are being added.*
+*The run had not finished when this was written.* Until its results are here, this report claims nothing from it.
+The rules it covers are the laboratory's flags, reference ranges, auto-validation and calculated results, and the bill
+totals and GST.
 
 ### 3.6 What CI does not prove, and what does
 
@@ -416,8 +424,8 @@ Follow [NANA-THENI-READINESS.md](NANA-THENI-READINESS.md), section 4. This relea
    store wait the same way. The item master's own reorder levels work.
 6. **The item master and the downtime kit (M4, M10).**
    - Give every narcotic its generic name, as Form 3H names it.
-   - Until M4 is fixed, enter a downtime's paper sales of H1, X and NDPS drugs before any later movement of the same
-     drug, or keep those drugs' registers on paper through a downtime.
+   - M4 is fixed before wave 1 (section 1.2). The parallel run's downtime drill then checks the registers after paper
+     sales of H1, X and NDPS drugs are entered.
 
 **Why wave 1 needs no other new code.** In wave 1, no live department hands work to one that is not live:
 
@@ -449,7 +457,8 @@ wave 3 the seams are many.
 
 | Gate | Evidence | Signed by |
 |---|---|---|
-| The code findings of the wave fixed | Each finding of section 1.2's *Fix first* column, closed with a test that failed before the fix; CI green on the commit | HyFib engineering lead |
+| The wave's blocker and high findings fixed | Each finding of section 1.2's *Fix first* column, closed with a test that failed before the fix; CI green on the commit | HyFib engineering lead |
+| The wave's medium findings decided | Each finding of section 1.2's *Medium* column: fixed with a test, or a written procedure for it | The wave's department in-charge |
 | The blockers closed | R2's key in `ReleaseKeys.cs`; CI green on the tagged commit; Dependabot's alerts read, each fixed or written down (R6); CodeQL alerts 23 and 24 dismissed (R10) | HyFib engineering lead |
 | The release workflow works | A green run on `v1.0.0-rc.1`, with every file attached | HyFib engineering lead |
 | The checksums reached IT by a second channel | IT's note of the values compared | Hospital IT officer |
@@ -476,7 +485,7 @@ After go-live, the pharmacist-in-charge signs the parallel run (NANA-THENI-READI
 | Every workstation upgraded by hand | Only if R2 is put off | R2 is closed |
 | Programs not signed | The second channel for the checksums (S1) | A code-signing certificate |
 | Features with no screen (section 2) | Each belongs to a later wave, except supplier returns (section 5) | Their screens are built, wave by wave |
-| The medium findings of section 1.1 | Each is covered by the procedure section 1.2 names until it is fixed | Each is fixed |
+| The medium findings of section 1.1 not yet fixed | Each is covered by a written procedure its wave's department in-charge signed (section 7). Blocker and high findings are never accepted: each is fixed first | Each is fixed |
 | picomatch GHSA-fc5q-39xc-vjpf (ReDoS) | Only build and test tools use it, on the repository's own patterns; nothing that ships contains it; no fixed version exists | 2 December 2026, or a fixed picomatch |
 | The ASVS L2 checklist's Partial and Gap rows | The security officer's sign-off decides each | SEC-06 is signed |
 | Translations not reviewed | Patients first see them in wave 7 | The reviewers |
