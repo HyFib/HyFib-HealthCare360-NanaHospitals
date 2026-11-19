@@ -429,6 +429,11 @@ and grants nothing.
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
     So do a visit opened by its id, and the patient's visit history and payer: each opening is also recorded as access
     to the record.
+  - A merge keeps the restriction. A restricted duplicate merged into another record leaves the record kept restricted,
+    audited as `patient.restriction_carried`: a merge needs only `patients.merge`, and lifting a restriction waits for
+    someone who may open restricted records. A merge with a restricted record is asked for, and approved, only by
+    someone who may open it (403 `patient.restricted`); an approver who may not leaves the request waiting for one who
+    may.
 - **Sensitive categories** (HIV, mental health, termination of pregnancy, sexual violence; HIV/AIDS Act 2017, Mental
   Healthcare Act 2017, MTP Act s.5A, Bharatiya Nyaya Sanhita 2023 s.72 and POCSO Act 2012 s.23):
   - An HIV (B20–B24, Z21), mental-illness (F20–F69), medical-abortion (O04) or sexual-abuse (T74.2, T76.2, Y05, Z04.4)
@@ -480,7 +485,8 @@ and grants nothing.
     the card and UPI payouts (`billing.gateway.reconcile`) asks with the reason, and another who holds
     `billing.refunds.approve` approves, shown what the report brought and matched. Its transactions are reversed in the
     books of the day it is approved, never removed (billing.md, Card and UPI reconciliation);
-  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
+  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves; when either
+    record is restricted, only someone who may open it does either (see "Restricted records" above);
   - a third party paying for a visit or a stay (an insurer, a company, a government scheme): the desk names it, and it
     is accepted only on the patient's policy or membership, in date and verified with the payer by someone other than
     whoever recorded its terms or last changed them (`PayerChoice`; `insurance.policy_self_verify`). Changing what a
