@@ -549,5 +549,24 @@
   "seconds": 386.3,
   "megabytes": 17.7,
   "madeBy": "render worker 3"
+ },
+ "w6-mrd-officer": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 21,
+  "wer": 2.6,
+  "wpm": 122.3,
+  "maxCps": 14.6,
+  "lufs": -16.0,
+  "seconds": 341.9,
+  "megabytes": 13.9,
+  "madeBy": "render worker 3"
  }
 }
