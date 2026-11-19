@@ -113,7 +113,7 @@ export default {
           wait: { text: 'Close ticket' },
         },
         {
-          press: 'Escape',
+          click: { role: 'button', name: 'Close', exact: true },
           say: 'Close the ticket window.',
         },
       ],

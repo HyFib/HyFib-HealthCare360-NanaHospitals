@@ -1,9 +1,29 @@
-import { writeFileSync } from 'node:fs';
+// Wave 5 (in-patient services): the blood bank officer's day. Made in setup by other staff: a second officer (account
+// bloodbank2, created by the administrator and approved by the hospital administrator, as accounts.mjs does) registered
+// the donor Murugan Selvam, screened him, collected a bag, separated a red cell unit and entered the results; Dr. Arjun
+// Mehta asked for one unit of red cells for Fatima Begum (anaemia with pneumonia, Hb 7.4: invented for training), and
+// the second officer grouped her sample. The video verifies the donation (the second-officer rule), cross-matches the unit
+// and issues it. Recorded as the blood bank officer at 11:10 am.
+
 const nav = { role: 'navigation', name: 'Main navigation' };
-const dump = (name) => async ({ page }) => writeFileSync(`/tmp/claude-0/-home-user-HyFib-HealthCare360-NanaHospitals/4cf56889-54f3-5e4e-8287-5c222ea81477/scratchpad/${name}.txt`, await page.locator('body').ariaSnapshot());
+
 export default {
-  id: 'w5-blood-bank-officer', title: 'Blood bank officer', role: 'BloodBankOfficer', roleLabel: 'Blood bank officer', user: 'bloodbank', wave: 5,
-  audience: 'x', intro: 'x', objectives: ['a', 'b'], modules: ['blood-bank'], covers: ['/blood-bank'],
+  id: 'w5-blood-bank-officer',
+  title: 'Blood bank officer: release a donation, cross-match and issue blood',
+  role: 'BloodBankOfficer',
+  roleLabel: 'Blood bank officer',
+  user: 'bloodbank',
+  wave: 5,
+  audience: 'For the officers of the Nana Hospitals blood bank.',
+  intro:
+    'Blood is the most carefully checked product in the hospital. HC360 holds every unit back until its results are verified, matches it to the patient, and keeps one officer from checking the same unit alone.',
+  objectives: [
+    'Verify a donation’s results, so its unit goes to stock.',
+    'Cross-match a unit for a patient’s request.',
+    'Issue the unit to the ward.',
+  ],
+  modules: ['blood-bank'],
+  covers: ['/blood-bank', '/blood-bank/requests', '/blood-bank/donations', '/blood-bank/donors'],
   setup: async ({ api }) => {
     const { firstSignIn } = await import('../../src/web/demo/lib/api.mjs');
     const admin = await api('admin');
@@ -38,7 +58,7 @@ export default {
   scenes: [
     { title: 'The blood bank this morning', steps: [
       { click: { within: nav, role: 'button', name: 'Blood bank' }, say: 'Open Blood bank from the menu.' },
-      { nav: 'Blood stock', say: 'Open Blood stock.', after: 'Every group shows no units yet. One request is open, and one unit is in quarantine.', wait: { role: 'button', name: /^Open requests/ }, result: { role: 'button', name: /^Open requests/ } },
+      { nav: 'Blood stock', say: 'Open Blood stock.', after: 'No group has a unit available yet. One request is open, and one unit is in quarantine.', wait: { role: 'button', name: /^Open requests/ }, result: { role: 'button', name: /^Open requests/ } },
       { show: { role: 'button', name: /^In quarantine/ }, say: 'A unit in quarantine is never given to a patient. It waits for its group and its TTI results.', zoom: 1.5 },
     ] },
     { title: 'Release a donation to stock', steps: [
@@ -60,9 +80,25 @@ export default {
       { click: { role: 'button', name: 'Save cross-match' }, say: 'Click Save cross-match. A compatible result reserves the unit for her for 72 hours.', after: 'The unit is Reserved for this request, and the cross-match is listed.', wait: { text: 'Reserved' } },
       { click: { role: 'button', name: 'NHBB26000001-R' }, say: 'To issue, scan the bag in your hand. Here, click the unit number.', after: 'HC360 checks the unit again: All checks passed for Fatima Begum.', wait: { text: /All checks passed/, exact: false } },
       { fill: [{ label: 'Handed to', exact: false }, 'Deepa Raman, ward nurse'], say: 'Write who collects the unit, and check their identity card.', zoom: 1.3 },
-      { click: { role: 'button', name: /Issue unit and print slip/ }, say: 'One officer may not group, cross-match and issue the same unit. Kavitha Raman grouped it and you cross-matched it, so you may issue it. Click Issue unit and print slip.', wait: { role: 'button', name: /^Print issue slip/ }, after_do: dump('b-issue') },
-      { show: { role: 'main' }, say: 'x', after_do: dump('b-issue2') },
+      { click: { role: 'button', name: /Issue unit and print slip/ }, say: 'One officer may not group, cross-match and issue the same unit. Kavitha Raman grouped it and you cross-matched it, so you may issue it. Click Issue unit and print slip.', after: 'The unit is listed under Issued units, handed to Deepa Raman, ward nurse. Its status is With the patient, and it is billed.', wait: { role: 'row', name: /NHBB26000001-R.*With the patient/ }, result: { role: 'row', name: /NHBB26000001-R.*With the patient/ } },
+      { show: { role: 'heading', name: /^Issued units/ }, say: 'If the unit is not used, return it within 30 minutes with the cold chain kept. Report any reaction at once.', zoom: 1.3 },
+      { show: { role: 'heading', name: /^Issued units/ }, say: 'On the ward, two staff check the patient’s wristband and the bag before the transfusion starts. HC360 refuses a wrong wristband or a wrong bag.' },
     ] },
   ],
-  recap: ['a','b','c'], check: [], next: 'x',
+  recap: [
+    'A unit stays in quarantine until its group and TTI results are verified by a second officer.',
+    'Cross-match the unit with the patient’s own sample. The group recorded at registration is never used.',
+    'One officer may not group, cross-match and issue the same unit. At the bedside, two staff check the wristband and the bag.',
+  ],
+  check: [
+    {
+      q: 'Kavitha Raman entered the results of a donation. Why can she not verify them herself?',
+      a: 'No unit leaves the blood bank on one officer’s word. A second officer checks the results against the worksheet and the printout, and then verifies them.',
+    },
+    {
+      q: 'Which blood group does HC360 use to choose a unit for a patient?',
+      a: 'The group the blood bank found on the patient’s sample, never the group recorded at registration.',
+    },
+  ],
+  next: 'Nurse: care of a patient on the ward',
 };

@@ -56,7 +56,13 @@ export default {
         {
           click: { role: 'button', name: 'Add A09.9' },
           say: 'Click the plus sign to add A09.9, gastroenteritis.',
-          after: 'The code is in the list, marked as the principal diagnosis, and the episode is now Coded. An episode has exactly one principal diagnosis.',
+          after: 'The code is in the list, marked as the principal diagnosis, An episode has exactly one principal diagnosis.',
+          wait: { role: 'table', name: 'Codes' },
+        },
+        {
+          click: { role: 'button', name: /^Save codes/ },
+          say: 'Click Save codes, or press Control and S.',
+          after: 'The episode is now Coded. A second coder must verify it.',
           wait: { text: 'A different coder must verify your coding.' },
         },
         {

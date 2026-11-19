@@ -133,7 +133,7 @@ const story = {
           zoom: 1.3,
         },
         {
-          show: { text: /Credit Note NHCN26000001/ },
+          show: { role: 'listitem', has: 'NHCN26000001' },
           say: 'The credit note that you approved is in the day book, with the ledgers it debits and credits.',
           zoom: 1.5,
         },
@@ -176,7 +176,7 @@ const story = {
       a: 'That the debit and the credit are the same, and that the vouchers are the day’s bills, receipts and credit notes.',
     },
   ],
-  next: 'Doctor fees and insurance claims follow in later videos.',
+  next: 'Insurance desk: pre-authorisations and claims',
 };
 // DEVTAIL-BEGIN
 import { appendFileSync as __a, writeFileSync as __w } from 'node:fs';

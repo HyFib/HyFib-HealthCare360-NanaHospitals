@@ -114,10 +114,10 @@ export default {
           wait: { role: 'table', name: 'Audit events' },
         },
         {
-          fill: [{ label: 'Search' }, 'purchase'],
-          say: 'To follow one person’s work, type the user name. Here, purchase shows what the purchase officer did.',
-          wait: { role: 'cell', name: /^purchase$/ },
-          result: { role: 'table', name: 'Audit events' },
+          fill: [{ label: 'Search' }, 'kavitha'],
+          say: 'The search finds a user, an action or a summary. Type kavitha to find the entry for the account you just added.',
+          wait: { role: 'cell', name: /Created user kavitha/ },
+          result: { role: 'row', name: /Created user kavitha/ },
         },
         {
           show: { role: 'button', name: 'Verify integrity' },

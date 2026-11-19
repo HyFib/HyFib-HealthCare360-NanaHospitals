@@ -122,8 +122,9 @@ export default {
         {
           click: { within: approve, role: 'button', name: 'Approve' },
           say: 'Click Approve in the window.',
-          after: 'RESULT',
-          wait: { text: 'RESULT' },
+          after: 'The request is now Approved. The page shows who decided, and your note. The Billing role is given to Meena Karthikeyan.',
+          wait: { text: 'Approved' },
+          zoom: 1.2,
         },
       ],
     },
