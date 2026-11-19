@@ -255,14 +255,17 @@ public sealed class LabVerificationTests(HospitalServer server)
     /// <summary>A walk-in order for one test, its tube collected and received in the lab (the counter's payment gate waived).</summary>
     /// <summary>A received tube of the test, for <paramref name="patientId"/> or a new patient.</summary>
     /// <param name="consented">The patient consented to the test (an HIV test is drawn only then: HIV and AIDS Act 2017, s.5).</param>
-    internal static async Task<CreatedSample> ReceivedSampleAsync(HospitalServer server, string testCode, Guid? patientId = null, bool consented = false)
+    /// <param name="referringDoctor">For an outside referral, the referring doctor's name as the counter types it.</param>
+    internal static async Task<CreatedSample> ReceivedSampleAsync(
+        HospitalServer server, string testCode, Guid? patientId = null, bool consented = false, string? referringDoctor = null)
     {
         var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
         var patient = patientId ?? (await RegisterPatientAsync(server)).Id;
         var test = (await lab.GetAsync<PagedResult<LabTestListItem>>($"/api/v1/lab/tests?search={testCode}")).Items.Single(t => t.Code == testCode);
         var order = await lab.PostAsync<LabOrderCreated>("/api/v1/lab/orders", new CreateLabOrderRequest(
-            patient, null, [test.Id], OrderPriority.Routine, LabOrderSource.WalkIn, null, null, null));
+            patient, null, [test.Id], OrderPriority.Routine, referringDoctor is null ? LabOrderSource.WalkIn : LabOrderSource.OutsideReferral, null,
+            referringDoctor, null));
         var tube = order.Samples.ShouldHaveSingleItem();
 
         // A walk-in test is drawn only once paid; these tests are about the sign-off, so the counter waives that here.

@@ -99,6 +99,13 @@ arrow, and the report carries the arrows' font, so every server prints them.
 
 **L8: "Qc Run passed"; L9: "No reruns if need report clarification after rerun sample".** No change.
 
+**A report corrected after release.** The patient is sent the corrected report as the first one went (SMS, WhatsApp and
+e-mail, in Tamil, Hindi or English as registered), so nobody keeps the wrong one. Walk-ins and outside referrals have no
+doctor in HC360 to alert, so the pathologists are alerted in the app instead: "Lab report amended: …: tell the doctor",
+naming the referring doctor typed on the order. Someone in the lab phones that doctor with the corrections. Before
+go-live, register the WhatsApp template `lab_report_amended` with Meta and switch it on (DEPLOYMENT.md section 4, step
+8); until then the notice goes by SMS and e-mail.
+
 **L10: "Sent to real images".** Open: HC360 stores no image from an analyser (no histogram or scattergram from the H500).
 Ask what is meant: the H500's histograms on the report, or something else.
 

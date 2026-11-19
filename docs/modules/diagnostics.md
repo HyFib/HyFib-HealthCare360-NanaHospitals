@@ -503,6 +503,17 @@ diagnostics screen.
   the clinical `OrderItemId`. The QR code is assigned at first release. Corrections after release are numbered
   amendments with the reason and old → new values, re-announced as "(amended)"; a correction of an input carries the
   results calculated from it (see Calculated results).
+* **Who hears of an amendment**: the patient is sent the corrected report (`lab.report_amended`) in the amendment's
+  transaction, as the first one went (`lab.report_ready`): the same channels, the PDF on the same terms, in the patient's
+  language, and the same rules for a deceased patient and for a record in a protected category whose number another
+  patient shares (`ReportDelivery`), so they do not keep the wrong report. The ordering doctor is alerted in the app
+  ("Lab report amended: …"). Where no doctor in HC360 can be alerted (the order links none: a walk-in, or an outside
+  referral whose doctor is named in words; or the linked doctor has no staff account), holders of `lab.results.verify`
+  at the report's facility are alerted instead, through the outbox, naming the doctor to phone: "Lab report amended:
+  NHLR2600042: tell the doctor" and "Revision 1 of report NHLR2600042 corrects released results, and no doctor in HC360 is
+  alerted of it. Phone Dr. S. Murugan, Bodinayakanur, the doctor named on the order, and tell them the changes." (or,
+  when the order names none, to ask the patient who their doctor is). A correction that waits for a second pathologist
+  sends both when it is approved, not before.
 * **Charges**: posted when the item/study is created (`diagnostics.lab`, `diagnostics.radiology`,
   `diagnostics.cardiology`; SourceReference = item/study id; quantity from the order; departments LAB, RAD, CDX) and
   reversed on cancellation. A billing failure never blocks clinical work: the error is stored and can be retried.
@@ -612,6 +623,7 @@ event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff
 | Key | Channels | Placeholders | Use |
 |---|---|---|---|
 | `lab.report_ready` | SMS, WhatsApp (platform defaults), Email (seeded here) | `name`, `reference`, `hospital` | Any diagnostic report released (lab, radiology, cardiology); skipped for deceased patients |
+| `lab.report_amended` | SMS, WhatsApp, Email (seeded here in English, Hindi and Tamil; WhatsApp seeded *Not in use* until Meta approves `lab_report_amended`) | `name`, `reference`, `hospital` | A released lab report corrected (amended), with the corrected report; the same rules as `lab.report_ready` |
 | `lab.critical` | SMS (platform default) | `patient`, `uhid`, `test`, `value` | Critical lab value to the ordering doctor |
 | `diagnostics.critical_finding` | SMS (seeded here) | `patient`, `uhid`, `study`, `finding` | Critical imaging/cardiology finding to the ordering doctor |
 
@@ -691,7 +703,9 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
 * **Cardiology**: CARD-ECG ₹250, CARD-ECHO ₹2,000, CARD-TMT ₹2,000, CARD-HOLTER ₹3,000, CARD-ABPM ₹2,500.
 * **Report templates**: TPL-DX-CHEST, TPL-DX-LSSPINE, TPL-US-ABDOMEN, TPL-US-PELVIS-F, TPL-CT-HEAD, TPL-CT-ABDOMEN,
   TPL-MR-BRAIN, TPL-MR-LSSPINE, TPL-MG-BIRADS (one per seeded procedure).
-* **Notification templates**: `lab.report_ready` (Email), `diagnostics.critical_finding` (SMS).
+* **Notification templates**: `lab.report_ready` (Email), `diagnostics.critical_finding` (SMS), and `lab.report_amended`
+  (SMS, WhatsApp and Email, each in English, Hindi and Tamil; the WhatsApp ones *Not in use* until an administrator
+  switches them on once Meta has approved them). Only a template missing for its key, channel and language is added.
 * **Tube numbers, on a database from before**: the series `lab.sample` is brought to `{SEQ:9}{CHK}` with its counter
   counted in tens of the old numbers, in one statement, and `lab.tubeCheckDigitSince` is written in the same
   transaction; audited `numbering.tube_check_digit` (a warning) with the format and counter before and after (see

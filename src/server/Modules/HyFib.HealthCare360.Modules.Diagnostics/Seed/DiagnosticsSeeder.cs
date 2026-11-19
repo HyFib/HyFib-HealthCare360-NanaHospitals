@@ -26,15 +26,58 @@ internal sealed class DiagnosticsSeeder(IAuditLogger audit, TimeProvider time) :
     /// <summary>GST SAC 999316: medical laboratory and diagnostic-imaging services (exempt healthcare).</summary>
     public const string SacCode = "999316";
 
-    private static readonly (string Key, NotificationChannel Channel, string? Subject, string Body, string Description)[] Templates =
+    /// <summary>
+    /// The templates this module adds to the platform defaults, each in its language: the "report ready" e-mail, the
+    /// critical finding SMS, and the notice of a corrected report (<see cref="ReportDelivery.ReportAmendedTemplate"/>) on
+    /// each channel of the "report ready" one, in English, Hindi and Tamil.
+    /// </summary>
+    internal static readonly (string Key, NotificationChannel Channel, string Language, string? Subject, string Body, string Description)[] Templates =
     [
-        (ReportDelivery.ReportReadyTemplate, NotificationChannel.Email, "Your report {{reference}} is ready",
+        (ReportDelivery.ReportReadyTemplate, NotificationChannel.Email, "en", "Your report {{reference}} is ready",
             "<p>Dear {{name}},</p><p>Your diagnostic report <strong>{{reference}}</strong> is ready. A copy is attached, and you can also view and download it securely on the patient portal.</p><p>Regards,<br/>{{hospital}}</p>",
             "Diagnostic report ready (e-mail)"),
-        (CriticalValueNotifier.FindingCriticalTemplate, NotificationChannel.Sms, null,
+        (CriticalValueNotifier.FindingCriticalTemplate, NotificationChannel.Sms, "en", null,
             "HC360 CRITICAL FINDING: {{patient}} ({{uhid}}) {{study}}: {{finding}}. Please review immediately.",
             "Critical imaging/cardiology finding to the ordering doctor"),
+
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.Sms, "en", null,
+            "Dear {{name}}, your report {{reference}} has been corrected. Please use the corrected report on the patient portal, not the earlier one. - {{hospital}}",
+            "Lab report corrected after release"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.WhatsApp, "en", null,
+            "Dear {{name}}, your report {{reference}} has been corrected. Please use the corrected report, not the earlier one. It is also on the patient portal.",
+            "Lab report corrected after release (WhatsApp)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.Email, "en", "Your report {{reference}} has been corrected",
+            "<p>Dear {{name}},</p><p>Your diagnostic report <strong>{{reference}}</strong> has been corrected. The corrected report is attached, and you can also view and download it securely on the patient portal. Please use it, and not the earlier one.</p><p>Regards,<br/>{{hospital}}</p>",
+            "Lab report corrected after release (e-mail)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.Sms, "hi", null,
+            "प्रिय {{name}}, आपकी रिपोर्ट {{reference}} में सुधार किया गया है। कृपया रोगी पोर्टल पर सुधारी गई रिपोर्ट का उपयोग करें, पिछली रिपोर्ट का नहीं। - {{hospital}}",
+            "Lab report corrected after release (Hindi)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.WhatsApp, "hi", null,
+            "प्रिय {{name}}, आपकी रिपोर्ट {{reference}} में सुधार किया गया है। कृपया सुधारी गई रिपोर्ट का उपयोग करें, पिछली रिपोर्ट का नहीं। यह रोगी पोर्टल पर भी उपलब्ध है।",
+            "Lab report corrected after release (WhatsApp, Hindi)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.Email, "hi", "आपकी रिपोर्ट {{reference}} में सुधार किया गया है",
+            "<p>प्रिय {{name}},</p><p>आपकी जाँच रिपोर्ट <strong>{{reference}}</strong> में सुधार किया गया है। सुधारी गई रिपोर्ट संलग्न है, और आप इसे रोगी पोर्टल पर भी सुरक्षित रूप से देख और डाउनलोड कर सकते हैं। कृपया इसी का उपयोग करें, पिछली रिपोर्ट का नहीं।</p><p>सादर,<br/>{{hospital}}</p>",
+            "Lab report corrected after release (e-mail, Hindi)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.Sms, "ta", null,
+            "அன்புள்ள {{name}}, உங்கள் அறிக்கை {{reference}} திருத்தப்பட்டுள்ளது. நோயாளி போர்ட்டலில் உள்ள திருத்தப்பட்ட அறிக்கையைப் பயன்படுத்துங்கள்; முந்தைய அறிக்கையை அல்ல. - {{hospital}}",
+            "Lab report corrected after release (Tamil)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.WhatsApp, "ta", null,
+            "அன்புள்ள {{name}}, உங்கள் அறிக்கை {{reference}} திருத்தப்பட்டுள்ளது. திருத்தப்பட்ட அறிக்கையைப் பயன்படுத்துங்கள்; முந்தைய அறிக்கையை அல்ல. இது நோயாளி போர்ட்டலிலும் உள்ளது.",
+            "Lab report corrected after release (WhatsApp, Tamil)"),
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.Email, "ta", "உங்கள் அறிக்கை {{reference}} திருத்தப்பட்டுள்ளது",
+            "<p>அன்புள்ள {{name}},</p><p>உங்கள் பரிசோதனை அறிக்கை <strong>{{reference}}</strong> திருத்தப்பட்டுள்ளது. திருத்தப்பட்ட அறிக்கை இணைக்கப்பட்டுள்ளது; அதை நோயாளி போர்ட்டலிலும் பாதுகாப்பாகப் பார்த்துப் பதிவிறக்கலாம். முந்தைய அறிக்கைக்குப் பதிலாக இதையே பயன்படுத்துங்கள்.</p><p>அன்புடன்,<br/>{{hospital}}</p>",
+            "Lab report corrected after release (e-mail, Tamil)"),
     ];
+
+    /// <summary>
+    /// Stored "Not in use" when first seeded: WhatsApp messages Meta must approve first. An administrator switches each on
+    /// in Notification templates once its template is approved in WhatsApp Manager; until then the message goes by SMS and
+    /// e-mail only.
+    /// </summary>
+    internal static readonly IReadOnlySet<(string Key, NotificationChannel Channel)> SeededNotInUse = new HashSet<(string, NotificationChannel)>
+    {
+        (ReportDelivery.ReportAmendedTemplate, NotificationChannel.WhatsApp),
+    };
 
     public int Order => 200;
 
@@ -447,22 +490,27 @@ internal sealed class DiagnosticsSeeder(IAuditLogger audit, TimeProvider time) :
         await db.SaveChangesAsync(ct);
     }
 
-    /// <summary>Templates this module adds to the platform defaults (lab.report_ready by e-mail, critical imaging/cardiology finding SMS).</summary>
+    /// <summary>
+    /// Templates this module adds to the platform defaults (<see cref="Templates"/>), each in its language, for all
+    /// facilities: only those missing, so an administrator's wording is never overwritten.
+    /// </summary>
     private static async Task SeedNotificationTemplatesAsync(HospitalDbContext db, CancellationToken ct)
     {
         var existing = await db.Set<NotificationTemplate>().IgnoreQueryFilters()
-            .Where(t => t.FacilityId == null && t.Language == "en")
-            .Select(t => new { t.Key, t.Channel })
+            .Where(t => t.FacilityId == null)
+            .Select(t => new { t.Key, t.Channel, t.Language })
             .ToListAsync(ct);
-        foreach (var template in Templates.Where(t => !existing.Any(e => e.Key == t.Key && e.Channel == t.Channel)))
+        foreach (var template in Templates.Where(t => !existing.Any(e => e.Key == t.Key && e.Channel == t.Channel && e.Language == t.Language)))
         {
             db.Add(new NotificationTemplate
             {
                 Key = template.Key,
                 Channel = template.Channel,
+                Language = template.Language,
                 Subject = template.Subject,
                 Body = template.Body,
                 Description = template.Description,
+                IsActive = !SeededNotInUse.Contains((template.Key, template.Channel)),
             });
         }
 

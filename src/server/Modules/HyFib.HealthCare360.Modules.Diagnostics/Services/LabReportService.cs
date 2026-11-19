@@ -18,8 +18,11 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// Report release and amendment (LIS-02, LIS-07). Release is per test: every verified test not yet released goes out
 /// together, raising DiagnosticReportReleased for the EHR and queueing <c>lab.report_ready</c> to the patient.
 /// A correction after release is a numbered amendment with a reason, printed on the report and audited. A corrected
-/// value that is critical needs a new documented call. A released HIV result outside its normal answers puts the
-/// patient's record in the HIV category (R-4), as an HIV diagnosis does.
+/// value that is critical needs a new documented call. The patient is sent the corrected report
+/// (<c>lab.report_amended</c>), and the ordering doctor is alerted in the app; where no doctor in HC360 can be alerted (a
+/// walk-in or an outside referral, whose referring doctor is named in words if at all), the laboratory is, to phone the
+/// doctor named on the order. A released HIV result outside its normal answers puts the patient's record in the HIV
+/// category (R-4), as an HIV diagnosis does.
 /// </summary>
 internal sealed class LabReportService(
     HospitalDbContext db,
@@ -299,7 +302,8 @@ internal sealed class LabReportService(
 
     /// <summary>
     /// Records a staged correction for the caller's save: the call log, the public-health and confidentiality follow-ups,
-    /// the numbered amendment and its audit, and the ordering doctor's SMS for a critical value (queued in the save).
+    /// the numbered amendment and its audit, the ordering doctor's SMS for a critical value, the patient's notice with the
+    /// corrected report, and the laboratory's alert when no doctor in HC360 can be alerted (all queued in the save).
     /// Returns the in-app alerts to send once it is committed.
     /// </summary>
     private async Task<Result<IReadOnlyList<CriticalAlert>>> RecordAmendmentAsync(
@@ -329,8 +333,50 @@ internal sealed class LabReportService(
         var alerts = amendment.Critical.Select(r => new CriticalAlert(
             DiagnosticKind.Laboratory, r.FacilityId, r.PatientId, order.OrderingPractitionerId, r.TestName, $"{r.Describe()} ({r.Flag})", $"/lab/orders/{order.Id}")).ToList();
         await critical.QueueDoctorSmsAsync(alerts, ct);
+
+        // The patient holds the earlier report: the corrected one goes to them as the first did, under its own template.
+        await delivery.QueueReportAmendedAsync(
+            order.PatientId, order.AccessionNumber, new NotificationDocument(LabReportDocumentSource.DocumentKind, report.Id), order.FacilityId, ct);
+
+        // A doctor HC360 cannot alert (none linked to the order, or one without a staff account) is phoned by the laboratory.
+        if (await NoDoctorAlertAsync(order, report, ct) is { } noDoctor)
+        {
+            realtime.AlertStaffAfterCommit(noDoctor);
+        }
+
         return alerts;
     }
+
+    /// <summary>
+    /// The laboratory's alert for an amended report no doctor in HC360 is alerted of: the order links no doctor (a walk-in,
+    /// or an outside referral whose doctor is named in words), or one without a staff account. It goes to whoever verifies,
+    /// releases and amends reports (<see cref="DiagnosticsPermissions.LabResultsVerify"/>) at the report's facility, naming
+    /// the doctor to phone. Null when the ordering doctor is alerted in the app.
+    /// </summary>
+    private async Task<DeferredStaffAlert?> NoDoctorAlertAsync(LabOrder order, LabReport report, CancellationToken ct)
+    {
+        var doctor = order.ReferringDoctorName;
+        if (order.OrderingPractitionerId is { } practitionerId)
+        {
+            if ((await lookups.UserIdsForPractitionerAsync(practitionerId, ct)).Count > 0)
+            {
+                return null;
+            }
+
+            doctor = (await lookups.PractitionerAsync(practitionerId, ct))?.DisplayName ?? doctor;
+        }
+
+        var (title, body) = NoDoctorWords(report, doctor);
+        return new DeferredStaffAlert(DiagnosticsPermissions.LabResultsVerify, report.FacilityId, title, body, $"/lab/reports/{report.Id}", "warning");
+    }
+
+    /// <summary>What the laboratory reads when no doctor in HC360 is alerted of an amended report: whom to phone.</summary>
+    internal static (string Title, string Body) NoDoctorWords(LabReport report, string? doctor) =>
+        ($"Lab report amended: {report.ReportNumber}: tell the doctor",
+            $"Revision {report.Revision} of report {report.ReportNumber} corrects released results, and no doctor in HC360 is alerted of it. " +
+            (string.IsNullOrWhiteSpace(doctor)
+                ? "No doctor is named on the order: ask the patient who their doctor is, and tell that doctor the changes."
+                : $"Phone {doctor.Trim()}, the doctor named on the order, and tell them the changes."));
 
     private async Task<Result<ReleaseOutcome>> ReleaseCoreAsync(LabReport report, CancellationToken ct)
     {
