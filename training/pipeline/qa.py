@@ -49,7 +49,7 @@ HOMOPHONES = {"cue": "queue", "cues": "queues", "que": "queue", "qs": "queues", 
 # Spellings a recogniser may choose for the same spoken words.
 SAME = [(r"\buser name", "username"), (r"\bhome page", "homepage"), (r"\bctrl\b", "control"), (r"\besc\b", "escape"),
         (r"\bpractice\b", "practise"), (r"\bpay slip", "payslip"), (r"\blicense\b", "licence"), (r"\bcheck up", "checkup"),
-        (r"\bcheck-up", "checkup"), (r"\be-mail", "email"), (r"\bset up\b", "setup"), (r"(\w{3,})iz(e|es|ed|ing|ation)\b", r"\1is\2"),
+        (r"\bcheck-up", "checkup"), (r"\be-mail", "email"), (r"\bset up\b", "setup"), (r"(\w{3,})iz(e|es|ed|er|ers|ing|ation|ations)\b", r"\1is\2"),
         (r"\bokay\b", "ok"), (r"\bwi-?fi\b", "wifi"), (r"\bx-ray", "x ray"),
         # British and American spellings of the same spoken word.
         (r"anaesth", "anesth"), (r"\btheatres?\b", "theater"), (r"\bcatalogue", "catalog"), (r"\bhaem", "hem"),
@@ -199,6 +199,18 @@ def main():
         ref, hyp = words(nar[sid]["text"]), words(heard)
         ref, hyp = join_compounds(ref, hyp), join_compounds(hyp, ref)
         errors, edits = wer(ref, hyp)
+        # Whisper sometimes repeats a phrase that was said once (a known failure on short windows). A line heard with
+        # far more words than were said is transcribed again, sentence by sentence, and the better reading is kept.
+        if len(hyp) > len(ref) * 1.4 + 3 and len(nar[sid]["sentences"]) > 1:
+            again = []
+            for snt in nar[sid]["sentences"]:
+                sa, sb = int((start + snt["start"] - 0.1) * 16000), int((start + snt["end"] + 0.2) * 16000)
+                again.append(transcribe(rec, x[max(0, sa):sb]))
+            hyp2 = words(" ".join(again))
+            ref2, hyp2 = join_compounds(words(nar[sid]["text"]), hyp2), join_compounds(hyp2, words(nar[sid]["text"]))
+            errors2, edits2 = wer(ref2, hyp2)
+            if errors2 < errors:
+                heard, ref, hyp, errors, edits = " ".join(again), ref2, hyp2, errors2, edits2
         total_ref += len(ref)
         total_err += errors
         n_words += len(spoken(nar[sid]["text"]).split())  # what is said: "64.0 mg/L" is six spoken words
