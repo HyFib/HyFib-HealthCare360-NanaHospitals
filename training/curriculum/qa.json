@@ -201,5 +201,23 @@
   "seconds": 285.1,
   "megabytes": 12.7,
   "madeBy": "this session"
+ },
+ "w7-patient-portal": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 22,
+  "wer": 1.9,
+  "wpm": 138.8,
+  "maxCps": 15.6,
+  "lufs": -16.0,
+  "seconds": 295.5,
+  "madeBy": "render worker 3"
  }
 }
