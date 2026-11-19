@@ -36,7 +36,7 @@ HOMOPHONES = {"cue": "queue", "cues": "queues", "que": "queue", "qs": "queues", 
 
 # Spellings a recogniser may choose for the same spoken words.
 SAME = [(r"\buser name", "username"), (r"\bhome page", "homepage"), (r"\bctrl\b", "control"), (r"\besc\b", "escape"),
-        (r"\bpractice\b", "practise"), (r"\blicense\b", "licence"), (r"\bcenter\b", "centre"), (r"\bcheck up", "checkup"),
+        (r"\bpractice\b", "practise"), (r"\bpay slip", "payslip"), (r"\blicense\b", "licence"), (r"\bcenter\b", "centre"), (r"\bcheck up", "checkup"),
         (r"\bcheck-up", "checkup"), (r"\be-mail", "email"), (r"\bset up\b", "setup"), (r"(\w{3,})iz(e|es|ed|ing|ation)\b", r"\1is\2"),
         (r"\bokay\b", "ok"), (r"\bwi-?fi\b", "wifi"), (r"\bx-ray", "x ray")]
 
