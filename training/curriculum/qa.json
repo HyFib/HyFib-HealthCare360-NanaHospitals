@@ -625,5 +625,24 @@
   "seconds": 284.1,
   "megabytes": 11.4,
   "madeBy": "render worker 3"
+ },
+ "w5-nurse": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 26,
+  "wer": 4.39,
+  "wpm": 134.7,
+  "maxCps": 15.3,
+  "lufs": -16.0,
+  "seconds": 366.9,
+  "megabytes": 17.9,
+  "madeBy": "render worker 2"
  }
 }
