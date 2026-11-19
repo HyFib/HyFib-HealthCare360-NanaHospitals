@@ -330,5 +330,24 @@
   "lufs": -16.0,
   "seconds": 366.6,
   "madeBy": "render worker 3"
+ },
+ "w5-physiotherapist": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 26,
+  "wer": 3.73,
+  "wpm": 127.8,
+  "maxCps": 15.5,
+  "lufs": -16.0,
+  "seconds": 318.7,
+  "megabytes": 14.5,
+  "madeBy": "render worker 1"
  }
 }
