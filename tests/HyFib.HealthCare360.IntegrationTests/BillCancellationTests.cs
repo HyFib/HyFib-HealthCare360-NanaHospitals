@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Bills;
 using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
+using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Patients.Features.Visits;
@@ -141,6 +142,8 @@ public sealed class BillCancellationTests(HospitalServer server)
     /// <summary>
     /// A health check-up visit with one charge of each service, billed and finalized by the billing desk: paid by the
     /// patient, or by <paramref name="company"/> on the patient's membership with <paramref name="coPay"/> percent co-pay.
+    /// The bill takes those charges alone: a new patient's first visit also carries the registration fee (REG-NEW,
+    /// charged at check-in), which is left for another bill.
     /// </summary>
     private async Task<BillDetail> BillAsync(PayerDetail? company, decimal coPay, params ServiceItemDto[] services)
     {
@@ -163,21 +166,37 @@ public sealed class BillCancellationTests(HospitalServer server)
             NotifyPatient: false));
 
         var billing = await server.SignInAsync(Users.Billing);
+        var charged = new List<Guid>();
         foreach (var service in services)
         {
-            await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(patient.Id, visit.Id, null, service.Id, 1m, null, null, null, null, null));
+            charged.Add((await billing.PostAsync<ChargeDto>("/api/v1/billing/charges",
+                new PostChargeRequest(patient.Id, visit.Id, null, service.Id, 1m, null, null, null, null, null))).Id);
         }
 
-        var draft = await billing.PostAsync<BillDetail>(Bills, new CreateBillRequest(visit.Id, null, null));
+        var draft = await billing.PostAsync<BillDetail>(Bills, new CreateBillRequest(visit.Id, null, charged));
+        draft.Lines.Select(l => l.ChargeId).ShouldBe(charged, ignoreOrder: true);
         return await billing.PostAsync<BillDetail>($"{Bills}/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
     private static Task<BillDetail> BillOfAsync(ApiClient client, BillDetail bill) => client.GetAsync<BillDetail>($"{Bills}/{bill.Id}");
 
-    /// <summary>The patient pays <paramref name="amount"/> on the bill by UPI.</summary>
-    private static Task<ReceiptDto> PayAsync(ApiClient billing, BillDetail bill, decimal amount) =>
-        billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
+    /// <summary>The patient pays <paramref name="amount"/> on the bill by UPI, at the billing desk's counter.</summary>
+    private static async Task<ReceiptDto> PayAsync(ApiClient billing, BillDetail bill, decimal amount)
+    {
+        await OpenShiftAsync(billing);
+        return await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
             bill.Id, [new PaymentLineInput(PaymentMode.Upi, amount, "UTR" + Digits(9), null, null, null, null, null)], null));
+    }
+
+    /// <summary>The billing desk's counter shift, opened if no test has opened it yet: money is collected on a shift.</summary>
+    private static async Task OpenShiftAsync(ApiClient billing)
+    {
+        using var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current");
+        if (current.StatusCode == HttpStatusCode.NoContent)
+        {
+            await billing.PostAsync<ShiftDto>("/api/v1/billing/shifts/open", new OpenShiftRequest("OP counter 1", OpeningFloat: 0m));
+        }
+    }
 
     /// <summary>Refunds <paramref name="amount"/> of the bill: the billing desk asks, the accountant approves, and it is paid by UPI.</summary>
     private static async Task RefundAsync(ApiClient billing, ApiClient accountant, BillDetail bill, decimal amount)
