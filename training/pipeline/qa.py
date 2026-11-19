@@ -60,6 +60,8 @@ SAME = [(r"\buser name", "username"), (r"\bhome page", "homepage"), (r"\bctrl\b"
 
 def words(text: str) -> list[str]:
     text = re.sub(r"(?i)\b(hc|health\s*care)\s*360\b", lambda m: "HC360" if m.group(1).lower() == "hc" else "HealthCare360", text)
+    # A code heard in lower case is the same code: "nhob2600001" for NHOB26000001.
+    text = re.sub(r"\b([a-z]{1,6})(\d{5,13})\b", lambda m: m.group(1).upper() + m.group(2), text)
     text = re.sub(r"\b([A-Z]{1,6}) ?-? ?(\d{1,8})\b", r"\1-\2", text)  # GM012, GM 012 and GM-012 are one token
     t = spoken(text).lower()
     for pattern, repl in SAME:
@@ -203,9 +205,11 @@ def main():
         ref, hyp = words(nar[sid]["text"]), words(heard)
         ref, hyp = join_compounds(ref, hyp), join_compounds(hyp, ref)
         errors, edits = wer(ref, hyp)
-        # Whisper sometimes repeats a phrase that was said once (a known failure on short windows). A line heard with
-        # far more words than were said is transcribed again, sentence by sentence, and the better reading is kept.
-        if len(hyp) > len(ref) * 1.4 + 3 and len(nar[sid]["sentences"]) > 1:
+        # Whisper sometimes repeats a phrase that was said once, or stops after the first sentence of a window (both
+        # known failures on short windows). A line heard with far more, or far fewer, words than were said is
+        # transcribed again, sentence by sentence, and the better reading is kept: words missing from the audio are
+        # missing from both readings, so this hides nothing that was not said.
+        if (len(hyp) > len(ref) * 1.4 + 3 or len(hyp) < len(ref) * 0.7) and len(nar[sid]["sentences"]) > 1:
             again = []
             for snt in nar[sid]["sentences"]:
                 sa, sb = int((start + snt["start"] - 0.1) * 16000), int((start + snt["end"] + 0.2) * 16000)
