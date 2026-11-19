@@ -155,7 +155,7 @@ export default {
         {
           click: { role: 'button', name: 'Book sessions', last: true },
           say: 'Click Book sessions.',
-          after: 'Six sessions are booked. The first one is today.',
+          after: 'Six sessions are booked, and the referral is In treatment.',
           wait: { role: 'heading', name: 'Sessions (6)' },
         },
       ],
@@ -193,7 +193,7 @@ export default {
         {
           click: { role: 'button', name: 'Record session' },
           say: 'Click Record session.',
-          after: 'The session is recorded. HC360 bills the modalities given.',
+          after: 'The session is recorded. Its status is Attended, with your name as the therapist.',
           wait: { role: 'row', name: /Lakshmi Narayanan.*Attended/ },
           result: { role: 'row', name: /Lakshmi Narayanan.*Attended/ },
         },
