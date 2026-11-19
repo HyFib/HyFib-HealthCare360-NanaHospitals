@@ -148,6 +148,13 @@
     "Nov": "November",
     "Dec": "December",
     "°C": "degrees Celsius",
-    "°F": "degrees Fahrenheit"
+    "°F": "degrees Fahrenheit",
+    "PRBC": "P R B C",
+    "UF": "U F",
+    "IFT": "I F T",
+    "AHG": "A H G",
+    "HBsAg": "H B s antigen",
+    "HbsAg": "H B s antigen",
+    "AVF": "A V F"
   }
 }
