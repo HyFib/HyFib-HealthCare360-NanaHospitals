@@ -6,7 +6,8 @@ import { emrApi, emrKeys, type StartEncounterRequest } from './api';
 
 /**
  * Starts (or continues) an encounter and opens the workspace. If an unsigned encounter already exists for the visit,
- * the server answers 409 with its id and the doctor simply continues it.
+ * the server answers 409 with its id and the doctor simply continues it. Started for a visit, the encounter starts the
+ * visit and puts its queue token in service on the server, in one transaction: call nothing else to start the token.
  */
 export function useStartEncounter() {
   const notify = useNotify();

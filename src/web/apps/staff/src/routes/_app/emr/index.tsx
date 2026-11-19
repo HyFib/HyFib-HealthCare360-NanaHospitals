@@ -231,13 +231,12 @@ function WorklistPage() {
     }
   };
 
+  // One call: the encounter's start puts the visit's token in service on the server, in the same transaction. A token
+  // start sent alongside it raced it for the visit, and the one saved second was refused (409).
   const consult = (entry: WorklistQueueEntry) => {
     if (entry.encounterId) {
       void navigate({ to: '/emr/encounters/$encounterId', params: { encounterId: entry.encounterId } });
       return;
-    }
-    if (canQueue && entry.tokenStatus !== 'InService') {
-      void queueApi.start(entry.tokenId).catch(() => undefined);
     }
     start.mutate({ patientId: entry.patientId, visitId: entry.visitId });
   };
