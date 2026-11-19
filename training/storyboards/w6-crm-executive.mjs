@@ -58,8 +58,8 @@ export default {
         {
           click: { role: 'button', name: 'Add lead' },
           say: 'Click Add lead.',
-          after: 'Geetha Priya is in the New column of the pipeline.',
-          wait: { text: 'Geetha Priya' },
+          after: 'The lead opens, with its number and the stage New. You can log a call or note, change its stage, or convert it into a patient.',
+          wait: { role: 'heading', name: /^Geetha Priya/ },
         },
       ],
     },

@@ -79,13 +79,8 @@ const story = {
         },
         {
           click: { role: 'row', name: /Coromandel Surgicals/ },
-          say: 'The vendor’s delivery has arrived. Open its order.',
+          say: 'The vendor’s delivery has arrived. Open its order, and count the boxes against its lines.',
           wait: { role: 'button', name: 'Receive goods' },
-        },
-        {
-          show: { role: 'table', name: 'Order lines' },
-          say: 'The order lists 30 boxes of syringes and 20 boxes of gloves. Count the boxes against this list.',
-          zoom: 1.3,
         },
         {
           click: { role: 'button', name: 'Receive goods' },
@@ -220,12 +215,7 @@ const story = {
         },
         {
           fill: [{ label: 'Name' }, 'Central Store refrigerator 1'],
-          say: 'And a name.',
-          zoom: 1.4,
-        },
-        {
-          show: { label: 'Kind' },
-          say: 'The kind sets the allowed temperatures. A refrigerator is kept between 2 and 8 °C.',
+          say: 'And a name. A refrigerator is kept between 2 and 8 °C.',
           zoom: 1.4,
         },
         {
@@ -246,6 +236,7 @@ const story = {
         {
           click: { within: { role: 'dialog' }, role: 'button', name: 'Record' },
           say: 'Click Record.',
+          after: 'The reading, 5.2 °C, is listed with the time it was taken.',
           wait: { role: 'row', name: /5\.2/ },
         },
       ],
@@ -268,25 +259,5 @@ const story = {
   ],
   next: 'Purchase officer: raise orders and approve goods receipts',
 };
-// DEVTAIL-BEGIN
-import { appendFileSync as __a, writeFileSync as __w } from 'node:fs';
-const __story = story;
-if (process.env.HC360_DUMP) {
-  __w(process.env.HC360_DUMP, '');
-  let n = 0;
-  __story.scenes = __story.scenes.map((sc) => ({
-    ...sc,
-    steps: sc.steps.map((st) => ({
-      ...st,
-      after_do: async (t) => {
-        if (st.after_do) await st.after_do(t);
-        await t.quiet(3000);
-        const dlg = t.page.locator('[role="dialog"]:visible');
-        const root = (await dlg.count()) ? dlg.first() : t.page.locator('#main, main').first();
-        __a(process.env.HC360_DUMP, `\n##### step ${++n} ${JSON.stringify(st.say ?? '').slice(0, 80)} ${t.page.url()}\n${await root.ariaSnapshot().catch((e) => String(e))}\n`);
-      },
-    })),
-  }));
-}
-export default __story;
-// DEVTAIL-END
+
+export default story;

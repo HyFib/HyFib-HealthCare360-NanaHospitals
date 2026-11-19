@@ -37,8 +37,16 @@ export default {
   },
   scenes: [{ title: 'x', steps: [
     { click: { within: nav, role: 'button', name: 'Blood bank' }, say: 'Open.' },
-    { nav: 'Blood stock', say: 'Open.', wait: { role: 'heading', name: 'Blood stock' }, after_do: dump('b-a') },
-    { nav: 'Donations', say: 'Open.', wait: { role: 'heading', name: /Donations/ }, after_do: dump('b-b') },
+    { nav: 'Blood stock', say: 'Open.', wait: { role: 'heading', name: 'Blood stock' } },
+    { nav: 'Donations', say: 'Open.', wait: { role: 'row', name: /Murugan Selvam/ }, after_do: dump('b-b') },
+    { click: { role: 'row', name: /Murugan Selvam/ }, say: 'Open.', wait: { text: 'Awaiting verification' }, after_do: dump('b-c') },
+    { click: { role: 'button', name: 'Verify results' }, say: 'Verify.', wait: { role: 'dialog' }, after_do: dump('b-d') },
+    { click: { role: 'button', name: 'Verify and release' }, say: 'Confirm.', after_do: dump('b-e') },
+    { nav: 'Blood requests', say: 'Open.', wait: { role: 'row', name: /Fatima Begum/ }, after_do: dump('b-f') },
+    { click: { role: 'row', name: /Fatima Begum/ }, say: 'Open.', wait: { role: 'button', name: 'Record cross-match' }, after_do: dump('b-g') },
+    { click: { role: 'button', name: 'Record cross-match' }, say: 'Open.', wait: { role: 'dialog', name: /Cross-match unit/ }, after_do: dump('b-h') },
+    { click: { role: 'radio', name: 'Compatible' }, say: 'C.' },
+    { click: { role: 'button', name: 'Save cross-match' }, say: 'Save.', wait: { text: 'Reserved' }, after_do: dump('b-i') },
   ] }],
   recap: ['a','b','c'], check: [], next: 'x',
 };

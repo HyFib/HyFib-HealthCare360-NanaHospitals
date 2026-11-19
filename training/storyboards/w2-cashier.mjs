@@ -29,8 +29,8 @@ const story = {
       steps: [
         { nav: 'OP billing', say: 'Open OP billing.', wait: { role: 'heading', name: 'OP billing' } },
         { fill: [{ label: 'Patient' }, 'Lakshmi'], say: 'patient', wait: { role: 'option' } },
-        { click: { role: 'option', name: /Lakshmi Narayanan/ }, say: 'pick', wait: { role: 'button', name: /^Collect/ } },
-        { click: { role: 'button', name: /^Collect/ }, say: 'collect', wait: { role: 'dialog' } },
+        { click: { role: 'option', name: /Lakshmi Narayanan/ }, say: 'pick', wait: { role: 'button', name: /^Collect ₹2,400/ } },
+        { click: { role: 'button', name: /^Collect ₹2,400/ }, say: 'collect', wait: { role: 'dialog' } },
       ],
     },
   ],

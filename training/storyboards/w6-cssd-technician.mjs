@@ -123,7 +123,7 @@ export default {
           zoom: 1.3,
         },
         {
-          select: [{ label: 'Wash cycle of set 1' }, 'Minor surgical tray'],
+          select: [{ label: 'Wash cycle of set 1' }, 'Washed in '],
           native: true,
           say: 'Choose the wash cycle the trays came from. Only a wash that passed can be chosen.',
           zoom: 1.3,

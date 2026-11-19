@@ -126,7 +126,8 @@ export default {
         },
         {
           click: { role: 'tab', name: 'Corrections' },
-          say: 'When a punch is missing, staff ask for a correction. You decide it on the Corrections tab.',
+          say: 'When a punch is missed, staff ask for a correction from My HR. Open the Corrections tab.',
+          after: 'Nothing is waiting now. When you approve a correction, HC360 recomputes the day at once.',
           wait: { role: 'tab', name: 'Corrections', selected: true },
         },
         {

@@ -76,15 +76,15 @@ export default {
           after_do: async ({ page }) => {
             await page.getByRole('dialog', { name: 'Assign NHMT26000001' }).waitFor({ state: 'hidden', timeout: 15000 });
           },
-          wait: { role: 'button', name: 'Start work' },
+          wait: { text: 'Start work' },
         },
         {
-          click: { role: 'button', name: 'Start work' },
+          click: { text: 'Start work' },
           say: 'When you begin the repair, click Start work.',
-          wait: { role: 'button', name: 'Mark resolved' },
+          wait: { text: 'Mark resolved' },
         },
         {
-          click: { role: 'button', name: 'Mark resolved' },
+          click: { text: 'Mark resolved' },
           say: 'When the pump works again, click Mark resolved.',
           wait: { role: 'dialog', name: 'Resolve NHMT26000001' },
         },

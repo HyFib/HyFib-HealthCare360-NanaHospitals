@@ -13,10 +13,13 @@ export default {
   },
   scenes: [{ title: 'x', steps: [
     { click: { within: nav, role: 'button', name: 'Dialysis' }, say: 'Open.' },
-    { nav: 'Dialysis board', say: 'Open.', wait: { role: 'heading', name: 'Dialysis board' }, after_do: dump('y-a') },
-    { click: { role: 'button', name: 'Book session' }, say: 'Book.', wait: { role: 'dialog', name: 'Book a dialysis session' }, after_do: dump('y-b') },
-    { fill: [{ label: 'Patient' }, 'Irfan'], say: 'P.', wait: { role: 'option', name: /Mohammed Irfan/ } , after_do: dump('y-c')},
-    { click: { role: 'option', name: /Mohammed Irfan/ }, say: 'Pick.', after_do: dump('y-d') },
+    { nav: 'Dialysis board', say: 'Open.', wait: { role: 'heading', name: /Due today, not booked \(1\)/ } },
+    { show: { role: 'heading', name: 'Dialysis board' }, say: 'x', after_do: dump('y-a') },
+    { click: { role: 'button', name: 'Book session' }, say: 'Book.', wait: { role: 'dialog', name: 'Book a dialysis session' } },
+    { fill: [{ label: 'Patient' }, 'Irfan'], say: 'P.', wait: { role: 'option', name: /Mohammed Irfan/ } },
+    { click: { role: 'option', name: /Mohammed Irfan/ }, say: 'Pick.' },
+    { click: { role: 'button', name: 'Book session', last: true }, say: 'Book.', wait: { role: 'heading', name: /Waiting for a machine \(1\)/ } },
+    { show: { role: 'heading', name: 'Dialysis board' }, say: 'x', after_do: dump('y-b') },
   ] }],
   recap: ['a','b','c'], check: [], next: 'x',
 };

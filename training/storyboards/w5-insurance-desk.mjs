@@ -191,7 +191,14 @@ export default {
         {
           click: { role: 'button', name: 'Submit to insurer' },
           say: 'Check the details. Then click Submit to insurer.',
-          wait: { text: /Submitted/, exact: false },
+          after: 'HC360 asks you to confirm. After you submit, the request gets a number and cannot be edited unless the insurer asks a question.',
+          wait: { role: 'dialog', name: 'Submit this request to the insurer?' },
+        },
+        {
+          click: { within: { role: 'dialog', name: 'Submit this request to the insurer?' }, role: 'button', name: 'Submit' },
+          say: 'Click Submit.',
+          after: 'The status is now Waiting for insurer.',
+          wait: { text: 'Waiting for insurer' },
         },
       ],
     },
