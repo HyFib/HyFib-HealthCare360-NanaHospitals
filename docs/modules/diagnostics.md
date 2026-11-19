@@ -122,9 +122,9 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
 | GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), isCalculated and formula (a result HC360 calculated from others: see Calculated results), suggestedValue (a value the sheet fills in for a person to confirm: an arterial blood gas's FiO2, `21`; never stored until entered), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
-| POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
+| POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` (data.results: id, testName, value, flag, told; see *Critical values*) |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
-| POST | `/results/{id}/critical-calls` | results.verify or results.enter | `CriticalCallDetails` (informedPersonName, role, informedPractitionerId, method, informedAt, readBackConfirmed = true, notes) → 201 |
+| POST | `/results/{id}/critical-calls` | results.verify or results.enter | `CriticalCallDetails` (informedPersonName, role, informedPractitionerId, method, informedAt, readBackConfirmed = true, notes) → 201; for a critical result, or one phoned before at another value (the call that corrects it); 422 `lab.not_critical` otherwise |
 
 ### Unmatched analyser results — `/api/v1/lab/unmatched-results`
 | Method | Path | Permission | Request → response |
@@ -483,7 +483,15 @@ diagnostics screen.
   ≤ 3 warning, above unacceptable). An unacceptable round is accepted only with its corrective action linked from the
   Quality module's CAPA register; a round not reported by its due date is overdue, and both are on the lab dashboard.
 * **Critical values**: verifying a critical result (or signing a critical imaging/cardiology finding) requires a
-  documented call with read-back (`CriticalCallLog`). The ordering doctor gets the `lab.critical` /
+  documented call with read-back (`CriticalCallLog`). For a lab result the call counts only for the value it was made
+  for (`CriticalCalls`): the register keeps each call's finding as text ("Potassium 7.2 mmol/L (CriticalHigh)"), and the
+  last call made is what the doctor or ward was last told. A value phoned and then changed before verification
+  (entered again, rerun, reopened) needs a new call, even when the new value is not critical: the ward may have acted on
+  the first value, and the new call corrects what it was told. Its finding says so ("Potassium 2.7 mmol/L (Low),
+  correcting Potassium 7.2 mmol/L (CriticalHigh)"). The same value with another flag (critical limits changed since)
+  keeps its call. Until then verification is refused with 422 `lab.critical_call_required`, whose `data.results` give,
+  for each result, the value now and `told`, the finding of the last call when that was another value; the result
+  sheet's `hasCriticalCall` is true only for a call made for the value as it is now. The ordering doctor gets the `lab.critical` /
   `diagnostics.critical_finding` SMS in the same transaction, plus in-app alerts to the doctor's user and to holders of
   `diagnostics.critical.alerts` after commit. Critical results are never auto-validated. An analyser result the analyser
   flagged critical (`HH`, `LL` or `AA`, HL7 OBX-8 or ASTM R.7) that is kept among the unmatched results is on no test,

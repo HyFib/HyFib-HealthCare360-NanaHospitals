@@ -135,6 +135,59 @@ public sealed class LabVerificationTests(HospitalServer server)
         (call.InformedPersonName, call.ReadBackConfirmed, call.CalledBy).ShouldBe(("Sr. Kavitha Nair", true, me.DisplayName));
     }
 
+    /// <summary>
+    /// L2: a call counts only for the value it was made for. A critical potassium phoned to the doctor and then entered
+    /// again as a value that is not critical is verified only once a new call tells them so; a sodium phoned critically
+    /// low and corrected to critically high needs a new call too, which can be documented with the verification.
+    /// </summary>
+    [Fact]
+    public async Task A_critical_value_phoned_and_then_changed_is_verified_only_after_a_call_with_the_value_as_it_is_now()
+    {
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var tube = await ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
+        var lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "118", ["K"] = "7.2", ["CL"] = "101", ["HCO3"] = "24" });
+        var potassium = lines.Single(l => l.TestCode == "K");
+        var sodium = lines.Single(l => l.TestCode == "NA");
+        (potassium.Flag, sodium.Flag).ShouldBe((ResultFlag.CriticalHigh, ResultFlag.CriticalLow));
+        var call = new CriticalCallDetails(
+            "Dr. Meena Iyer", "Duty doctor, casualty", null, CommunicationMethod.Phone, DateTimeOffset.UtcNow.AddMinutes(-20), ReadBackConfirmed: true, null);
+        await lab.PostAsync<Guid>($"/api/v1/lab/results/{potassium.ResultId}/critical-calls", call);
+        await lab.PostAsync<Guid>($"/api/v1/lab/results/{sodium.ResultId}/critical-calls", call);
+
+        // The sample was haemolysed: rerun, the potassium is 2.7 (low, not critical) and the sodium 168 (critically high).
+        lines = await EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "168", ["K"] = "2.7", ["CL"] = "101", ["HCO3"] = "24" });
+        (lines.Single(l => l.TestCode == "K").Flag, lines.Single(l => l.TestCode == "NA").Flag).ShouldBe((ResultFlag.Low, ResultFlag.CriticalHigh));
+        lines.Where(l => l.TestCode is "K" or "NA").ShouldAllBe(l => !l.HasCriticalCall, "the calls told other values");
+
+        var ids = lines.Select(l => l.ResultId).ToList();
+        var refused = await RefusalAsync(pathologist, VerifyPath, new VerifyResultsRequest(ids, null, null, Release: false));
+        refused.GetProperty("code").GetString().ShouldBe("lab.critical_call_required");
+        var asked = refused.GetProperty("data").GetProperty("results").EnumerateArray()
+            .ToDictionary(r => r.GetProperty("id").GetGuid(), r => r.GetProperty("told").GetString());
+        asked.ShouldBe(new Dictionary<Guid, string?>
+        {
+            [potassium.ResultId] = "Potassium 7.2 mmol/L (CriticalHigh)",
+            [sodium.ResultId] = "Sodium 118 mmol/L (CriticalLow)",
+        }, ignoreOrder: true);
+        refused.GetProperty("detail").GetString().ShouldNotBeNull().ShouldContain("The doctor was told another value");
+        (await SheetAsync(lab, tube)).Lines.ShouldAllBe(l => l.Status == LabResultStatus.Entered, "nothing on the tube is verified");
+
+        // The technician phones the doctor with the corrected potassium; the pathologist documents the sodium's call with
+        // the verification.
+        await lab.PostAsync<Guid>($"/api/v1/lab/results/{potassium.ResultId}/critical-calls", call with { InformedAt = DateTimeOffset.UtcNow.AddMinutes(-2) });
+        var verified = await pathologist.PostAsync<VerificationOutcome>(VerifyPath, new VerifyResultsRequest(ids, null,
+            call with { InformedPersonName = "Sr. Kavitha Nair", InformedAt = DateTimeOffset.UtcNow.AddMinutes(-1) }, Release: false));
+        (verified.Verified, verified.CriticalCallsRecorded).ShouldBe((4, 1));
+
+        var calls = (await pathologist.GetAsync<PagedResult<CriticalCallDto>>("/api/v1/lab/critical-calls?kind=Laboratory&pageSize=200")).Items;
+        calls.Where(c => c.LabResultId == potassium.ResultId).Select(c => c.Finding).ShouldBe(
+            ["Potassium 7.2 mmol/L (CriticalHigh)", "Potassium 2.7 mmol/L (Low), correcting Potassium 7.2 mmol/L (CriticalHigh)"], ignoreOrder: true);
+        calls.Where(c => c.LabResultId == sodium.ResultId).Select(c => c.Finding).ShouldBe(
+            ["Sodium 118 mmol/L (CriticalLow)", "Sodium 168 mmol/L (CriticalHigh), correcting Sodium 118 mmol/L (CriticalLow)"], ignoreOrder: true);
+        (await SheetAsync(lab, tube)).Lines.Where(l => l.TestCode is "K" or "NA").ShouldAllBe(l => l.HasCriticalCall);
+    }
+
     [Fact]
     public async Task While_qc_has_failed_results_are_verified_only_with_a_pathologists_audited_override_or_once_qc_passes()
     {

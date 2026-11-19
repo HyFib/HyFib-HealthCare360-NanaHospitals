@@ -70,6 +70,7 @@ import {
   interpretLine,
   isCriticalFlag,
   isReadyForBulkVerify,
+  requiredCallLabel,
   reviewHints,
   type LineInterpretation,
 } from './flags';
@@ -497,10 +498,7 @@ function SheetEditor({ sheet, onScanBarcode }: { sheet: ResultSheetDto; onScanBa
         setQcState(null);
         setCallState({
           mode: 'verify',
-          findings: results.map((r) => ({
-            id: r.id,
-            label: `${r.testName}: ${r.value}${r.flag ? ` (${flagDisplay(r.flag)?.label.toLowerCase() ?? r.flag})` : ''}`,
-          })),
+          findings: results.map((r) => ({ id: r.id, label: requiredCallLabel(r) })),
           request,
         });
         return;

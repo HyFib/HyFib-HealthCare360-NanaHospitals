@@ -878,6 +878,11 @@ export interface CriticalCallRequiredResult {
   testName: string;
   value: string;
   flag: ResultFlag | null;
+  /**
+   * What the last call documented for it told ("Potassium 7.2 mmol/L (CriticalHigh)"), when that was another value: the
+   * call asked for corrects it. Null when nobody was told yet.
+   */
+  told?: string | null;
 }
 
 // ------------------------------------------------------------------------------------------------ reports

@@ -4,7 +4,7 @@
  * everything on save and its answer is what gets stored and printed; these functions only preview it.
  */
 import type { Gender } from '@hc360/core';
-import type { LabResultType, ReferenceRangeDto, ResultFlag, ResultSheetLine } from './api';
+import type { CriticalCallRequiredResult, LabResultType, ReferenceRangeDto, ResultFlag, ResultSheetLine } from './api';
 
 export type FlagTone = 'normal' | 'low' | 'high' | 'abnormal' | 'critical';
 
@@ -451,6 +451,15 @@ export function unitKey(unit: string | null | undefined): string {
  */
 export function isSameUnit(analyserUnit: string | null | undefined, testUnit: string | null | undefined): boolean {
   return !analyserUnit?.trim() || unitKey(analyserUnit) === unitKey(testUnit);
+}
+
+/**
+ * How the call dialog names a result the server asks a call for: the value now, and, when the doctor was last told
+ * another value, that this call corrects it (a value phoned and then changed is phoned again before it is verified).
+ */
+export function requiredCallLabel(result: CriticalCallRequiredResult): string {
+  const now = `${result.testName}: ${result.value}${result.flag ? ` (${flagDisplay(result.flag)?.label.toLowerCase() ?? result.flag})` : ''}`;
+  return result.told ? `${now}. The doctor was told ${result.told}: tell them the value as it is now.` : now;
 }
 
 type ReviewedLine = Pick<
