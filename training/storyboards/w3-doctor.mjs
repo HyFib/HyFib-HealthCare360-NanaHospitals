@@ -95,8 +95,7 @@ export default {
         },
         {
           click: { role: 'button', name: 'Record vitals' },
-          say: 'Click Record vitals. Values outside the usual range for his age are flagged as you type.',
-          wait: { text: 'Vitals recorded' },
+          say: 'Values outside the usual range for his age are flagged as you type: his temperature is marked Fever. Click Record vitals.',
         },
         {
           fill: [{ label: 'Examination' }, 'Throat congested, tonsils enlarged without pus. Chest clear.'],

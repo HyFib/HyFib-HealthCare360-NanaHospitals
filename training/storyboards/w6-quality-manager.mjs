@@ -112,7 +112,7 @@ export default {
         {
           click: { role: 'button', name: 'Plan action' },
           say: 'Click Plan action.',
-          after: 'The action is on the incident, with its number and its due date.',
+          after: 'The action is on the incident, with its number and its due date. The incident moves to Actions in progress.',
           wait: { role: 'table', name: 'Corrective and preventive actions' },
         },
       ],
@@ -149,7 +149,8 @@ export default {
         {
           click: { role: 'button', name: 'Save value' },
           say: 'Click Save value.',
-          wait: { role: 'row', name: /Hand hygiene compliance rate/ },
+          after: 'The latest value is 88% for October 2026. It is marked Off target, because the target is 90% or more.',
+          wait: { role: 'row', name: /Hand hygiene compliance rate.*88%/ },
         },
         {
           nav: 'Risk register',

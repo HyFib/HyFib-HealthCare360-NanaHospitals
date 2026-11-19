@@ -156,7 +156,10 @@ export default {
           click: { within: { role: 'dialog', name: /^Record calibration/ }, role: 'button', name: 'Record' },
           say: 'Click Record.',
           after: 'The autoclave leaves the list of calibrations that are due.',
-          wait: { text: 'Calibration recorded' },
+          after_do: async ({ page }) => {
+            await page.getByRole('dialog', { name: /^Record calibration/ }).waitFor({ state: 'hidden', timeout: 15000 });
+          },
+          wait: { role: 'table', name: 'Calibration due' },
         },
         {
           click: { role: 'tab', name: /^Preventive maintenance/ },
@@ -182,7 +185,10 @@ export default {
           click: { within: { role: 'dialog', name: /^Record visit/ }, role: 'button', name: 'Record visit' },
           say: 'Click Record visit.',
           after: 'HC360 sets the date of the next visit from the plan.',
-          wait: { text: 'Visit recorded' },
+          after_do: async ({ page }) => {
+            await page.getByRole('dialog', { name: /^Record visit/ }).waitFor({ state: 'hidden', timeout: 15000 });
+          },
+          wait: { role: 'table', name: 'Preventive maintenance plans' },
         },
       ],
     },
