@@ -409,5 +409,24 @@
   "seconds": 394.8,
   "megabytes": 19.6,
   "madeBy": "render worker 1"
+ },
+ "w2-accountant": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 18,
+  "wer": 4.97,
+  "wpm": 140.6,
+  "maxCps": 16.5,
+  "lufs": -16.0,
+  "seconds": 299.0,
+  "megabytes": 12.7,
+  "madeBy": "this session"
  }
 }
