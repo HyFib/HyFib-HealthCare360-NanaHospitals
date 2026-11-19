@@ -55,7 +55,7 @@ export default {
         },
         {
           click: { role: 'button', name: 'Collect ₹2,400.00' },
-          say: 'Click Collect on her unpaid bill, NHOB26000001.',
+          say: 'Click Collect on her unpaid bill.',
           wait: { role: 'table', name: 'Services on this bill' },
         },
         {
