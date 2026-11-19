@@ -8,8 +8,8 @@ initialisms the way Indian hospitals say them, numbers become words the way an I
 lakhs and crores, times as "eleven thirty", codes such as GWF-01 letter by letter), and each sentence is synthesised
 on its own, so the captions know exactly when each sentence starts and ends.
 
-Environment: HC360_TTS_MODELS (the folder setup-models.sh fills), HC360_VOICE (default hf_alpha), HC360_SPEED (0.9,
-about 135-140 words a minute), HC360_TTS_CACHE (sentence audio kept between runs).
+Environment: HC360_TTS_MODELS (the folder setup-models.sh fills), HC360_VOICE (default hf_alpha), HC360_SPEED (0.82,
+about 135-145 words a minute), HC360_TTS_CACHE (sentence audio kept between runs).
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ HERE = Path(__file__).resolve().parent
 MODELS = Path(os.environ.get("HC360_TTS_MODELS", HERE.parent / ".models"))
 VOICES = {"hf_alpha": 31, "hf_beta": 32, "hm_omega": 33, "hm_psi": 34, "bf_emma": 21}
 VOICE = os.environ.get("HC360_VOICE", "hf_alpha")
-SPEED = float(os.environ.get("HC360_SPEED", "0.9"))
+SPEED = float(os.environ.get("HC360_SPEED", "0.82"))
 CACHE = Path(os.environ.get("HC360_TTS_CACHE", HERE.parent / ".cache" / "tts"))
 RATE = 48000  # the video's audio rate
-SENTENCE_PAUSE = 0.30  # seconds between two sentences of one line
+SENTENCE_PAUSE = 0.40  # seconds between two sentences of one line
 
 LEXICON: dict[str, str] = json.loads((HERE / "lexicon.json").read_text(encoding="utf-8"))["terms"]
 _LEX_KEYS = sorted(LEXICON, key=len, reverse=True)
@@ -106,7 +106,7 @@ def clock(h: int, m: int, ampm: str | None) -> str:
 
 def spoken(text: str) -> str:
     """What the voice is asked to say for a caption's text."""
-    s = _LEX_RE.sub(lambda m: LEXICON[m.group(0)], text)
+    s = _LEX_RE.sub(lambda m: LEXICON[m.group(0)], text.replace("’", "'").replace("‘", "'"))
     # Codes: GWF-01, GM-001, OPD-01, NH-000123 (letters, then each digit).
     s = re.sub(r"\b([A-Z]{1,6})-(\d{1,8})\b", lambda m: " ".join(m.group(1)) + " " + digits(m.group(2)), s)
     # Money: ₹1,930 / ₹ 1,50,000.50 (the lexicon already turned ₹ into "rupees ").
@@ -166,12 +166,13 @@ def engine():
 
 
 def trim(x: np.ndarray, rate: int) -> np.ndarray:
-    """Cuts the voice's leading and trailing silence, keeping 40 ms either side."""
+    """Cuts the voice's leading and trailing silence, keeping 90 ms either side: a quiet first consonant (the p of
+    "part") cut short is heard as another word."""
     level = np.abs(x)
-    loud = np.where(level > max(0.01, level.max() * 0.02))[0]
+    loud = np.where(level > max(0.003, level.max() * 0.005))[0]
     if len(loud) == 0:
         return x
-    pad = int(rate * 0.04)
+    pad = int(rate * 0.09)
     return x[max(0, loud[0] - pad): loud[-1] + pad]
 
 
