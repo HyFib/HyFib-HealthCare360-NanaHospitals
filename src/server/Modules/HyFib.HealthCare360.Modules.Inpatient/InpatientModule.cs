@@ -96,6 +96,7 @@ public sealed class InpatientModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IAdmissionDirectory, AdmissionDirectory>());
         services.AddScoped<MarService>();
         services.AddScoped<IMarChartAhead>(sp => sp.GetRequiredService<MarService>());
+        services.AddScoped<IWardMedicines, WardMedicines>();
         services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackInpatient>();
         services.AddWitnessPurpose(MarService.DoseWitness);
         services.AddWitnessPurpose(DischargeService.AgainstAdviceWitness);

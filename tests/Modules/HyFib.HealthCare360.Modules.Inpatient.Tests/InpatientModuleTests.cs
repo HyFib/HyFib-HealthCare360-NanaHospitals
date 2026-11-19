@@ -1,4 +1,5 @@
 using HyFib.HealthCare360.Modules.Inpatient.Services;
+using HyFib.HealthCare360.Platform.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -33,5 +34,14 @@ public sealed class InpatientModuleTests
 
         services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(MarChartAheadJob));
         services.ShouldContain(d => d.ServiceType == typeof(IMarChartAhead));
+    }
+
+    [Fact]
+    public void The_ward_tells_the_prescribing_safety_check_what_it_gives_without_a_prescription()
+    {
+        var services = new ServiceCollection();
+        new InpatientModule().AddServices(services, new ConfigurationBuilder().Build());
+
+        services.ShouldContain(d => d.ServiceType == typeof(IWardMedicines) && d.ImplementationType == typeof(WardMedicines));
     }
 }

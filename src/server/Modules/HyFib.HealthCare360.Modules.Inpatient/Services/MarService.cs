@@ -22,6 +22,11 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// dose until then unless it was taken as an emergency order. A nurse's stop waits for the doctor's countersignature with
 /// the doses held. What is not countersigned in time is listed for the ward and the doctor, and both are told.
 /// </para>
+/// <para>
+/// A ward order gets the prescribing safety check an e-prescription line of the same medicine gets at signing
+/// (<see cref="IMedicationSafetyCheck"/>, kept by Clinical): a blocking alert (an allergy, a major interaction, a dose above
+/// the maximum, no route) stops it unless a clinical reason is given for going ahead, kept in the audit trail at Critical.
+/// </para>
 /// </summary>
 public sealed class MarService(
     HospitalDbContext db,
@@ -32,7 +37,8 @@ public sealed class MarService(
     INotificationService notifications,
     IAuditLogger audit,
     TimeProvider time,
-    IIncidentRegister incidents) : IMarChartAhead
+    IIncidentRegister incidents,
+    IMedicationSafetyCheck safetyCheck) : IMarChartAhead
 {
     /// <summary>
     /// What a second nurse witnesses on the MAR: a controlled drug or a high-alert medicine given. Whoever keeps the MAR
@@ -195,13 +201,29 @@ public sealed class MarService(
             EnteredByName = Name(),
             CountersignDueAt = verbal ? now + await CountersignWindowAsync(admission.FacilityId, ct) : null,
         };
+
+        // The prescribing safety check, as an e-prescription line of the medicine gets at signing: a blocking alert stops the
+        // order unless the request gives the clinical reason for going ahead.
+        var safety = await safetyCheck.CheckAsync(admission.PatientId, Proposed(order), ct);
+        var overrideReason = Clean(request.OverrideReason);
+        if (safety.IsBlocked && overrideReason is null)
+        {
+            return SafetyBlock(safety);
+        }
+
+        var overridden = safety.IsBlocked ? $"; written over a safety alert: {overrideReason}" : "";
         db.Add(order);
         await ScheduleAsync(order, start > now ? start : now, null, null, ct);
+        if (safety.IsBlocked)
+        {
+            audit.Add(SafetyOverrideAudit(order, safety, overrideReason!));
+        }
+
         if (verbal)
         {
             audit.Add(OrderAudit(order, "medication.verbal_order",
                 $"{Words(order)}: {(order.Mode == MedicationOrderMode.Telephone ? "telephone" : "verbal")} order of {doctor.DisplayName}, read back, written by {order.EnteredByName}"
-                + (order.IsEmergency ? " as an emergency" : "") + (order.DosesHeld ? "; no dose until countersigned" : ""),
+                + (order.IsEmergency ? " as an emergency" : "") + (order.DosesHeld ? "; no dose until countersigned" : "") + overridden,
                 AuditSeverity.Warning));
         }
 
@@ -210,11 +232,59 @@ public sealed class MarService(
         {
             await NotifyDoctorAsync(doctor.Id, "Verbal order to countersign",
                 $"{Words(order)}, written in your name by {order.EnteredByName}. Countersign it by {Local(order.CountersignDueAt!.Value)}."
-                + (order.DosesHeld ? " No dose is given until you do." : ""), ct);
+                + (order.DosesHeld ? " No dose is given until you do." : "")
+                + (safety.IsBlocked ? $" It was written over a safety alert ({string.Join(" ", safety.Alerts.Where(a => a.IsBlocking).Select(a => a.Message))}), for this reason: {overrideReason}" : ""),
+                ct);
         }
 
         return (await ToDtosAsync([order], ct))[0];
     }
+
+    /// <summary>
+    /// The prescribing safety check of a ward order before it is written: what <see cref="AddOrderAsync"/> will find, for the
+    /// order form to show, and to ask for the clinical reason a blocking alert needs.
+    /// </summary>
+    public async Task<Result<MedicationSafetyResult>> CheckOrderAsync(AdmissionRef admission, AddMedicationOrderRequest request, CancellationToken ct)
+    {
+        if (request.DrugItemId is { } itemId && !(await DrugClassesAsync([itemId], ct)).ContainsKey(itemId))
+        {
+            return Error.Field("drugItemId", "This medicine is not in the drug master. Choose it again, or type it in.");
+        }
+
+        return await safetyCheck.CheckAsync(admission.PatientId, new WardMedicine(Guid.CreateVersion7(), request.DrugItemId, request.DrugName.Trim(),
+            Clean(request.GenericName), Clean(request.Strength), Clean(request.Route), request.Dose.Trim(), request.Frequency.Trim()), ct);
+    }
+
+    /// <summary>The order as the prescribing safety check reads it.</summary>
+    private static WardMedicine Proposed(MedicationOrder order) =>
+        new(order.Id, order.DrugItemId, order.DrugName, order.GenericName, order.Strength, order.Route, order.Dose, order.Frequency);
+
+    /// <summary>The refusal of a ward order a blocking safety alert stops, with every alert for the form to show, as an e-prescription's.</summary>
+    private static Error SafetyBlock(MedicationSafetyResult safety) =>
+        new("medication.safety_block",
+            "The safety check found problems that stop this order. Change it, or give the clinical reason for ordering it anyway: the reason is recorded and reviewed.")
+        {
+            Data = safety.Alerts,
+        };
+
+    /// <summary>
+    /// A ward order written over a blocking safety alert, audited at Critical as an e-prescription's override is: the reason,
+    /// and the alerts as the check found them.
+    /// </summary>
+    private static AuditEntry SafetyOverrideAudit(MedicationOrder order, MedicationSafetyResult safety, string reason) =>
+        OrderAudit(order, "medication.safety_override", $"{Words(order)}: {reason}", AuditSeverity.Critical) with
+        {
+            Details = new
+            {
+                order.AdmissionId,
+                order.Mode,
+                order.OrderedByPractitionerId,
+                order.EnteredBy,
+                OverrideReason = reason,
+                Overridden = safety.Alerts.Where(a => a.IsBlocking).ToList(),
+                Alerts = safety.Alerts,
+            },
+        };
 
     /// <summary>
     /// A prescriber stops the order at once: every dose still due is cancelled, an overdue one too, so none is given after
@@ -1063,7 +1133,7 @@ public sealed class MarService(
         await notifications.NotifyUsersAsync(users, title, body, CountersignaturesLink, Category, severity, ct);
     }
 
-    private AuditEntry OrderAudit(MedicationOrder order, string action, string summary, AuditSeverity severity) =>
+    private static AuditEntry OrderAudit(MedicationOrder order, string action, string summary, AuditSeverity severity) =>
         new(AuditCategories.Clinical, action, summary.Length <= 1000 ? summary : summary[..999] + "…")
         {
             PatientId = order.PatientId,

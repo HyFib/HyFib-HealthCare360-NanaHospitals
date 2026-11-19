@@ -8,9 +8,11 @@ Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references 
 round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (237 unit tests); integration `WardCareTests`,
 `InpatientJourneyTests`.
 
-It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list) and `IAdmissionDirectory` (whether a
-stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled), and asks
-`IBillingStatusProvider` and every `IDischargeHoldSource` before it completes a discharge.
+It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list), `IAdmissionDirectory` (whether a
+stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled) and
+`IWardMedicines` (what the ward gives a patient that no signed e-prescription carries, for Clinical's prescribing safety
+check), and asks `IBillingStatusProvider` and every `IDischargeHoldSource` before it completes a discharge, and
+`IMedicationSafetyCheck` (Clinical) before it writes a ward medication order.
 
 ## Permissions
 
@@ -317,7 +319,8 @@ view's *Restrained patients* list ([Restraints.tsx](../../src/web/apps/staff/src
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/admissions/{admissionId}/medication-orders?activeOnly` | `nursing.mar` or `nursing.chart` | → `MedicationOrderDto[]` (incl. `roundTimes`) |
-| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`; next 24 h scheduled unless the doses are held, then kept a day ahead) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`; 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
+| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`, `overrideReason`; next 24 h scheduled unless the doses are held, then kept a day ahead) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`, `medication.safety_block` (a blocking safety alert and no `overrideReason`, the alerts in `data`); 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
+| POST | `/admissions/{admissionId}/medication-orders/check` | `nursing.mar` | `AddMedicationOrderRequest` → `MedicationSafetyResult` (`isBlocked`, `alerts`: what the order would meet, blocking first); nothing is written |
 | POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels at once every dose still due, an overdue one too; anyone else's is asked for (`stopPending`, doses held) |
 | POST | `/medication-orders/{id}/countersign` | `clinical.prescriptions.sign` | `CountersignMedicationOrderRequest` (`version`) → `MedicationOrderDto`; only the doctor named, from their own account (403 `medication.countersign_not_prescriber`); held doses are scheduled |
 | POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, every dose still due cancelled |
@@ -358,6 +361,21 @@ declines it, when they are given again. `CountersignOverdueJob` (every 15 minute
 and the facility's holders of `nursing.in_charge` once of each order or stop past its time, audited at Warning
 (`medication.countersign_overdue`, `medication.stop_countersign_overdue`); the staff app lists them under In-patients ›
 Orders to countersign.
+
+**Safety check of a ward order.** A ward order, the doctor's own or a verbal or telephone one, gets the prescribing
+safety check an e-prescription line of the same medicine gets at signing (`IMedicationSafetyCheck`, kept by Clinical,
+`docs/modules/clinical.md`, *Prescribing safety*): the patient's active allergies; interactions and duplicate therapy
+with their current medicines, which are the signed prescriptions still within their course and the ward's own active
+orders and pharmacy supplies without a prescription line (`IWardMedicines`); the maximum daily dose; and the route
+against the dosage form. The frequency is read as a prescription line's (`OD`, `BD`, `TDS`, `QID`, `HS`, `SOS`, `STAT`,
+`Weekly`, anything else a custom one such as `1-0-1` or `Q6H`). A medicine picked from the drug master is named, and its
+form read, as the master has them. The controlled-drug notice is left out: a ward order makes no register entry. A
+blocking alert (an allergy, a major interaction, a dose above the maximum, no route or a route the form contradicts)
+refuses the order (422 `medication.safety_block`, the alerts in `data`) unless the request gives `overrideReason`, the
+clinical reason for ordering it anyway (at least 10 characters). An override is audited at Critical
+(`medication.safety_override`, the reason and every alert found in its details), and a verbal order's audit and the
+doctor's notice to countersign it say so. The order form runs the check when the order is first sent and shows what it
+finds with the prescription's safety review: the reason for a blocking alert, and a tick that the warnings were read.
 
 **A stopped medicine is not given.** A stop, by a prescriber at once or confirmed by the doctor after a nurse asked for
 it, and a cancelled prescription cancel every dose of the line still due ("Medication order stopped", "Prescription

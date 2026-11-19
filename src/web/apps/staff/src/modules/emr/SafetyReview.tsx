@@ -65,7 +65,8 @@ function AlertList({
 /**
  * The result of the prescribing safety check, shown in the prescription itself (never as a toast). Signing unlocks only
  * when every requirement is met: an audited clinical reason for blocking alerts, an acknowledgement of warnings and an
- * explicit confirmation of Schedule H1/X medicines.
+ * explicit confirmation of Schedule H1/X medicines. A ward's medication order (`subject` "order") is checked the same way
+ * before it is written.
  */
 export function SafetyReview({
   grouped,
@@ -75,6 +76,7 @@ export function SafetyReview({
   items,
   controlledItems,
   disabled,
+  subject = 'prescription',
 }: {
   grouped: GroupedAlerts;
   requirements: SignRequirements;
@@ -83,8 +85,10 @@ export function SafetyReview({
   items: readonly { id: string; drugName: string }[];
   controlledItems: readonly string[];
   disabled?: boolean;
+  subject?: 'prescription' | 'order';
 }) {
   const styles = useStyles();
+  const order = subject === 'order';
   const reasonLength = decision.overrideReason.trim().length;
   const clean =
     grouped.blocking.length === 0 && grouped.warnings.length === 0 && !requirements.needsControlledConfirmation;
@@ -105,11 +109,13 @@ export function SafetyReview({
           <MessageBarBody>
             <MessageBarTitle>
               Stop: {grouped.blocking.length} {grouped.blocking.length === 1 ? 'problem blocks' : 'problems block'}{' '}
-              signing
+              {order ? 'this order' : 'signing'}
             </MessageBarTitle>
             <Text block>
-              Change the prescription, or give the clinical reason for prescribing anyway. Overrides are recorded and
-              reviewed.
+              {order
+                ? 'Change the order, or give the clinical reason for ordering it anyway.'
+                : 'Change the prescription, or give the clinical reason for prescribing anyway.'}{' '}
+              Overrides are recorded and reviewed.
             </Text>
             <AlertList alerts={grouped.blocking} items={items} />
             <Field

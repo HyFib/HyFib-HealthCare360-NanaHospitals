@@ -531,6 +531,9 @@ and grants nothing.
     it from their own sign-in (`pharmacy.override_unacknowledged`), never the account that signed it
     (`pharmacy.override_own_prescription`); the acknowledgement is audited at Warning with the alert and the doctor's
     reason (`pharmacy.safety_override_acknowledged`).
+  - a ward medication order gets the same prescribing safety check: a blocking alert refuses it
+    (`medication.safety_block`) unless it carries the clinical reason, at least 10 characters, audited at Critical with
+    every alert found (`medication.safety_override`).
   - the store (MAKER-CHECKER slice 13): an indent is approved and issued by someone other than whoever raised it
     (`indent.approve_own`, `indent.issue_own`); a transfer is received by someone other than whoever dispatched it
     (`transfer.receive_own`), and a line counted short books nothing until someone who holds

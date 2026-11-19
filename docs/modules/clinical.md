@@ -1047,7 +1047,9 @@ FrontOffice and HospitalAdmin.
 ## Prescribing safety (ERX-02/06)
 
 Checks run in `Domain/Safety` (pure, unit-tested) against the prescription, the patient's current medicines (signed
-prescriptions still within their course, all facilities) and active drug/other allergies:
+prescriptions still within their course, and what the ward gives that no signed prescription carries: active ward
+orders and pharmacy supplies without a prescription line, from Inpatient's `IWardMedicines`, named "already prescribed
+on the ward chart"; all facilities) and active drug/other allergies:
 
 | Check | Result |
 |---|---|
@@ -1070,6 +1072,11 @@ refused as the server refuses it. The route goes to the pharmacy label and the n
 Blocking alerts need `overrideReason` (≥ 10 characters; audited as `prescription.safety_override`, severity Critical);
 every other warning needs `acknowledgeWarnings`. The alerts shown at signing are stored on the prescription
 (`safety_alerts` jsonb). Only the prescribing doctor can sign.
+
+The same checks serve a ward's medication order (`IMedicationSafetyCheck`, `WardMedicationSafety`): Inpatient asks before
+it writes one, and refuses it on a blocking alert unless the order gives its own override reason (see
+`docs/modules/inpatient.md`, *Safety check of a ward order*). The ward's frequency in words is read as a prescription
+line's (`WardFrequency`); the controlled-drug notice is left out.
 
 ## Events
 

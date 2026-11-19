@@ -4,6 +4,7 @@ import type { FluidDirection, FluidRoute } from './fluidBalance';
 import type { AmbulatoryAid, GaitType, PainScaleKind, RiskLevel } from './riskScales';
 import type { NursingShift } from './time';
 import type { CarePlanProblemDto } from './wardCareApi';
+import type { WardOrderSafety } from './wardOrderSafety';
 
 // ------------------------------------------------------------------ nursing notes and handovers
 
@@ -292,6 +293,11 @@ export interface AddMedicationOrderRequest {
   readBack?: boolean;
   /** A verbal order of a high-alert or controlled medicine to be given before the doctor countersigns it. */
   emergency?: boolean;
+  /**
+   * The clinical reason for writing the order over a blocking safety alert (at least 10 characters), audited at Critical;
+   * without it such an order is refused (`medication.safety_block`, with the alerts).
+   */
+  overrideReason?: string | null;
 }
 
 /** A medicine of the drug master for the ward's order form (`GET /api/v1/nursing/drugs`). */
@@ -519,6 +525,9 @@ export const nursingApi = {
     api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/pain`, body),
   addOrder: (admissionId: string, body: AddMedicationOrderRequest) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/admissions/${admissionId}/medication-orders`, body),
+  /** The prescribing safety check of the order as the form has it, before it is written. */
+  checkOrder: (admissionId: string, body: AddMedicationOrderRequest) =>
+    api.post<WardOrderSafety>(`/api/v1/nursing/admissions/${admissionId}/medication-orders/check`, body),
   /** A prescriber's stop is made at once; anyone else's waits for the doctor (`stopPending` on the answer). */
   stopOrder: (orderId: string, reason: string) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop`, { reason }),

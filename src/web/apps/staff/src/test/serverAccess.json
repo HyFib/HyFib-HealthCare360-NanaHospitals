@@ -2378,6 +2378,7 @@
     "POST /api/v1/nursing/admissions/{admissionId:guid}/intake-output nursing.chart",
     "POST /api/v1/nursing/admissions/{admissionId:guid}/mar nursing.mar",
     "POST /api/v1/nursing/admissions/{admissionId:guid}/medication-orders nursing.mar",
+    "POST /api/v1/nursing/admissions/{admissionId:guid}/medication-orders/check nursing.mar",
     "POST /api/v1/nursing/admissions/{admissionId:guid}/notes nursing.chart",
     "POST /api/v1/nursing/admissions/{admissionId:guid}/restraints nursing.restraint.order",
     "POST /api/v1/nursing/admissions/{admissionId:guid}/safety-events nursing.chart",
