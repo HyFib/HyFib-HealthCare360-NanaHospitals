@@ -121,6 +121,11 @@ block was issued, in the series' year, in order with the block's other entries, 
 - takes stock off now, from the batches handed over (FEFO or the batch named), books the payment split, the controlled
   drug register and any e-invoice as for any sale; the stock ledger shows the time the entry was made, because the shelf
   moves when HC360 is told;
+- is written in the controlled-drug register when it is entered, not at the time on the paper: a bound register is in
+  order, and each line's running balance is the stock after its own movement. The line's remarks give the paper's time
+  and the invoice ("Entered from the paper sale of 10 Nov 2026 22:30 IST, invoice …"). So the registers date a late entry
+  when it is made, while the invoice, the GST return and the day book follow the paper's date. The day's narcotic account
+  (Form 3H) of the paper's day therefore does not include the sale; the day it was entered does, with the remark;
 - records when it was entered (`PharmacySaleDetail.enteredFromPaperAt`: the drawer says "Written on paper during a
   downtime, entered ...") and is audited as `patients.entered_from_paper` against the sale, Warning when entered late
   under an approval.

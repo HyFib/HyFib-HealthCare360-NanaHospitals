@@ -3,8 +3,11 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Ndps;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Queue;
+using HyFib.HealthCare360.Modules.Pharmacy.Features.Registers;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
+using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Auditing;
 using HyFib.HealthCare360.Platform.Contracts;
@@ -73,6 +76,66 @@ public sealed class PharmacyPaperSaleTests(HospitalServer server)
         var audit = await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<AuditEvent>().AsNoTracking()
             .SingleAsync(a => a.Action == "patients.entered_from_paper" && a.EntityId == sold.Id.ToString(), Ct);
         audit.EntityType.ShouldBe(nameof(PharmacySale));
+    }
+
+    [Fact]
+    public async Task A_paper_sale_is_written_in_the_controlled_drug_register_when_it_is_entered_and_the_balances_stay_true()
+    {
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var nurse = await server.SignInAsync(HospitalServer.Users.Nurse);
+        var storeKeeper = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var store = await OwnStoreAsync();
+
+        // 20 ampoules on the shelf. During the downtime two are sold on paper, one number from the block.
+        var morphine = await OwnMedicine.OnTheShelfAsync(
+            server, pharmacist, tablets: 20m, storeId: store, schedule: DrugSchedule.X, isControlled: true, genericName: "Morphine sulphate");
+        var block = await mrd.PostAsync<DowntimeNumberBlockDetail>(Blocks, new IssueDowntimeNumbersRequest(DowntimeNumberKind.PharmacySale, "Night pharmacy", 1));
+        var paperAt = block.Block.IssuedAt.AddSeconds(1);
+
+        // A goods receipt of 50 is made after the paper's time and before the paper is entered: the register's balance is 70.
+        await OwnMedicine.ReceiveAsync(server, storeKeeper, store, morphine.ItemId, 50m);
+
+        // The paper sale is entered after it.
+        await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter", new CounterSaleRequest(
+            store, null, "Walk-in customer", null, new ExternalPrescription("Dr. Paper", "TN 12345", null, "RX-PAPER-1"),
+            [new CounterSaleLine(morphine.ItemId, 2m, morphine.Batch.BatchId)], 0m,
+            [new SalePayment(PaymentMode.Cash, Math.Round(morphine.Batch.Mrp * 2m, MidpointRounding.AwayFromZero), null)], true,
+            Paper: new PaperNumber(block.Numbers[0].Number, paperAt)));
+
+        // The register is in the order the movements were made, so each balance follows the one above it: 20, 70, 68.
+        var lines = (await pharmacist.GetAsync<PagedResult<ControlledRegisterRow>>(
+            $"/api/v1/pharmacy/registers/controlled?storeId={store}&itemId={morphine.ItemId}&pageSize=50")).Items;
+        lines.Select(l => l.BalanceAfter).ShouldBe([20m, 70m, 68m]);
+        var sale = lines[2];
+        sale.OccurredAt.ShouldBeGreaterThan(lines[1].OccurredAt, "the line is dated when it was written, not at the time on the paper");
+        sale.OccurredAt.ShouldBeGreaterThan(paperAt);
+        sale.Remarks.ShouldNotBeNull().ShouldStartWith("Entered from the paper sale of ");
+        sale.Remarks.ShouldContain("IST, invoice " + block.Numbers[0].Number);
+
+        // The day's account (Form 3H) balances: 70 received, 2 dispensed, closing 68 = the register's last balance.
+        var today = HospitalClock.ToLocalDate(DateTimeOffset.UtcNow);
+        var drug = (await pharmacist.GetAsync<NdpsDailyAccount>($"/api/v1/pharmacy/ndps/daily?storeId={store}&date={today:yyyy-MM-dd}")).Drugs.ShouldHaveSingleItem();
+        (drug.Opening, drug.Received, drug.Dispensed, drug.Closing, drug.Balanced).ShouldBe((0m, 70m, 2m, 68m, true));
+        drug.Movements.Single(m => m.Type == StockMovementType.Sale).Remarks.ShouldNotBeNull().ShouldContain("paper sale");
+
+        // A count after the entry is compared with 68.
+        var count = await nurse.PostAsync<NarcoticCountDto>("/api/v1/pharmacy/ndps/counts", new RecordNarcoticCountRequest(store, [new CountedDrug(morphine.ItemId, 68m)], null));
+        (count.HasDifference, count.Lines.Single().RegisterBalance).ShouldBe((false, 68m));
+    }
+
+    /// <summary>A pharmacy store of the test's own, so no other test's stock moves its register.</summary>
+    private async Task<Guid> OwnStoreAsync()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var facility = (await admin.GetAsync<AuthUser>("/api/v1/auth/me")).FacilityId ?? throw new InvalidOperationException("No facility.");
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var code = "PAPR" + Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
+        var store = new Store { FacilityId = facility, Code = code, Name = $"Night pharmacy {code}", Type = StoreType.Pharmacy };
+        db.Add(store);
+        await db.SaveChangesAsync(Ct);
+        return store.Id;
     }
 
     [Fact]

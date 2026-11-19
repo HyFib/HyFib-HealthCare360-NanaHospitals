@@ -53,7 +53,7 @@ internal sealed class NdpsService(HospitalDbContext db, IOutbox outbox, ICurrent
                 item.Id, item.Name, opening, received, dispensed, otherIn, otherOut, closing, closing == register,
                 lines.Select(r => new NdpsMovement(
                     r.OccurredAt, r.MovementType, r.QuantityIn, r.QuantityOut, r.BalanceAfter, r.ReferenceNumber, r.PatientUhid, r.PatientName,
-                    r.PrescriberName, r.PrescriptionNumber)).ToList());
+                    r.PrescriberName, r.PrescriptionNumber, r.Remarks)).ToList());
         }).ToList();
         return new NdpsDailyAccount(date, store.Id, store.Name, rows);
     }
@@ -108,7 +108,7 @@ internal sealed class NdpsService(HospitalDbContext db, IOutbox outbox, ICurrent
             PatientContacts.Address(patient.Address, await contacts.FullAsync(ct)).ToString(),
             lines.Select(r => new NdpsPatientLine(
                 r.OccurredAt, r.ItemName, r.BatchNumber, r.QuantityOut - r.QuantityIn, r.MovementType, r.PrescriberName, r.PrescriberRegistrationNumber,
-                r.PrescriptionNumber, r.ReferenceNumber)).ToList());
+                r.PrescriptionNumber, r.ReferenceNumber, r.Remarks)).ToList());
     }
 
     /// <summary>The stores that have held an essential narcotic drug: where counts are made.</summary>

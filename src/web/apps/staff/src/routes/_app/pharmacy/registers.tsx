@@ -286,6 +286,7 @@ function RegistersPage() {
                   <span>
                     {r.referenceNumber ?? '—'}
                     {r.prescriptionNumber && <Caption1 block>Rx {r.prescriptionNumber}</Caption1>}
+                    {r.remarks && <Caption1 block>{r.remarks}</Caption1>}
                   </span>
                 ),
               },

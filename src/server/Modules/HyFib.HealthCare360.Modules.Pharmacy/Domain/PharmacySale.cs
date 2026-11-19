@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Domain;
@@ -46,6 +47,14 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public DateTimeOffset? EnteredFromPaperAt { get; set; }
 
     public bool IsBackEntered => EnteredFromPaperAt is not null;
+
+    /// <summary>
+    /// What a register line of a sale entered from paper says about it, or <c>null</c> for a sale made at the time. The
+    /// controlled-drug register is bound and in order: a line is dated when it is written, so the time on the paper goes in the remark.
+    /// </summary>
+    public string? RegisterRemark => EnteredFromPaperAt is null
+        ? null
+        : string.Create(CultureInfo.InvariantCulture, $"Entered from the paper sale of {HospitalClock.ToLocalTime(SoldAt):d MMM yyyy HH:mm} IST, invoice {InvoiceNumber}");
 
     public Guid? SoldByUserId { get; set; }
     public string? CounsellingNotes { get; set; }

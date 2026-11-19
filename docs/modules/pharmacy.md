@@ -151,10 +151,12 @@ Patients module's `DowntimeNumberService`, which the pharmacy registers the seri
 series, out of order within the block, or in the future (400 on `paper.at`), and one past the *Pharmacy sale from paper*
 back-entry window (`downtime.backEntryHours.pharmacySale`, 72 hours, at most 14 days) with no late back-entry approval
 (422 `backentry.late`). The invoice then takes the number as its invoice number and the time as `soldAt`, its payments,
-the controlled-drug register lines and the day book are dated at the time on the paper, and `enteredFromPaperAt` records
-when it was entered (`PharmacySaleDetail.enteredFromPaperAt`; the entry is audited as `patients.entered_from_paper`
+the day book is dated at the time on the paper, and `enteredFromPaperAt` records when it was entered (`PharmacySaleDetail.enteredFromPaperAt`; the entry is audited as `patients.entered_from_paper`
 against the sale). Stock moves when the sale is entered, from the batches handed over: the stock ledger shows the entry
-time, not the paper's. A counter sale made on paper whose prescription reference is the number of an open OP queue entry
+time, not the paper's. The controlled-drug register is dated the same way, when the line is written: a bound register is
+in order, and each line's running balance is the stock after its own movement, so a line dated at the paper's time would
+sit among movements made since and carry a balance that does not follow from them. The line's `remarks` say "Entered from
+the paper sale of 10 Nov 2026 22:30 IST, invoice …", with the paper's time and the invoice. A counter sale made on paper whose prescription reference is the number of an open OP queue entry
 of the same patient closes that entry as dispensed on paper (the entry's `paperSaleNumber` names the invoice), so the
 prescription does not come back in the queue. Nothing is changed when any check fails.
 
@@ -280,13 +282,16 @@ Money out of the pharmacy, and stock written off, are made only when a second pe
 ### Registers — `/registers` (PH-06 statutory)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/registers/controlled?page&storeId&itemId&schedule&from&to` | `pharmacy.registers` | → paged `ControlledRegisterRow` (Schedule H1/X and NDPS; per item and store in posting order: movement, quantity in/out, running balance, batch/expiry, patient name/UHID/address, prescriber and registration number, prescription and document number, recorded by) |
+| GET | `/registers/controlled?page&storeId&itemId&schedule&from&to` | `pharmacy.registers` | → paged `ControlledRegisterRow` (Schedule H1/X and NDPS; per item and store in posting order: movement, quantity in/out, running balance, batch/expiry, patient name/UHID/address, prescriber and registration number, prescription and document number, recorded by, remarks) |
 | GET | `/registers/controlled/export?…` | `pharmacy.registers` | → CSV (UTF-8 BOM, IST times, formula-injection-safe cells); the export is audited |
 | GET | `/registers/schedule-h?page&storeId&from&to` | `pharmacy.registers` | → paged `ScheduleHRegisterRow` (Schedule H supplies from sales and IP issues, with patient, prescriber and prescription; H1 lines are in the controlled register) |
 | GET | `/registers/schedule-h/export?…` | `pharmacy.registers` | → CSV, audited |
 
 The controlled-drug register holds exactly one line per stock-ledger movement (unique `ledger_entry_id`). Pharmacy
-documents write their own lines with the patient and prescriber. Everything else arrives through
+documents write their own lines with the patient and prescriber. A line is dated when it is written: a sale entered from
+paper after a downtime is written when it is entered, and its `remarks` carry the paper's time and the invoice (the
+invoice, the GST return and the day book keep the paper's date). `remarks` are shown on the register page, in its CSV, and
+on the NDPS accounts (Form 3H, Form 3E and the Form 3H CSV). Everything else arrives through
 `ControlledStockMoved` (see Events): GRN, transfers, adjustments, write-offs, OT consumption.
 
 ### Recall trace — `/recalls/trace`

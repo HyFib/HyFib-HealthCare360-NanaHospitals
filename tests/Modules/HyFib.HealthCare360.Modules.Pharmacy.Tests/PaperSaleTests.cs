@@ -77,6 +77,20 @@ public sealed class PaperSaleTests
     }
 
     [Fact]
+    public void A_sale_entered_from_paper_carries_the_papers_time_and_invoice_as_the_remark_of_its_register_lines()
+    {
+        // Paper time 22:30 IST on 10 Nov 2026 is 17:00 UTC.
+        var paperAt = new DateTimeOffset(2026, 11, 10, 17, 0, 0, TimeSpan.Zero);
+        var entered = new DateTimeOffset(2026, 11, 11, 3, 30, 0, TimeSpan.Zero);
+        var sale = new PharmacySale { InvoiceNumber = "NHPH260000021", SoldAt = paperAt, EnteredFromPaperAt = entered };
+
+        sale.RegisterRemark.ShouldBe("Entered from the paper sale of 10 Nov 2026 22:30 IST, invoice NHPH260000021");
+
+        var live = new PharmacySale { InvoiceNumber = "NHPH260000022", SoldAt = Now };
+        live.RegisterRemark.ShouldBeNull();
+    }
+
+    [Fact]
     public void A_prescription_dispensed_on_paper_is_closed_as_dispensed_and_leaves_the_open_queue()
     {
         var entry = PharmacyQueueEntry.FromPrescription(QueueEntryTests.Prescription(), Now.AddHours(-1));

@@ -41,6 +41,7 @@ const DAILY: NdpsDailyAccount = {
           patientName: 'Lakshmi Narayanan',
           prescriberName: 'Dr. Anil Rao',
           prescriptionNumber: 'RX-26-01920',
+          remarks: null,
         },
       ],
     },
