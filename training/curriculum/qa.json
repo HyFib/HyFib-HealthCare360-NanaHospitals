@@ -509,5 +509,24 @@
   "seconds": 316.6,
   "megabytes": 14.5,
   "madeBy": "render worker 3"
+ },
+ "w6-biomedical-engineer": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 29,
+  "wer": 4.93,
+  "wpm": 127.4,
+  "maxCps": 15.7,
+  "lufs": -16.0,
+  "seconds": 344.4,
+  "megabytes": 17.4,
+  "madeBy": "render worker 2"
  }
 }
