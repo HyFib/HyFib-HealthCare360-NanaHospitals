@@ -349,5 +349,43 @@
   "seconds": 318.7,
   "megabytes": 14.5,
   "madeBy": "render worker 1"
+ },
+ "w1-purchase-officer": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 17,
+  "wer": 2.06,
+  "wpm": 133.4,
+  "maxCps": 15.8,
+  "lufs": -16.0,
+  "seconds": 275.5,
+  "megabytes": 11.6,
+  "madeBy": "render worker 3"
+ },
+ "w7-hospital-admin": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 18,
+  "wer": 3.83,
+  "wpm": 120.6,
+  "maxCps": 14.5,
+  "lufs": -16.0,
+  "seconds": 295.4,
+  "megabytes": 14.0,
+  "madeBy": "render worker 3"
  }
 }
