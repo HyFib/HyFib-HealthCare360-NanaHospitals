@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
@@ -5,7 +6,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 /// <summary>
 /// Whether the unit an analyser sent is the test's unit written another way (pure; unit-tested). Analysers spell the
 /// same unit in many ways: "10^3/uL", "x10³/µL", "10*3/uL" (UCUM), "K/uL", "10^9/L" and "/cumm" are all the test's
-/// 10³/µL; "s", "sec" and "seconds" are one unit; "mg%" is mg/dL. Two spellings are the same unit when they name the same quantity in
+/// 10³/µL, as is HORIBA's "1E03/mm3"; "s", "sec" and "seconds" are one unit; "mg%" is mg/dL; a cubic micrometre (µm³, as
+/// HORIBA writes the cell volumes) is a femtolitre. Two spellings are the same unit when they name the same quantity in
 /// the same scale, so the value needs no conversion: 10⁹ per litre is 10³ per microlitre, and a cubic millimetre is a
 /// microlitre. Units of another scale (g/L against g/dL, mmol/L against mg/dL, mEq/L against mmol/L) are never taken as
 /// the same. The staff app's review hints read units with the same rule (<c>isSameUnit</c> in lab/flags.ts); both are
@@ -55,6 +57,10 @@ internal static class AnalyserUnits
 
         // Enzyme activity: the international unit is the unit of the clinical enzyme assays.
         ["IU/L"] = "U/L",
+
+        // Cell volumes (MCV, MPV, RDW-SD): a cubic micrometre is a femtolitre.
+        ["UM3"] = "FL",
+        ["UM^3"] = "FL",
     };
 
     /// <summary>
@@ -67,7 +73,7 @@ internal static class AnalyserUnits
 
     /// <summary>
     /// One spelling for every way of writing a unit: no spaces, upper case, the micro sign as u, powers of ten as 10^n
-    /// (10³, 10*3, 10E3, x10^3), a cubic millimetre (mm³, cumm) as a microlitre, then the aliases above.
+    /// (10³, 10*3, 10E3, x10^3, and HORIBA's 1E03), a cubic millimetre (mm³, cumm) as a microlitre, then the aliases above.
     /// </summary>
     internal static string Canonical(string? unit)
     {
@@ -114,6 +120,21 @@ internal static class AnalyserUnits
         if (key.StartsWith("10*", StringComparison.Ordinal) || (key.StartsWith("10E", StringComparison.Ordinal) && key.Length > 3 && char.IsAsciiDigit(key[3])))
         {
             key = "10^" + key[3..];
+        }
+
+        // HORIBA's analysers write 10³ as 1E03 ("1E03/mm3" for the white cells, "1E06/mm3" for the red).
+        if (key.Length > 2 && key.StartsWith("1E", StringComparison.Ordinal) && char.IsAsciiDigit(key[2]))
+        {
+            var end = 2;
+            while (end < key.Length && char.IsAsciiDigit(key[end]))
+            {
+                end++;
+            }
+
+            if (end - 2 <= 2)
+            {
+                key = "10^" + int.Parse(key.AsSpan(2, end - 2), CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture) + key[end..];
+            }
         }
 
         // A cubic millimetre is a microlitre: "/cumm", "/mm3" and "/mm^3" are "/uL".

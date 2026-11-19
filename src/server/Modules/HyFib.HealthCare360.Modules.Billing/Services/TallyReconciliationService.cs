@@ -246,6 +246,10 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             .Where(c => c.FacilityId == facilityId && c.IssuedAt >= start && c.IssuedAt < end)
             .Select(c => new { c.Kind, c.Amount })
             .ToListAsync(ct);
+        var debits = await db.Set<DebitNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Where(n => n.FacilityId == facilityId && n.IssuedAt >= start && n.IssuedAt < end)
+            .Select(n => n.Amount)
+            .ToListAsync(ct);
         var deductions = await (
                 from s in db.Set<ClaimSettlement>()
                 join c in db.Set<InsuranceClaim>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on s.ClaimId equals c.Id
@@ -281,6 +285,8 @@ public sealed class TallyReconciliationService(HospitalDbContext db, TallyServic
             CreditNotesAmount = credits.Where(c => c.Kind != CreditNoteKind.WriteOff).Sum(c => c.Amount),
             WriteOffs = credits.Count(c => c.Kind == CreditNoteKind.WriteOff),
             WriteOffsAmount = credits.Where(c => c.Kind == CreditNoteKind.WriteOff).Sum(c => c.Amount),
+            DebitNotes = debits.Count,
+            DebitNotesAmount = debits.Sum(),
             ClaimDeductions = deductions.Where(d => d > 0).Sum(),
             DoctorFeesAccrued = accrued.Sum(),
             Payouts = paidOut.Count,

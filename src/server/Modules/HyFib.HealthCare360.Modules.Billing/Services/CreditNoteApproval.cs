@@ -35,6 +35,7 @@ internal sealed class CreditNoteApproval(RefundService refunds) : IApprovalActio
     {
         CreditNoteKind.WriteOff => "Write-off",
         CreditNoteKind.PayerShare => "Payer credit note",
+        CreditNoteKind.PayerReturn => "Payer credit note for returns",
         _ => "Credit note",
     };
 }

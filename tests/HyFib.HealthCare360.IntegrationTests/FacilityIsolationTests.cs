@@ -160,7 +160,7 @@ public sealed class FacilityIsolationTests(HospitalServer server)
         foreach (var patient in new[] { kept, rejected })
         {
             var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ELECTROLYTES", patient.Id);
-            var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "7.2", ["CL"] = "101" });
+            var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "7.2", ["CL"] = "101", ["HCO3"] = "24" });
             lines.Single(l => l.TestCode == "K").Flag.ShouldBe(ResultFlag.CriticalHigh);
             if (patient == rejected)
             {

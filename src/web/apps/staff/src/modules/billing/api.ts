@@ -156,6 +156,15 @@ export interface DebitNoteDto {
   eInvoice?: EInvoiceStamp | null;
 }
 
+/** A return waiting to be credited on the bill that charged it: its value as charged, GST included. */
+export interface ReturnToCreditDto {
+  chargeId: string;
+  description: string;
+  quantity: number;
+  amount: number;
+  serviceDate: string;
+}
+
 export interface CreditNoteDto {
   id: string;
   number: string;
@@ -303,6 +312,11 @@ export interface BillDetail {
   eInvoice?: EInvoiceStamp | null;
   /** Set when the bill is due an IRN and has none: its prints say it is not a valid tax invoice for the buyer. */
   missingIrn?: MissingIrn | null;
+  /**
+   * Returns that came back after the bill was finalized and wait to be credited on it: a payer or a package shared the
+   * bill, so they go on no other bill, where the patient would be refunded what the payer or the package paid.
+   */
+  returnsToCredit?: ReturnToCreditDto[] | null;
   /**
    * Why the bill is free of cost by law: the law and the MLC entry (the victim of a sexual offence or an acid attack,
    * BNSS 2023 s.397), never the offence. Every line comes to nothing and nothing is collected.
@@ -1046,6 +1060,12 @@ export const billingApi = {
    * approvals inbox, on the bill as it is now. A credit note on a bill with GST names the services it corrects
    * (`lines`, their sum the amount): 400 `lines` without them; 422 `billing.credit_exceeds_line` past a service's value.
    */
+  /**
+   * Asks for the returns waiting on the bill to be credited on it (202): an approver, someone else, issues the credit
+   * notes, split as the bill split the sale (the patient's share to the patient, the payer's to the payer).
+   */
+  requestReturnCredit: (billId: string, reason: string) =>
+    api.post<ApprovalRequestDto>(`/api/v1/billing/bills/${billId}/return-credit`, { reason }),
   /** Asks for a debit note: 202 with the approval request; an approver, someone else, issues it. */
   requestDebitNote: (
     billId: string,

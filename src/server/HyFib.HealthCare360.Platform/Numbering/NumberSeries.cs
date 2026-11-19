@@ -110,10 +110,13 @@ internal sealed class NumberSeriesService(HospitalDbContext db, NumberSeriesCata
                 continue;
             }
 
+            // Counting starts at the series' first number, and a counter below it (from before the series started there)
+            // goes on from it: for most series the floor is 0, and this is plain counting.
             var period = NumberFormat.PeriodFor(row.ResetPolicy, now);
+            var floor = Math.Max(series.FirstNumber, 1) - 1;
             var allocated = await db.Database.SqlQuery<AllocatedRow>($"""
                 UPDATE platform.number_series
-                   SET current_value = CASE WHEN current_period IS NOT DISTINCT FROM {period} THEN current_value + {count} ELSE {count} END,
+                   SET current_value = CASE WHEN current_period IS NOT DISTINCT FROM {period} THEN GREATEST(current_value, {floor}) + {count} ELSE {floor} + {count} END,
                        current_period = {period},
                        updated_at = {time.GetUtcNow()}
                  WHERE key = {series.Key} AND facility_id IS NOT DISTINCT FROM {scope}

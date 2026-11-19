@@ -11,3 +11,12 @@ onlyBuiltDependencies:
 # in 11.0.1.
 overrides:
   "minimatch@<11.0.1": 11.0.3
+
+# Advisories reviewed as not affecting HC360 (docs/security/SECURITY.md, "Patching security advisories").
+auditConfig:
+  ignoreGhsas:
+    # picomatch <= 4.0.7: ReDoS through a single-branch pattern. Only build and test tooling uses it (vite, vitest,
+    # eslint's typescript-estree, the TanStack router plugin, through tinyglobby and fdir), on the developer's or CI's
+    # own patterns; nothing the staff app or the portal ships contains it. No fixed version is published yet (accepted
+    # 18 November 2026). Look again on 2 December 2026, and remove this entry and update picomatch once a fix is out.
+    - GHSA-fc5q-39xc-vjpf

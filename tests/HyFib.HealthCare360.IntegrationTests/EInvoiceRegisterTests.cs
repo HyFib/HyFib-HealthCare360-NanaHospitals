@@ -74,14 +74,17 @@ public sealed class EInvoiceRegisterTests(HospitalServer server)
         (row.Source, row.Number, row.BuyerGstin, row.State, row.Total).ShouldBe(("bill", bill.BillNumber, KeralaCompany, EInvoiceState.Pending, bill.NetAmount));
         row.ReportBy.ShouldBe(row.Date.AddDays(30));
 
-        // Its JSON is the portal's: Kerala is the place of supply, and the whole tax is IGST.
+        // Its JSON is the portal's: the buyer is in Kerala, but the service is supplied in Tamil Nadu, where it is given (IGST
+        // Act s.12(4)), so the place of supply is the hospital's state and the tax is CGST and SGST.
         var payload = await JsonAsync(accounts, $"{Register}/bill/{bill.Id}/json");
         var invoice = payload.AsArray().ShouldHaveSingleItem()!;
         invoice["DocDtls"]!["No"]!.GetValue<string>().ShouldBe(bill.BillNumber);
         (invoice["SellerDtls"]!["Gstin"]!.GetValue<string>(), invoice["SellerDtls"]!["Pin"]!.GetValue<int>()).ShouldBe((Hospital, 600018));
-        (invoice["BuyerDtls"]!["Pos"]!.GetValue<string>(), invoice["BuyerDtls"]!["Loc"]!.GetValue<string>(), invoice["BuyerDtls"]!["Pin"]!.GetValue<int>())
-            .ShouldBe(("32", "Kochi", 682016));
-        invoice["ValDtls"]!["IgstVal"]!.GetValue<decimal>().ShouldBe(bill.IgstAmount);
+        (invoice["BuyerDtls"]!["Pos"]!.GetValue<string>(), invoice["BuyerDtls"]!["Stcd"]!.GetValue<string>(), invoice["BuyerDtls"]!["Loc"]!.GetValue<string>(),
+            invoice["BuyerDtls"]!["Pin"]!.GetValue<int>()).ShouldBe(("33", "32", "Kochi", 682016));
+        (invoice["ValDtls"]!["CgstVal"]!.GetValue<decimal>(), invoice["ValDtls"]!["SgstVal"]!.GetValue<decimal>(), invoice["ValDtls"]!["IgstVal"]!.GetValue<decimal>())
+            .ShouldBe((bill.CgstAmount, bill.SgstAmount, 0m));
+        bill.CgstAmount.ShouldBeGreaterThan(0m);
         invoice["ValDtls"]!["TotInvVal"]!.GetValue<decimal>().ShouldBe(bill.NetAmount);
         var lines = invoice["ItemList"]!.AsArray().Count;
         lines.ShouldBe(bill.Lines.Count);

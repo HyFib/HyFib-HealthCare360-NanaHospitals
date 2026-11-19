@@ -50,7 +50,9 @@ public sealed record MedicationOrderDto(
 /// doctor named, <paramref name="Mode"/> (verbal or telephone) and <paramref name="ReadBack"/> (read back to the doctor, who
 /// confirmed it) are required, and the doctor countersigns it. <paramref name="Emergency"/>: a verbal order of a
 /// high-alert or controlled medicine to be given before the doctor countersigns it. A medicine picked from the drug master
-/// (<paramref name="DrugItemId"/>) takes its flags from it; one typed in is handled as high-alert.
+/// (<paramref name="DrugItemId"/>) takes its flags from it; one typed in is handled as high-alert. The order gets the
+/// prescribing safety check; <paramref name="OverrideReason"/> (at least 10 characters) is the clinical reason for writing
+/// it over a blocking alert, audited at Critical.
 /// </summary>
 public sealed record AddMedicationOrderRequest(
     Guid? DrugItemId,
@@ -68,7 +70,8 @@ public sealed record AddMedicationOrderRequest(
     bool IsHighAlert = false,
     MedicationOrderMode? Mode = null,
     bool ReadBack = false,
-    bool Emergency = false);
+    bool Emergency = false,
+    string? OverrideReason = null);
 
 /// <summary>A prescriber stops the order at once; anyone else asks for the stop, which the doctor countersigns.</summary>
 public sealed record StopMedicationOrderRequest(string Reason);
@@ -143,6 +146,10 @@ public sealed record RecordAdministrationRequest(
     string? Notes,
     uint Version);
 
+/// <summary>
+/// A dose on the ward's round. <paramref name="Notes"/> are the dose's own (an extra dose's reason, what to confirm first);
+/// <paramref name="Instructions"/> are its order's ("after food", "confirm the dose with the doctor").
+/// </summary>
 public sealed record WardMarItem(
     Guid EntryId,
     Guid AdmissionId,
@@ -158,7 +165,9 @@ public sealed record WardMarItem(
     int MinutesLate,
     uint Version,
     bool NeedsWitness = false,
-    string? HeldBecause = null);
+    string? HeldBecause = null,
+    string? Notes = null,
+    string? Instructions = null);
 
 public sealed record ScheduleResult(Guid MedicationOrderId, int DosesAdded);
 
@@ -182,6 +191,9 @@ public sealed class AddMedicationOrderRequestValidator : AbstractValidator<AddMe
         RuleFor(x => x.Mode).IsInEnum();
         RuleFor(x => x.Emergency).Equal(false).When(x => x.Mode is not (MedicationOrderMode.Verbal or MedicationOrderMode.Telephone))
             .WithMessage("Only a verbal or telephone order is marked as an emergency.");
+        RuleFor(x => x.OverrideReason).SafeText(1000);
+        RuleFor(x => x.OverrideReason).Must(r => r!.Trim().Length >= 10).When(x => !string.IsNullOrWhiteSpace(x.OverrideReason))
+            .WithMessage("Give the clinical reason for ordering it anyway (at least 10 characters).");
     }
 }
 

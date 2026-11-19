@@ -8,8 +8,9 @@ using HyFib.HealthCare360.Modules.SupplyChain.Services;
 namespace HyFib.HealthCare360.Modules.Inpatient.Features.Mar;
 
 /// <summary>
-/// /api/v1/nursing — medication chart (orders) and Medication Administration Record, plus the ward's due-dose worklist, the
-/// doctor's countersignature of verbal and telephone orders and of nurses' stops, and the list of what waits for one.
+/// /api/v1/nursing — medication chart (orders, with the prescribing safety check of a ward order) and Medication
+/// Administration Record, plus the ward's due-dose worklist, the doctor's countersignature of verbal and telephone orders
+/// and of nurses' stops, and the list of what waits for one.
 /// </summary>
 internal static class MarEndpoints
 {
@@ -20,6 +21,8 @@ internal static class MarEndpoints
         group.MapGet("/admissions/{admissionId:guid}/medication-orders", ListOrders)
             .RequireAnyPermission(InpatientPermissions.NursingMar, InpatientPermissions.NursingChart);
         group.MapPost("/admissions/{admissionId:guid}/medication-orders", AddOrder)
+            .RequirePermission(InpatientPermissions.NursingMar).WithValidation<AddMedicationOrderRequest>();
+        group.MapPost("/admissions/{admissionId:guid}/medication-orders/check", CheckOrder)
             .RequirePermission(InpatientPermissions.NursingMar).WithValidation<AddMedicationOrderRequest>();
         group.MapPost("/medication-orders/{id:guid}/stop", StopOrder)
             .RequirePermission(InpatientPermissions.NursingMar).WithValidation<StopMedicationOrderRequest>();
@@ -69,6 +72,13 @@ internal static class MarEndpoints
         return access.IsFailure
             ? access.Error!.ToProblem()
             : (await mar.AddOrderAsync(access.Value, request, ct)).ToCreated(o => $"/api/v1/nursing/admissions/{admissionId}/medication-orders");
+    }
+
+    /// <summary>The prescribing safety check of the order as the form has it, before it is written: the alerts, blocking ones first.</summary>
+    private static async Task<IResult> CheckOrder(Guid admissionId, AddMedicationOrderRequest request, AdmissionAccess admissions, MarService mar, CancellationToken ct)
+    {
+        var access = await admissions.OpenForChartingAsync(admissionId, ct);
+        return access.IsFailure ? access.Error!.ToProblem() : (await mar.CheckOrderAsync(access.Value, request, ct)).ToOk();
     }
 
     private static async Task<IResult> StopOrder(Guid id, StopMedicationOrderRequest request, HospitalDbContext db, AdmissionAccess admissions, MarService mar, CancellationToken ct)

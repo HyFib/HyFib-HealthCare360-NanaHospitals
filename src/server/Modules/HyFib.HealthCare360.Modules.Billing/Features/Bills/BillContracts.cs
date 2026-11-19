@@ -179,7 +179,22 @@ public sealed record BillDetail(
     decimal DebitAmount = 0m,
     decimal PayerDebitAmount = 0m,
     string? GstFilingWarning = null,
-    MissingIrn? MissingIrn = null);
+    MissingIrn? MissingIrn = null,
+    IReadOnlyList<ReturnToCreditDto>? ReturnsToCredit = null);
+
+/// <summary>
+/// A return that came back after the bill was finalized and waits to be credited on it (a payer or a package shared the
+/// bill, so it goes on no other bill): <paramref name="Amount"/> is its value as charged, GST included.
+/// </summary>
+public sealed record ReturnToCreditDto(Guid ChargeId, string Description, decimal Quantity, decimal Amount, DateTimeOffset ServiceDate);
+
+/// <summary>Asks for the returns waiting on a finalized bill to be credited on it; an approver issues the credit notes.</summary>
+public sealed record CreditReturnsRequest(string Reason);
+
+public sealed class CreditReturnsRequestValidator : AbstractValidator<CreditReturnsRequest>
+{
+    public CreditReturnsRequestValidator() => RuleFor(x => x.Reason).Reason();
+}
 
 /// <summary>
 /// The package a bill is priced at: an OP bill's own, or the IP account's on a final bill. <see cref="Price"/> is the

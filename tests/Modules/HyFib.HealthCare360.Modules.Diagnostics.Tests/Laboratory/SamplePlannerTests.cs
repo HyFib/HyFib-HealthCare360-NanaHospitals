@@ -43,6 +43,21 @@ public sealed class SamplePlannerTests
         ppTube.DedicatedTestId.ShouldBe(postPrandial.Id);
     }
 
+    /// <summary>The glucose challenge test is drawn an hour after the glucose drink: never into a sugar tube drawn before.</summary>
+    [Fact]
+    public void A_glucose_challenge_test_never_shares_another_sugar_tube()
+    {
+        var fasting = Tube(Seeded("LAB-FBS"));
+        var challenge = Seeded("LAB-GCT");
+        var challengeTube = Tube(challenge);
+
+        SamplePlanner.FindTube([fasting], Key("LAB-GCT")).ShouldBeNull();
+        SamplePlanner.FindTube([challengeTube], Key("LAB-FBS")).ShouldBeNull();
+        SamplePlanner.FindTube([challengeTube], Key("LAB-PPBS")).ShouldBeNull();
+        challengeTube.DedicatedTestId.ShouldBe(challenge.Id);
+        challengeTube.Container.ShouldBe(ContainerType.Fluoride);
+    }
+
     [Fact]
     public void A_tube_already_drawn_is_not_reused()
     {

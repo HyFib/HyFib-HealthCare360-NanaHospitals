@@ -54,6 +54,9 @@ internal static class BillEndpoints
         // Asks for a debit note (supplementary invoice); an approver, someone else, issues it (202).
         group.MapPost("/{id:guid}/debit-notes", RequestDebitNote).RequireAnyPermission(BillingPermissions.RefundsRequest, BillingPermissions.RefundsApprove)
             .WithValidation<IssueDebitNoteRequest>();
+        // Asks for the returns that came back after a bill a payer or a package shared to be credited on it (202).
+        group.MapPost("/{id:guid}/return-credit", RequestReturnCredit).RequireAnyPermission(BillingPermissions.RefundsRequest, BillingPermissions.RefundsApprove)
+            .WithValidation<CreditReturnsRequest>();
     }
 
     private static async Task<IResult> List(
@@ -192,8 +195,8 @@ internal static class BillEndpoints
         var payer = detail.PayerId is { } payerId
             ? await db.Set<Payer>().AsNoTracking().Where(p => p.Id == payerId).Select(p => new { p.Name, p.Gstin, p.Address }).FirstOrDefaultAsync(ct)
             : null;
-        // A payer credit note goes to the payer, registered for GST or not.
-        var recipient = payer?.Gstin is not null || (payer is not null && note.Kind == CreditNoteKind.PayerShare)
+        // A payer credit note (of a deduction or of a return) goes to the payer, registered for GST or not.
+        var recipient = payer?.Gstin is not null || (payer is not null && note.Kind is CreditNoteKind.PayerShare or CreditNoteKind.PayerReturn)
             ? new CreditNoteRecipient(payer.Name, payer.Gstin, payer.Address)
             : new CreditNoteRecipient(detail.PatientName ?? DocumentFormat.Missing, null, null);
         var einvoice = await einvoices.PrintAsync(CreditNoteEInvoiceSource.Key, noteId, ct);
@@ -294,6 +297,9 @@ internal static class BillEndpoints
 
     private static async Task<IResult> RequestDebitNote(Guid id, IssueDebitNoteRequest request, DebitNoteService notes, CancellationToken ct) =>
         (await notes.RequestAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
+
+    private static async Task<IResult> RequestReturnCredit(Guid id, CreditReturnsRequest request, ReturnCreditService returns, CancellationToken ct) =>
+        (await returns.RequestAsync(id, request, ct)).ToHttpResult(approval => TypedResults.Accepted($"/api/v1/approvals/{approval.Id}", approval));
 
     private static async Task<IResult> DetailAfterAsync(
         Result result, HospitalDbContext db, Guid id, TimeProvider time, IEInvoiceRegister einvoices, CancellationToken ct)

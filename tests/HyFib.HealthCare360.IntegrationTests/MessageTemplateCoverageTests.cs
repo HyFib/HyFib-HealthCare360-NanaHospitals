@@ -43,6 +43,7 @@ public sealed class MessageTemplateCoverageTests(HospitalServer server)
         (SharePrescriptionAfterTeleconsultation.Template, SharePrescriptionAfterTeleconsultation.Channels),
         ("prescription.shared", [NotificationChannel.WhatsApp]),
         ("lab.report_ready", [NotificationChannel.Sms, NotificationChannel.WhatsApp, NotificationChannel.Email]),
+        (Modules.Diagnostics.Services.ReportDelivery.ReportAmendedTemplate, [NotificationChannel.Sms, NotificationChannel.WhatsApp, NotificationChannel.Email]),
         ("payment.link", [NotificationChannel.Sms, NotificationChannel.WhatsApp]),
         ("pharmacy.refill_reminder", [NotificationChannel.Sms, NotificationChannel.WhatsApp]),
         ("pharmacy.refill_ready", [NotificationChannel.Sms, NotificationChannel.WhatsApp]),

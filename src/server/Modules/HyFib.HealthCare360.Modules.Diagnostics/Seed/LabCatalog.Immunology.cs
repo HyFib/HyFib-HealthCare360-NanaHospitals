@@ -57,9 +57,14 @@ internal static partial class LabCatalog
             Components = [("T3", null), ("T4", null), ("TSH", null)],
         };
 
+        // One test under every name the i-CHROMA and the doctors give it (Nana Hospitals: "Same test name for VIT-D,
+        // VIT D-25, VIT-D3"; "VIT-D, VIT 25 OH, VIT D3 are same test name"): each is a channel of LAB-VITD.
         yield return new OrderableSeed("LAB-VITD", "Vitamin D (25-hydroxy)", "VIT D", 1400m, Immunology, Serum, Plain, 24, Clia, "62292-8")
         {
-            Result = Numeric("ng/mL", 1, [All(30.0m, 100.0m, text: "Deficient: < 20; Insufficient: 20 - 29; Sufficient: 30 - 100; Potential toxicity: > 100")], "VITD"),
+            Result = Numeric("ng/mL", 1, [All(30.0m, 100.0m, text: "Deficient: < 20; Insufficient: 20 - 29; Sufficient: 30 - 100; Potential toxicity: > 100")]) with
+            {
+                Channels = ["VITD", "VIT-D", "VIT D-25", "VIT-D3", "VIT D3", "VIT 25 OH"],
+            },
         };
 
         yield return new OrderableSeed("LAB-VITB12", "Vitamin B12 (cobalamin)", "VIT B12", 1000m, Immunology, Serum, Plain, 24, Clia, "2132-9")

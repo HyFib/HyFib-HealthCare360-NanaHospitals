@@ -756,6 +756,8 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
   // Nothing waits for a final bill: the interim bills took every service, or none was charged. Once the discharge has
   // begun no more will come, so none is needed and the advance is settled against the interim bills.
   const nothingForFinalBill = !!c && !c.hasFinalBill && c.unbilledCount === 0;
+  // Returns after a final bill a payer or a package shared are credited on that bill, where its page offers it.
+  const returnsBillId = c && (c.returnsToCreditCount ?? 0) > 0 ? (c.finalBillId ?? null) : null;
   return (
     <div className={styles.stack}>
       <Section title="Discharge clearance">
@@ -815,6 +817,14 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
                   </Badge>
                 )}
               </SummaryRow>
+              {(c.returnsToCreditCount ?? 0) > 0 && (
+                <SummaryRow
+                  label="Returns to credit on the final bill"
+                  hint={`${c.returnsToCreditCount} item(s), credited on the final bill as it split them, not refunded on a bill of their own`}
+                >
+                  <Amount value={c.returnsToCreditAmount ?? 0} />
+                </SummaryRow>
+              )}
               <SummaryRow label="Patient's share still due">
                 <Amount value={c.patientDue} />
               </SummaryRow>
@@ -856,6 +866,14 @@ export function IpDischargePanel({ account }: { account: IpAccountDetail }) {
                 disabled={finalBill.isPending}
               >
                 {c?.hasFinalBill ? 'Bill late services' : 'Prepare final bill'}
+              </Button>
+            )}
+            {returnsBillId && (
+              <Button
+                icon={<ArrowUndoRegular />}
+                onClick={() => void navigate({ to: '/billing/bills/$billId', params: { billId: returnsBillId } })}
+              >
+                Credit the returns on the final bill
               </Button>
             )}
             <Button

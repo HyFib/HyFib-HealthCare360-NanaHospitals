@@ -49,6 +49,7 @@ import {
   formatProblems,
   hospitalDate,
   insertToken,
+  nextNumber,
   nextRestart,
   renderNumber,
   RESTART_LABELS,
@@ -226,7 +227,8 @@ export function NumberSeriesFields({
     resetPolicy,
     startAt: typeof startAt === 'number' && !Number.isNaN(startAt) ? startAt : null,
   });
-  const next = change.startAt !== null && change.startAt > series.lastNumber ? change.startAt : series.lastNumber + 1;
+  const following = nextNumber(series.lastNumber, series.firstNumber);
+  const next = change.startAt !== null && change.startAt > series.lastNumber ? change.startAt : following;
   const wellFormed = formatProblems(change.format).length === 0;
   const restart = nextRestart(change.resetPolicy, today);
   const isDefault = change.format === series.defaultFormat && change.resetPolicy === series.defaultResetPolicy;
@@ -286,8 +288,8 @@ export function NumberSeriesFields({
         min={1}
         hint={
           series.lastNumber > 0
-            ? `Leave it empty to carry on from ${series.lastNumber + 1}. To continue from an older system, enter its next number; a later number leaves a gap.`
-            : 'Leave it empty to start from 1. To continue from an older system, enter its next number.'
+            ? `Leave it empty to carry on from ${following}. To continue from an older system, enter its next number; a later number leaves a gap.`
+            : `Leave it empty to start from ${following}. To continue from an older system, enter its next number.`
         }
       />
 

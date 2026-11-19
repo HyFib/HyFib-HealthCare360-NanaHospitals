@@ -16,6 +16,17 @@ public sealed class Code128PlanTests
     }
 
     [Fact]
+    public void A_ten_digit_tube_number_is_five_symbols_of_set_c()
+    {
+        var plan = Code128Plan.For("1000000123");
+
+        plan.Runs.ShouldBe([new Code128Run(Code128Set.C, "1000000123")]);
+        plan.Modules.ShouldBe((11 * (5 + 2)) + 13);
+        plan.ZplData().ShouldBe(">;1000000123");
+        plan.TsplData().ShouldBe("!1051000000123");
+    }
+
+    [Fact]
     public void A_prefix_in_set_b_then_the_digits_in_set_c()
     {
         var plan = Code128Plan.For("LS2600000123");

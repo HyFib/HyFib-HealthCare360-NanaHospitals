@@ -207,6 +207,10 @@ export interface ClearanceDto {
   dischargeWithDuesApproved: boolean;
   /** Every service is on a finalized interim bill: a final bill would hold nothing, so none is needed. */
   billedOnInterimBills: boolean;
+  /** Returns after a final bill a payer or a package shared: credited on it (`finalBillId`), not billed; they hold nothing up. */
+  returnsToCreditCount?: number;
+  returnsToCreditAmount?: number;
+  finalBillId?: string | null;
 }
 
 export interface IpAccountFilters {

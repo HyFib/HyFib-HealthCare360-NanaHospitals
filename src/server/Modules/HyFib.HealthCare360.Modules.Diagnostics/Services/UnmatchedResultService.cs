@@ -12,6 +12,7 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 internal sealed class UnmatchedResultService(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     LabWorkflow workflow,
     LabResultService results,
     CriticalValueNotifier critical,
@@ -30,9 +31,22 @@ internal sealed class UnmatchedResultService(
     /// </summary>
     internal const string PatientMismatchReason = "The analyser named another patient for the sample:";
 
-    /// <summary>Why a result assigned by hand waits for a person: always that a person chose where it goes, and a patient mismatch.</summary>
-    internal static IReadOnlyList<string> HeldReasons(UnmatchedLabResult unmatched) =>
-        unmatched.Reason == UnmatchedResultReason.PatientMismatch ? [AssignedReason, $"{PatientMismatchReason} {unmatched.Detail}"] : [AssignedReason];
+    /// <summary>
+    /// Stored as well on a result kept for a mistyped tube number and assigned by hand, followed by the number the analyser
+    /// sent: the pathologist verifying it sees that a person, not the tube number, chose the tube.
+    /// </summary>
+    internal const string MistypedTubeNumberReason = "The analyser sent a tube number whose check digit does not match, so a person chose the tube:";
+
+    /// <summary>
+    /// Why a result assigned by hand waits for a person: always that a person chose where it goes, and a patient mismatch or
+    /// a mistyped tube number.
+    /// </summary>
+    internal static IReadOnlyList<string> HeldReasons(UnmatchedLabResult unmatched) => unmatched.Reason switch
+    {
+        UnmatchedResultReason.PatientMismatch => [AssignedReason, $"{PatientMismatchReason} {unmatched.Detail}"],
+        UnmatchedResultReason.MistypedTubeNumber => [AssignedReason, $"{MistypedTubeNumberReason} {unmatched.SampleBarcode} was typed on the analyser."],
+        _ => [AssignedReason],
+    };
 
     /// <summary>The facility's results waiting to be matched (or those assigned or discarded), newest first.</summary>
     public async Task<PagedResult<UnmatchedResultDto>> ListAsync(PageRequest page, UnmatchedResultStatus status, CancellationToken ct)
@@ -139,12 +153,15 @@ internal sealed class UnmatchedResultService(
             Details = new { unmatched.SampleBarcode, sample, resultId = target.Id, reason = unmatched.Reason.ToString() },
         });
 
+        // What HC360 calculates from the value is calculated again (N7).
+        var calculated = await calculator.CalculateAsync([target.SampleId], now, ct);
         await workflow.RefreshAsync([target.LabOrderId], now, ct);
         await db.SaveChangesAsync(ct);
 
-        if (target.IsCritical)
+        var criticals = calculated.Where(r => r.Status == LabResultStatus.Entered).Prepend(target).Where(r => r.IsCritical).Distinct().ToList();
+        if (criticals.Count > 0)
         {
-            await critical.AlertVerifiersAsync(await results.AlertsAsync([target], ct), ct);
+            await critical.AlertVerifiersAsync(await results.AlertsAsync(criticals, ct), ct);
         }
 
         await realtime.PublishAsync(target.FacilityId, "lab.results.entered", new { OrderIds = new[] { target.LabOrderId } }, ct);

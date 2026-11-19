@@ -43,7 +43,7 @@ import { ORDER_PRIORITIES, type OrderPriority } from '@/modules/lab/common/types
 import { priorityLabel, sectionLabel } from '@/modules/lab/labels';
 import { summarizeQc } from '@/modules/lab/qc';
 import { ResultSheetPanel } from '@/modules/lab/ResultSheet';
-import { classifyScan, normalizeScan } from '@/modules/lab/scan';
+import { classifyScan, isMistypedTubeNumber, MISTYPED_TUBE_NUMBER, normalizeScan } from '@/modules/lab/scan';
 import { useLabLive } from '@/modules/lab/useLabLive';
 import { tubeProgress } from '@/modules/lab/worklist';
 
@@ -278,7 +278,13 @@ function WorklistPage() {
 
       <Section>
         <FilterBar>
-          <Field label="Scan sample" className={styles.scan} hint="Barcode or accession number, then Enter">
+          <Field
+            label="Scan sample"
+            className={styles.scan}
+            hint="Barcode or accession number, then Enter"
+            validationState={isMistypedTubeNumber(term) ? 'warning' : 'none'}
+            validationMessage={isMistypedTubeNumber(term) ? MISTYPED_TUBE_NUMBER : undefined}
+          >
             <Input
               ref={scanRef}
               value={term}

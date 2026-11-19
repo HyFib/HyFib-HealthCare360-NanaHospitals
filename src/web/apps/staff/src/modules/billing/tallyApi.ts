@@ -59,11 +59,44 @@ export interface TallyExportDto {
   tallyCheckMessage: string | null;
 }
 
+/** How a part of a line on a party's ledger stands against the party's bills (mirrors `AccountingBillType`). */
+export type AccountingBillType = 'NewRef' | 'AgainstRef' | 'Advance' | 'OnAccount';
+
+/** How money moved through the bank (mirrors `AccountingBankTransaction`). */
+export type AccountingBankTransaction = 'Others' | 'Cheque' | 'EFundTransfer';
+
+export interface AccountingBillAllocation {
+  name: string | null;
+  type: AccountingBillType;
+  amount: number;
+}
+
+export interface AccountingBankAllocation {
+  date: string;
+  transactionType: AccountingBankTransaction;
+  amount: number;
+  instrumentNumber: string | null;
+  instrumentDate: string | null;
+  bankName: string | null;
+}
+
 export interface AccountingEntry {
   ledgerName: string;
   amount: number;
   isDebit: boolean;
   costCentre: string | null;
+  /** Bill references on a payer's or supplier's ledger (New Ref, Agst Ref, On Account). */
+  billAllocations?: AccountingBillAllocation[];
+  /** The cheque or UTR on a line of a bank ledger. */
+  bankAllocations?: AccountingBankAllocation[];
+}
+
+/** The GST party of a B2B sale or a purchase. */
+export interface AccountingParty {
+  ledgerName: string;
+  gstin: string | null;
+  stateName: string | null;
+  placeOfSupply: string | null;
 }
 
 export interface AccountingVoucher {
@@ -76,6 +109,10 @@ export interface AccountingVoucher {
   remoteId: string | null;
   key: string;
   amount: number;
+  party?: AccountingParty | null;
+  /** A purchase's bill as the supplier numbered and dated it. */
+  supplierInvoiceNumber?: string | null;
+  supplierInvoiceDate?: string | null;
 }
 
 /** Counts of a day's vouchers by where they stand (`TallySending`). */
@@ -148,6 +185,21 @@ export interface TallyDayCheck {
   canCheckTally: boolean;
 }
 
+/** What a patient's voucher's narration says of the patient (mirrors `TallyNarrationPatient`). */
+export type TallyNarrationPatient = 'None' | 'UhidOnly' | 'NameAndUhid';
+
+/** Which stores' goods receipts the day book posts as purchases (mirrors `TallyPurchaseStores`). */
+export type TallyPurchaseStores = 'Pharmacy' | 'All' | 'None';
+
+/** The voucher types the day book's sales and purchases go to (`TallyVoucherTypes`). */
+export interface TallyVoucherTypes {
+  inPatient: string;
+  outPatient: string;
+  laboratory: string;
+  pharmacy: string;
+  purchase: string;
+}
+
 /** A counter that bills its own sales (pharmacy, canteen) in the ledger settings. */
 export interface TallyCounterLedgers {
   include: boolean;
@@ -186,9 +238,29 @@ export interface TallyLedgerMap {
   /** The card and UPI settlement journal: the bank the acquirer pays into and its charges (GST on them: gatewayInputGst). */
   posSettlementBank: string;
   posCharges: string;
+  /** Supplier documents: goods returned, input GST taken back, payable adjustments, and each supplier's ledger. */
+  purchaseReturns: string;
+  inputCgst: string;
+  inputSgst: string;
+  inputIgst: string;
+  vendorAdjustments: string;
+  ledgerPerVendor: boolean;
+  sundryCreditors: string;
+  /** Goods bought (a goods receipt's taxable value), per GST rate with `salesLedgerPerGstRate`. */
+  purchases: string;
+  purchasesFrom: TallyPurchaseStores;
   pharmacy: TallyCounterLedgers;
   canteen: TallyCounterLedgers;
+  /** Sales of the pharmacy and the canteen, and purchases, go to a ledger per GST rate ("Pharmacy Sales @ 12%"). */
   salesLedgerPerGstRate: boolean;
+  /** GST goes to a ledger per tax and rate ("Output CGST @ 6%" for 12%). */
+  gstLedgerPerRate: boolean;
+  /** The pharmacy posts one voucher per invoice; off, its day's summary. */
+  pharmacyPerInvoice: boolean;
+  voucherTypes: TallyVoucherTypes;
+  patientInNarration: TallyNarrationPatient;
+  /** The ledgers that are bank accounts in Tally; null: the ledgers HC360 posts bank money to. */
+  bankLedgers: string[] | null;
   /**
    * The version of the facility's saved names; absent while the facility uses the hospital-wide ones. Sent back with a
    * change, so names saved meanwhile by someone else are not overwritten (REL-04).

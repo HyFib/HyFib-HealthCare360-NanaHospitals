@@ -395,13 +395,58 @@ internal sealed class AccountApprovals(
     internal static async Task<List<UserSession>> RevokeAllSessionsAsync(HospitalDbContext db, Guid userId, string reason, DateTimeOffset now, CancellationToken ct)
     {
         var active = await db.Set<UserSession>().Where(s => s.UserId == userId && s.RevokedAt == null).ToListAsync(ct);
-        foreach (var session in active)
+        End(active, reason, now);
+        return active;
+    }
+
+    /// <summary>
+    /// Ends the live sessions <paramref name="user"/>, as saved, may no longer keep (<see cref="FacilityGrant.KeepsSession"/>),
+    /// in <paramref name="db"/>, unsaved, and returns them: the caller saves, then tells every server with
+    /// <see cref="Invalidate"/>. Those are a session in a facility the user no longer works in, and, unless the user is a
+    /// Super Administrator, one signed in to no facility, whether the user is given some facilities or all of them. A
+    /// patient's sessions, which are in no facility, are left alone.
+    /// </summary>
+    /// <param name="superAdministrator">The user holds the Super Administrator role, as saved.</param>
+    internal static async Task<List<UserSession>> RevokeSessionsOutsideAsync(
+        HospitalDbContext db, User user, bool superAdministrator, DateTimeOffset now, CancellationToken ct)
+    {
+        // A Super Administrator works in every facility, and may hold a session in none.
+        if (superAdministrator || user.Type == UserType.Patient)
+        {
+            return [];
+        }
+
+        var facilities = user.Facilities.Select(f => f.FacilityId).ToList();
+        var outside = (await db.Set<UserSession>().Where(s => s.UserId == user.Id && s.RevokedAt == null && s.ExpiresAt > now).ToListAsync(ct))
+            .Where(s => !FacilityGrant.KeepsSession(s.FacilityId, user.AllFacilities, facilities, superAdministrator: false))
+            .ToList();
+        foreach (var session in outside)
+        {
+            session.RevokedAt = now;
+            session.RevokedReason = session.FacilityId is null ? FacilityGrant.FacilityRequiredReason : FacilityGrant.FacilityRemovedReason;
+        }
+
+        return outside;
+    }
+
+    /// <summary>
+    /// Ends the live sessions signed in to a facility taken out of use, in <paramref name="db"/>, unsaved, and returns them:
+    /// the caller saves, then tells every server with <see cref="Invalidate"/>.
+    /// </summary>
+    internal static async Task<List<UserSession>> RevokeSessionsInAsync(HospitalDbContext db, Guid facilityId, DateTimeOffset now, CancellationToken ct)
+    {
+        var inside = await db.Set<UserSession>().Where(s => s.FacilityId == facilityId && s.RevokedAt == null && s.ExpiresAt > now).ToListAsync(ct);
+        End(inside, FacilityGrant.FacilityInactiveReason, now);
+        return inside;
+    }
+
+    private static void End(IEnumerable<UserSession> sessions, string reason, DateTimeOffset now)
+    {
+        foreach (var session in sessions)
         {
             session.RevokedAt = now;
             session.RevokedReason = reason;
         }
-
-        return active;
     }
 
     /// <summary>

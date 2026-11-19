@@ -212,7 +212,7 @@ public static class PersonalDataCatalogue
                 new("supportservices.ambulance_trips", "Ambulance trips", Counted: false),
             ]),
         new("billing", "Bills, payments and insurance",
-            "Your bills, payments, refunds, deposits, insurance policies and claims.",
+            "Your bills, payments, refunds, deposits, insurance policies and claims. The hospital's accounts (Tally) record your name and UHID with your bills and payments, or only your UHID if your record is restricted or confidential.",
             "To bill you, take payments and handle insurance claims.",
             "Needed to provide the service; tax law requires financial records to be kept.", PersonalDataRetention.Finance,
             [

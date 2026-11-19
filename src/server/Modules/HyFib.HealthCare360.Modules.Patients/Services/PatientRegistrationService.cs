@@ -472,7 +472,10 @@ public sealed class PatientRegistrationService(
         return $"{source.Uhid} merged into {target.Uhid}";
     }
 
-    /// <summary>The duplicate and the record it would merge into, if neither is merged already.</summary>
+    /// <summary>
+    /// The duplicate and the record it would merge into, if neither is merged already and the user may open both
+    /// (<see cref="PatientAccessGuard.EnsureCanOpenAsync"/>).
+    /// </summary>
     private async Task<Result<(Patient Source, Patient Target)>> MergeRecordsAsync(Guid sourceId, Guid targetId, bool track, CancellationToken ct)
     {
         if (sourceId == targetId)
@@ -491,6 +494,17 @@ public sealed class PatientRegistrationService(
         if (source.MergedIntoPatientId is not null || target.MergedIntoPatientId is not null)
         {
             return Error.Rule("patient.already_merged", "One of these records has already been merged.");
+        }
+
+        // Whoever asks for a merge, and whoever approves it, reads both records to decide they are one person: a restricted
+        // (VIP) record only if they may open it. An approver who may not is refused, and the request waits for someone who may.
+        foreach (var restricted in new[] { source, target }.Where(p => p.IsVip))
+        {
+            if ((await access.EnsureCanOpenAsync(restricted.Id, ct)).IsFailure)
+            {
+                return Error.Forbidden("patient.restricted",
+                    $"{restricted.Uhid} is a restricted record: only someone who may open it asks for or approves a merge with it.");
+            }
         }
 
         return (source, target);
@@ -541,14 +555,26 @@ public sealed class PatientRegistrationService(
 
         await MovePortalFamilyLinksAsync(source, target, ct);
 
-        // The duplicate's clinical record moves to the surviving one, and so do the categories that keep it confidential (R-4).
-        target.SensitiveCategories |= source.SensitiveCategories;
+        // The duplicate's clinical record moves to the surviving one, and so do its restriction, the categories that keep it
+        // confidential (R-4) and its identifiers (MergeCarryOver).
+        var carried = MergeCarryOver.Apply(source, target);
 
-        // The surviving record takes the duplicate's ABHA number when it has none: a link made by the merge, audited as
-        // every link of a national health ID is.
-        if (target.AbhaNumberCipher is null && source.AbhaNumberCipher is not null)
+        // A restriction the merge carried, which only someone who may open restricted records lifts.
+        if (carried.Restriction)
         {
-            (target.AbhaNumberCipher, target.AbhaNumberIndex, target.AbhaNumberMasked) = (source.AbhaNumberCipher, source.AbhaNumberIndex, source.AbhaNumberMasked);
+            audit.Add(new AuditEntry(AuditCategories.Security, "patient.restriction_carried", $"VIP restriction carried over to {target.Uhid} by the merge of {source.Uhid}")
+            {
+                PatientId = target.Id,
+                EntityType = nameof(Patient),
+                EntityId = target.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+                Details = new { restricted = true, mergedFrom = source.Uhid },
+            });
+        }
+
+        // An ABHA number taken from the duplicate is a link made by the merge, audited as every link of a national health ID is.
+        if (carried.AbhaNumber)
+        {
             audit.Add(new AuditEntry(AuditCategories.Data, AbhaChangedAction, $"Merged from {source.Uhid}: ABHA number {source.AbhaNumberMasked} linked")
             {
                 PatientId = target.Id,
@@ -558,8 +584,6 @@ public sealed class PatientRegistrationService(
             });
         }
 
-        target.AadhaarLast4 ??= source.AadhaarLast4;
-        target.AadhaarIndex ??= source.AadhaarIndex;
         source.MarkMergedInto(target.Id);
 
         audit.Add(new AuditEntry(AuditCategories.Clinical, "patient.merged", $"Merged {source.Uhid} into {target.Uhid}: {reason}")

@@ -25,6 +25,9 @@ public enum SpecimenType
     BodyFluid,
     Tissue,
     Other,
+
+    /// <summary>Arterial blood for blood gases, drawn without air into a heparinised syringe (container Heparin).</summary>
+    ArterialBlood,
 }
 
 /// <summary>Collection container (cap colours follow the common Indian vacutainer convention).</summary>

@@ -42,6 +42,11 @@ export interface NumberSeriesItem {
   defaultResetPolicy: NumberResetPolicy;
   /** Why every format of this series must carry {FAC} (a sentence), whatever the number of facilities; null otherwise. */
   facilityCodeReason?: string | null;
+  /**
+   * The lowest running number the series issues (1 when absent): tube numbers count from 100000000, so that every one,
+   * with its check digit, has 10 digits. The next number cannot be set below it.
+   */
+  firstNumber?: number;
 }
 
 export interface NumberSeriesList {

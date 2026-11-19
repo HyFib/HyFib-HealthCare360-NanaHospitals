@@ -204,8 +204,11 @@ public sealed class ClaimService(
     }
 
     /// <summary>
-    /// Rejection disallows the unpaid balance on the bill (recovered from the patient by a new bill or written off). Above
-    /// the threshold nothing changes until someone else approves: the claim stays open, the insurer still owes it.
+    /// Rejection disallows the unpaid balance on the bill: the loss is written off (the deduction's journal in Tally). To
+    /// recover it from the patient instead, the billing desk takes it off the payer's invoice with a payer credit note and
+    /// charges it to the patient with a patient debit note, both on the same bill; the bill is not cancelled and billed
+    /// again, as a cancellation would reverse it in full while the deduction stays (<see cref="Bill.Cancel"/>). Above the
+    /// threshold nothing changes until someone else approves: the claim stays open, the insurer still owes it.
     /// </summary>
     public async Task<Result<ClaimWriteOffOutcome>> RejectAsync(Guid id, RejectClaimRequest request, CancellationToken ct)
     {

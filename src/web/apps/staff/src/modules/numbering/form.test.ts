@@ -103,14 +103,20 @@ describe('the list', () => {
     series(),
     ipBill,
     uhid,
-    series({ key: 'lab.sample', name: 'Sample tube barcode', area: 'Laboratory', format: '{SEQ:9}' }),
+    series({
+      key: 'lab.sample',
+      name: 'Sample tube number',
+      area: 'Laboratory',
+      format: '{SEQ:9}{CHK}',
+      firstNumber: 100_000_000,
+    }),
   ];
 
   it('is ordered by area then name, or by name', () => {
     expect(sortSeries(rows, 'area', false).map((s) => s.name)).toEqual([
       'IP bill',
       'OP bill',
-      'Sample tube barcode',
+      'Sample tube number',
       'UHID (patient number)',
     ]);
     expect(sortSeries(rows, 'name', true).map((s) => s.name)[0]).toBe('UHID (patient number)');
@@ -119,7 +125,7 @@ describe('the list', () => {
 
   it('is filtered by area and by name, area or format', () => {
     expect(filterSeries(rows, 'Billing', undefined).map((s) => s.name)).toEqual(['OP bill', 'IP bill']);
-    expect(filterSeries(rows, undefined, 'seq:9').map((s) => s.name)).toEqual(['Sample tube barcode']);
+    expect(filterSeries(rows, undefined, '{chk}').map((s) => s.name)).toEqual(['Sample tube number']);
     expect(filterSeries(rows, undefined, 'patients').map((s) => s.name)).toEqual(['UHID (patient number)']);
   });
 });

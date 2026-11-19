@@ -267,6 +267,11 @@ public sealed class RefundService(
             return Error.NotFound(nameof(Bill), billId);
         }
 
+        if (request.Kind == CreditNoteKind.PayerReturn)
+        {
+            return Error.Rule("billing.credit_returns_on_the_bill", "Returns are credited with the bill's returns credit, which works out the payer's share.");
+        }
+
         var amount = Money.Round(request.Amount);
         var creditable = request.Kind == CreditNoteKind.PayerShare ? await PayerCreditableAsync(bill, amount, ct) : bill.CanCredit(amount);
         if (creditable.IsFailure)
@@ -509,8 +514,12 @@ public sealed class RefundService(
             : Result.Success();
     }
 
+    /// <summary>
+    /// What payer credit notes already took off the payer's invoice: of deductions, and of its share of returns (which
+    /// counts in what it will not pay, <see cref="Bill.ApplyPayerCredit"/>, and is credited once).
+    /// </summary>
     private Task<decimal> PayerCreditedAsync(Guid billId, CancellationToken ct) =>
-        db.Set<CreditNote>().Where(c => c.BillId == billId && c.Kind == CreditNoteKind.PayerShare).SumAsync(c => c.Amount, ct);
+        db.Set<CreditNote>().Where(c => c.BillId == billId && (c.Kind == CreditNoteKind.PayerShare || c.Kind == CreditNoteKind.PayerReturn)).SumAsync(c => c.Amount, ct);
 
     /// <summary>The date the bill was invoiced, from which the time to reduce its GST runs.</summary>
     private static DateOnly BillDate(Bill bill) => BillingTime.LocalDate(bill.FinalizedAt ?? bill.CreatedAt);
