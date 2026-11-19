@@ -219,5 +219,43 @@
   "lufs": -16.0,
   "seconds": 295.5,
   "madeBy": "render worker 3"
+ },
+ "w2-front-office": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 25,
+  "wer": 3.76,
+  "wpm": 126.6,
+  "maxCps": 15.7,
+  "lufs": -16.0,
+  "seconds": 356.8,
+  "megabytes": 16.8,
+  "madeBy": "render worker 2"
+ },
+ "w4-cardiologist": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 20,
+  "wer": 3.62,
+  "wpm": 122.1,
+  "maxCps": 15.6,
+  "lufs": -16.0,
+  "seconds": 288.3,
+  "megabytes": 12.6,
+  "madeBy": "render worker 2"
  }
 }
