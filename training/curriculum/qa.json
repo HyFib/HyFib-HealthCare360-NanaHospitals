@@ -1,0 +1,56 @@
+{
+ "00-getting-started": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 23,
+  "wer": 1.16,
+  "wpm": 138.3,
+  "maxCps": 16.9,
+  "lufs": -16,
+  "seconds": 393.7,
+  "megabytes": 17.4
+ },
+ "01-everyday-tools": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 23,
+  "wer": 2.64,
+  "wpm": 130.5,
+  "maxCps": 16.2,
+  "lufs": -16,
+  "seconds": 380.9,
+  "megabytes": 19.5
+ },
+ "02-find-patient": {
+  "passed": false,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": false,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 17,
+  "wer": 3.83,
+  "wpm": 137.5,
+  "maxCps": 15.9,
+  "lufs": -16,
+  "seconds": 294.2,
+  "megabytes": 14
+ }
+}
