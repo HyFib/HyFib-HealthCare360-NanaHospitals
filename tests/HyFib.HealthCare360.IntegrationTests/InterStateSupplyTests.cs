@@ -132,7 +132,11 @@ public sealed class InterStateSupplyTests(HospitalServer server)
         (counter.CgstAmount + counter.SgstAmount).ShouldBe(sale.IgstAmount);
     }
 
-    /// <summary>A corporate visit with one charge of <paramref name="service"/>, billed and finalized by the billing desk.</summary>
+    /// <summary>
+    /// A corporate visit with one charge of <paramref name="service"/>, billed and finalized by the billing desk. The bill
+    /// takes that charge alone: a new patient's first visit also carries the registration fee (REG-NEW, charged at
+    /// check-in), which is left for another bill.
+    /// </summary>
     private async Task<BillDetail> BillAsync(PayerDetail company, ServiceItemDto service)
     {
         var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
@@ -149,9 +153,10 @@ public sealed class InterStateSupplyTests(HospitalServer server)
             TokenPriority.Normal, IssueToken: false, NotifyPatient: false));
 
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
-        await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(
+        var charge = await billing.PostAsync<ChargeDto>("/api/v1/billing/charges", new PostChargeRequest(
             patient.Id, visit.Id, null, service.Id, 1m, null, null, null, null, null));
-        var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, null, null));
+        var draft = await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, null, [charge.Id]));
+        draft.Lines.ShouldHaveSingleItem().ChargeId.ShouldBe(charge.Id);
         return await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize", new BillVersionRequest(draft.Version));
     }
 
