@@ -54,7 +54,12 @@ training/pipeline/server.sh snapshot morning    # every video starts from here, 
 training/pipeline/check.sh 02-find-patient      # an author's check: runs the storyboard, lists its screenshots
 training/pipeline/make.sh 02-find-patient       # the video: capture, narrate, compose, check
 training/pipeline/make.sh --all
+training/pipeline/retell.sh 02-find-patient     # after a change of wording only: new words over the same screens
 ```
+
+`retell.sh` needs no training server: the words are the storyboard's fields alone (`pipeline/narration.mjs`), so the
+narration, the cards and the ending can be made again over the screens already captured on that machine. It refuses
+when the steps themselves changed (a step added or removed, or a different action): that needs `make.sh`.
 
 ## Writing a storyboard
 
@@ -67,7 +72,11 @@ node training/pipeline/explore.mjs pharmacist /pharmacy/queue shot.png --click "
 A storyboard (see `storyboards/02-find-patient.mjs`) exports `id`, `title`, `role` (the built-in role, or `*`),
 `roleLabel`, `user` (the training account), `wave`, `audience`, `intro`, `objectives` (2 to 4, each one task),
 `modules` and `covers` (the menu paths it teaches, for the coverage table), `scenes` of `steps`, `recap`, `check`
-(two questions with answers) and `next`. Options: `desk: true` sets the workstation's desk (queue at General Medicine,
+(two questions with answers), and for a shared video `next`, the title of the video every learner watches next.
+A role's video is the last on that role's path, so it ends with practice instead: on the training server until the
+learner can finish the department's day script without help, the check before go-live
+([MODULE-ROLLOUT-PLAN.md](../docs/deployment/MODULE-ROLLOUT-PLAN.md), section 6, step 7). `outro` (the last words)
+and `endLines` (the end card's lines) replace the ending, as the patient portal's does for patients. Options: `desk: true` sets the workstation's desk (queue at General Medicine,
 room OPD-01; nurses' station on the female ward; OP counter 1); `signIn: 'on-screen'` films the sign-in.
 `setup: async ({ api }) => { ... }` makes data that other roles would have made earlier in the day, through the API
 as those roles (`await api('purchase')`), after the training server is restored and before the filmed steps: a
