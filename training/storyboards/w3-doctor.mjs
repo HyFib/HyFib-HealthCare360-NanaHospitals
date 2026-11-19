@@ -173,7 +173,7 @@ export default {
           say: 'Click Check safety. HC360 checks the allergies, the current medicines, interactions, duplicates and the maximum dose.',
           after:
             'No problem was found. If it finds one, signing is blocked until you change the prescription, or give your clinical reason. Every override is recorded.',
-          wait: { text: 'Safety check passed' },
+          wait: { role: 'button', name: 'Check again' },
           zoom: 1.3,
         },
         {
