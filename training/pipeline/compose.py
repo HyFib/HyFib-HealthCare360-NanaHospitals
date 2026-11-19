@@ -550,61 +550,67 @@ class Video:
                 for s in self.nar[sid]["sentences"]:
                     for a, b, text in split_sentence(s):
                         cues.append([start + a, start + b, text])
-        # Linger a little after each cue, never into the next; keep at least 0.9 s on screen.
+        # Linger a little after each cue and keep at least 0.9 s on screen. A cue followed within 0.6 s by the next
+        # stays until it (2 frames apart), so the band does not blink empty between two sentences.
+        gap = 2 / FPS
         for i, c in enumerate(cues):
-            nxt = cues[i + 1][0] if i + 1 < len(cues) else c[1] + 2
-            c[1] = min(max(c[1] + 0.25, c[0] + 0.9), nxt - 0.04) if nxt > c[0] + 0.3 else c[1]
+            nxt = cues[i + 1][0] if i + 1 < len(cues) else None
+            end = max(c[1] + 0.25, c[0] + 0.9)
+            if nxt is not None:
+                if nxt - end < 0.6:
+                    end = nxt - gap
+                end = min(end, nxt - gap)
+            c[1] = max(end, c[0] + 0.3)
         return [(a, b, t) for a, b, t in cues]
 
 
 def split_sentence(s: dict) -> list[tuple[float, float, str]]:
     """A sentence as caption cues of at most two lines of 42 characters, timed in proportion to what is spoken."""
     text, start, end = s["text"], s["start"], s["end"]
-    chunks = chunk(text, 84)
-    weights = [max(1, len(c)) for c in chunks]
+    cues = cue_texts(text)
+    weights = [max(1, len(c.replace("\n", " "))) for c in cues]
     total = sum(weights)
     out, t = [], start
-    for c, wgt in zip(chunks, weights):
+    for c, wgt in zip(cues, weights):
         d = (end - start) * wgt / total
-        out.append((t, t + d, two_lines(c)))
+        out.append((t, t + d, c))
         t += d
     return out
 
 
-def chunk(text: str, limit: int) -> list[str]:
-    if len(text) <= limit:
-        return [text]
+CONJUNCTIONS = ("and", "but", "so", "then", "which", "when", "where", "or", "because", "until", "before", "after", "if",
+                "while", "with", "for", "to")
+
+
+def best_split(text: str, limit: int | None = None) -> tuple[str, str] | None:
+    """The best place to cut a text in two: near the middle, after punctuation or before a conjunction."""
     words = text.split()
     best = None
     for i in range(1, len(words)):
         a, b = " ".join(words[:i]), " ".join(words[i:])
-        if len(a) > limit:
-            break
+        if limit and (len(a) > limit or len(b) > limit):
+            continue
         score = abs(len(a) - len(b))
         if a.endswith((",", ";", ":", "—")):
             score -= 25
-        elif words[i].lower() in ("and", "but", "so", "then", "which", "when", "where", "or", "because", "until", "before", "after", "if"):
-            score -= 15
+        elif words[i].lower() in CONJUNCTIONS:
+            score -= 12
         if best is None or score < best[0]:
             best = (score, a, b)
-    if best is None:
-        return [text]
-    return chunk(best[1], limit) + chunk(best[2], limit)
+    return (best[1], best[2]) if best else None
 
 
-def two_lines(text: str) -> str:
+def cue_texts(text: str) -> list[str]:
+    """Cue texts for a sentence: each at most two lines of at most 42 characters (cut in two until it fits)."""
     if len(text) <= 42:
-        return text
-    words = text.split()
-    best = None
-    for i in range(1, len(words)):
-        a, b = " ".join(words[:i]), " ".join(words[i:])
-        if len(a) > 42 or len(b) > 42:
-            continue
-        score = abs(len(a) - len(b)) - (8 if a.endswith((",", ";", ":")) else 0)
-        if best is None or score < best[0]:
-            best = (score, a, b)
-    return f"{best[1]}\n{best[2]}" if best else text
+        return [text]
+    lines = best_split(text, 42) if len(text) <= 85 else None
+    if lines:
+        return [f"{lines[0]}\n{lines[1]}"]
+    parts = best_split(text)
+    if parts is None:  # one word longer than a line: nothing to cut
+        return [text]
+    return cue_texts(parts[0]) + cue_texts(parts[1])
 
 
 def draw_ring(im: Image.Image, p0: tuple, p1: tuple, alpha: float) -> None:
