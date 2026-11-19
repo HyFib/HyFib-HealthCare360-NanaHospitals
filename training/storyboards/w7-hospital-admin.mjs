@@ -3,7 +3,7 @@
 // hospital administrator at 11:10 am. setup() has the system administrator ask for a new account, as he would earlier.
 
 const nav = { role: 'navigation', name: 'Main navigation' };
-const approve = { role: 'dialog' };
+const approve = { role: 'alertdialog', name: /^Approve/ };
 
 export default {
   id: 'w7-hospital-admin',

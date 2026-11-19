@@ -1,17 +1,29 @@
 const nav = { role: 'navigation', name: 'Main navigation' };
 
+// Wave 1 (the stores and purchase go live with the pharmacy at Nana Hospitals): the purchase officer's day. Turning an
+// approved requisition into a purchase order, and checking the goods receipt the store keeper entered before the goods
+// go into stock. Recorded as the purchase officer (Malathi Sekar) at 11:10 am. Setup, as the others would have done it
+// earlier: an order to Coromandel Surgicals (approved by the hospital administrator, sent to the vendor) and the store
+// keeper's goods receipt against it, sent for approval; and a requisition for gauze swabs that the hospital
+// administrator approved.
+
 const story = {
   id: 'w1-purchase-officer',
-  title: 'Purchase officer: draft',
+  title: 'Purchase officer: order from a requisition, approve goods receipts',
   role: 'PurchaseOfficer',
   roleLabel: 'Purchase officer',
   user: 'purchase',
   wave: 1,
-  audience: 'x',
-  intro: 'x',
-  objectives: ['a', 'b'],
-  modules: ['purchase'],
-  covers: ['/purchase'],
+  audience: 'For the purchase officers and purchase staff of Nana Hospitals.',
+  intro:
+    'Purchase turns what the stores need into orders to vendors, and checks that the goods that arrive match the vendor’s invoice. In HC360 every step has a record, and the goods enter stock only after a second person checks them.',
+  objectives: [
+    'Turn an approved requisition into a purchase order.',
+    'Check and approve the goods receipt that the store keeper entered.',
+    'See the received goods in stock.',
+  ],
+  modules: ['purchase', 'inventory', 'approvals'],
+  covers: ['/purchase', '/purchase/requisitions', '/purchase/grns', '/inventory/stock', '/approvals'],
   setup: async ({ api }) => {
     const purchase = await api('purchase');
     const admin = await api('hospitaladmin');
@@ -67,33 +79,133 @@ const story = {
   },
   scenes: [
     {
-      title: 'Order',
+      title: 'Turn a requisition into a purchase order',
       steps: [
-        { click: { within: nav, role: 'button', name: 'Purchase' }, say: 'Open Purchase.' },
-        { nav: 'Requisitions', say: 'Open Requisitions.', wait: { role: 'table', name: 'Requisitions' } },
-        { click: { role: 'row', name: /Central Store/ }, say: 'Open it.', wait: { role: 'button', name: 'Create purchase order' } },
-        { click: { role: 'button', name: 'Create purchase order' }, say: 'Create.', wait: { role: 'heading', name: 'New purchase order' } },
-        { fill: [{ label: 'Vendor' }, 'Coromandel'], say: 'vendor', wait: { role: 'option' } },
-        { click: { role: 'option', name: /Coromandel/ }, say: 'pick vendor' },
-        { fill: [{ label: 'Rate of Gauze Swab 10 x 10 cm Sterile (8 ply)' }, '38'], say: 'rate' },
-        { click: { role: 'button', name: 'Save and send for approval' }, say: 'save', wait: { role: 'heading', name: /^Purchase order/ } },
+        {
+          click: { within: nav, role: 'button', name: 'Purchase' },
+          say: 'Open Purchase from the menu.',
+        },
+        {
+          nav: 'Purchase overview',
+          say: 'Open the Purchase overview.',
+          after: 'One approved requisition is waiting to become an order, and one goods receipt is not posted yet.',
+          wait: { role: 'button', name: /^Approved, not ordered 1/ },
+          result: { role: 'button', name: /^Approved, not ordered 1/ },
+        },
+        {
+          nav: 'Requisitions',
+          say: 'Open Requisitions.',
+          wait: { role: 'table', name: 'Requisitions' },
+        },
+        {
+          click: { role: 'row', name: /Central Store/ },
+          say: 'Open the requisition for the Central Store.',
+          after: 'It asks for 40 packets of gauze swabs. The hospital administrator has approved it.',
+          wait: { role: 'button', name: 'Create purchase order' },
+        },
+        {
+          click: { role: 'button', name: 'Create purchase order' },
+          say: 'Click Create purchase order.',
+          after: 'The item is already on the order. Choose the vendor and enter the rate.',
+          wait: { role: 'heading', name: 'New purchase order' },
+        },
+        {
+          fill: [{ label: 'Vendor' }, 'Coromandel'],
+          say: 'Type the name of the vendor.',
+          wait: { role: 'option' },
+          zoom: 1.4,
+        },
+        {
+          click: { role: 'option', name: /Coromandel/ },
+          say: 'Choose Coromandel Surgicals from the list.',
+          zoom: 1.4,
+        },
+        {
+          fill: [{ label: 'Rate of Gauze Swab 10 x 10 cm Sterile (8 ply)' }, '38'],
+          say: 'Type the rate for one packet, from the vendor’s quotation. The rate does not include GST.',
+          after: 'HC360 adds the GST and shows the total of the order.',
+          wait: { text: /Estimated total/ },
+          zoom: 1.3,
+        },
+        {
+          click: { role: 'button', name: 'Save and send for approval' },
+          say: 'Click Save and send for approval.',
+          after: 'The order waits for a purchase approver. It goes to the vendor only after it is approved and sent.',
+          wait: { text: /Waiting for approval by a purchase approver/ },
+        },
       ],
     },
     {
-      title: 'Approve',
+      title: 'Approve the goods receipt',
       steps: [
-        { nav: 'Approvals', say: 'Open Approvals.', wait: { role: 'heading', name: 'Approvals' } },
-        { click: { role: 'button', name: 'Approve' }, say: 'approve', wait: { text: /^Approve: / } },
-        { click: { role: 'button', name: 'Approve', last: true }, say: 'approve2', wait: { text: /Nothing is waiting/ } },
-        { nav: 'Goods receipts', say: 'Open Goods receipts.', wait: { role: 'row', name: /Coromandel Surgicals/ } },
-        { nav: 'Stock and batches', say: 'Open Stock and batches.', wait: { role: 'heading', name: 'Stock and batches' } },
-        { fill: [{ label: 'Search' }, 'Gloves'], say: 'search', wait: { role: 'row', name: /Examination Gloves/ } },
+        {
+          nav: 'Approvals',
+          say: 'Open Approvals.',
+          after:
+            'The goods receipt that Selvaraj Pandian entered waits for your decision. Nobody approves their own request.',
+          wait: { role: 'row', name: /GRN NHGRN26000001/ },
+        },
+        {
+          show: { role: 'row', name: /GRN NHGRN26000001/ },
+          say: 'The receipt is for ₹7,403.00 from Coromandel Surgicals. Check it against the vendor’s invoice before you approve: the items, the batches and the total.',
+          zoom: 1.3,
+        },
+        {
+          click: { role: 'button', name: 'Approve' },
+          say: 'Click Approve.',
+          after: 'HC360 asks for an optional note.',
+          wait: { text: /^Approve: goods receipt/ },
+        },
+        {
+          click: { role: 'button', name: 'Approve', last: true },
+          say: 'Click Approve again to confirm.',
+          after: 'Nothing is waiting for your decision now.',
+          wait: { text: /Nothing is waiting for your decision/ },
+        },
+        {
+          nav: 'Goods receipts',
+          say: 'Open Goods receipts.',
+          after: 'The receipt is Posted. Posting adds the batches to stock.',
+          wait: { role: 'row', name: /Coromandel Surgicals.*Posted/ },
+        },
+      ],
+    },
+    {
+      title: 'See the goods in stock',
+      steps: [
+        {
+          click: { within: nav, role: 'button', name: 'Stores and inventory' },
+          say: 'Open Stores and inventory from the menu.',
+        },
+        {
+          nav: 'Stock and batches',
+          say: 'Open Stock and batches.',
+          wait: { role: 'heading', name: 'Stock and batches' },
+        },
+        {
+          fill: [{ label: 'Search' }, 'Gloves'],
+          say: 'Search for the gloves that were received.',
+          wait: { role: 'row', name: /Examination Gloves/ },
+        },
       ],
     },
   ],
-  recap: ['a', 'b', 'c'],
-  check: [{ q: 'q', a: 'a' }, { q: 'q', a: 'a' }],
-  next: 'x',
+  recap: [
+    'Turn an approved requisition into an order: choose the vendor, enter the rate, and send the order for approval.',
+    'Approve a goods receipt only after you have checked it against the vendor’s invoice. You cannot approve a receipt that you entered.',
+    'An approved receipt is Posted, and its batches are in stock.',
+  ],
+  check: [
+    {
+      q: 'Why can the store keeper not approve the goods receipt that he entered?',
+      a: 'Goods go into stock only when someone other than whoever entered them has checked them against the vendor’s invoice.',
+    },
+    {
+      q: 'What do you check before you click Approve on a goods receipt?',
+      a: 'The items, the batches and the total, against the vendor’s invoice.',
+    },
+  ],
+  next: 'Cashier: open a shift, collect payments and close the day',
 };
 // DEVTAIL-BEGIN
 import { appendFileSync as __a, writeFileSync as __w } from 'node:fs';

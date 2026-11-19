@@ -30,7 +30,7 @@ const story = {
         { nav: 'OP billing', say: 'Open OP billing.', wait: { role: 'heading', name: 'OP billing' } },
         { fill: [{ label: 'Patient' }, 'Lakshmi'], say: 'patient', wait: { role: 'option' } },
         { click: { role: 'option', name: /Lakshmi Narayanan/ }, say: 'pick', wait: { role: 'button', name: /^Collect ₹2,400/ } },
-        { click: { role: 'button', name: /^Collect ₹2,400/ }, say: 'collect', wait: { role: 'heading', name: /^Bill NHOB26000001/ } },
+        { click: { role: 'button', name: /^Collect ₹2,400/ }, say: 'collect', wait: { text: /Balance due/i } },
         { click: { role: 'button', name: /^Collect ₹2,400/ }, say: 'collect 2', wait: { text: 'Collect payment' } },
       ],
     },

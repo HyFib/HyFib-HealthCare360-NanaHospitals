@@ -82,6 +82,54 @@ export default {
         {
           click: { within: pay, role: 'button', name: 'Collect ₹2,400.00' },
           say: 'Click Collect.',
+          after:
+            'HC360 records the payment: ₹2,400 received, with its receipt number, and the bill is fully paid. Print the receipt from here, and give it to the patient.',
+          wait: { role: 'heading', name: 'Payment recorded' },
+          result: { text: '₹2,400.00 received' },
+        },
+        {
+          click: { role: 'button', name: 'Done' },
+          say: 'Then click Done.',
+          wait: { role: 'table', name: 'Services on this bill' },
+        },
+      ],
+    },
+    {
+      title: 'Take an advance for an in-patient',
+      steps: [
+        {
+          nav: 'In-patient accounts',
+          say: 'Fatima Begum is in the female general ward. Her family brings an advance. Open In-patient accounts.',
+          wait: { role: 'cell', name: /^Fatima Begum/ },
+        },
+        {
+          click: { role: 'cell', name: /^Fatima Begum/ },
+          say: 'Open her account.',
+          wait: { role: 'heading', name: /^Fatima Begum · NHIP26000001/ },
+        },
+        {
+          show: { role: 'table', name: 'Running bill by category' },
+          say: 'The running bill adds every charge as it is posted: laboratory, imaging, the bed, nursing and the doctor’s visit. So far it is ₹4,050, and no advance is held.',
+          zoom: 1.2,
+        },
+        {
+          click: { role: 'button', name: 'Collect advance' },
+          say: 'Click Collect advance.',
+          wait: advance,
+        },
+        {
+          fill: [{ within: advance, label: 'Amount' }, '5000'],
+          say: 'Her husband pays ₹5,000 in cash. Type the amount. Cash is already chosen.',
+          zoom: 1.4,
+        },
+        {
+          fill: [{ within: advance, label: 'Note on the receipt' }, 'Advance for the ward stay'],
+          say: 'You may write a note for the receipt.',
+          zoom: 1.4,
+        },
+        {
+          click: { within: advance, role: 'button', name: 'Collect ₹5,000.00' },
+          say: 'Click Collect.',
           after: 'RESULT',
           wait: { text: 'RESULT' },
         },

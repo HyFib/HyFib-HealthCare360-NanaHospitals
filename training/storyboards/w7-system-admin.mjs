@@ -88,7 +88,7 @@ export default {
         {
           click: { role: 'tab', name: 'Asked by me' },
           say: 'Open Asked by me.',
-          after: 'Her access is waiting for approval. You cannot approve it yourself: a second administrator does, as the hospital administrator will show.',
+          after: 'Her access is waiting for approval. You cannot approve it yourself: a second administrator does. The hospital administrator’s video shows how.',
           wait: { role: 'row', name: /Kavitha Sundaram/ },
         },
       ],
@@ -114,10 +114,10 @@ export default {
           wait: { role: 'table', name: 'Audit events' },
         },
         {
-          select: [{ label: 'Category' }, 'Admin'],
-          native: true,
-          say: 'Choose a category to narrow the list. Admin shows the work of administrators.',
-          wait: { role: 'table', name: 'Audit events' },
+          fill: [{ label: 'Search' }, 'purchase'],
+          say: 'To follow one person’s work, type the user name. Here, purchase shows what the purchase officer did.',
+          wait: { role: 'cell', name: /^purchase$/ },
+          result: { role: 'table', name: 'Audit events' },
         },
         {
           show: { role: 'button', name: 'Verify integrity' },
@@ -174,7 +174,20 @@ export default {
       ],
     },
   ],
-  recap: ['a', 'b', 'c'],
-  check: [{ q: 'q', a: 'a' }, { q: 'q', a: 'a' }],
-  next: 'x',
+  recap: [
+    'A new user’s roles wait for a second administrator. Give each person only the role that fits the job.',
+    'The audit log records every sign-in, access and change. Nobody can edit or delete an entry.',
+    'Check System health regularly. At the hospital, administration works only in HC360 Desktop on an enrolled computer.',
+  ],
+  check: [
+    {
+      q: 'You add a new user with the Billing role. Can she see billing screens as soon as she signs in?',
+      a: 'No. Her role waits for another administrator to approve it. Until then she can sign in and change her password, but sees nothing.',
+    },
+    {
+      q: 'Why does administration work only in HC360 Desktop at the hospital?',
+      a: 'Administration is limited to computers that IT enrolled. A browser, a kiosk or a queue display cannot administer HC360.',
+    },
+  ],
+  next: 'Hospital administrator: the dashboard, the bed board and approvals',
 };
