@@ -21,7 +21,7 @@ export default {
     'Record a request for a patient’s file, and find the medico-legal, birth and death registers.',
   ],
   modules: ['mrd'],
-  covers: ['/mrd', '/mrd/coding', '/mrd/records', '/mrd/requests', '/emergency/mlc', '/mrd/births', '/mrd/deaths'],
+  covers: ['/mrd', '/mrd/coding', '/mrd/records', '/mrd/requests', '/emergency/mlc', '/mrd/births'],
   scenes: [
     {
       title: 'Code a discharged patient',
@@ -56,7 +56,7 @@ export default {
         {
           click: { role: 'button', name: 'Add A09.9' },
           say: 'Click the plus sign to add A09.9, gastroenteritis.',
-          after: 'The code is in the list, marked as the principal diagnosis, An episode has exactly one principal diagnosis.',
+          after: 'The code is in the list, marked as the principal diagnosis. An episode has exactly one principal diagnosis.',
           wait: { role: 'table', name: 'Codes' },
         },
         {
@@ -89,7 +89,7 @@ export default {
         {
           click: { role: 'button', name: 'Check for gaps' },
           say: 'Click Check for gaps. HC360 looks for missing notes, diagnoses and discharge summaries.',
-          after: 'One deficiency is open: Diagnosis missing, assigned to Dr. Arjun Mehta. It is on his worklist, and the chart cannot be completed until it is resolved.',
+          after: 'One deficiency is open: Diagnosis missing. HC360 looks for a diagnosis recorded during the stay’s consultations, and Sunita Devi’s is only in her discharge summary. The deficiency is on Dr. Arjun Mehta’s worklist, and the chart cannot be completed until it is resolved.',
           wait: { role: 'heading', name: /^Deficiencies \(1 open\)/ },
           result: { role: 'table', name: 'Deficiencies' },
         },
@@ -169,5 +169,4 @@ export default {
       a: 'Within 21 days.',
     },
   ],
-  next: 'CRM executive: leads, follow-up calls and campaigns',
 };

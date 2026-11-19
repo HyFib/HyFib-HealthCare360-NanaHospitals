@@ -20,7 +20,7 @@ export default {
     'Record a quality indicator and read the risk register.',
   ],
   modules: ['quality'],
-  covers: ['/quality/incidents', '/quality/capas', '/quality/indicators', '/quality/risks'],
+  covers: ['/quality/incidents', '/quality/indicators', '/quality/risks'],
   setup: async ({ api }) => {
     const nurse = await api('nurse');
     await nurse.get('/api/v1/quality/incidents/mine');
@@ -176,5 +176,4 @@ export default {
       a: 'An owner and a due date. The quality team checks about 30 days after it is done that it worked.',
     },
   ],
-  next: 'MIS analyst: read the reports, send them on a schedule',
 };
