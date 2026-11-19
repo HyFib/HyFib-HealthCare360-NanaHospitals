@@ -37,9 +37,9 @@ public enum MedicationOrderMode
 }
 
 /// <summary>
-/// A line on the in-patient medication chart: what the doctor ordered. MAR rows are scheduled from its frequency when
-/// the pharmacy dispenses it (or when a ward order is transcribed), so the chart shows only doses that are really
-/// available on the ward.
+/// A line on the in-patient medication chart: what the doctor ordered. MAR rows are scheduled from its frequency once the
+/// pharmacy first supplies it (or when a ward order is transcribed), and from then on the chart is kept a day ahead
+/// (<see cref="KeptChartedAhead"/>) until the order stops or ends, whatever quantity each issue carried.
 /// </summary>
 public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
 {
@@ -139,6 +139,24 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
 
     /// <summary>No dose of this order is given now (<see cref="CanGiveDose"/> says why).</summary>
     public bool DosesHeld => CanGiveDose().IsFailure;
+
+    /// <summary>
+    /// Whether the chart of this order is kept a day ahead (<c>MarChartAheadJob</c>): the order is active, its doses are not
+    /// held, it has not ended, its frequency has rounds, and it is on the chart already: a dose of it is charted
+    /// (<paramref name="hasDoses"/>), the pharmacy has supplied it, or it is a ward order whose start has come. An
+    /// e-prescription line waits for the pharmacy's first supply; a STAT dose is charted once, and SOS doses as given.
+    /// </summary>
+    public bool KeptChartedAhead(bool hasDoses, DateTimeOffset now) =>
+        Status == MedicationOrderStatus.Active && !DosesHeld && (EndAt is not { } end || end > now)
+        && DoseSchedule.TimesOfDay(Frequency).Count > 0
+        && (hasDoses || LastDispensedAt is not null || (Source == MedicationOrderSource.Manual && StartAt <= now));
+
+    /// <summary>
+    /// The order's doses from <paramref name="from"/> for the next <see cref="MarRules.ChartAhead"/>, on its rounds and within
+    /// its start and end, that are not on the chart yet (<paramref name="charted"/>: the times already charted).
+    /// </summary>
+    public IReadOnlyList<DateTimeOffset> DosesToChart(DateTimeOffset from, IReadOnlyCollection<DateTimeOffset> charted) =>
+        [.. DoseSchedule.Between(Frequency, from, from + MarRules.ChartAhead, StartAt, EndAt).Where(at => !charted.Contains(at))];
 
     public bool CountersignOverdue(DateTimeOffset now) => AwaitingCountersignature && CountersignDueAt is { } due && now > due;
 
@@ -337,6 +355,9 @@ public static class MarRules
 {
     /// <summary>Default window after the scheduled time before a due dose shows as overdue (setting <c>inpatient.marGraceMinutes</c>).</summary>
     public static readonly TimeSpan DefaultGrace = TimeSpan.FromMinutes(30);
+
+    /// <summary>How far ahead an order's doses are on the chart: a day.</summary>
+    public static readonly TimeSpan ChartAhead = TimeSpan.FromHours(24);
 
     private static readonly TimeSpan ClockTolerance = TimeSpan.FromMinutes(5);
 

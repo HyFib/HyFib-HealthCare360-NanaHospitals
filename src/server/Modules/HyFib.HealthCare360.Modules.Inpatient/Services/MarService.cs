@@ -11,8 +11,9 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 
 /// <summary>
 /// Medication chart and administration record (PH-03 MAR feed). Signed in-patient prescriptions become chart lines;
-/// when the IP pharmacy dispenses them, the next 24 hours of doses are scheduled on the ward's medication rounds; nurses
-/// record each dose once. Methods used by domain-event handlers only stage changes (the raising module commits them).
+/// when the IP pharmacy first dispenses them, the next 24 hours of doses are scheduled on the ward's medication rounds, and
+/// <see cref="MarChartAheadJob"/> keeps every such line a day ahead until it stops or ends; nurses record each dose once.
+/// Methods used by domain-event handlers only stage changes (the raising module commits them).
 /// <para>
 /// A ward order is signed at once only by the doctor it is written in the name of, signed in as themselves and holding
 /// <c>clinical.prescriptions.sign</c>. Anyone else (a nurse, or a doctor writing another doctor's order) records that
@@ -31,7 +32,7 @@ public sealed class MarService(
     INotificationService notifications,
     IAuditLogger audit,
     TimeProvider time,
-    IIncidentRegister incidents)
+    IIncidentRegister incidents) : IMarChartAhead
 {
     /// <summary>
     /// What a second nurse witnesses on the MAR: a controlled drug or a high-alert medicine given. Whoever keeps the MAR
@@ -50,7 +51,8 @@ public sealed class MarService(
 
     public const int DefaultCountersignHours = 24;
 
-    public static readonly TimeSpan Horizon = TimeSpan.FromHours(24);
+    /// <summary>How far ahead doses are charted (<see cref="MarRules.ChartAhead"/>): a day.</summary>
+    public static readonly TimeSpan Horizon = MarRules.ChartAhead;
 
     /// <summary>Where the orders waiting for a countersignature are listed in the staff app (the notifications link there).</summary>
     public const string CountersignaturesLink = "/nursing/countersignatures";
@@ -84,8 +86,7 @@ public sealed class MarService(
         }
 
         var until = from + Horizon;
-        var doses = DoseSchedule.Between(order.Frequency, from, until, order.StartAt, order.EndAt);
-        if (doses.Count == 0)
+        if (order.DosesToChart(from, []).Count == 0)
         {
             return 0;
         }
@@ -109,14 +110,13 @@ public sealed class MarService(
             .Concat(staged)
             .ToHashSet();
 
-        var added = 0;
-        foreach (var at in doses.Where(d => !existing.Contains(d)))
+        var doses = order.DosesToChart(from, existing);
+        foreach (var at in doses)
         {
             db.Add(NewDose(order, at, isAdHoc: false, batchNumber, dispenseId));
-            added++;
         }
 
-        return added;
+        return doses.Count;
     }
 
     public async Task<Result<MedicationOrderDto>> AddOrderAsync(AdmissionRef admission, AddMedicationOrderRequest request, CancellationToken ct)
@@ -365,7 +365,10 @@ public sealed class MarService(
         return (await ToDtosAsync([order], ct))[0];
     }
 
-    /// <summary>Extends the chart by another 24 hours of doses (for orders not re-dispensed daily, such as ward stock).</summary>
+    /// <summary>
+    /// Charts the next 24 hours of doses now: for a line the pharmacy has not supplied (given from ward stock), which
+    /// <see cref="MarChartAheadJob"/> then keeps a day ahead as it does every line already on the chart.
+    /// </summary>
     public async Task<Result<ScheduleResult>> ExtendScheduleAsync(Guid orderId, CancellationToken ct)
     {
         var order = await db.Set<MedicationOrder>().FirstOrDefaultAsync(o => o.Id == orderId, ct);
@@ -394,6 +397,79 @@ public sealed class MarService(
         await db.SaveChangesAsync(ct);
         return new ScheduleResult(order.Id, added);
     }
+
+    /// <summary>
+    /// The orders <see cref="MarChartAheadJob"/> charts now: those whose chart is kept a day ahead
+    /// (<see cref="MedicationOrder.KeptChartedAhead"/>), of patients still in their bed, that lack a dose in the next
+    /// <see cref="Horizon"/>. In every facility: the job has no signed-in user.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> OrdersToChartAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var kept = (await ChartAheadCandidates(now).ToListAsync(ct))
+            .Where(c => c.Order.KeptChartedAhead(c.HasDoses, now))
+            .Select(c => c.Order)
+            .ToList();
+        if (kept.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = kept.Select(o => o.Id).ToList();
+        var until = now + Horizon;
+        var charted = (await db.Set<MedicationAdministration>().AsNoTracking()
+                .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.ScheduledAt >= now && m.ScheduledAt < until)
+                .Select(m => new { OrderId = m.MedicationOrderId!.Value, m.ScheduledAt })
+                .ToListAsync(ct))
+            .ToLookup(m => m.OrderId, m => m.ScheduledAt);
+        return [.. kept.Where(o => o.DosesToChart(now, charted[o.Id].ToHashSet()).Count > 0).Select(o => o.Id)];
+    }
+
+    /// <summary>
+    /// Charts and saves the order's doses for the day from now (<see cref="ScheduleAsync"/>): <see cref="MarChartAheadJob"/>'s
+    /// work for one order. Nothing once the order is no longer kept ahead, or its patient has left the bed. The doses carry no
+    /// batch: the nurse records the one given, as for a dose charted with the schedule button.
+    /// </summary>
+    public async Task<int> ChartAheadAsync(Guid orderId, CancellationToken ct)
+    {
+        var order = await db.Set<MedicationOrder>().FirstOrDefaultAsync(o => o.Id == orderId, ct);
+        if (order is null || await ActiveAdmissionAsync(order.AdmissionId, ct) is null)
+        {
+            return 0;
+        }
+
+        var now = time.GetUtcNow();
+        var hasDoses = await db.Set<MedicationAdministration>().AnyAsync(m => m.MedicationOrderId == orderId, ct);
+        if (!order.KeptChartedAhead(hasDoses, now))
+        {
+            return 0;
+        }
+
+        var added = await ScheduleAsync(order, now, null, null, ct);
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        return added;
+    }
+
+    /// <summary>
+    /// The active orders that may be kept charted ahead now (not ended, no stop waiting, starting within the day) of patients
+    /// admitted or about to be discharged, each with whether a dose of it is charted. The order decides the rest
+    /// (<see cref="MedicationOrder.KeptChartedAhead"/>).
+    /// </summary>
+    internal IQueryable<ChartAheadCandidate> ChartAheadCandidates(DateTimeOffset now)
+    {
+        var until = now + Horizon;
+        return from o in db.Set<MedicationOrder>().AsNoTracking()
+               join a in db.Set<Admission>() on o.AdmissionId equals a.Id
+               where o.Status == MedicationOrderStatus.Active && o.StopRequestedAt == null && o.StartAt < until && (o.EndAt == null || o.EndAt > now)
+                     && (a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated)
+               select new ChartAheadCandidate(o, db.Set<MedicationAdministration>().Any(m => m.MedicationOrderId == o.Id));
+    }
+
+    internal sealed record ChartAheadCandidate(MedicationOrder Order, bool HasDoses);
 
     public async Task<Result<MarEntryDto>> RecordAsync(Guid entryId, RecordAdministrationRequest request, CancellationToken ct)
     {

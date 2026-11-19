@@ -251,6 +251,51 @@ public sealed class MedicationTests
         order.ConfirmStop(doctor, At(25, 14)).Error!.Code.ShouldBe("medication.no_stop_pending");
     }
 
+    [Fact]
+    public void An_order_is_kept_charted_ahead_once_it_is_on_the_chart_and_while_its_doses_may_be_given()
+    {
+        var now = At(26, 10);
+
+        // A ward order whose start has come, or one with a dose charted; one starting tomorrow waits for its start.
+        Order().KeptChartedAhead(hasDoses: false, now).ShouldBeTrue();
+        Changed(Order(), o => o.StartAt = At(27, 8)).KeptChartedAhead(hasDoses: false, now).ShouldBeFalse();
+        Changed(Order(), o => o.StartAt = At(27, 8)).KeptChartedAhead(hasDoses: true, now).ShouldBeTrue();
+
+        // An e-prescription line waits for the pharmacy's first supply.
+        var prescribed = Changed(Order(), o => o.Source = MedicationOrderSource.Prescription);
+        prescribed.KeptChartedAhead(hasDoses: false, now).ShouldBeFalse();
+        Changed(prescribed, o => o.LastDispensedAt = At(25, 11)).KeptChartedAhead(hasDoses: false, now).ShouldBeTrue();
+
+        // Not once it is stopped or has ended, nor while its doses are held.
+        Changed(Order(), o => o.Stop(null, "Course completed", At(26, 9))).KeptChartedAhead(true, now).ShouldBeFalse();
+        Changed(Order(), o => o.EndAt = At(26, 9)).KeptChartedAhead(true, now).ShouldBeFalse();
+        Changed(Order(), o => o.RequestStop(Guid.NewGuid(), "Sr. Anitha", "Rash", At(26, 9), At(27, 9))).KeptChartedAhead(true, now).ShouldBeFalse();
+        Order(highAlert: true, mode: MedicationOrderMode.Telephone).KeptChartedAhead(true, now).ShouldBeFalse();
+        Order(highAlert: true, mode: MedicationOrderMode.Telephone, emergency: true).KeptChartedAhead(true, now).ShouldBeTrue();
+
+        // Never on the rounds: only when needed, on the doctor's direction, or once.
+        foreach (var frequency in new[] { "SOS", "As directed", "STAT" })
+        {
+            Changed(Order(), o => o.Frequency = frequency).KeptChartedAhead(true, now).ShouldBeFalse(frequency);
+        }
+    }
+
+    [Fact]
+    public void The_doses_to_chart_are_the_days_rounds_not_on_it_yet_and_none_past_the_end()
+    {
+        var order = Changed(Order(), o => o.EndAt = At(26, 15));
+
+        order.DosesToChart(At(25, 10), []).ShouldBe([At(25, 21), At(26, 9)]);
+        order.DosesToChart(At(25, 10), [At(25, 21)]).ShouldBe([At(26, 9)]);
+        order.DosesToChart(At(26, 10), []).ShouldBeEmpty("the order ends at 15:00, before the 21:00 round");
+    }
+
+    private static MedicationOrder Changed(MedicationOrder order, Action<MedicationOrder> change)
+    {
+        change(order);
+        return order;
+    }
+
     private static MedicationOrder Order(bool highAlert = false, bool controlled = false, MedicationOrderMode mode = MedicationOrderMode.Written, bool emergency = false) =>
         new()
         {
