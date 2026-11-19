@@ -312,5 +312,23 @@
   "lufs": -16.0,
   "seconds": 251.5,
   "madeBy": "render worker 3"
+ },
+ "w5-insurance-desk": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 30,
+  "wer": 2.99,
+  "wpm": 127.1,
+  "maxCps": 15.2,
+  "lufs": -16.0,
+  "seconds": 366.6,
+  "madeBy": "render worker 3"
  }
 }
