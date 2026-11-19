@@ -1,0 +1,5 @@
+# Fetched or made by the pipeline, never committed (training/README.md)
+.models
+.venv
+.cache/
+out/
