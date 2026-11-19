@@ -141,12 +141,8 @@ export default {
         },
         {
           click: { within: nav, role: 'button', name: 'Emergency' },
-          say: 'The medico-legal case register is under Emergency.',
-        },
-        {
-          nav: 'MLC register',
-          say: 'Open the MLC register.',
-          after: 'It lists medico-legal cases and when the police were told. This morning it is empty: no case has been marked as medico-legal.',
+          say: 'The medico-legal case register is under Emergency. Open Emergency from the menu.',
+          after: 'The MLC register lists medico-legal cases and when the police were told. This morning it is empty.',
           wait: { role: 'heading', name: 'MLC register' },
         },
         {
