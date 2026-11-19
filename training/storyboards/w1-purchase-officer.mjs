@@ -198,7 +198,7 @@ const story = {
   ],
   check: [
     {
-      q: 'Why can the store keeper not approve the goods receipt that he entered?',
+      q: 'Why can the store keeper not approve a goods receipt they entered?',
       a: 'Goods go into stock only when someone other than whoever entered them has checked them against the vendor’s invoice.',
     },
     {

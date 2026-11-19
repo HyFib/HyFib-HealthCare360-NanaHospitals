@@ -1,6 +1,6 @@
 // Wave 7 (insights): the hospital administrator's morning. The executive dashboard and the bed board, approving a new
 // user another administrator asked for (the two-person rule), and the masters (services and prices). Recorded as the
-// hospital administrator at 11:10 am. setup() has the system administrator ask for a new account, as he would earlier.
+// hospital administrator at 11:10 am. setup() has the system administrator ask for a new account, as they would earlier.
 
 const nav = { role: 'navigation', name: 'Main navigation' };
 const approve = { role: 'alertdialog', name: /^Approve/ };
@@ -96,7 +96,7 @@ export default {
         },
         {
           show: { role: 'row', name: /Meena Karthikeyan/ },
-          say: 'Meena Karthikeyan is a new billing executive. Her access does not start until a second person approves it. Nobody approves their own request.',
+          say: 'Meena Karthikeyan is a new billing executive. The Billing role is not given until a second person approves it. Nobody approves their own request.',
           zoom: 1.4,
         },
         {

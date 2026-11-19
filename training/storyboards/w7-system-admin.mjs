@@ -44,22 +44,22 @@ export default {
         },
         {
           fill: [{ within: addUser, label: 'User name' }, 'kavitha.s'],
-          say: 'Type the user name. It is what she types to sign in.',
+          say: 'Type the user name. It is what the new user types to sign in.',
           zoom: 1.3,
         },
         {
           fill: [{ within: addUser, label: 'Full name' }, 'Kavitha Sundaram'],
-          say: 'Then her full name, as screens and prints show it.',
+          say: 'Then the full name, as screens and prints show it.',
           zoom: 1.3,
         },
         {
           fill: [{ within: addUser, label: 'Mobile' }, '9000003001'],
-          say: 'And her mobile number.',
+          say: 'And the mobile number.',
           zoom: 1.3,
         },
         {
           check: { within: addUser, role: 'checkbox', name: 'Billing' },
-          say: 'Choose her role. Give a role that fits her job, and nothing more.',
+          say: 'Choose the role. Give a role that fits the job, and nothing more.',
           zoom: 1.3,
         },
         {
@@ -71,7 +71,7 @@ export default {
           click: { within: addUser, role: 'button', name: 'Create user' },
           say: 'Click Create user.',
           after:
-            'HC360 shows a temporary password, once. Give it to her in person. She must change it when she signs in. Her role waits for another administrator, so she sees nothing until it is approved.',
+            'HC360 shows a temporary password, once. Give it to the new user in person. It must be changed at the first sign-in. The role waits for another administrator: until it is approved, the account holds no role.',
           wait: { role: 'heading', name: /^Temporary password for Kavitha Sundaram/ },
           zoom: 1.2,
         },
@@ -88,7 +88,7 @@ export default {
         {
           click: { role: 'tab', name: 'Asked by me' },
           say: 'Open Asked by me.',
-          after: 'Her access is waiting for approval. You cannot approve it yourself: a second administrator does. The hospital administrator’s video shows how.',
+          after: 'The new access is waiting for approval. You cannot approve it yourself: a second administrator does. The hospital administrator’s video shows how.',
           wait: { role: 'row', name: /Kavitha Sundaram/ },
         },
       ],
@@ -181,8 +181,8 @@ export default {
   ],
   check: [
     {
-      q: 'You add a new user with the Billing role. Can she see billing screens as soon as she signs in?',
-      a: 'No. Her role waits for another administrator to approve it. Until then she can sign in and change her password, but sees nothing.',
+      q: 'You add a new user with the Billing role. Can the new user open billing screens at the first sign-in?',
+      a: 'No. The role waits for another administrator to approve it. Until then the account holds no role, so no billing screen opens.',
     },
     {
       q: 'Why does administration work only in HC360 Desktop at the hospital?',
