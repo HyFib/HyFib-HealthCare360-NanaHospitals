@@ -156,8 +156,11 @@ export type MedicationOrderSource = 'Prescription' | 'Pharmacy' | 'Manual';
 export type MedicationOrderStatus = 'Active' | 'Stopped' | 'Completed';
 /** Signed by the doctor who wrote it, or a verbal or telephone order someone else wrote in the doctor's name. */
 export type MedicationOrderMode = 'Written' | 'Verbal' | 'Telephone';
-/** Why a dose is held (the server's refusal code): a high-alert verbal order not yet countersigned, or a stop waiting. */
-export type DoseHold = 'medication.awaiting_countersignature' | 'medication.stop_pending';
+/**
+ * Why a dose is not given now (the server's refusal code): a high-alert verbal order not yet countersigned, a stop waiting,
+ * or the medicine stopped.
+ */
+export type DoseHold = 'medication.awaiting_countersignature' | 'medication.stop_pending' | 'medication.not_active';
 export type MarStatus = 'Due' | 'Given' | 'Held' | 'Refused' | 'Missed' | 'Cancelled';
 export type MarOutcome = 'Given' | 'Held' | 'Refused' | 'Missed';
 
@@ -185,6 +188,7 @@ export const ORDER_MODE_LABEL: Record<MedicationOrderMode, string> = {
 export const DOSE_HOLD_LABEL: Record<DoseHold, string> = {
   'medication.awaiting_countersignature': 'Held: awaiting countersignature',
   'medication.stop_pending': 'Held: stop pending',
+  'medication.not_active': 'Not to be given: medicine stopped',
 };
 
 /** Frequencies the server schedules (OD, BD, TDS, QID, HS, 1-0-1, Q6H…) plus as-needed ones that never auto-schedule. */

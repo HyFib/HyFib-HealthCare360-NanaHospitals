@@ -318,16 +318,16 @@ view's *Restrained patients* list ([Restraints.tsx](../../src/web/apps/staff/src
 |---|---|---|---|
 | GET | `/admissions/{admissionId}/medication-orders?activeOnly` | `nursing.mar` or `nursing.chart` | → `MedicationOrderDto[]` (incl. `roundTimes`) |
 | POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`; next 24 h scheduled unless the doses are held, then kept a day ahead) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`; 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
-| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels the future doses at once; anyone else's is asked for (`stopPending`, doses held) |
+| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels at once every dose still due, an overdue one too; anyone else's is asked for (`stopPending`, doses held) |
 | POST | `/medication-orders/{id}/countersign` | `clinical.prescriptions.sign` | `CountersignMedicationOrderRequest` (`version`) → `MedicationOrderDto`; only the doctor named, from their own account (403 `medication.countersign_not_prescriber`); held doses are scheduled |
-| POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, the doses held since the stop was asked for cancelled |
+| POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, every dose still due cancelled |
 | POST | `/medication-orders/{id}/stop/decline` | `clinical.prescriptions.sign` | `DeclineStopRequest` (reason, `version`) → the order goes on; the nurse who asked is told |
 | GET | `/medication-orders/awaiting-countersignature?wardId&mine&overdueOnly` | `nursing.mar` or `nursing.in_charge` | → `AwaitingCountersignatureItem[]` (what waits for a doctor: for a ward, for the signed-in doctor, past its time) |
 | GET | `/drugs?search` | `nursing.mar` | → `WardDrugDto[]` (the drug master for the ward's order form, with its controlled and high-alert flags) |
 | POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (charts the next 24 h now: for a line the pharmacy has not supplied, given from ward stock; kept a day ahead from then); 422 while the doses are held |
 | GET | `/admissions/{admissionId}/mar?date` | `nursing.mar` or `nursing.chart` | → `MarEntryDto[]` (day + older undocumented doses, `isOverdue`) |
-| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
-| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`) |
+| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged`; none of an order that has stopped (422 `medication.not_active`) or whose doses are held |
+| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`), nor a dose of a stopped order (422 `medication.not_active`, `heldBecause` says so), nor a cancelled dose recorded at all (422 `mar.cancelled`) |
 | GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist) |
 
 A controlled drug given (an order marked controlled: Schedule H1 or X, or NDPS) or a high-alert medicine given is
@@ -353,11 +353,19 @@ until then: nothing goes on the round, and no extra dose is recorded against it,
 emergency verbal order, read back, when its doses are given, each witnessed, and it stays flagged. The doctor has
 `inpatient.verbalOrderCountersignHours` (default 24, 1 to 72; fixed on the order when it is written) to countersign. A
 nurse's stop is asked for: the order stays on the chart with every dose held until the doctor named (or the patient's
-consultant, for an order that names none) confirms it, when the doses held since it was asked for are cancelled, or
+consultant, for an order that names none) confirms it, when every dose still due is cancelled, or
 declines it, when they are given again. `CountersignOverdueJob` (every 15 minutes, nodes that run jobs) tells the doctor
 and the facility's holders of `nursing.in_charge` once of each order or stop past its time, audited at Warning
 (`medication.countersign_overdue`, `medication.stop_countersign_overdue`); the staff app lists them under In-patients ›
 Orders to countersign.
+
+**A stopped medicine is not given.** A stop, by a prescriber at once or confirmed by the doctor after a nurse asked for
+it, and a cancelled prescription cancel every dose of the line still due ("Medication order stopped", "Prescription
+cancelled"), an overdue one too: a dose due at 09:00 and not given when the doctor stops the medicine at 09:20 for a
+rash is not given at 09:40. The ward's round no longer lists it, a cancelled dose is not recorded (422 `mar.cancelled`),
+and no dose of a stopped line is given or added (422 `medication.not_active`). A dose given before the stop and not yet
+recorded is added as a dose with no order, with the time it was given (witnessed, as any dose with no order). A
+discharge still leaves the doses that fell due before it for the nurse to document.
 
 **The chart a day ahead.** An e-prescription line goes on the chart at signing with no doses: its first doses are
 scheduled when the pharmacy first supplies it, for the next 24 hours from the issue. A ward order's are scheduled as it is
@@ -384,7 +392,7 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 | `PatientDischarged` | raised and handled | `DischargeType` = `Normal`, `Referred`, `Lama`, `Dama`, `Absconded` or `Expired`; Diagnostics withdraws the stay's tests whose sample is not drawn. Handled here too: the stay's chart lines stop ("Patient discharged") and the doses scheduled from the discharge on are cancelled; doses that fell due before it stay for the nurse to document |
 | `VisitCreated` / `VisitCompleted` / `VisitCancelled` (Patients) | raised | the in-patient visit is created with Patients' numbering (`visit`, `{FAC}V{YY}{SEQ:7}`), completed on discharge, cancelled with the admission; the OPD visit the patient was admitted from is completed at admission |
 | `PrescriptionSigned` | handled | in-patient lines become medication-chart lines (no doses until dispensed) |
-| `PrescriptionCancelled` | handled | chart lines stopped, future doses cancelled |
+| `PrescriptionCancelled` | handled | chart lines stopped, every dose still due cancelled, an overdue one too |
 | `MedicationDispensed` | handled | next 24 h of doses scheduled (then kept a day ahead, *The chart a day ahead*); unlinked lines charted as one dose to confirm |
 | `PatientsMerged` (Patients) | handled | re-points patient ids across facilities |
 | `VitalSignsRecorded` (Clinical) | handled | an early-warning escalation for a patient in a bed when NEWS2 calls for a doctor (*NEWS2 escalation*) |

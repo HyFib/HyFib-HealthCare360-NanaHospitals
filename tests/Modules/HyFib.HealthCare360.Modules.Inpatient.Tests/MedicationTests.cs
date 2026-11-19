@@ -1,5 +1,6 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
+using HyFib.HealthCare360.Modules.Inpatient.Services;
 
 namespace HyFib.HealthCare360.Modules.Inpatient.Tests;
 
@@ -249,6 +250,28 @@ public sealed class MedicationTests
         (order.Status, order.StoppedBy, order.StopReason, order.StopRequestedBy).ShouldBe((MedicationOrderStatus.Stopped, (Guid?)doctor, "Rash", (Guid?)nurse));
         order.StopPending.ShouldBeFalse();
         order.ConfirmStop(doctor, At(25, 14)).Error!.Code.ShouldBe("medication.no_stop_pending");
+    }
+
+    [Fact]
+    public void A_stopped_order_gives_no_dose_and_a_dose_cancelled_with_it_is_not_recorded()
+    {
+        // Ceftriaxone BD: the 09:00 dose is not given yet when the doctor stops the order at 09:20, for a rash.
+        var order = Order();
+        var dose = Due(At(25, 9));
+        dose.MedicationOrderId = order.Id;
+        order.Stop(Guid.NewGuid(), "Rash, ?allergy", At(25, 9, 20)).IsSuccess.ShouldBeTrue();
+
+        var refused = order.CanGiveDose();
+        refused.IsSuccess.ShouldBeFalse("the doctor stopped the medicine: no dose of it is given");
+        refused.Error!.Code.ShouldBe("medication.not_active");
+        refused.Error.Message.ShouldContain("Rash, ?allergy");
+
+        // At 09:40 the ward sees the dose, 40 minutes late, as one not to give, and once the stop has cancelled it, it is not
+        // recorded as given.
+        MarService.ToDto(dose, At(25, 9, 40), MarRules.DefaultGrace, order).HeldBecause.ShouldBe("medication.not_active");
+        dose.CancelIfDue("Medication order stopped");
+        dose.Record(Given(), Guid.NewGuid(), "Sr. Anitha", requiresWitness: false, At(25, 9, 40)).Error!.Code.ShouldBe("mar.cancelled");
+        (dose.Status, dose.Reason, dose.AdministeredAt).ShouldBe((MarStatus.Cancelled, "Medication order stopped", (DateTimeOffset?)null));
     }
 
     [Fact]

@@ -217,9 +217,9 @@ public sealed class MarService(
     }
 
     /// <summary>
-    /// A prescriber stops the order at once: doses not yet due are cancelled, overdue ones stay for the nurse to document.
-    /// Anyone else asks for the stop: the doses are held while it waits, and the doctor named (or the patient's consultant)
-    /// confirms it or declines it.
+    /// A prescriber stops the order at once: every dose still due is cancelled, an overdue one too, so none is given after
+    /// the stop. Anyone else asks for the stop: the doses are held while it waits, and the doctor named (or the patient's
+    /// consultant) confirms it or declines it.
     /// </summary>
     public async Task<Result<MedicationOrderDto>> StopOrderAsync(Guid orderId, string reason, CancellationToken ct)
     {
@@ -238,7 +238,7 @@ public sealed class MarService(
                 return stopped.Error!;
             }
 
-            await CancelDueAsync(order.Id, now, "Medication order stopped", ct);
+            await CancelDueAsync(order.Id, "Medication order stopped", ct);
             await db.SaveChangesAsync(ct);
             return (await ToDtosAsync([order], ct))[0];
         }
@@ -298,7 +298,7 @@ public sealed class MarService(
         return (await ToDtosAsync([order], ct))[0];
     }
 
-    /// <summary>The doctor confirms the stop a nurse asked for: the order stops, and doses from the time it was asked for are cancelled.</summary>
+    /// <summary>The doctor confirms the stop a nurse asked for: the order stops, and every dose still due is cancelled.</summary>
     public async Task<Result<MedicationOrderDto>> ConfirmStopAsync(Guid orderId, uint version, CancellationToken ct)
     {
         var order = await db.Set<MedicationOrder>().FirstOrDefaultAsync(o => o.Id == orderId, ct);
@@ -315,16 +315,16 @@ public sealed class MarService(
 
         db.SetExpectedVersion(order, version);
         var now = time.GetUtcNow();
-        var (askedAt, askedBy) = (order.StopRequestedAt, order.StopRequestedByName);
+        var askedBy = order.StopRequestedByName;
         var stopped = order.ConfirmStop(currentUser.UserId!.Value, now);
         if (stopped.IsFailure)
         {
             return stopped.Error!;
         }
 
-        // The doses held since the stop was asked for were never given: they are cancelled with the stop. Doses due before it
-        // stay for the nurse to document, as for any stop.
-        await CancelDueAsync(order.Id, askedAt ?? now, "Medication order stopped", ct);
+        // The doses held since the stop was asked for were never given, and one due before it and not given is not given now:
+        // every dose still due is cancelled with the stop, as for any stop.
+        await CancelDueAsync(order.Id, "Medication order stopped", ct);
         audit.Add(OrderAudit(order, "medication.stop_countersigned", $"{Words(order)}: stop asked for by {askedBy} countersigned by {Name()}", AuditSeverity.Info));
         await db.SaveChangesAsync(ct);
         return (await ToDtosAsync([order], ct))[0];
@@ -542,7 +542,7 @@ public sealed class MarService(
                 return Error.Field("medicationOrderId", "This medication is not on the patient's chart.");
             }
 
-            // No extra dose of an order whose doses are held, given now or put on the chart for later.
+            // No extra dose of an order that has stopped or whose doses are held, given now or put on the chart for later.
             var held = order.CanGiveDose();
             if (held.IsFailure)
             {
@@ -695,11 +695,13 @@ public sealed class MarService(
         var now = time.GetUtcNow();
         var reason = Fit($"Prescription cancelled: {cancelled.Reason}", 300)!;
         orders.ForEach(o => o.Stop(null, reason, now));
+
+        // Every dose still due, overdue ones too: none of a cancelled prescription is given.
         var ids = orders.Select(o => o.Id).ToList();
-        var future = await db.Set<MedicationAdministration>()
-            .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.Status == MarStatus.Due && m.ScheduledAt >= now)
+        var due = await db.Set<MedicationAdministration>()
+            .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.Status == MarStatus.Due)
             .ToListAsync(ct);
-        future.ForEach(m => m.CancelIfDue("Prescription cancelled"));
+        due.ForEach(m => m.CancelIfDue("Prescription cancelled"));
     }
 
     /// <summary>
@@ -1039,13 +1041,16 @@ public sealed class MarService(
         order.OrderedByPractitionerId
         ?? await db.Set<Admission>().AsNoTracking().Where(a => a.Id == order.AdmissionId).Select(a => a.ConsultantPractitionerId).FirstOrDefaultAsync(ct);
 
-    /// <summary>Cancels the order's doses still due from <paramref name="from"/> on.</summary>
-    private async Task CancelDueAsync(Guid orderId, DateTimeOffset from, string reason, CancellationToken ct)
+    /// <summary>
+    /// Cancels every dose of the order still due, an overdue one too: a stopped medicine is not given, whenever its dose fell
+    /// due. A dose given before the stop and not yet recorded is added as a dose with no order, with the time it was given.
+    /// </summary>
+    private async Task CancelDueAsync(Guid orderId, string reason, CancellationToken ct)
     {
-        var future = await db.Set<MedicationAdministration>()
-            .Where(m => m.MedicationOrderId == orderId && m.Status == MarStatus.Due && m.ScheduledAt >= from)
+        var due = await db.Set<MedicationAdministration>()
+            .Where(m => m.MedicationOrderId == orderId && m.Status == MarStatus.Due)
             .ToListAsync(ct);
-        future.ForEach(m => m.CancelIfDue(reason));
+        due.ForEach(m => m.CancelIfDue(reason));
     }
 
     /// <summary>Tells the doctor, on every staff account linked to their practitioner record.</summary>

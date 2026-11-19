@@ -137,8 +137,11 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
     /// <summary>A stop a nurse asked for, waiting for the doctor's countersignature.</summary>
     public bool StopPending => StopRequestedAt is not null && Status == MedicationOrderStatus.Active;
 
-    /// <summary>No dose of this order is given now (<see cref="CanGiveDose"/> says why).</summary>
-    public bool DosesHeld => CanGiveDose().IsFailure;
+    /// <summary>
+    /// The order is active but no dose of it is given now: a stop waiting for the doctor, or a high-alert verbal order not
+    /// countersigned (<see cref="CanGiveDose"/> says why). A stopped order is not held: it is over.
+    /// </summary>
+    public bool DosesHeld => Status == MedicationOrderStatus.Active && CanGiveDose().IsFailure;
 
     /// <summary>
     /// Whether the chart of this order is kept a day ahead (<c>MarChartAheadJob</c>): the order is active, its doses are not
@@ -163,12 +166,20 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
     public bool StopCountersignOverdue(DateTimeOffset now) => StopPending && StopCountersignDueAt is { } due && now > due;
 
     /// <summary>
-    /// Whether a dose may be given now. A stop waiting for the doctor holds every dose (the safe direction); so does a
-    /// verbal or telephone order of a high-alert, controlled or chemotherapy medicine until the doctor countersigns it,
-    /// unless the nurse took it as an emergency order, read back.
+    /// Whether a dose may be given now. Never once the order has stopped: a dose still due then, overdue or not, was
+    /// cancelled with the stop. A stop waiting for the doctor holds every dose (the safe direction); so does a verbal or
+    /// telephone order of a high-alert, controlled or chemotherapy medicine until the doctor countersigns it, unless the
+    /// nurse took it as an emergency order, read back.
     /// </summary>
     public Result CanGiveDose()
     {
+        if (Status != MedicationOrderStatus.Active)
+        {
+            return Error.Rule("medication.not_active",
+                $"This medicine was stopped{(string.IsNullOrWhiteSpace(StopReason) ? string.Empty : $" ({StopReason})")}, so none of its doses is given. "
+                + "If the patient still needs it, ask the doctor for a new order.");
+        }
+
         if (StopPending)
         {
             return Error.Rule("medication.stop_pending",
@@ -272,7 +283,7 @@ public enum MarStatus
     Refused,
     Missed,
 
-    /// <summary>The order was stopped before the dose was due.</summary>
+    /// <summary>The order stopped, or the patient was discharged, while the dose was still due, overdue or not: it is never given.</summary>
     Cancelled,
 }
 
@@ -310,6 +321,13 @@ public sealed class MedicationAdministration : AuditableEntity, IFacilityScoped
 
     public Result Record(MarOutcome outcome, Guid? userId, string? userName, bool requiresWitness, DateTimeOffset now)
     {
+        // A dose cancelled when its order stopped (or the patient was discharged) is never given afterwards.
+        if (Status == MarStatus.Cancelled)
+        {
+            return Error.Rule("mar.cancelled",
+                $"This dose was cancelled ({Reason ?? "its order stopped"}), so it is not given. Write a nursing note for anything to add.");
+        }
+
         var check = MarRules.ValidateOutcome(Status, outcome, requiresWitness, now);
         if (check.IsFailure)
         {

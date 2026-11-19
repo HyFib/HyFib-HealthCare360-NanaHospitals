@@ -701,9 +701,11 @@ and grants nothing.
   - stopping a ward medication order (slice 5): a prescriber (`clinical.prescriptions.sign`) stops it at once. Anyone
     else's stop is recorded as asked for, the order stays on the chart with every dose held (no dose given:
     `medication.stop_pending`), and the doctor named on the order (the patient's consultant for one that names none)
-    confirms it (`POST …/medication-orders/{id}/stop/countersign`), when the doses held since are cancelled, or declines
+    confirms it (`POST …/medication-orders/{id}/stop/countersign`), when every dose still due is cancelled, or declines
     it (`…/stop/decline`, with the reason, told to the nurse), when the doses are given again. Holding the doses is the
-    safe direction while it waits; the same time and overdue notice apply.
+    safe direction while it waits; the same time and overdue notice apply. A stop, and a cancelled prescription, cancel
+    every dose of the line still due, an overdue one too, and no dose of a stopped line is given or added
+    (`medication.not_active`; a cancelled dose is not recorded, `mar.cancelled`).
   - a refill (`POST /api/v1/clinical/prescriptions/{id}/refill`, slice 5): it carries the original doctor's name and
     registration as before, and records who refilled it (`refilledByName`, `signedByUserId`; audited
     `prescription.refilled`), so a pharmacist's refill never reads as the doctor's signature. A prescription with a
