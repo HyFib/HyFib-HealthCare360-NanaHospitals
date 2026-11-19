@@ -975,9 +975,13 @@ internal sealed class BillEInvoiceSource(HospitalDbContext db) : IEInvoiceSource
                 l.Description, IsService: true, l.SacCode, l.Quantity, l.UnitPrice, l.GrossAmount, l.GrossAmount - l.TaxableAmount, l.TaxableAmount,
                 l.TaxRate, l.IgstAmount, l.CgstAmount, l.SgstAmount, l.TaxableAmount + l.IgstAmount + l.CgstAmount + l.SgstAmount))
             .ToList();
+
+        // A bill is supplied in the facility's state, whoever the buyer (BillPlaceOfSupply); one finalized before the
+        // facility's GSTIN was entered has no place of supply of its own.
+        var placeOfSupply = bill.PlaceOfSupply ?? await BillPlaceOfSupply.FacilityStateAsync(db, bill.FacilityId, cancellationToken) ?? string.Empty;
         return new EInvoiceDocument(
             Source, bill.Id, bill.FacilityId, bill.BillNumber ?? string.Empty, BillingTime.LocalDate(finalizedAt),
-            new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), bill.PlaceOfSupply ?? Gstin.StateCode(gstin) ?? string.Empty,
+            new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), placeOfSupply,
             items, bill.RoundOffAmount, bill.NetAmount, bill.Status == BillStatus.Cancelled,
             lines.Any(l => l.Quantity < 0) ? "The bill has returned services; report it to the portal with a credit note for them." : null);
     }
@@ -1038,9 +1042,10 @@ internal sealed class CreditNoteEInvoiceSource(HospitalDbContext db) : IEInvoice
                 l.Description, IsService: true, l.SacCode, 1m, l.TaxableAmount, l.TaxableAmount, 0m, l.TaxableAmount, l.GstRate, l.IgstAmount,
                 l.CgstAmount, l.SgstAmount, l.Amount))
             .ToList();
+        var placeOfSupply = bill.PlaceOfSupply ?? await BillPlaceOfSupply.FacilityStateAsync(db, bill.FacilityId, cancellationToken) ?? string.Empty;
         return new EInvoiceDocument(
             Source, note.Id, note.FacilityId, note.Number, BillingTime.LocalDate(note.IssuedAt),
-            new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), bill.PlaceOfSupply ?? Gstin.StateCode(gstin) ?? string.Empty,
+            new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), placeOfSupply,
             items, 0m, note.Amount, IsCancelled: false, Type: EInvoiceDocumentTypes.CreditNote,
             Preceding: new EInvoicePreceding(BillEInvoiceSource.Key, bill.Id, bill.BillNumber ?? string.Empty, BillingTime.LocalDate(invoiced)));
     }

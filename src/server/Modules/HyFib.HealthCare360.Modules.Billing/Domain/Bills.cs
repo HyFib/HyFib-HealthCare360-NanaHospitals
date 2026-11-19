@@ -88,14 +88,24 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal CgstAmount { get; set; }
     public decimal SgstAmount { get; set; }
 
-    /// <summary>GST on a supply to another state: the payer is registered there (IGST Act s.12(2)(a) for services).</summary>
+    /// <summary>
+    /// IGST, on a bill finalized as a supply to another state before every bill took the facility's state as its place of
+    /// supply (<see cref="SetPlaceOfSupply"/>); nothing on any other bill.
+    /// </summary>
     public decimal IgstAmount { get; set; }
 
     public decimal TaxAmount { get; set; }
 
-    /// <summary>The state of supply as its GST code ("33"): the facility's own, or a registered payer's in another state.</summary>
+    /// <summary>
+    /// The state of supply as its GST code ("33"): the facility's own, whoever pays (IGST Act s.12(3) and s.12(4)); null
+    /// while the facility has no GSTIN.
+    /// </summary>
     public string? PlaceOfSupply { get; private set; }
 
+    /// <summary>
+    /// Taxed as a supply to another state (IGST): only a bill finalized so before every bill was supplied in the facility's
+    /// state. Its credit and debit notes take back and add GST as it was charged, as IGST.
+    /// </summary>
     public bool IsInterState { get; private set; }
 
     public decimal RoundOffAmount { get; set; }
@@ -300,18 +310,21 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
-    /// Where the services are supplied for GST: the payer's registered state when the payer has a GSTIN, else the
-    /// facility's. A draft only; the next <see cref="Recalculate"/> splits the tax as IGST or CGST and SGST.
+    /// Where the bill is supplied for GST: the facility's own state, whoever pays. Health care is supplied where it is
+    /// performed (IGST Act s.12(4)), a room and any service tied to the premises where the hospital stands (s.12(3)), and
+    /// what is used in treatment is handed over there; so a payer registered in another state is billed CGST and SGST
+    /// like any other, its GSTIN naming it as the buyer only. A draft only; the next <see cref="Recalculate"/> splits the
+    /// tax as CGST and SGST.
     /// </summary>
-    public void SetPlaceOfSupply(string? facilityState, string? payerState)
+    public void SetPlaceOfSupply(string? facilityState)
     {
         if (Status != BillStatus.Draft)
         {
             return;
         }
 
-        PlaceOfSupply = payerState ?? facilityState;
-        IsInterState = payerState is not null && facilityState is not null && payerState != facilityState;
+        PlaceOfSupply = facilityState;
+        IsInterState = false;
     }
 
     /// <summary>

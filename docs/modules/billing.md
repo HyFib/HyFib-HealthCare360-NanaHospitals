@@ -29,14 +29,21 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 
 * `decimal` only; every amount is rounded with `Money.Round` (half away from zero) per line.
 * GST is charged on the discounted value of each line and split into CGST/SGST (`Money.SplitGst`, SGST takes the paisa).
-* **Place of supply** (IGST Act s.12(2)(a)): the state of a payer registered for GST (the first two digits of its
-  GSTIN), else the facility's own state (`BillPlaceOfSupply`, set while the bill is a draft). A payer registered in
-  another state is billed **IGST** for the whole tax instead of CGST and SGST, on every line and in the totals; the bill
-  stores `placeOfSupply` and `igstAmount`. Tally posts IGST to the `Output IGST` ledger. A facility without a GSTIN bills
-  CGST and SGST as before.
+* **Place of supply**: the facility's own state, the first two digits of its GSTIN, on every bill whoever pays it
+  (`BillPlaceOfSupply`, set while the bill is a draft; the bill stores `placeOfSupply`). Health care is supplied where it
+  is performed (IGST Act 2017, s.12(4)); a room, and any service tied to the hospital's premises, where the hospital
+  stands (s.12(3)); and the medicines and devices used in treatment are handed over there. So every bill is an
+  intra-state supply, taxed **CGST and SGST**, even to a payer registered in another state (an insurer or company in
+  Kerala, say, which borders Theni): the payer's GSTIN names it as the buyer on the e-invoice and in GSTR-1, and does
+  not move the place of supply. The e-invoice's place of supply (`Pos`) is the hospital's state and the buyer's state
+  code (`Stcd`) the payer's; GSTR-1 reports the bill as a B2B invoice within the state; Tally posts its CGST and SGST.
+  A bill finalized before this rule as a supply to another state keeps its IGST (`igstAmount`, `isInterState`), and its
+  credit and debit notes take back and add IGST as it charged. A facility without a GSTIN has no place of supply and
+  bills CGST and SGST. The pharmacy's own invoices are not bills: goods it sends to another state are supplied there
+  (s.10) and carry IGST ([pharmacy.md](pharmacy.md)).
 * **Room rent** (`RoomRentGst`; notification 12/2017-CT(R) entry 74 as amended by 4/2022, and 11/2017-CT(R) entry 31A
   inserted by 3/2022, from 18 July 2022): health care is exempt, but a day of a room other than intensive or critical
-  care charged above ₹5,000 is taxed at 5% on the whole charge (CGST and SGST of 2.5% each, or IGST), without input tax
+  care charged above ₹5,000 is taxed at 5% on the whole charge (CGST and SGST of 2.5% each), without input tax
   credit. At or below ₹5,000, or in critical care (ICU, CCU, ICCU, NICU: Inpatient's ICU, NICU, PICU and HDU wards), a
   day is exempt. The rule replaces the room's rate in the service master for the bed days Inpatient charges (each tells
   Billing its `RoomCharge`, kept on the charge as `room`), and again when a stay is re-priced on another plan. A day is
@@ -819,7 +826,8 @@ language*).
   date on the right.
 * Patient, UHID, status, payer, tariff, package and co-pay; every line with service code, doctor, date, SAC code, quantity, rate,
   package cover (when a package covers anything), discount and, on a tax invoice, taxable value, GST rate, CGST and SGST
-  (or IGST, with the place of supply, for a payer registered in another state).
+  (or IGST, with the place of supply, on a bill finalized as a supply to another state before every bill was placed in
+  the hospital's state).
 * Totals from the gross amount to the net amount, the payer's and the patient's share, credit notes, paid, refunded,
   and the balance due or the refund due; the patient's share in words (Indian system, "Rupees … Only").
 * On a tax invoice, the GST summary by SAC code and rate. Then the payments received (advances adjusted included), the
@@ -934,10 +942,11 @@ due on the supply whether or not it was paid, and a write-off reduces no tax.
   (422 `billing.credit_exceeds_line`); a return or a line that comes to nothing is not credited. On a bill without GST
   the services may be named or not.
 * **The split is exact.** Each line's credit is split into taxable value and GST in proportion to the line
-  (`GstCreditNotes.Share`, in the shared kernel), as IGST on a supply to another state and as CGST and SGST within it.
-  Each credit's share is the difference of the shares of the running totals before and after it, so however a line is
-  credited, its credits add up to its own taxable value and GST to the paisa. The note keeps its lines
-  (`credit_note_lines`) and its CGST, SGST and IGST.
+  (`GstCreditNotes.Share`, in the shared kernel), as CGST and SGST as the bill charged them (as IGST on a bill finalized
+  as a supply to another state before every bill was placed in the hospital's state). Each credit's share is the
+  difference of the shares of the running totals before and after it, so however a line is credited, its credits add
+  up to its own taxable value and GST to the paisa. The note keeps its lines (`credit_note_lines`) and its CGST, SGST
+  and IGST.
 * **Until 30 November after the financial year** (s.34(2)). The GST of a bill can be reduced by a credit note issued by
   30 November after the end of the financial year (April to March) of the bill (`GstCreditNotes.LastDay`). One issued
   later lowers what the patient owes and not the GST (`gstTimeBarred`): its lines carry no GST, the books take back the
@@ -977,7 +986,7 @@ which is never cancelled for it ([Cancelling a bill](#cancelling-a-bill)).
 ## Debit notes
 A **debit note** (supplementary invoice, CGST Act s.34(3), CGST rule 53) raises what a finalized bill charged for
 services on it: a rate charged short, a quantity under-billed. The billing desk names the services and the taxable
-value each is raised by; GST is added at each service's rate, IGST to another state or CGST and SGST within it
+value each is raised by; GST is added at each service's rate, as CGST and SGST (IGST on a bill that charged IGST)
 (`DebitNotes.Gst`). It is charged to the patient (`debitAmount`: the bill owes again, a paid bill becomes partly paid)
 or to the payer (`payerDebitAmount`, added to what the payer owes). One person asks and another issues it (approval
 `billing.debit_note`, permission `billing.refunds.approve`), on the bill as it was asked against. It is numbered in its
@@ -1008,7 +1017,8 @@ is not set, nothing is listed and nothing can be recorded.
   to reduce the GST, and a return after it are not reported.
 * **The JSON.** `InvoiceRegistrationPayload` writes the portal's INV-01 schema, version 1.1: B2B, `INV` or `CRN` (a
   credit note names the invoice it reduces in `RefDtls.PrecDocDtls`, its number and date), the facility as
-  the supplier (legal name, address line, city, PIN code and state from its GSTIN), the buyer with the place of supply,
+  the supplier (legal name, address line, city, PIN code and state from its GSTIN), the buyer with its own state code
+  and the place of supply (for a bill or its note, the hospital's state, wherever the buyer is registered),
   every line with its SAC (services, `IsServc` Y) or HSN code (medicines, unit `NOS`), quantity, unit price, discount,
   taxable value, GST rate and IGST or CGST and SGST, and the totals. A pharmacy line goes at its taxable value (MRP
   includes GST), with no separate discount.

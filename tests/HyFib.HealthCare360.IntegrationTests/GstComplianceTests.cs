@@ -282,7 +282,8 @@ public sealed class GstComplianceTests(HospitalServer server)
         var billing = await server.SignInAsync(HospitalServer.Users.Billing);
         var accountant = await server.SignInAsync(HospitalServer.Users.Accountant);
 
-        // ₹200 more on the lounge, charged to the company: IGST 18% to Kerala is ₹36.
+        // ₹200 more on the lounge, charged to the company: GST at 18% is ₹36, CGST and SGST as the bill charged it, the lounge
+        // being supplied in Tamil Nadu whatever the company's state.
         var asked = await AskAsync(billing, $"/api/v1/billing/bills/{bill.Id}/debit-notes",
             new IssueDebitNoteRequest(DebitNoteParty.Payer, "Lounge charged at last year's rate", [new DebitNoteLineRequest(line.Id, 200m)]));
         asked.Details.ShouldContain(new ApprovalDetail("Debit note", "₹236.00"));
@@ -312,14 +313,15 @@ public sealed class GstComplianceTests(HospitalServer server)
         gstr1.Gstin.ShouldBe(EInvoicing.Hospital);
         gstr1.B2b.ShouldContain(d => d.Number == bill.BillNumber && d.BuyerGstin == EInvoicing.KeralaCompany);
         var cdnr = gstr1.Cdnr.Single(d => d.Number == note.Number);
-        (cdnr.Kind, cdnr.Items.Single().Amounts.Igst).ShouldBe((GstDocumentKind.DebitNote, 36m));
+        (cdnr.Kind, cdnr.PlaceOfSupply).ShouldBe((GstDocumentKind.DebitNote, "33"));
+        cdnr.Items.Single().Amounts.ShouldSatisfyAllConditions(a => a.Cgst.ShouldBe(18m), a => a.Sgst.ShouldBe(18m), a => a.Igst.ShouldBe(0m));
         gstr1.DocumentsIssued.ShouldContain(d => d.Nature == 4 && d.From.Length > 0);
         using var file = await accountant.SendRawAsync(HttpMethod.Get, $"/api/v1/billing/gst-returns/gstr1/json?month={month}");
         file.StatusCode.ShouldBe(HttpStatusCode.OK);
         var json = JsonNode.Parse(await file.Content.ReadAsStringAsync(Ct))!;
         json["fp"]!.GetValue<string>().ShouldBe($"{EInvoicing.Today():MMyyyy}");
         json["cdnr"]!.AsArray().SelectMany(c => c!["nt"]!.AsArray()).ShouldContain(n => n!["nt_num"]!.GetValue<string>() == note.Number);
-        (await accountant.GetAsync<Gstr3bReturn>($"/api/v1/billing/gst-returns/gstr3b?month={month}")).OutwardTaxable.Igst.ShouldBeGreaterThanOrEqualTo(36m);
+        (await accountant.GetAsync<Gstr3bReturn>($"/api/v1/billing/gst-returns/gstr3b?month={month}")).OutwardTaxable.Cgst.ShouldBeGreaterThanOrEqualTo(18m);
 
         // The billing desk does not read the returns.
         using var forbidden = await billing.SendRawAsync(HttpMethod.Get, $"/api/v1/billing/gst-returns/gstr1?month={month}");
