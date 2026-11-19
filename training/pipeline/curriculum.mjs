@@ -59,7 +59,11 @@ const pathFor = (r) => [
 ];
 
 const covered = (link, videos) => videos.some((s) => (s.covers ?? []).some((c) => c === link.to || (c.endsWith('/*') && link.to.startsWith(c.slice(0, -1)))));
-const fmt = (sec) => (sec ? `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}` : '');
+const fmt = (sec) => {
+  if (!sec) return '';
+  const s = Math.round(sec); // 359.6 s is 6:00, not 5:60
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 const out = [];
 out.push('# Curriculum: who watches what');
