@@ -112,6 +112,10 @@ export default {
           after: 'The ticket is Resolved, with what was done and the root cause. The downtime stops, and Close ticket is now offered.',
           wait: { text: 'Close ticket' },
         },
+        {
+          press: 'Escape',
+          say: 'Close the ticket window.',
+        },
       ],
     },
     {
