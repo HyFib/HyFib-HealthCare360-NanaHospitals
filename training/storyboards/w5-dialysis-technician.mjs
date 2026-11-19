@@ -269,5 +269,4 @@ export default {
       a: 'The weight, blood pressure and pulse before dialysis. HC360 asks for them first.',
     },
   ],
-  next: 'Nurse: care of a patient on the ward',
 };

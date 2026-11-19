@@ -189,5 +189,4 @@ export default {
       a: 'Administration is limited to computers that IT enrolled. A browser, a kiosk or a queue display cannot administer HC360.',
     },
   ],
-  next: 'Hospital administrator: the dashboard, the bed board and approvals',
 };

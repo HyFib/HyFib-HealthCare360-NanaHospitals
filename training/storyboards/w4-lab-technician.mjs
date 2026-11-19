@@ -182,5 +182,4 @@ export default {
       a: 'The label carries the patient’s name and UHID. A tube without it can be mixed up with another patient’s.',
     },
   ],
-  next: 'Pathologist: verify and release reports',
 };

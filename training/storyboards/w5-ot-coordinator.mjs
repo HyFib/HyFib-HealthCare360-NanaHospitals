@@ -170,5 +170,4 @@ export default {
       a: 'No. An anaesthetist is needed for every technique except local and topical anaesthesia given by the surgeon.',
     },
   ],
-  next: 'Insurance desk: policies, pre-authorisation and claims',
 };

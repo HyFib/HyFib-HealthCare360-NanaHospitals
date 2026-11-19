@@ -128,5 +128,4 @@ export default {
       a: 'To the radiologist’s reporting worklist, to be reported.',
     },
   ],
-  next: 'Radiologist: report and sign off studies',
 };

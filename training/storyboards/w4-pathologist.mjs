@@ -135,5 +135,4 @@ export default {
       a: 'In the Critical call register.',
     },
   ],
-  next: 'Radiographer: take the imaging studies',
 };

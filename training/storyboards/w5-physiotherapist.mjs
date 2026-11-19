@@ -215,5 +215,4 @@ export default {
       a: 'On the Physiotherapy worklist: click Record on the patient’s row, write the pain before and after, and the progress note.',
     },
   ],
-  next: 'Doctor: refer a patient to physiotherapy',
 };

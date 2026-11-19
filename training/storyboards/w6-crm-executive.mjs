@@ -162,5 +162,4 @@ export default {
       a: 'HC360 adds them two days after discharge. You add the other calls yourself.',
     },
   ],
-  next: 'Quality manager: incidents, corrective actions and indicators',
 };

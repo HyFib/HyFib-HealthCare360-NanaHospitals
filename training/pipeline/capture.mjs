@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { ending, narration, stepId } from './narration.mjs';
 
 // Playwright as installed on the machine that records (NODE_PATH), with the Chromium of its own version.
 const { chromium } = createRequire(import.meta.url)('playwright');
@@ -206,10 +207,6 @@ async function signInStaff(user) {
 // ----------------------------------------------------------------------------------------------------- run
 
 const beats = [];
-const segments = [];
-const narrate = (id, text) => {
-  if (text) segments.push({ id, text });
-};
 
 async function go(path) {
   const base = story.portal ? PORTAL : BASE;
@@ -323,8 +320,6 @@ async function runStep(step, id) {
   if (step.result) beat.result = await boxOf(find(step.result));
   else if (step.wait) beat.result = await boxOf(find(step.wait));
   for (const key of ['zoom', 'say', 'after']) if (step[key] !== undefined) beat[key] = step[key];
-  narrate(`${id}.say`, step.say);
-  narrate(`${id}.after`, step.after);
   return beat;
 }
 
@@ -348,12 +343,9 @@ try {
   for (const [ci, scene] of story.scenes.entries()) {
     const cid = `c${ci + 1}`;
     beats.push({ type: 'chapter', id: cid, title: scene.title });
-    // "Part two" opening a line is heard as other words in this voice (training/README.md); "Next" is not.
-    const lead = ci === 0 ? 'First' : ci === story.scenes.length - 1 ? 'Finally' : 'Next';
-    narrate(cid, scene.say ?? `${lead}: ${scene.title.charAt(0).toLowerCase()}${scene.title.slice(1)}.`);
     for (const step of scene.steps) {
       current = { scene: scene.title, step };
-      const id = `s${String(++n).padStart(3, '0')}`;
+      const id = stepId(++n);
       beats.push(await runStep(step, id));
     }
   }
@@ -370,20 +362,10 @@ try {
 }
 await browser.close();
 
-// The cards' narration.
-// Lists are read as "First, ... Second, ...": a bare "One." opening a sentence is easily misheard.
-const ORDINALS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'];
-const COUNTS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
-const lower = (t) => (/^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t);
-const list = (items) => items.map((t, i) => `${ORDINALS[i]}, ${lower(t)}`).join(' ');
-narrate('title', story.intro ?? `Welcome. This video is for ${story.audience}. ${story.title}.`);
-narrate('objectives', `In this video, you will learn ${COUNTS[story.objectives.length]} ${story.objectives.length === 1 ? 'thing' : 'things'}. ${list(story.objectives)}`);
-narrate('recap', `Let us recap. ${list(story.recap)}`);
-(story.check ?? []).forEach((c, i) => {
-  narrate(`check${i + 1}.q`, `Check yourself. ${c.q} Pause the video and answer.`);
-  narrate(`check${i + 1}.a`, `The answer: ${c.a}`);
-});
-narrate('end', story.outro ?? `Well done. ${story.next ? `Next, watch: ${story.next}. ` : ''}Then practise these steps on the training server, with your own account.`);
+// The words are the storyboard's alone (narration.mjs), so retell.mjs can put them again over these screens.
+const segments = narration(story);
+const { next, endLines } = ending(story);
+if (story.next && !next) console.warn('  next not used: a role video ends with practice (pipeline/narration.mjs)');
 
 const recordedAt = serverDate.toISOString();
 const capture = {
@@ -397,13 +379,10 @@ const capture = {
   objectives: story.objectives,
   recap: story.recap,
   check: story.check ?? [],
-  next: story.next ?? null,
+  next,
   modules: story.modules ?? [],
   covers: story.covers ?? [],
-  endLines: [
-    ...(story.next ? [['Next video', story.next]] : []),
-    ['Practise', story.practise ?? 'On the training server, with your own account. Your trainer has the day script.'],
-  ],
+  endLines,
   footer: `Fictional patients and data. Recorded on HC360 ${commit()} on ${new Date(recordedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}.`,
   app: { commit: commit(), recordedAt },
   viewport: VIEWPORT,

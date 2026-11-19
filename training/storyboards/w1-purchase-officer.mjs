@@ -206,7 +206,6 @@ const story = {
       a: 'The items, the batches and the total, against the vendor’s invoice.',
     },
   ],
-  next: 'Cashier: open a shift, collect payments and close the day',
 };
 
 export default story;

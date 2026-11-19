@@ -184,5 +184,4 @@ export default {
       a: 'In In-patient accounts: open her account and click Collect advance. The advance is held on her account, and set against her final bill.',
     },
   ],
-  next: 'Cashier: open the shift, collect and close the day',
 };

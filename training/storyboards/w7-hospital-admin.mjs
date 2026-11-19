@@ -122,7 +122,7 @@ export default {
         {
           click: { within: approve, role: 'button', name: 'Approve' },
           say: 'Click Approve in the window.',
-          after: 'The request is now Approved. The page shows who decided, and your note. The Billing role is given to Meena Karthikeyan.',
+          after: 'The request is now Approved, with who decided and your note. Made shows that one role was given. Roles held now lists the roles from when it was asked, so it still says None.',
           wait: { text: 'Approved' },
           zoom: 1.2,
         },
@@ -169,5 +169,4 @@ export default {
       a: 'Choose Today in the Period list.',
     },
   ],
-  next: 'System administrator: users, the audit log and system health',
 };

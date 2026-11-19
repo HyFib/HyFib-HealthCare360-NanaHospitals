@@ -121,5 +121,4 @@ export default {
       a: 'When it is on, signing the report also releases it to the doctor.',
     },
   ],
-  next: 'Shared video: find a patient and follow their visit',
 };

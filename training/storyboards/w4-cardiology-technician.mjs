@@ -132,5 +132,4 @@ export default {
       a: 'The cardiologist reports from the tracing. A study without a tracing cannot be reported.',
     },
   ],
-  next: 'Cardiologist: report the ECG and sign it',
 };

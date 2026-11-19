@@ -179,5 +179,4 @@ export default {
       a: 'Turn on the critical finding switch and record the call to the treating doctor. HC360 asks for it before you can sign.',
     },
   ],
-  next: 'Insurance desk: policies, pre-authorisation and claims',
 };

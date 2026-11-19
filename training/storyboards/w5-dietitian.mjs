@@ -128,5 +128,4 @@ export default {
       a: 'The meal plan and the kitchen list follow the new order. Click Update plan to see the change at once.',
     },
   ],
-  next: 'Canteen: the kitchen’s side of the meal plan',
 };

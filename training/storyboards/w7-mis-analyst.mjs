@@ -126,5 +126,4 @@ export default {
       a: 'From the live database. They are the hospital’s figures as they stand, so nothing is collected by hand.',
     },
   ],
-  next: 'Hospital administrator: run the hospital from the dashboards',
 };

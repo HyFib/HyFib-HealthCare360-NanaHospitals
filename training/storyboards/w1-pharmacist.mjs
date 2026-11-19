@@ -184,5 +184,4 @@ export default {
       a: 'It is a controlled drug. HC360 asks you to confirm that you have checked the prescription, the patient and the quantity.',
     },
   ],
-  next: 'Store keeper: receive goods, issue indents and count stock',
 };

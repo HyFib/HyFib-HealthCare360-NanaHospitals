@@ -218,5 +218,4 @@ export default {
       a: 'No. Nothing is sent until you click Submit to insurer.',
     },
   ],
-  next: 'Cashier: bills, payments and shifts',
 };

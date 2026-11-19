@@ -201,5 +201,4 @@ export default {
       a: 'Priority. Senior citizens, pregnant women and differently-abled patients are given priority in the queue.',
     },
   ],
-  next: 'Billing: bill a visit and collect payment',
 };

@@ -15,7 +15,7 @@ export default {
   wave: 7,
   audience: 'For patients and their families, and for the staff who help them at the front desk.',
   intro:
-    'Patients of Nana Hospitals can see their reports, prescriptions and bills on their own phone. No password is needed. This video shows how a patient signs in, and what he finds.',
+    'Patients of Nana Hospitals can see their reports, prescriptions and bills on their own phone. No password is needed. This video shows how patients sign in, and what they find.',
   objectives: [
     'Sign in to the portal with a mobile number and a one-time code.',
     'Read a lab report, and open a prescription with its QR code.',
@@ -187,5 +187,7 @@ export default {
       a: 'Scans it, to check that the prescription is genuine.',
     },
   ],
-  next: 'Front office: register a patient and give a token',
+  // Its viewers are patients: no training server, no next video.
+  outro: 'Well done. Now you can see your reports, prescriptions and bills on your own phone. If you need help with the portal, ask at the front desk of Nana Hospitals.',
+  endLines: [['Help', 'Ask at the front desk of Nana Hospitals.']],
 };

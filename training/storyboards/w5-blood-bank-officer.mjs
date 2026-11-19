@@ -100,5 +100,4 @@ export default {
       a: 'The group the blood bank found on the patient’s sample, never the group recorded at registration.',
     },
   ],
-  next: 'Nurse: care of a patient on the ward',
 };
