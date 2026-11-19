@@ -48,17 +48,17 @@ fi
 source "$ENV_FILE"
 export HC360_DEMO_PASSWORD HC360_DEMO_DB NODE_EXTRA_CA_CERTS
 
+step "the staff app and the patient portal (before the server: its build lists the files it serves)"
+if [ ! -f "$ROOT/src/server/HyFib.HealthCare360.Server/wwwroot/index.html" ]; then
+  (cd "$ROOT/src/web" && pnpm install --frozen-lockfile >"$LOG/pnpm.log" 2>&1 && pnpm -r --filter './apps/**' build >>"$LOG/pnpm.log" 2>&1) \
+    || { tail -20 "$LOG/pnpm.log"; exit 1; }
+fi
+
 step "the server (Release, analyzers off: the compiled code is the same)"
 if [ ! -f "$ROOT/src/server/HyFib.HealthCare360.Server/bin/Release/net10.0/HyFib.HealthCare360.Server.dll" ]; then
   (cd "$ROOT" && DOTNET_gcServer=0 DOTNET_GCHeapHardLimit=0x600000000 DOTNET_GCConserveMemory=5 \
     dotnet build src/server/HyFib.HealthCare360.Server -c Release -m:1 -p:RunAnalyzers=false -p:UseSharedCompilation=false \
     >"$LOG/dotnet-build.log" 2>&1) || { tail -20 "$LOG/dotnet-build.log"; exit 1; }
-fi
-
-step "the staff app and the patient portal"
-if [ ! -f "$ROOT/src/server/HyFib.HealthCare360.Server/wwwroot/index.html" ]; then
-  (cd "$ROOT/src/web" && pnpm install --frozen-lockfile >"$LOG/pnpm.log" 2>&1 && pnpm -r --filter './apps/**' build >>"$LOG/pnpm.log" 2>&1) \
-    || { tail -20 "$LOG/pnpm.log"; exit 1; }
 fi
 
 step "the voice and the checking recogniser"
