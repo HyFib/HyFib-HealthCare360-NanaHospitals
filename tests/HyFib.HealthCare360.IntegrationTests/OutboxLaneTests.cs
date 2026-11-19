@@ -213,7 +213,7 @@ public sealed class OutboxLaneTests(HospitalServer server) : IAsyncLifetime
             "supplychain.cold-chain-alert", "diagnostics.realtime", "diagnostics.staff-alert", "diagnostics.user-alert",
             "pharmacy.queue.changed", "pharmacy.ndps-alert", "clinical.idsp-alert", "clinical.ams-alert", "lab.analyser.order",
             "billing.einvoice.reminder", "billing.appointment.prepayment", "billing.tally.post", "billing.tally.check",
-            "billing.tally.late-purchase",
+            "billing.tally.late-purchase", "billing.tally.late-entry",
         ];
         handlers.Where(h => h.Value.Lane == OutboxLane.Local).Select(h => h.Key).ShouldBe(local, ignoreOrder: true);
 

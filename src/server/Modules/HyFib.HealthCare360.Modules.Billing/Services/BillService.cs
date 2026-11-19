@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Modules.Billing.Services.EventHandlers;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -26,7 +27,8 @@ public sealed class BillService(
     ChargeRefusals refusals,
     ICurrentUser currentUser,
     TimeProvider time,
-    DowntimeNumberService downtimeNumbers)
+    DowntimeNumberService downtimeNumbers,
+    LateEntryQueue lateEntries)
 {
     public async Task<Result<Guid>> CreateOpDraftAsync(CreateBillRequest request, CancellationToken ct)
     {
@@ -393,6 +395,9 @@ public sealed class BillService(
         if (paper is not null)
         {
             bill.EnteredFromPaperAt = time.GetUtcNow();
+
+            // The bill is in the day book of the day on the paper, which may have gone to Tally already.
+            lateEntries.Dated(bill.FacilityId, paper.At, "billing.bill", number);
         }
 
         var chargeIds = bill.Lines.Select(l => l.ChargeId).ToList();

@@ -487,8 +487,7 @@ public sealed class DispensingService(
         }
 
         sale.InvoiceNumber = claimed.Value.Number;
-        sale.SoldAt = paper.At;
-        sale.EnteredFromPaperAt = now;
+        sale.EnterFromPaper(paper.At, now);
         return Result.Success();
     }
 

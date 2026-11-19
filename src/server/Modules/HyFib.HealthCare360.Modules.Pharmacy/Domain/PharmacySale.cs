@@ -1,5 +1,6 @@
 using System.Globalization;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
+using HyFib.HealthCare360.Platform.Contracts;
 
 namespace HyFib.HealthCare360.Modules.Pharmacy.Domain;
 
@@ -47,6 +48,21 @@ public sealed class PharmacySale : AuditableEntity, IFacilityScoped
     public DateTimeOffset? EnteredFromPaperAt { get; set; }
 
     public bool IsBackEntered => EnteredFromPaperAt is not null;
+
+    /// <summary>
+    /// Dates the sale at the time on the paper and marks it as entered from paper at <paramref name="enteredAt"/>. A paper of
+    /// an earlier day belongs to that day's day book, which may have gone to Tally already: <see cref="DayBookEntryBackdated"/>
+    /// is raised, and Billing sends the day again when it went. A paper of today needs nothing: tonight's post sends it.
+    /// </summary>
+    public void EnterFromPaper(DateTimeOffset paperAt, DateTimeOffset enteredAt)
+    {
+        SoldAt = paperAt;
+        EnteredFromPaperAt = enteredAt;
+        if (HospitalClock.ToLocalDate(paperAt) < HospitalClock.ToLocalDate(enteredAt))
+        {
+            Raise(new DayBookEntryBackdated(FacilityId, HospitalClock.ToLocalDate(paperAt), "pharmacy.sale", InvoiceNumber));
+        }
+    }
 
     /// <summary>
     /// What a register line of a sale entered from paper says about it, or <c>null</c> for a sale made at the time. The

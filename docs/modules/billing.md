@@ -1328,6 +1328,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `BillFinalized`, `BillPaid`, `BillCancelled`, `BillPaymentReversed` | Doctor-fee accrual (idempotent per bill line; a line whose accrual was reversed accrues again) and reversal |
 | `BillFinalized` | A bill with GST to a payer with a GSTIN queues `billing.einvoice.generate` ([Automatic IRNs](#automatic-irns)) |
 | `GoodsReceiptPosted` (Supply chain) | A goods receipt of an earlier day queues `billing.tally.late-purchase`: its day goes to Tally again if it went already ([The Tally day book](#the-tally-day-book)) |
+| `DayBookEntryBackdated` (Pharmacy) | A pharmacy sale entered from paper for an earlier day queues `billing.tally.late-entry`: its day goes to Tally again if it went already ([The Tally day book](#the-tally-day-book)) |
 
 ### Appointment prepayments (OA-03)
 Scheduling posts nothing to billing. The outbox handler `billing.appointment.prepayment` (retried with back-off)
@@ -1687,6 +1688,13 @@ bank references, one voucher per pharmacy invoice, GST by rate, purchases) are r
   `All` or `None`. A goods receipt posted after the day it was received joins that day's day book. When that day went
   to Tally already, posting the receipt (Platform event `GoodsReceiptPosted`) queues `billing.tally.late-purchase`, and
   `TallyCorrections` queues the day again if the facility posts that receipt as a purchase;
+* A bill, a receipt or a pharmacy sale entered from paper is dated at the time on the paper, so it is in the day book of
+  that day. When the paper is of an earlier day (India time), saving it queues `billing.tally.late-entry` in the same
+  transaction (`BillService.FinalizeAsync` and `ReceiptService.CollectForBillAsync` through `LateEntryQueue`; for a
+  pharmacy sale, Platform event `DayBookEntryBackdated`, handled in Billing), and `TallyCorrections` queues that day
+  again when it went to Tally already. The nightly post sends yesterday only and leaves alone a day already sent after it
+  ended, so without this such an entry would never reach Tally. A day not yet sent is left to the nightly post, and an
+  entry dated today needs nothing;
 * a Debit Note per purchase return and a Journal per supplier payable adjustment posted on the day
   (`IVendorAccountsSource`, see [supplychain.md](supplychain.md)): input GST taken back by rate;
 * a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg));
@@ -1830,6 +1838,9 @@ the bill's day again, never to delete it.
 * `billing.tally.late-purchase` — a goods receipt of an earlier day was posted into stock (queued by
   `GoodsReceiptPostedHandler` in Supply chain's transaction): its day is queued again when it went to Tally already and
   the facility posts the receipt as a purchase. Local lane.
+* `billing.tally.late-entry` — a paper bill, a receipt from the manual receipt book or a pharmacy sale dated in an
+  earlier day was saved (queued by `LateEntryQueue` in the entry's transaction, for a pharmacy sale by
+  `DayBookEntryBackdatedHandler`): that day is queued again when it went to Tally already. Local lane.
 * `billing.appointment.prepayment` — see above.
 * `billing.einvoice.generate` — asks the portal for a document's IRN once it is final, retried while the portal does not
   answer or a note's invoice waits for its IRN, not after a refusal; see [Automatic IRNs](#automatic-irns).

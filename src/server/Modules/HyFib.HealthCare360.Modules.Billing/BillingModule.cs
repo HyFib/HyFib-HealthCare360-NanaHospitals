@@ -16,6 +16,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Tally;
 using HyFib.HealthCare360.Modules.Billing.Features.Tariffs;
 using HyFib.HealthCare360.Modules.Billing.Features.VisitPayer;
 using HyFib.HealthCare360.Modules.Billing.Services;
+using HyFib.HealthCare360.Modules.Billing.Services.EventHandlers;
 using HyFib.HealthCare360.Platform.Networking;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -73,6 +74,7 @@ public sealed class BillingModule : IModule
         services.AddScoped<DoctorFeeService>();
         services.AddScoped<DoctorTaxService>();
         services.AddScoped<TallyService>();
+        services.AddScoped<LateEntryQueue>();
         services.AddScoped<EInvoiceService>();
         services.AddScoped<IEInvoiceSource, BillEInvoiceSource>();
         services.AddScoped<IEInvoiceSource, CreditNoteEInvoiceSource>();

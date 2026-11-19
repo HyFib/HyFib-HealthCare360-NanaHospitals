@@ -2,13 +2,17 @@ using HyFib.HealthCare360.Modules.Billing.Domain;
 
 namespace HyFib.HealthCare360.Modules.Billing.Services;
 
+/// <summary>An entry saved with the date of an earlier day (<see cref="TallyCorrections.LateEntryMessage"/>): a paper bill, a receipt from the manual receipt book or a pharmacy sale entered from paper.</summary>
+internal sealed record LateEntry(Guid FacilityId, DateOnly Date, string Source, string? Reference);
+
 /// <summary>A goods receipt posted into stock after the day its goods were received (<see cref="TallyCorrections.LatePurchaseMessage"/>).</summary>
 internal sealed record LatePurchase(Guid FacilityId, DateOnly ReceivedOn, string Number);
 
 /// <summary>
 /// Puts a day book back in the Tally queue when something is recorded for a day that already went to Tally: an online
-/// payment recorded late (its receipt is dated when the patient paid), a settlement fetched after its day was posted, or
-/// a goods receipt posted into stock after the day its goods came (its purchase is dated by that day). Vouchers carry
+/// payment recorded late (its receipt is dated when the patient paid), a settlement fetched after its day was posted, a
+/// goods receipt posted into stock after the day its goods came (its purchase is dated by that day), or a paper entry (a
+/// bill, a receipt from the manual receipt book, a pharmacy sale) saved after the day its paper is dated. Vouchers carry
 /// stable numbers, so the day posts again without duplicates. A day not yet queued is left to the nightly post.
 /// </summary>
 public sealed class TallyCorrections(HospitalDbContext db, TallyService tally, TimeProvider time)
@@ -18,6 +22,12 @@ public sealed class TallyCorrections(HospitalDbContext db, TallyService tally, T
     /// Supply chain's transaction; its day is looked at once that has committed.
     /// </summary>
     public const string LatePurchaseMessage = "billing.tally.late-purchase";
+
+    /// <summary>
+    /// The outbox message an entry dated in an earlier day queues when it is saved (<see cref="LateEntry"/>), in the
+    /// transaction that saves it; its day is looked at once that has committed.
+    /// </summary>
+    public const string LateEntryMessage = "billing.tally.late-entry";
 
     internal async Task RepostIfPostedAsync(Guid facilityId, DateOnly date, CancellationToken ct)
     {

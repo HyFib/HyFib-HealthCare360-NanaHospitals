@@ -158,7 +158,8 @@ in order, and each line's running balance is the stock after its own movement, s
 sit among movements made since and carry a balance that does not follow from them. The line's `remarks` say "Entered from
 the paper sale of 10 Nov 2026 22:30 IST, invoice …", with the paper's time and the invoice. A counter sale made on paper whose prescription reference is the number of an open OP queue entry
 of the same patient closes that entry as dispensed on paper (the entry's `paperSaleNumber` names the invoice), so the
-prescription does not come back in the queue. Nothing is changed when any check fails.
+prescription does not come back in the queue. A paper of an earlier day also raises `DayBookEntryBackdated`, so that day's
+Tally day book is sent again if it went already. Nothing is changed when any check fails.
 
 OTC blocking (`SchedulePolicy`, Drugs & Cosmetics Rules): Schedule H, H1, X and NDPS medicines are never sold
 without a prescription (`pharmacy.prescription_required`, with the offending items in `data.items`). H1/X also
@@ -381,6 +382,7 @@ Refill rules. Authorised on the original OP prescription only, at most 12 refill
 | `PatientDischarged` (Inpatient) | handled | Cancels pending ward indents and closes open IP queue entries |
 | `PatientsMerged` (Patients) | handled | Moves queue entries, sales, returns, ward indents/issues/returns, refill requests and register links to the surviving patient (printed names/UHIDs on register lines are kept) |
 | `ControlledStockMoved` (SupplyChain) | handled | Writes the register line for movements whose reference module does not start with `pharmacy.` (pharmacy writes its own) |
+| `DayBookEntryBackdated` (Platform.Contracts) | raised | When a sale is entered from paper for an earlier day (India time), in the sale's transaction. Billing queues that day's Tally day book again if it went already (docs/modules/billing.md). Nothing is raised for a paper of today |
 | `MedicationDispensed` (Platform.Contracts) | raised | On OP dispensing and counter sales to a registered patient (walk-in customers have none), and on every IP issue. Feeds medication history and the nursing MAR (handled by Inpatient) |
 
 Stock ledger references written by this module: `pharmacy.dispense`, `pharmacy.sale`, `pharmacy.return`,

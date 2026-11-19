@@ -2,8 +2,11 @@ using System.Net;
 using System.Text.Json;
 using HyFib.HealthCare360.Integrations.Tally;
 using HyFib.HealthCare360.Modules.Billing.Domain;
+using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Modules.Billing.Features.Payments;
 using HyFib.HealthCare360.Modules.Billing.Services;
 using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Pharmacy.Features.Sales;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Features.Items;
@@ -13,11 +16,13 @@ using HyFib.HealthCare360.Modules.SupplyChain.Features.Vendors;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Integrations;
 using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.SharedKernel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using BillingCollectPaymentRequest = HyFib.HealthCare360.Modules.Billing.Features.Payments.CollectPaymentRequest;
 using PharmacyPaymentMode = HyFib.HealthCare360.Modules.Pharmacy.Domain.PaymentMode;
 using SalePayment = HyFib.HealthCare360.Modules.Pharmacy.Domain.SalePayment;
 
@@ -235,6 +240,94 @@ public sealed class TallyPostingTests(HospitalServer server)
         var held = TallyVoucherReader.Read(await company.ExportDayAsync(options.CompanyName!, today, Ct));
         TallyReadBack.Compare(today, [invoice], held.Vouchers, options).Vouchers.ShouldHaveSingleItem().Match.ShouldBe(AccountingVoucherMatch.Matched);
     }
+
+    /// <summary>
+    /// Entries made from paper after the day went to Tally: a paper bill, a receipt from the manual receipt book and a paper
+    /// pharmacy sale are dated at the time on the paper, so each is in the day book of that day. The day went to Tally
+    /// before the paper was entered; entering each puts the day back in the queue (billing.tally.late-entry, in the
+    /// entry's own transaction; for the pharmacy sale through the day book event Billing handles). The paper is of
+    /// yesterday at 22:00, in India.
+    /// </summary>
+    [Fact]
+    public async Task A_paper_bill_receipt_and_pharmacy_sale_entered_after_their_day_went_to_Tally_queue_that_day_again()
+    {
+        var mrd = await server.SignInAsync(HospitalServer.Users.MrdOfficer);
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var billing = await server.SignInAsync(HospitalServer.Users.Billing);
+        var pharmacist = await server.SignInAsync(HospitalServer.Users.Pharmacist);
+        var facilityId = await FacilityAsync();
+        var yesterday = BillingTime.LocalDate(DateTimeOffset.UtcNow).AddDays(-1);
+        var paperAt = BillingTime.StartOfDay(yesterday).AddHours(22);
+        var bills = await PaperBlockAsync(mrd, DowntimeNumberKind.OpBill, paperAt);
+        var receipts = await PaperBlockAsync(mrd, DowntimeNumberKind.Receipt, paperAt);
+        var sales = await PaperBlockAsync(mrd, DowntimeNumberKind.PharmacySale, paperAt);
+        var medicine = await OwnMedicine.OnTheShelfAsync(server, pharmacist);
+        var patient = await DowntimeNumberTests.RegisterAsync(frontOffice);
+
+        // The paper bill.
+        var started = await PostedYesterdayAsync(facilityId, yesterday);
+        var draft = await DowntimeNumberTests.DraftAsync(frontOffice, billing, patient.Id);
+        var bill = await billing.PostAsync<BillDetail>($"/api/v1/billing/bills/{draft.Id}/finalize",
+            new FinalizeBillRequest(draft.Version, new PaperNumber(bills.Numbers[0].Number, paperAt)));
+        await QueuedAgainAsync(facilityId, yesterday, started, "A paper bill of a day that went to Tally should queue that day again.");
+
+        // The receipt from the manual receipt book, for the bill.
+        started = await PostedYesterdayAsync(facilityId, yesterday);
+        var shift = await DowntimeNumberTests.OpenShiftAsync(billing);
+        try
+        {
+            await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts",
+                new BillingCollectPaymentRequest(bill.Id, [DowntimeNumberTests.Upi(bill.DueAmount)], null, new PaperNumber(receipts.Numbers[0].Number, paperAt.AddMinutes(5))));
+        }
+        finally
+        {
+            await DowntimeNumberTests.CloseShiftAsync(billing, shift);
+        }
+
+        await QueuedAgainAsync(facilityId, yesterday, started, "A receipt from the manual receipt book of a day that went to Tally should queue that day again.");
+
+        // The paper pharmacy sale.
+        started = await PostedYesterdayAsync(facilityId, yesterday);
+        await pharmacist.PostAsync<PharmacySaleCreated>("/api/v1/pharmacy/sales/counter", new CounterSaleRequest(
+            medicine.StoreId, null, "Walk-in customer", null, null, [new CounterSaleLine(medicine.ItemId, 1m, medicine.Batch.BatchId)], 0m,
+            [new SalePayment(PharmacyPaymentMode.Cash, Math.Round(medicine.Batch.Mrp, MidpointRounding.AwayFromZero), null)], false,
+            Paper: new PaperNumber(sales.Numbers[0].Number, paperAt)));
+        await QueuedAgainAsync(facilityId, yesterday, started, "A paper pharmacy sale of a day that went to Tally should queue that day again.");
+    }
+
+    /// <summary>
+    /// A block of one number, as if it had been issued an hour before the paper, in the period the paper is in: the numbers
+    /// are issued now, and the paper is of yesterday.
+    /// </summary>
+    private async Task<DowntimeNumberBlockDetail> PaperBlockAsync(ApiClient mrd, DowntimeNumberKind kind, DateTimeOffset paperAt)
+    {
+        var block = await mrd.PostAsync<DowntimeNumberBlockDetail>("/api/v1/downtime/number-blocks", new IssueDowntimeNumbersRequest(kind, "Downtime counter", 1));
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = Db(scope);
+        var policy = await db.Set<DowntimeNumberBlock>().IgnoreQueryFilters().Where(b => b.Id == block.Block.Id).Select(b => b.ResetPolicy).SingleAsync(Ct);
+        var period = NumberFormat.PeriodFor(policy, NumberFormat.ToHospitalTime(paperAt));
+        (await db.Set<DowntimeNumberBlock>().IgnoreQueryFilters().Where(b => b.Id == block.Block.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(b => b.CreatedAt, paperAt.AddHours(-1)).SetProperty(b => b.Period, period), Ct)).ShouldBe(1);
+        return block;
+    }
+
+    /// <summary>
+    /// The day posted to Tally after it ended (so the nightly post leaves it alone); returns the time before which nothing
+    /// else has queued it again.
+    /// </summary>
+    private async Task<DateTimeOffset> PostedYesterdayAsync(Guid facilityId, DateOnly day)
+    {
+        await AddDayAsync(facilityId, day, TallyExportStatus.Posted, queuedAt: BillingTime.StartOfDay(day.AddDays(1)).AddSeconds(1));
+        return DateTimeOffset.UtcNow;
+    }
+
+    private async Task QueuedAgainAsync(Guid facilityId, DateOnly day, DateTimeOffset since, string failure) =>
+        await EventuallyAsync(async () =>
+        {
+            await using var check = server.Services.CreateAsyncScope();
+            var export = await Db(check).Set<TallyExport>().AsNoTracking().SingleAsync(e => e.FacilityId == facilityId && e.Date == day, Ct);
+            return export.QueuedAt >= since ? export : null;
+        }, failure);
 
     private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('a' + Random.Shared.Next(26))));
 
