@@ -4,15 +4,49 @@ using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 
 /// <summary>
-/// The pharmacy counter's day for Billing's Tally day book (INT-TALLY), and its card and UPI payments for the card and
-/// UPI settlement match, through the Platform contract <see cref="ICounterSalesSource"/>. In-patient issues are not here:
-/// they reach the IP bill as charges.
+/// The pharmacy counter's day for Billing's Tally day book (INT-TALLY), summed (<see cref="ICounterSalesSource"/>) or invoice
+/// by invoice (<see cref="ICounterInvoiceSource"/>), and its card and UPI payments for the card and UPI settlement match.
+/// In-patient issues are not here: they reach the IP bill as charges.
 /// </summary>
-internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSalesSource
+internal sealed class PharmacyDayBookSource(HospitalDbContext db) : ICounterSalesSource, ICounterInvoiceSource
 {
     public const string Key = "pharmacy";
 
     public string Counter => Key;
+
+    /// <summary>
+    /// The day invoice by invoice: the invoices sold (a same-day cancellation leaves its invoice out), the returns booked
+    /// and the balances paid on the day, with the sales they belong to read once, items and payments included.
+    /// </summary>
+    public async Task<CounterInvoicesDay> GetInvoicesAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken)
+    {
+        var (start, end) = HospitalClock.Range(date, date);
+        var sales = db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Include(s => s.Items)
+            .Include(s => s.Payments);
+        var sold = await sales
+            .Where(s => s.FacilityId == facilityId && s.SoldAt >= start && s.SoldAt < end && s.Status != SaleStatus.Cancelled)
+            .ToListAsync(cancellationToken);
+        var returns = await db.Set<PharmacySaleReturn>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Include(r => r.Items)
+            .Where(r => r.FacilityId == facilityId && r.ReturnedAt >= start && r.ReturnedAt < end)
+            .ToListAsync(cancellationToken);
+
+        // Invoices of other days whose goods came back, or whose balance was paid, on the day.
+        var paidOn = await (
+                from payment in db.Set<PharmacyPayment>()
+                join sale in db.Set<PharmacySale>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on payment.PharmacySaleId equals sale.Id
+                where sale.FacilityId == facilityId && sale.Status != SaleStatus.Cancelled && !payment.IsRefund && payment.Mode != PaymentMode.Credit
+                      && payment.ReceivedAt >= start && payment.ReceivedAt < end && payment.ReceivedAt != sale.SoldAt
+                select sale.Id)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var soldIds = sold.Select(s => s.Id).ToHashSet();
+        var otherIds = returns.Select(r => r.SaleId).Concat(paidOn).Where(id => !soldIds.Contains(id)).Distinct().ToList();
+        var others = otherIds.Count == 0 ? [] : await sales.Where(s => otherIds.Contains(s.Id)).ToListAsync(cancellationToken);
+
+        return PharmacyDayBook.Invoices(date, sold, returns, sold.Concat(others).ToDictionary(s => s.Id));
+    }
 
     /// <summary>
     /// Card and UPI payments on invoices, later collections included, and money paid back to a card or by UPI on a return
@@ -133,6 +167,84 @@ internal static class PharmacyDayBook
 
         return new CounterSalesDay(PharmacyDayBookSource.Key, date, sold, returned, ByMode(collected.Select(c => (c.Mode, c.Amount))));
     }
+
+    /// <summary>
+    /// The day invoice by invoice (pure, unit-tested), by the same rules as <see cref="Day"/>: each invoice sold with the
+    /// money taken with it; each return with the GST carved out of its refund at each line's rate (the value alone once
+    /// the time to reduce the sale's GST has passed) and the money paid back for it, in the modes it went back in (the
+    /// sale's refunds made with the return); and each invoice's balances paid on the day.
+    /// </summary>
+    /// <param name="sold">The invoices sold on the day; a cancelled one is left out.</param>
+    /// <param name="returns">The returns booked on the day.</param>
+    /// <param name="sales">Every sale the day's invoices, returns and balances paid belong to, with items and payments.</param>
+    public static CounterInvoicesDay Invoices(
+        DateOnly date, IReadOnlyList<PharmacySale> sold, IReadOnlyList<PharmacySaleReturn> returns, IReadOnlyDictionary<Guid, PharmacySale> sales)
+    {
+        var (start, end) = HospitalClock.Range(date, date);
+        var invoices = sold.Where(s => s.Status != SaleStatus.Cancelled)
+            .OrderBy(s => s.SoldAt).ThenBy(s => s.InvoiceNumber, StringComparer.Ordinal)
+            .Select(s => new CounterInvoice(
+                s.InvoiceNumber, s.SoldAt, s.PatientId, Clean(s.CustomerName), Buyer(s),
+                Tax(s.Items.Select(i => (i.GstRate, i.TaxableAmount, i.CgstAmount, i.SgstAmount, i.IgstAmount))),
+                s.RoundOff,
+                Payments(s.Payments.Where(p => !p.IsRefund && p.Mode != PaymentMode.Credit && p.ReceivedAt == s.SoldAt))))
+            .ToList();
+
+        var credited = returns.OrderBy(r => r.ReturnedAt).ThenBy(r => r.ReturnNumber, StringComparer.Ordinal).Select(r =>
+        {
+            var sale = sales.GetValueOrDefault(r.SaleId);
+            var rates = sale?.Items.ToDictionary(i => i.Id, i => i.GstRate) ?? [];
+            var timeBarred = sale is not null && date > GstCreditNotes.LastDay(HospitalClock.ToLocalDate(sale.SoldAt));
+            var tax = Tax(r.Items.Select(i =>
+            {
+                var rate = rates.GetValueOrDefault(i.SaleItemId);
+                var split = timeBarred
+                    ? new TaxBreakup(Money.Round(i.RefundAmount), 0m, 0m, 0m, 0m)
+                    : GstCalculator.FromInclusive(i.RefundAmount, rate, sale?.IsInterState == true);
+                return (rate, split.Taxable, split.Cgst, split.Sgst, split.Igst);
+            }));
+
+            // What went back with the return: the sale's refunds made with it, in each mode they went back in.
+            var refunds = sale?.Payments.Where(p => p.IsRefund && p.ReceivedAt == r.ReturnedAt).ToList() ?? [];
+            var paidBack = refunds.Count > 0 ? Payments(refunds)
+                : r.CashRefund > 0 ? [new CounterPayment(ModeOf(r.RefundMode), r.CashRefund, r.RefundReference)]
+                : [];
+            return new CounterReturn(
+                r.ReturnNumber, r.ReturnedAt, sale?.InvoiceNumber ?? string.Empty, r.PatientId ?? sale?.PatientId, Clean(sale?.CustomerName),
+                sale is null ? null : Buyer(sale), tax, paidBack);
+        }).ToList();
+
+        var collections = sales.Values.Where(s => s.Status != SaleStatus.Cancelled)
+            .Select(s => (Sale: s, Paid: s.Payments
+                .Where(p => !p.IsRefund && p.Mode != PaymentMode.Credit && p.ReceivedAt >= start && p.ReceivedAt < end && p.ReceivedAt != s.SoldAt)
+                .ToList()))
+            .Where(c => c.Paid.Count > 0)
+            .OrderBy(c => c.Sale.InvoiceNumber, StringComparer.Ordinal)
+            .Select(c => new CounterCollection(c.Sale.InvoiceNumber, c.Sale.PatientId, Clean(c.Sale.CustomerName), Payments(c.Paid)))
+            .ToList();
+
+        return new CounterInvoicesDay(PharmacyDayBookSource.Key, date, invoices, credited, collections);
+    }
+
+    /// <summary>The registered buyer of a B2B sale, with the place of supply.</summary>
+    private static CounterBuyer? Buyer(PharmacySale sale) =>
+        string.IsNullOrWhiteSpace(sale.BuyerGstin) ? null : new CounterBuyer(sale.BuyerGstin.Trim(), Clean(sale.BuyerLegalName), Clean(sale.PlaceOfSupply));
+
+    /// <summary>Each payment with its reference, in the order taken; credit is not money.</summary>
+    private static List<CounterPayment> Payments(IEnumerable<PharmacyPayment> payments) =>
+        payments.Where(p => p.Mode != PaymentMode.Credit && p.Amount != 0)
+            .OrderBy(p => p.ReceivedAt)
+            .Select(p => new CounterPayment(ModeOf(p.Mode), p.Amount, Clean(p.Reference)))
+            .ToList();
+
+    private static CounterPaymentMode ModeOf(PaymentMode mode) => mode switch
+    {
+        PaymentMode.Card => CounterPaymentMode.Card,
+        PaymentMode.Upi => CounterPaymentMode.Upi,
+        _ => CounterPaymentMode.Cash,
+    };
+
+    private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static List<CounterTaxLine> Tax(IEnumerable<(decimal Rate, decimal Taxable, decimal Cgst, decimal Sgst, decimal Igst)> lines) =>
         lines.GroupBy(l => l.Rate)

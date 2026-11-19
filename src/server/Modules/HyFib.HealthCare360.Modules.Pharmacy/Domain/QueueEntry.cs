@@ -183,6 +183,29 @@ public sealed class PharmacyQueueEntry : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// The line of this in-patient prescription that a ward indent for it supplies with <paramref name="itemId"/>: its line
+    /// of that drug of the master with a quantity left to supply (the first, should two name it); none once it is closed.
+    /// </summary>
+    public PharmacyQueueLine? LineSuppliedBy(Guid itemId) =>
+        IsOpen ? Lines.FirstOrDefault(l => l.DrugItemId == itemId && l.RemainingQuantity > 0) : null;
+
+    /// <summary>
+    /// Counts what a ward indent for this prescription issued on its line, up to what is left on it, so the IP queue never
+    /// offers, issues and charges that quantity again. More than is left (a replacement ampoule) is the indent's own.
+    /// </summary>
+    public Result RecordSupplied(Guid lineId, decimal quantity, DateTimeOffset now)
+    {
+        var line = Lines.FirstOrDefault(l => l.Id == lineId);
+        if (line is null)
+        {
+            return Error.NotFound(nameof(PharmacyQueueLine), lineId);
+        }
+
+        var counted = Math.Min(quantity, line.RemainingQuantity);
+        return counted > 0 ? RecordDispensed(lineId, counted, now) : Result.Success();
+    }
+
     /// <summary>Puts quantity back on a line when its sale is cancelled the same day (the entry re-opens).</summary>
     public Result ReverseDispensed(Guid lineId, decimal quantity, DateTimeOffset now)
     {

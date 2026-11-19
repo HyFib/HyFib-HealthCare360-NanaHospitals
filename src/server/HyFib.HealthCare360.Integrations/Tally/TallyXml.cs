@@ -15,8 +15,10 @@ internal sealed record TallyImportOptions(string? CompanyName, string CostCatego
 
 /// <summary>
 /// Tally Prime XML: voucher import envelopes (<c>ENVELOPE/HEADER/TALLYREQUEST=Import Data</c>, <c>IMPORTDATA/REQUESTDESC</c>
-/// with <c>SVCURRENTCOMPANY</c>, one <c>TALLYMESSAGE/VOUCHER</c> per voucher), the company-list request used as a health
-/// check and the day's voucher collection read back for reconciliation. Built with LINQ to XML so every value is escaped.
+/// with <c>SVCURRENTCOMPANY</c>, one <c>TALLYMESSAGE/VOUCHER</c> per voucher, with the GST party and the supplier's
+/// invoice when the voucher has them, and each ledger line's bank and bill allocations), the company-list request used as
+/// a health check and the day's voucher collection read back for reconciliation. Built with LINQ to XML so every value is
+/// escaped.
 /// </summary>
 internal static class TallyXml
 {
@@ -92,11 +94,31 @@ internal static class TallyXml
     /// Tally sign convention: debit lines are "deemed positive" and carry a negative amount; credit lines are not
     /// deemed positive and carry a positive amount. Amounts use two decimals and the invariant culture.
     /// </summary>
-    public static string Amount(AccountingEntry entry)
+    public static string Amount(AccountingEntry entry) => Signed(entry.Amount, entry.IsDebit);
+
+    /// <summary><paramref name="amount"/> with the sign of a line on the debit or the credit side (<see cref="Amount"/>).</summary>
+    public static string Signed(decimal amount, bool isDebit)
     {
-        var amount = Money.Round(entry.Amount);
-        return (entry.IsDebit ? -amount : amount).ToString("0.00", CultureInfo.InvariantCulture);
+        var rounded = Money.Round(amount);
+        return (isDebit ? -rounded : rounded).ToString("0.00", CultureInfo.InvariantCulture);
     }
+
+    /// <summary>Tally's name of how money moved through the bank (<c>TRANSACTIONTYPE</c>).</summary>
+    public static string TransactionType(AccountingBankTransaction type) => type switch
+    {
+        AccountingBankTransaction.Cheque => "Cheque",
+        AccountingBankTransaction.EFundTransfer => "e-Fund Transfer",
+        _ => "Others",
+    };
+
+    /// <summary>Tally's name of a bill-wise reference type (<c>BILLTYPE</c>).</summary>
+    public static string BillType(AccountingBillType type) => type switch
+    {
+        AccountingBillType.AgainstRef => "Agst Ref",
+        AccountingBillType.Advance => "Advance",
+        AccountingBillType.OnAccount => "On Account",
+        _ => "New Ref",
+    };
 
     /// <summary>
     /// REMOTEID makes the import idempotent: Tally alters the voucher it already holds with this id instead of
@@ -122,6 +144,11 @@ internal static class TallyXml
             return "every entry needs a ledger";
         }
 
+        if (voucher.Party is { } party && string.IsNullOrWhiteSpace(party.LedgerName))
+        {
+            return "the party needs its ledger";
+        }
+
         if (voucher.Entries.Any(e => e.Amount <= 0))
         {
             return "amounts must be positive (IsDebit decides the side)";
@@ -129,9 +156,61 @@ internal static class TallyXml
 
         var debits = voucher.Entries.Where(e => e.IsDebit).Sum(e => Money.Round(e.Amount));
         var credits = voucher.Entries.Where(e => !e.IsDebit).Sum(e => Money.Round(e.Amount));
-        return debits == credits
+        if (debits != credits)
+        {
+            return string.Create(CultureInfo.InvariantCulture, $"debits ({debits:0.00}) and credits ({credits:0.00}) do not balance");
+        }
+
+        return voucher.Entries.Select(e => BillProblem(e) ?? BankProblem(e)).FirstOrDefault(problem => problem is not null);
+    }
+
+    /// <summary>Why a line's bank allocations would not stand in Tally: a part not positive, or parts that do not add up to the line.</summary>
+    private static string? BankProblem(AccountingEntry entry)
+    {
+        var parts = entry.BankAllocations;
+        if (parts.Count == 0)
+        {
+            return null;
+        }
+
+        var ledger = entry.LedgerName.Trim();
+        if (parts.Any(b => b.Amount <= 0))
+        {
+            return $"the bank allocations of {ledger} must be positive (the line decides the side)";
+        }
+
+        var allocated = parts.Sum(b => Money.Round(b.Amount));
+        return allocated == Money.Round(entry.Amount)
             ? null
-            : string.Create(CultureInfo.InvariantCulture, $"debits ({debits:0.00}) and credits ({credits:0.00}) do not balance");
+            : string.Create(CultureInfo.InvariantCulture,
+                $"the bank allocations of {ledger} ({allocated:0.00}) do not add up to its amount ({Money.Round(entry.Amount):0.00})");
+    }
+
+    /// <summary>Why a line's bill allocations would not stand in Tally: a part not positive, a bill without a name, or parts that do not add up to the line.</summary>
+    private static string? BillProblem(AccountingEntry entry)
+    {
+        var bills = entry.BillAllocations;
+        if (bills.Count == 0)
+        {
+            return null;
+        }
+
+        var ledger = entry.LedgerName.Trim();
+        if (bills.Any(b => b.Amount <= 0))
+        {
+            return $"the bill allocations of {ledger} must be positive (the line decides the side)";
+        }
+
+        if (bills.Any(b => b.Type != AccountingBillType.OnAccount && string.IsNullOrWhiteSpace(b.Name)))
+        {
+            return $"every bill allocation of {ledger} except On Account needs the bill's name";
+        }
+
+        var allocated = bills.Sum(b => Money.Round(b.Amount));
+        return allocated == Money.Round(entry.Amount)
+            ? null
+            : string.Create(CultureInfo.InvariantCulture,
+                $"the bill allocations of {ledger} ({allocated:0.00}) do not add up to its amount ({Money.Round(entry.Amount):0.00})");
     }
 
     public static IReadOnlyList<string> ParseCompanyNames(XDocument document) =>
@@ -162,9 +241,37 @@ internal static class TallyXml
             new XElement("EFFECTIVEDATE", date),
             new XElement("VOUCHERTYPENAME", type),
             new XElement("VOUCHERNUMBER", Clean(voucher.Number)),
+            string.IsNullOrWhiteSpace(voucher.SupplierInvoiceNumber) ? null : new XElement("REFERENCE", Clean(voucher.SupplierInvoiceNumber)),
+            voucher.SupplierInvoiceDate is { } invoiceDate ? new XElement("REFERENCEDATE", Date(invoiceDate)) : null,
+            Party(voucher.Party, options),
             new XElement("PERSISTEDVIEW", AccountingVoucherView),
             string.IsNullOrWhiteSpace(voucher.Narration) ? null : new XElement("NARRATION", Clean(voucher.Narration)),
             voucher.Entries.Select(entry => LedgerEntry(entry, options)));
+    }
+
+    /// <summary>The GST party of a B2B sale or a purchase: its ledger (renamed by the ledger map), GSTIN, state and place of supply.</summary>
+    private static IEnumerable<XElement> Party(AccountingParty? party, TallyImportOptions options)
+    {
+        if (party is null)
+        {
+            yield break;
+        }
+
+        yield return new XElement("PARTYLEDGERNAME", Clean(options.MapLedger(party.LedgerName)));
+        if (!string.IsNullOrWhiteSpace(party.Gstin))
+        {
+            yield return new XElement("PARTYGSTIN", Clean(party.Gstin));
+        }
+
+        if (!string.IsNullOrWhiteSpace(party.StateName))
+        {
+            yield return new XElement("STATENAME", Clean(party.StateName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(party.PlaceOfSupply))
+        {
+            yield return new XElement("PLACEOFSUPPLY", Clean(party.PlaceOfSupply));
+        }
     }
 
     private static XElement LedgerEntry(AccountingEntry entry, TallyImportOptions options)
@@ -174,6 +281,17 @@ internal static class TallyXml
             new XElement("LEDGERNAME", Clean(options.MapLedger(entry.LedgerName))),
             new XElement("ISDEEMEDPOSITIVE", entry.IsDebit ? "Yes" : "No"),
             new XElement("AMOUNT", amount),
+            entry.BankAllocations.Select(bank => new XElement("BANKALLOCATIONS.LIST",
+                new XElement("DATE", Date(bank.Date)),
+                new XElement("INSTRUMENTDATE", Date(bank.InstrumentDate ?? bank.Date)),
+                new XElement("TRANSACTIONTYPE", TransactionType(bank.TransactionType)),
+                string.IsNullOrWhiteSpace(bank.InstrumentNumber) ? null : new XElement("INSTRUMENTNUMBER", Clean(bank.InstrumentNumber)),
+                string.IsNullOrWhiteSpace(bank.BankName) ? null : new XElement("BANKNAME", Clean(bank.BankName)),
+                new XElement("AMOUNT", Signed(bank.Amount, entry.IsDebit)))),
+            entry.BillAllocations.Select(bill => new XElement("BILLALLOCATIONS.LIST",
+                string.IsNullOrWhiteSpace(bill.Name) ? null : new XElement("NAME", Clean(bill.Name)),
+                new XElement("BILLTYPE", BillType(bill.Type)),
+                new XElement("AMOUNT", Signed(bill.Amount, entry.IsDebit)))),
             string.IsNullOrWhiteSpace(entry.CostCentre)
                 ? null
                 : new XElement("CATEGORYALLOCATIONS.LIST",
@@ -182,6 +300,8 @@ internal static class TallyXml
                         new XElement("NAME", Clean(entry.CostCentre)),
                         new XElement("AMOUNT", amount))));
     }
+
+    private static string Date(DateOnly date) => date.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
 
     /// <summary>Removes control characters XML cannot carry (they would throw while serialising).</summary>
     private static string Clean(string value) =>

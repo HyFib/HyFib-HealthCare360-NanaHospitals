@@ -138,7 +138,9 @@ internal static class BillQueries
             bill.DebitAmount,
             bill.PayerDebitAmount,
             await LateForFiledReturnAsync(db, bill, ct),
-            einvoice.Missing);
+            einvoice.Missing,
+            (await ReturnCreditService.PendingAsync(db, bill, ct))
+                .Select(c => new ReturnToCreditDto(c.Id, c.Description, -c.Quantity, -c.NetAmount, c.ServiceDate)).ToList());
     }
 
     /// <summary>A credit note with the lines it corrects, their GST, and its IRN when it is a registered e-invoice.</summary>

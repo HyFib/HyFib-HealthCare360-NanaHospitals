@@ -52,6 +52,14 @@ public sealed record NumberSeriesDefinition(
 
     public bool RequiresFacilityCode => FacilityCodeReason is not null;
 
+    /// <summary>
+    /// The first running number the series issues (1 unless set), and the lowest it ever issues. A series whose numbers
+    /// must all have as many digits as its padding, with no leading zero, starts at the smallest number of that many
+    /// digits: {SEQ:10} at 1000000000. A counter below it (a database from before the series started there) jumps to it
+    /// at the next number, and the next number an administrator sets cannot be below it.
+    /// </summary>
+    public long FirstNumber { get; init; } = 1;
+
     public bool IsLocked => LockedReason is not null;
 }
 

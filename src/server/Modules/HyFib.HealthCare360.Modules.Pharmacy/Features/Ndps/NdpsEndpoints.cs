@@ -60,14 +60,14 @@ internal static class NdpsEndpoints
         var lines = new List<IReadOnlyList<string?>>
         {
             Csv.Row("Drug", "Time", "Movement", "Opening", "Received", "Dispensed", "Patient", "UHID", "Prescriber", "Prescription", "Reference",
-                "Balance"),
+                "Balance", "Remarks"),
         };
         foreach (var drug in a.Drugs)
         {
             lines.Add(Csv.Row(drug.ItemName, null, "Opening stock", Csv.Number(drug.Opening)));
             lines.AddRange(drug.Movements.Select(m => Csv.Row(
                 drug.ItemName, Csv.Time(m.At), m.Type.ToString(), null, m.In == 0 ? null : Csv.Number(m.In), m.Out == 0 ? null : Csv.Number(m.Out),
-                m.PatientName, m.PatientUhid, m.PrescriberName, m.PrescriptionNumber, m.Reference, Csv.Number(m.BalanceAfter))));
+                m.PatientName, m.PatientUhid, m.PrescriberName, m.PrescriptionNumber, m.Reference, Csv.Number(m.BalanceAfter), m.Remarks)));
             lines.Add(Csv.Row(drug.ItemName, null, "Closing stock", null, Csv.Number(drug.Received + drug.OtherIn), Csv.Number(drug.Dispensed + drug.OtherOut),
                 null, null, null, null, null, Csv.Number(drug.Closing)));
         }

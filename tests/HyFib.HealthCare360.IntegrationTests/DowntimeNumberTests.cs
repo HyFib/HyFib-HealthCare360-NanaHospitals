@@ -340,7 +340,7 @@ public sealed class DowntimeNumberTests(HospitalServer server)
         (await accountant.GetAsync<Gstr1Return>($"/api/v1/billing/gst-returns/gstr1?month={month}")).DocumentsIssued.SingleOrDefault(d => d.Series == "OP bills")
         ?? new Gstr1DocumentsIssued(1, "OP bills", string.Empty, string.Empty, 0, 0);
 
-    private static async Task<BillDetail> DraftAsync(ApiClient frontOffice, ApiClient billing, Guid patientId)
+    internal static async Task<BillDetail> DraftAsync(ApiClient frontOffice, ApiClient billing, Guid patientId)
     {
         var visit = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", Visit(patientId, null));
         var dressing = (await billing.GetAsync<List<ServiceItemDto>>("/api/v1/masters/lookups/services?search=PROC-DRESS")).Single(s => s.Code == "PROC-DRESS");
@@ -348,7 +348,7 @@ public sealed class DowntimeNumberTests(HospitalServer server)
         return await billing.PostAsync<BillDetail>("/api/v1/billing/bills", new CreateBillRequest(visit.Id, null, null));
     }
 
-    private static async Task<PatientCreated> RegisterAsync(ApiClient frontOffice) =>
+    internal static async Task<PatientCreated> RegisterAsync(ApiClient frontOffice) =>
         await frontOffice.PostAsync<PatientCreated>("/api/v1/patients", new RegisterPatientRequest(
             Title: null, FirstName: TestPatients.FirstName("Downtime"), MiddleName: null, LastName: "Numbers", Gender: Gender.Female,
             DateOfBirth: null, AgeYears: 20 + Random.Shared.Next(60), AgeMonths: null, Phone: null, AlternatePhone: null, Email: null,
@@ -357,10 +357,10 @@ public sealed class DowntimeNumberTests(HospitalServer server)
             PreferredLanguage: null, Category: null, AbhaNumber: null, AbhaAddress: null, AadhaarNumber: null, PhotoFileId: null, IsVip: false,
             Notes: null, ConfirmedNotDuplicate: true));
 
-    private static PaymentLineInput Upi(decimal amount) =>
+    internal static PaymentLineInput Upi(decimal amount) =>
         new(PaymentMode.Upi, amount, "UTR" + string.Concat(Enumerable.Range(0, 9).Select(_ => (char)('0' + Random.Shared.Next(10)))), null, null, null, null, null);
 
-    private static async Task<ShiftDto?> OpenShiftAsync(ApiClient billing)
+    internal static async Task<ShiftDto?> OpenShiftAsync(ApiClient billing)
     {
         using var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current");
         current.EnsureSuccessStatusCode();
@@ -369,7 +369,7 @@ public sealed class DowntimeNumberTests(HospitalServer server)
             : null;
     }
 
-    private static async Task CloseShiftAsync(ApiClient billing, ShiftDto? opened)
+    internal static async Task CloseShiftAsync(ApiClient billing, ShiftDto? opened)
     {
         if (opened is null)
         {

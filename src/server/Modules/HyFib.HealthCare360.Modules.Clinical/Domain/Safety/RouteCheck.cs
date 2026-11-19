@@ -8,7 +8,10 @@ public enum DosageFormKind
     /// <summary>The form does not settle the route (a solution, drops, an unknown form, none).</summary>
     Unknown = 0,
 
-    /// <summary>An injection or an infusion: IV, IM, SC or another route by needle, never by mouth.</summary>
+    /// <summary>
+    /// An injection or an infusion ("injectable suspension" too): IV, IM, SC or another route by needle, never by mouth. Its
+    /// solution may also be nebulised, inhaled or put into the nose.
+    /// </summary>
     Injection,
 
     /// <summary>Taken by mouth: a tablet, capsule, syrup, suspension, sachet…</summary>
@@ -50,12 +53,16 @@ public static partial class DosageForms
     public static bool IsInjectionRoute(string? route) => route?.Trim().ToUpperInvariant() is "IV" or "IM" or "SC" or "ID"
         or "INTRAVENOUS" or "INTRAMUSCULAR" or "SUBCUTANEOUS" or "INTRADERMAL";
 
-    /// <summary>A route no injection is given by: by mouth, through a tube, on the skin, in the eye, inhaled…</summary>
+    /// <summary>
+    /// A route an injection is not ordered by: by mouth, through a tube, under the tongue, rectally, on the skin, in the eye or
+    /// ear, vaginally. Nebulised, inhaled or into the nose are not among them: the ward nebulises adrenaline (croup, stridor),
+    /// acetylcysteine, colistin and hypertonic saline from the injection, and puts midazolam into the nose for a seizure.
+    /// </summary>
     public static bool IsNonInjectionRoute(string? route) => route?.Trim().ToUpperInvariant() is "ORAL" or "PO" or "SUBLINGUAL"
-        or "NASOGASTRIC" or "RECTAL" or "TOPICAL" or "INHALATION" or "NEBULISATION" or "NEBULIZATION" or "EYE" or "EAR"
-        or "NASAL" or "VAGINAL";
+        or "NASOGASTRIC" or "RECTAL" or "TOPICAL" or "EYE" or "EAR" or "VAGINAL";
 
-    [GeneratedRegex(@"\b(inj(ection)?s?\b|inj\.|infusion|vials?\b|amp(o)?ules?\b)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // "Injectable" too: a depot injection is often an "injectable suspension", which is not taken by mouth.
+    [GeneratedRegex(@"\b(inj(ection|ectable)?s?\b|inj\.|infusion|vials?\b|amp(o)?ules?\b)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex Injection();
 
     [GeneratedRegex(@"(inhal|nebuli[sz]|respule|rotacap|metered[- ]dose|\beye\b|ophthalm|\bear\b|\botic\b|nasal|suppositor|rectal|enema|pessar|vaginal|sublingual|cream|ointment|\bgel\b|lotion|jelly|dusting|\bpaint\b|patch|topical)",
@@ -70,8 +77,9 @@ public static partial class DosageForms
 /// <summary>
 /// Every line names the route it is given by, and the route must fit its dosage form (ERX-02): an injection is given by
 /// needle (IV, IM and SC are the prescriber's choice, as is "Other" for intrathecal or intra-articular), never by a route
-/// such as Oral; a tablet or a syrup is not given IV, IM or SC. The route goes to the pharmacy label and the nurse's MAR,
-/// so a line without one, or one its form contradicts, blocks signing, whichever screen, favourite or client filled it.
+/// such as Oral, though its solution may be nebulised, inhaled or put into the nose; a tablet or a syrup is not given IV,
+/// IM or SC. The route goes to the pharmacy label and the nurse's MAR, so a line without one, or one its form contradicts,
+/// blocks signing, whichever screen, favourite or client filled it.
 /// </summary>
 public static class RouteCheck
 {

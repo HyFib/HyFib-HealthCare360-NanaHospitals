@@ -128,6 +128,9 @@ public sealed class SupplyChainModule : IModule
         services.AddScoped<TransferService>();
         services.AddScoped<VendorAccountService>();
         services.AddScoped<IVendorAccountsSource, VendorAccountsDayBookSource>();
+
+        // The day's goods receipts as purchases for Billing's Tally day book (Billing reads them without referencing this module).
+        services.AddScoped<IPurchaseAccountsSource, PurchaseAccountsDayBookSource>();
         services.AddScoped<AdjustmentService>();
         services.AddScoped<InventoryReportService>();
         services.AddScoped<AssetService>();

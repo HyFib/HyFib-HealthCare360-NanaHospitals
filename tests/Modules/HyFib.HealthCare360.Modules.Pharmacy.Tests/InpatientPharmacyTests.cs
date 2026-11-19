@@ -27,6 +27,38 @@ public sealed class InpatientPharmacyTests
     }
 
     [Fact]
+    public void An_indent_for_an_in_patient_prescription_is_counted_on_its_line_so_the_queue_does_not_issue_it_again()
+    {
+        // Metformin 60 and telmisartan 30 prescribed for the ward; the nurse indents the metformin for the prescription.
+        var entry = PharmacyQueueEntry.FromPrescription(QueueEntryTests.Prescription(inpatient: true), Now);
+        var metformin = entry.Lines[0];
+        entry.LineSuppliedBy(metformin.DrugItemId!.Value).ShouldBe(metformin);
+        entry.LineSuppliedBy(Guid.CreateVersion7()).ShouldBeNull("a medicine the prescription does not name");
+
+        entry.RecordSupplied(metformin.Id, 60, Now).IsSuccess.ShouldBeTrue();
+
+        (metformin.RemainingQuantity, metformin.Status, entry.Status).ShouldBe((0m, QueueLineStatus.Dispensed, QueueEntryStatus.PartiallyDispensed));
+        entry.RecordDispensed(metformin.Id, 60, Now).Error!.Code.ShouldBe("queue.line_closed", "the IP queue no longer issues, nor charges, the same tablets");
+        entry.LineSuppliedBy(metformin.DrugItemId!.Value).ShouldBeNull("nothing left to supply");
+    }
+
+    [Fact]
+    public void An_indent_that_brings_more_than_is_left_on_the_line_counts_only_what_was_left()
+    {
+        var entry = PharmacyQueueEntry.FromPrescription(QueueEntryTests.Prescription(inpatient: true), Now);
+        var (metformin, telmisartan) = (entry.Lines[0], entry.Lines[1]);
+        entry.RecordDispensed(metformin.Id, 56, Now).IsSuccess.ShouldBeTrue();
+
+        entry.RecordSupplied(metformin.Id, 10, Now).IsSuccess.ShouldBeTrue();
+        entry.RecordSupplied(metformin.Id, 2, Now).IsSuccess.ShouldBeTrue("a replacement beyond the prescription is the indent's own");
+        metformin.DispensedQuantity.ShouldBe(60);
+
+        entry.RecordSupplied(telmisartan.Id, 30, Now).IsSuccess.ShouldBeTrue();
+        entry.Status.ShouldBe(QueueEntryStatus.Dispensed);
+        entry.LineSuppliedBy(telmisartan.DrugItemId ?? Guid.Empty).ShouldBeNull("a closed prescription supplies nothing more");
+    }
+
+    [Fact]
     public void Cancelling_a_partly_issued_indent_keeps_what_was_issued()
     {
         var indent = new WardIndent();

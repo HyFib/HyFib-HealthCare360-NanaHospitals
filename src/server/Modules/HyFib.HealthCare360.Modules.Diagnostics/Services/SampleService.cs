@@ -12,7 +12,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// Pre-analytical workflow (LIS-02, LIS-03): collection with barcode labels, receipt in the lab by scanning, and
 /// rejection with a standard reason followed by a recollection tube. Out-patient collection is gated on payment
 /// (setting <c>lab.requirePaymentBeforeCollection</c>, default on); in-patient, emergency and day-care work is never held up,
-/// nor is that of a victim treated free of cost by law (BNSS 2023, s.397).
+/// nor is that of a victim treated free of cost by law (BNSS 2023, s.397). A tube number typed at the counter whose check
+/// digit does not match finds no tube, and says so (<see cref="TubeNumbers"/>).
 /// </summary>
 internal sealed class SampleService(
     HospitalDbContext db,
@@ -23,6 +24,7 @@ internal sealed class SampleService(
     LabWorkflow workflow,
     DiagnosticsRealtime realtime,
     AnalyserOrders analyserOrders,
+    TubeNumbers tubeNumbers,
     ICurrentUser currentUser,
     TimeProvider time)
 {
@@ -151,21 +153,29 @@ internal sealed class SampleService(
         return Result<IReadOnlyList<SampleLabel>>.Ok(await LabelsAsync(order, tubes, ct));
     }
 
-    /// <summary>Bulk receipt by barcode scan. Each barcode gets its own outcome, so one bad label does not block the rack.</summary>
+    /// <summary>
+    /// Bulk receipt by barcode scan, or by tube numbers typed in. Each gets its own outcome, so one bad label does not block
+    /// the rack; a number whose check digit does not match finds no tube.
+    /// </summary>
     public async Task<IReadOnlyList<ReceiveOutcome>> ReceiveAsync(IReadOnlyList<string> barcodes, CancellationToken ct)
     {
         var codes = barcodes.Select(b => b.Trim()).Where(b => b.Length > 0).Distinct(StringComparer.Ordinal).ToList();
-        var tubes = await db.Set<LabSample>().Where(s => codes.Contains(s.Barcode)).ToListAsync(ct);
+        var checking = codes.Where(TubeNumbers.Verifies).ToList();
+        var tubes = await db.Set<LabSample>().Where(s => checking.Contains(s.Barcode)).ToListAsync(ct);
         var now = time.GetUtcNow();
         var outcomes = new List<ReceiveOutcome>();
         var received = new List<LabSample>();
 
         foreach (var code in codes)
         {
-            var tube = tubes.FirstOrDefault(s => s.Barcode == code);
+            // A number that does not check finds at most a tube numbered before the check digit (TubeNumbers): rare, one by one.
+            var tube = TubeNumbers.Verifies(code)
+                ? tubes.FirstOrDefault(s => s.Barcode == code)
+                : await db.Set<LabSample>().Where(await tubeNumbers.MatchingAsync(code, ct)).FirstOrDefaultAsync(ct);
             if (tube is null)
             {
-                outcomes.Add(new ReceiveOutcome(code, false, null, "No sample has this barcode."));
+                var why = TubeNumbers.IsMistyped(code) ? TubeNumbers.MistypedMessage(code) : "No sample has this barcode.";
+                outcomes.Add(new ReceiveOutcome(code, false, null, why));
                 continue;
             }
 
@@ -273,13 +283,19 @@ internal sealed class SampleService(
         return new SampleRejected(tube.Id, replacement.Value.Id, replacement.Value.Barcode);
     }
 
-    public async Task<SampleLookup?> FindByBarcodeAsync(string barcode, CancellationToken ct)
+    /// <summary>
+    /// The tube with <paramref name="barcode"/>, scanned or typed in. A number whose check digit does not match finds no
+    /// tube, and the lab is told it was typed wrong (<see cref="TubeNumbers"/>).
+    /// </summary>
+    public async Task<Result<SampleLookup>> FindByBarcodeAsync(string barcode, CancellationToken ct)
     {
         var code = barcode.Trim();
-        var tube = await db.Set<LabSample>().AsNoTracking().FirstOrDefaultAsync(s => s.Barcode == code, ct);
+        var tube = await db.Set<LabSample>().AsNoTracking().Where(await tubeNumbers.MatchingAsync(code, ct)).FirstOrDefaultAsync(ct);
         if (tube is null)
         {
-            return null;
+            return TubeNumbers.IsMistyped(code)
+                ? Error.Rule(TubeNumbers.MistypedCode, TubeNumbers.MistypedMessage(code))
+                : Error.NotFound(nameof(LabSample), code);
         }
 
         var order = await db.Set<LabOrder>().AsNoTracking().Where(o => o.Id == tube.LabOrderId).Select(o => new { o.AccessionNumber }).FirstAsync(ct);

@@ -121,6 +121,44 @@ public sealed class YumizenH500Tests
     public void Orders_by_panel(string[] channels, string[] panels) =>
         H500.OrderedTests(channels).ShouldBe(panels);
 
+    /// <summary>
+    /// The channels HC360's catalogue gives the CBC's analytes: the H500's own parameter codes (Nana Hospitals reports all
+    /// of them). A tube with the differential pending is ordered as DIF, one with only the counts and indices as CBC.
+    /// </summary>
+    [Theory]
+    [InlineData(new[] { "HGB", "WBC", "NEU%", "LYM%", "MON%", "EOS%", "BAS%", "IMG%", "NEU#", "LYM#", "MON#", "EOS#", "BAS#", "IMG#", "RBC", "HCT", "MCV",
+        "MCH", "MCHC", "RDW-CV", "RDW-SD", "PLT", "MPV", "PCT", "PDW", "P-LCR" }, new[] { "DIF" })]
+    [InlineData(new[] { "NEU#" }, new[] { "DIF" })]
+    [InlineData(new[] { "IMG%" }, new[] { "DIF" })]
+    [InlineData(new[] { "RDW-CV", "RDW-SD", "PLT", "MPV", "PCT", "PDW", "P-LCR" }, new[] { "CBC" })]
+    public void Orders_the_catalogues_cbc_by_the_panel_its_pending_parameters_need(string[] channels, string[] panels) =>
+        H500.OrderedTests(channels).ShouldBe(panels);
+
+    [Fact]
+    public void Maps_every_parameter_of_a_cbc_with_differential_under_its_own_code()
+    {
+        (string Code, string Value, string Unit)[] parameters =
+        [
+            ("WBC", "9.45", "1E03/mm3"), ("LYM#", "2.60", "1E03/mm3"), ("LYM%", "27.5", "%"), ("MON#", "0.60", "1E03/mm3"),
+            ("MON%", "6.3", "%"), ("NEU#", "5.90", "1E03/mm3"), ("NEU%", "62.4", "%"), ("EOS#", "0.30", "1E03/mm3"), ("EOS%", "3.2", "%"),
+            ("BAS#", "0.05", "1E03/mm3"), ("BAS%", "0.5", "%"), ("IMG#", "0.02", "1E03/mm3"), ("IMG%", "0.2", "%"),
+            ("RBC", "4.71", "1E06/mm3"), ("HGB", "13.9", "g/dL"), ("HCT", "41.8", "%"), ("MCV", "88.7", "µm3"), ("MCH", "29.5", "pg"),
+            ("MCHC", "33.3", "g/dL"), ("RDW-CV", "12.9", "%"), ("RDW-SD", "41.2", "µm3"), ("PLT", "250", "1E03/mm3"), ("MPV", "9.1", "µm3"),
+            ("PCT", "0.228", "%"), ("PDW", "15.2", "%"), ("P-LCR", "24.6", "%"),
+        ];
+        var results = parameters.Select((p, i) =>
+            $"R|{i + 1}|^^^{p.Code}^|{p.Value}|{p.Unit}|^REFERENCE_RANGE|N||F||LabMan_111^^LABMANAGER|20210707172907|20210707172907|112YADH47745");
+
+        var message = Map([@"H|\^&|||H500/H500E^112YADH47745^4.0.0.5|||||||P|LIS2-A2|20210709175022", "P|1", "O|1|1000000123||^^^DIF|R|20210707172907|||||||||BLOOD",
+            .. results, "L|1|N"]).ShouldHaveSingleItem();
+
+        message.SampleBarcode.ShouldBe("1000000123", "the 10-digit tube number typed on the analyser");
+        message.Results.Select(r => r.ChannelCode).ShouldBe(parameters.Select(p => p.Code));
+        message.Results.Select(r => r.Value).ShouldBe(parameters.Select(p => p.Value));
+        message.Results.Select(r => r.Units).ShouldBe(parameters.Select(p => p.Unit), "units pass as the analyser sent them");
+        message.Results.ShouldAllBe(r => r.Kind == InstrumentResultKind.Value && r.Status == "F");
+    }
+
     [Fact]
     public void Other_analysers_are_ordered_by_channel() =>
         AstmDialect.Standard.OrderedTests(["HGB", "LYM#"]).ShouldBe(["HGB", "LYM#"]);

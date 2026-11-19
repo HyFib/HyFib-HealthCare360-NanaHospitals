@@ -4,6 +4,7 @@ import type { FluidDirection, FluidRoute } from './fluidBalance';
 import type { AmbulatoryAid, GaitType, PainScaleKind, RiskLevel } from './riskScales';
 import type { NursingShift } from './time';
 import type { CarePlanProblemDto } from './wardCareApi';
+import type { WardOrderSafety } from './wardOrderSafety';
 
 // ------------------------------------------------------------------ nursing notes and handovers
 
@@ -156,8 +157,11 @@ export type MedicationOrderSource = 'Prescription' | 'Pharmacy' | 'Manual';
 export type MedicationOrderStatus = 'Active' | 'Stopped' | 'Completed';
 /** Signed by the doctor who wrote it, or a verbal or telephone order someone else wrote in the doctor's name. */
 export type MedicationOrderMode = 'Written' | 'Verbal' | 'Telephone';
-/** Why a dose is held (the server's refusal code): a high-alert verbal order not yet countersigned, or a stop waiting. */
-export type DoseHold = 'medication.awaiting_countersignature' | 'medication.stop_pending';
+/**
+ * Why a dose is not given now (the server's refusal code): a high-alert verbal order not yet countersigned, a stop waiting,
+ * or the medicine stopped.
+ */
+export type DoseHold = 'medication.awaiting_countersignature' | 'medication.stop_pending' | 'medication.not_active';
 export type MarStatus = 'Due' | 'Given' | 'Held' | 'Refused' | 'Missed' | 'Cancelled';
 export type MarOutcome = 'Given' | 'Held' | 'Refused' | 'Missed';
 
@@ -185,6 +189,7 @@ export const ORDER_MODE_LABEL: Record<MedicationOrderMode, string> = {
 export const DOSE_HOLD_LABEL: Record<DoseHold, string> = {
   'medication.awaiting_countersignature': 'Held: awaiting countersignature',
   'medication.stop_pending': 'Held: stop pending',
+  'medication.not_active': 'Not to be given: medicine stopped',
 };
 
 /** Frequencies the server schedules (OD, BD, TDS, QID, HS, 1-0-1, Q6H…) plus as-needed ones that never auto-schedule. */
@@ -288,6 +293,11 @@ export interface AddMedicationOrderRequest {
   readBack?: boolean;
   /** A verbal order of a high-alert or controlled medicine to be given before the doctor countersigns it. */
   emergency?: boolean;
+  /**
+   * The clinical reason for writing the order over a blocking safety alert (at least 10 characters), audited at Critical;
+   * without it such an order is refused (`medication.safety_block`, with the alerts).
+   */
+  overrideReason?: string | null;
 }
 
 /** A medicine of the drug master for the ward's order form (`GET /api/v1/nursing/drugs`). */
@@ -388,6 +398,10 @@ export interface WardMarItem {
   needsWitness: boolean;
   /** Why the dose is held, while it is; null when it may be given. */
   heldBecause?: DoseHold | null;
+  /** The dose's own notes: an extra dose's reason, what to confirm before giving it. */
+  notes?: string | null;
+  /** Its order's instructions ("after food", "confirm the dose with the doctor"). */
+  instructions?: string | null;
 }
 
 // ------------------------------------------------------------------ queries
@@ -515,6 +529,9 @@ export const nursingApi = {
     api.post<AssessmentDto>(`/api/v1/nursing/admissions/${admissionId}/assessments/pain`, body),
   addOrder: (admissionId: string, body: AddMedicationOrderRequest) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/admissions/${admissionId}/medication-orders`, body),
+  /** The prescribing safety check of the order as the form has it, before it is written. */
+  checkOrder: (admissionId: string, body: AddMedicationOrderRequest) =>
+    api.post<WardOrderSafety>(`/api/v1/nursing/admissions/${admissionId}/medication-orders/check`, body),
   /** A prescriber's stop is made at once; anyone else's waits for the doctor (`stopPending` on the answer). */
   stopOrder: (orderId: string, reason: string) =>
     api.post<MedicationOrderDto>(`/api/v1/nursing/medication-orders/${orderId}/stop`, { reason }),

@@ -14,7 +14,8 @@ public sealed record NdpsMovement(
     string? PatientUhid,
     string? PatientName,
     string? PrescriberName,
-    string? PrescriptionNumber);
+    string? PrescriptionNumber,
+    string? Remarks);
 
 /// <summary>
 /// A drug's day in a store (Form 3H): the opening stock, what came in, what was dispensed to patients and what else
@@ -58,7 +59,8 @@ public sealed record NdpsPatientLine(
     string? PrescriberName,
     string? PrescriberRegistrationNumber,
     string? PrescriptionNumber,
-    string? Reference);
+    string? Reference,
+    string? Remarks);
 
 /// <summary>The patient's record of essential narcotic drugs dispensed to them (Form 3E).</summary>
 public sealed record NdpsPatientRecord(

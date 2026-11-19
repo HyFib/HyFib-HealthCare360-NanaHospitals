@@ -50,6 +50,24 @@ public sealed class LabelTemplateTests
         routine.Elements.OfType<TextElement>().ShouldContain(t => t.Text == "EDTA - HAEM");
     }
 
+    /// <summary>
+    /// Tube numbers have 10 digits, the last a check digit (1000012342): they print, and scan, on the narrowest tube labels
+    /// too.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Printers))]
+    public void A_ten_digit_tube_number_prints_on_the_tube_label(LabelLanguage language, int dpi)
+    {
+        foreach (var (width, height) in new[] { (50, 25), (38, 25) })
+        {
+            var label = Draw(LabelSamples.Label(language, dpi, width, height), LabelSamples.Tube() with { Barcode = "1000012342" }, LabTubeTemplate.Draw);
+
+            BarcodesScan(label);
+            label.Elements.OfType<BarcodeElement>().ShouldHaveSingleItem().Plan.Value.ShouldBe("1000012342");
+            label.Elements.OfType<TextElement>().ShouldContain(t => t.Text == "1000012342", "the digits under the barcode, to write or type");
+        }
+    }
+
     [Theory]
     [InlineData(38, 25)]
     [InlineData(50, 38)]

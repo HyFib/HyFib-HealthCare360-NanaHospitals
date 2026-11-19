@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Bills;
+using HyFib.HealthCare360.Modules.Billing.Services.EventHandlers;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Features.Downtime;
 using HyFib.HealthCare360.Modules.Patients.Services;
@@ -26,7 +27,8 @@ public sealed class BillService(
     ChargeRefusals refusals,
     ICurrentUser currentUser,
     TimeProvider time,
-    DowntimeNumberService downtimeNumbers)
+    DowntimeNumberService downtimeNumbers,
+    LateEntryQueue lateEntries)
 {
     public async Task<Result<Guid>> CreateOpDraftAsync(CreateBillRequest request, CancellationToken ct)
     {
@@ -393,6 +395,9 @@ public sealed class BillService(
         if (paper is not null)
         {
             bill.EnteredFromPaperAt = time.GetUtcNow();
+
+            // The bill is in the day book of the day on the paper, which may have gone to Tally already.
+            lateEntries.Dated(bill.FacilityId, paper.At, "billing.bill", number);
         }
 
         var chargeIds = bill.Lines.Select(l => l.ChargeId).ToList();
@@ -416,7 +421,10 @@ public sealed class BillService(
     /// <summary>
     /// Cancels a finalized bill (holders of <c>billing.bills.cancel</c> only): charges return to the unbilled pool,
     /// advance adjustments go back to the IP deposit or the patient advance they came from, and any cash/card collected
-    /// becomes a refund request that a second person must approve.
+    /// becomes a refund request that a second person must approve. Not while a claim is open on it or it has a live IRN,
+    /// nor once anything was recorded against it (a credit note or write-off, a debit note, an insurer's settlement or
+    /// deduction, a rejected claim's included: <see cref="Bill.AdjustedSinceFinalized"/>), as the cancellation reverses
+    /// the whole bill in the books and the GST returns while those stay.
     /// </summary>
     public async Task<Result> CancelAsync(Guid billId, CancelBillRequest request, CancellationToken ct)
     {
@@ -428,7 +436,8 @@ public sealed class BillService(
 
         if (await db.Set<InsuranceClaim>().AnyAsync(c => c.BillId == billId && c.Status != ClaimStatus.Rejected, ct))
         {
-            return Error.Rule("billing.bill_has_claim", "An insurance claim is open on this bill. Settle or reject the claim first.");
+            return Error.Rule("billing.bill_has_claim",
+                "An insurance claim is open on this bill, so it is not cancelled. Once the insurer settles or rejects the claim, correct the bill with a credit note.");
         }
 
         if (await db.Set<EInvoice>().AnyAsync(e => e.Source == "bill" && e.SourceId == billId && e.Status == EInvoiceStatus.Registered, ct))
@@ -572,7 +581,22 @@ public sealed class BillService(
             query = query.Where(c => chargeIds.Contains(c.Id));
         }
 
-        return await query.OrderBy(c => c.ServiceDate).ToListAsync(ct);
+        // A return of what a finalized bill of the visit charged, when a payer or a package shared it, is credited on that
+        // bill (ReturnCredits): on a new bill the patient would be refunded what the payer or the package paid.
+        var available = await query.OrderBy(c => c.ServiceDate).ToListAsync(ct);
+        return visitId is { } visit && available.Any(c => c.IsCredit) && await SharedBillOfVisitAsync(visit, ct) is { } shared
+            ? [.. ReturnCredits.ForNewBill(shared, available, await ReturnCreditService.ChargedElsewhereAsync(db, shared, ct))]
+            : available;
+    }
+
+    /// <summary>A finalized OP bill of the visit (not cancelled) that a payer or a package shared, if there is one.</summary>
+    private async Task<Bill?> SharedBillOfVisitAsync(Guid visitId, CancellationToken ct)
+    {
+        var finalized = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines)
+            .Where(b => b.VisitId == visitId && b.Type == BillType.OutPatient && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled
+                        && b.Status != BillStatus.Refunded)
+            .ToListAsync(ct);
+        return finalized.FirstOrDefault(ReturnCredits.CreditedOnTheBill);
     }
 
     /// <summary>Advance (deposit) adjusted on this bill and not yet restored.</summary>

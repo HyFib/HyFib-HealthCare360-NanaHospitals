@@ -183,9 +183,9 @@ public sealed class IpBillingService(
         var position = await BillingStatusProvider.PositionAsync(db, discharged.AdmissionId, ct);
         var clearance = DischargeClearanceRules.Evaluate(position);
 
-        // Every service is on a finalized bill (the final bill, or the interim bills that took them all), nothing is due
-        // and no advance is held.
-        if (clearance.Outstanding <= 0 && position.UnbilledCount == 0 && account.DepositBalance <= 0)
+        // Every service is on a finalized bill (the final bill, or the interim bills that took them all), nothing is due,
+        // no advance is held and no return waits to be credited on the final bill.
+        if (clearance.Outstanding <= 0 && position.UnbilledCount == 0 && account.DepositBalance <= 0 && position.ReturnsToCreditCount == 0)
         {
             account.Close();
             return;
@@ -316,9 +316,14 @@ public sealed class IpBillingService(
 
         var position = await BillingStatusProvider.PositionAsync(db, admissionId.Value, ct);
         var clearance = DischargeClearanceRules.Evaluate(position);
+        var finalBillId = await db.Set<Bill>()
+            .Where(b => b.AdmissionId == admissionId && b.IsFinalBill && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled && b.Status != BillStatus.Refunded)
+            .Select(b => (Guid?)b.Id)
+            .FirstOrDefaultAsync(ct);
         return new ClearanceDto(
             clearance.Cleared, clearance.Outstanding, clearance.Reason, position.UnbilledCount, position.UnbilledAmount, position.HasFinalBill,
-            position.PatientDue, position.DepositBalance, position.DischargeWithDuesApproved, position.BilledOnInterimBills);
+            position.PatientDue, position.DepositBalance, position.DischargeWithDuesApproved, position.BilledOnInterimBills,
+            position.ReturnsToCreditCount, position.ReturnsToCreditAmount, finalBillId);
     }
 
     // ------------------------------------------------------------------ commands
@@ -535,7 +540,10 @@ public sealed class IpBillingService(
 
     /// <summary>
     /// Prepares (or refreshes) the draft final bill with every unbilled service, package cover and the payer split.
-    /// Once the final bill is finalized, late services go on a supplementary bill for the patient.
+    /// Once the final bill is finalized, late services go on a supplementary bill for the patient. Late returns go there
+    /// too after a self-paying final bill, and are refunded to the patient; after a final bill a payer or a package
+    /// shared they are credited on the final bill instead (<see cref="ReturnCredits"/>), which knows what the payer and the
+    /// package paid of them, and never go on the supplementary bill.
     /// </summary>
     public async Task<Result<Guid>> PrepareFinalBillAsync(Guid id, CancellationToken ct)
     {
@@ -551,12 +559,19 @@ public sealed class IpBillingService(
         }
 
         Bill bill;
-        if (await HasFinalizedFinalBillAsync(account.AdmissionId, ct))
+        if (await FinalizedFinalBillAsync(account.AdmissionId, ct) is { } finalized)
         {
-            var late = await AvailableChargesAsync(account.AdmissionId, null, ct);
+            var available = await AvailableChargesAsync(account.AdmissionId, null, ct);
+            var late = available.Any(c => c.IsCredit)
+                ? ReturnCredits.ForNewBill(finalized, available, await ReturnCreditService.ChargedElsewhereAsync(db, finalized, ct))
+                : available;
             if (late.Count == 0)
             {
-                return Error.Rule("billing.nothing_to_bill", "The final bill is finalized and there are no new services.");
+                return available.Count == 0
+                    ? Error.Rule("billing.nothing_to_bill", "The final bill is finalized and there are no new services.")
+                    : Error.Rule("billing.returns_to_credit",
+                        $"What came back after final bill {finalized.BillNumber} ({Returns(available)}) was charged on it to the payer or the package: " +
+                        "credit it on the final bill (Credit the returns), so the patient gets back only what the patient paid.");
             }
 
             bill = Bill.Draft(
@@ -776,6 +791,16 @@ public sealed class IpBillingService(
         return db.Set<Charge>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .AnyAsync(c => c.AdmissionId == admissionId && c.Status == ChargeStatus.Unbilled && drafts.Contains(c.BillId), ct);
     }
+
+    /// <summary>The stay's finalized final bill (not cancelled) with its lines; null when it has none.</summary>
+    private Task<Bill?> FinalizedFinalBillAsync(Guid admissionId, CancellationToken ct) =>
+        db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).Include(b => b.Lines).FirstOrDefaultAsync(
+            b => b.AdmissionId == admissionId && b.IsFinalBill && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled && b.Status != BillStatus.Refunded,
+            ct);
+
+    /// <summary>How many returns, and worth how much as charged, for a message: "1 return worth ₹3,000.00".</summary>
+    private static string Returns(IReadOnlyCollection<Charge> credits) =>
+        $"{(credits.Count == 1 ? "1 return" : $"{credits.Count} returns")} worth ₹{Money.FormatInr(-credits.Sum(c => c.NetAmount))}";
 
     private Task<bool> HasFinalizedFinalBillAsync(Guid admissionId, CancellationToken ct) =>
         db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(

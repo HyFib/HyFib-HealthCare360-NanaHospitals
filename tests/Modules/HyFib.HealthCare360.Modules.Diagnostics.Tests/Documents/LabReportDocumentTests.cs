@@ -24,7 +24,7 @@ public sealed class LabReportDocumentTests
 
         body.ShouldContain("<h2>Haematology</h2>");
         body.ShouldContain("<span class=\"crit\">5.1</span>");
-        body.ShouldContain("title=\"Critically low\">LL</span>");
+        body.ShouldContain("title=\"Critically low\"><span class=\"dir\" aria-hidden=\"true\">↓</span> LL</span>");
         body.ShouldContain("Awaited");
         body.ShouldNotContain("13.9");
         body.ShouldContain("Organism isolated: <strong>E. coli</strong> · Colony count 100000 CFU/mL");
@@ -32,6 +32,92 @@ public sealed class LabReportDocumentTests
         body.ShouldContain("<strong>Interpretation:</strong> Low haemoglobin");
         body.ShouldContain("Whole blood · Method: Flow cytometry · Tested at Metro Labs");
     }
+
+    /// <summary>An arterial blood gas (N8) names its specimen on the report as arterial blood.</summary>
+    [Fact]
+    public void An_arterial_blood_gas_names_its_specimen_arterial_blood()
+    {
+        var abg = Report().Sections[0].Tests[0] with
+        {
+            Code = "LAB-ABG",
+            Name = "Arterial blood gas (ABG)",
+            SpecimenType = SpecimenType.ArterialBlood,
+            Method = null,
+            ReferralLabName = null,
+        };
+        var report = Report() with { Sections = [new LabReportSection(LabSection.Biochemistry, [abg])] };
+
+        LabReportDocument.Body(report, releasedOnly: true).ToString().ShouldContain("Arterial blood");
+    }
+
+    /// <summary>
+    /// Nana Hospitals reads high and low results by an arrow (L7): ↑ beside H and HH, ↓ beside L and LL. The letter and its
+    /// words stay, so the meaning never rests on the arrow, and the report brings the arrows' font.
+    /// </summary>
+    [Fact]
+    public async Task High_and_low_flags_carry_an_arrow_beside_their_letter_and_the_report_brings_its_font()
+    {
+        LabReportResultLine Line(string name, string value, ResultFlag flag) =>
+            new(Guid.NewGuid(), name, null, value, "mmol/L", flag, "3.5 – 5.1", LabResultStatus.Verified, false, null, null, null, [], null, null);
+        var test = Report().Sections[0].Tests[0] with
+        {
+            Results =
+            [
+                Line("Potassium", "5.6", ResultFlag.High),
+                Line("Potassium, repeat", "6.9", ResultFlag.CriticalHigh),
+                Line("Sodium", "131", ResultFlag.Low),
+                Line("Sodium, repeat", "118", ResultFlag.CriticalLow),
+                Line("Chloride", "101", ResultFlag.Normal),
+                Line("Haemolysis", "Present", ResultFlag.Abnormal),
+            ],
+        };
+        var report = Report() with { Sections = [new LabReportSection(LabSection.Biochemistry, [test])] };
+
+        var body = LabReportDocument.Body(report, releasedOnly: true).ToString();
+
+        body.ShouldContain("<span class=\"flag\" title=\"High\"><span class=\"dir\" aria-hidden=\"true\">↑</span> H</span>");
+        body.ShouldContain("<span class=\"crit\" title=\"Critically high\"><span class=\"dir\" aria-hidden=\"true\">↑</span> HH</span>");
+        body.ShouldContain("<span class=\"flag\" title=\"Low\"><span class=\"dir\" aria-hidden=\"true\">↓</span> L</span>");
+        body.ShouldContain("<span class=\"crit\" title=\"Critically low\"><span class=\"dir\" aria-hidden=\"true\">↓</span> LL</span>");
+        body.ShouldContain("<span class=\"flag\" title=\"Abnormal\">A</span>", Case.Sensitive, "an abnormal answer has no direction");
+        body.ShouldContain("<td>Chloride</td><td><span class=\"\">101</span></td><td></td>", Case.Sensitive, "a normal result has no flag");
+
+        var html = (await LabReportDocument.BuildAsync(report, releasedOnly: true, Frame(), DocumentText.English, Ct)).ToHtml();
+        html.ShouldContain("@font-face { font-family: \"HC360 Arrows\"");
+        html.ShouldContain(".dir { font-family: \"" + DocumentFonts.Arrows + "\"", Case.Sensitive, "the arrows' own font comes first");
+    }
+
+    [Fact]
+    public async Task A_report_with_no_high_or_low_result_carries_no_arrow_or_arrow_font()
+    {
+        var test = Report().Sections[0].Tests[0] with
+        {
+            Results =
+            [
+                new LabReportResultLine(Guid.NewGuid(), "Haemoglobin", null, "13.1", "g/dL", ResultFlag.Normal, "12.0 – 15.0",
+                    LabResultStatus.Verified, false, null, null, null, [], null, null),
+            ],
+        };
+
+        var html = (await LabReportDocument.BuildAsync(Report() with { Sections = [new LabReportSection(LabSection.Hematology, [test])] },
+            releasedOnly: true, Frame(), DocumentText.English, Ct)).ToHtml();
+
+        html.ShouldNotContain("↑");
+        html.ShouldNotContain("↓");
+        html.ShouldNotContain("@font-face { font-family: \"HC360 Arrows\"");
+    }
+
+    [Theory]
+    [InlineData(ResultFlag.High, "↑")]
+    [InlineData(ResultFlag.CriticalHigh, "↑")]
+    [InlineData(ResultFlag.Low, "↓")]
+    [InlineData(ResultFlag.CriticalLow, "↓")]
+    [InlineData(ResultFlag.Abnormal, null)]
+    [InlineData(ResultFlag.Critical, null)]
+    [InlineData(ResultFlag.Normal, null)]
+    [InlineData(null, null)]
+    public void Only_a_result_above_or_below_its_interval_has_an_arrow(ResultFlag? flag, string? arrow) =>
+        LabReportDocument.Arrow(flag).ShouldBe(arrow);
 
     [Fact]
     public void The_laboratory_copy_shows_work_in_progress_as_not_verified()
@@ -136,7 +222,7 @@ public sealed class LabReportDocumentTests
         html.ShouldContain("<span class=\"label\">रिपोर्ट सं.</span>");
         html.ShouldContain("<th style=\"width:34%\">जाँच</th><th style=\"width:22%\">परिणाम</th><th style=\"width:7%\">संकेत</th>");
         html.ShouldContain("<th>संदर्भ सीमा</th>");
-        html.ShouldContain("title=\"गंभीर रूप से कम\">LL</span>");
+        html.ShouldContain("title=\"गंभीर रूप से कम\"><span class=\"dir\" aria-hidden=\"true\">↓</span> LL</span>");
         html.ShouldContain("पृथक किया गया सूक्ष्मजीव: <strong>E. coli</strong>");
         html.ShouldContain("इस रिपोर्ट की जाँच के लिए स्कैन करें");
         html.ShouldContain("सत्यापन कोड K7Q2M9X4");

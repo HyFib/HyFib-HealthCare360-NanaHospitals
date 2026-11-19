@@ -20,32 +20,39 @@ internal sealed record OwnMedicine(Guid StoreId, Guid ItemId, BatchStock Batch)
     /// The store keeper adds an over-the-counter tablet that carries GST, as the seeded paracetamol does, and receives
     /// <paramref name="tablets"/> of it into the OP pharmacy at an MRP of <paramref name="mrp"/> a tablet (the seeded
     /// paracetamol suspension's MRP, so that its tax rounds as before). It is named <paramref name="name"/> when the test
-    /// looks for it by name, else "Paracetamol 500 mg Tablet" and six letters of its own.
+    /// looks for it by name, else "Paracetamol 500 mg Tablet" and six letters of its own. A test that needs a controlled
+    /// drug, or a shelf of its own, gives the schedule, the generic name or the store.
     /// </summary>
     public static async Task<OwnMedicine> OnTheShelfAsync(
-        HospitalServer server, ApiClient pharmacist, decimal tablets = 20m, decimal mrp = 32m, string? name = null)
+        HospitalServer server, ApiClient pharmacist, decimal tablets = 20m, decimal mrp = 32m, string? name = null,
+        Guid? storeId = null, DrugSchedule schedule = DrugSchedule.Otc, bool isControlled = false, string genericName = "Paracetamol")
     {
         var storeKeeper = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
-        var store = (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH");
+        var store = storeId ?? (await pharmacist.GetAsync<List<StoreDto>>("/api/v1/inventory/stores?type=Pharmacy")).Single(s => s.Code == "OPPH").Id;
         var itemId = (await storeKeeper.PostAsync<JsonElement>("/api/v1/inventory/items", new SaveItemRequest(
-            Code: $"IT-{Letters(10)}", Name: name ?? $"Paracetamol 500 mg Tablet {Letters(6)}", GenericName: "Paracetamol", BrandName: null, Type: ItemType.Drug,
+            Code: $"IT-{Letters(10)}", Name: name ?? $"Paracetamol 500 mg Tablet {Letters(6)}", GenericName: genericName, BrandName: null, Type: ItemType.Drug,
             CategoryId: null, Strength: "500 mg", DosageForm: "Tablet", PackSize: "Strip of 10", BaseUnit: "TAB", PurchaseUnit: "TAB", PurchaseUnitFactor: 1,
-            HsnCode: "300490", GstRate: 5m, Schedule: DrugSchedule.Otc, IsControlled: false, IsColdChain: false, VedClass: VedClass.Essential,
+            HsnCode: "300490", GstRate: 5m, Schedule: schedule, IsControlled: isControlled, IsColdChain: false, VedClass: VedClass.Essential,
             ReorderLevel: 0, ReorderQuantity: 0, MinimumStock: 0, MaximumStock: 0, Manufacturer: "Test Pharma", Barcode: null, IsActive: true, Version: null)))
             .GetProperty("id").GetGuid();
 
+        var batchNumber = await ReceiveAsync(server, storeKeeper, store, itemId, tablets, mrp);
+        var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store}&itemId={itemId}"))
+            .Single(b => b.BatchNumber == batchNumber);
+        return new OwnMedicine(store, itemId, batch);
+    }
+
+    /// <summary>A goods receipt of one new batch into the store, entered by the store keeper and approved into stock by someone else; the batch number.</summary>
+    public static async Task<string> ReceiveAsync(HospitalServer server, ApiClient storeKeeper, Guid store, Guid itemId, decimal tablets, decimal mrp = 32m)
+    {
         var vendor = (await storeKeeper.GetAsync<PagedResult<VendorListItem>>("/api/v1/purchase/vendors?pageSize=100")).Items.Single(v => v.Code == "VEN-SBPD");
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var batchNumber = $"OWN{Letters(8)}";
-        // The store keeper enters the receipt; someone else approves it into stock.
         await GoodsReceipts.IntoStockAsync(server, storeKeeper, new CreateGoodsReceiptRequest(
-            vendor.Id, store.Id, null, $"INV-{Letters(10)}", today, today, null,
+            vendor.Id, store, null, $"INV-{Letters(10)}", today, today, null,
             [new GoodsReceiptLineInput(itemId, null, batchNumber, null, today.AddYears(2), tablets, 0m, mrp / 2, mrp, 0m, null, AcceptShortExpiry: false)],
             SendForApproval: true));
-
-        var batch = (await pharmacist.GetAsync<List<BatchStock>>($"/api/v1/pharmacy/stock/batches?storeId={store.Id}&itemId={itemId}"))
-            .Single(b => b.BatchNumber == batchNumber);
-        return new OwnMedicine(store.Id, itemId, batch);
+        return batchNumber;
     }
 
     private static string Letters(int count) => string.Concat(Enumerable.Range(0, count).Select(_ => (char)('A' + Random.Shared.Next(26))));

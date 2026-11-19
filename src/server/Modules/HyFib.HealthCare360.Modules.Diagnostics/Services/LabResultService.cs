@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
+using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory.Rules;
 using HyFib.HealthCare360.Modules.Diagnostics.Features.LabResults;
 using HyFib.HealthCare360.Platform.Settings;
 
@@ -10,11 +11,14 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// patient's reference interval and delta-checked at entry. Verification is refused while QC is failing for the assay
 /// (unless overridden with an audited reason; where the lab asks for a second pathologist, that override covers only the
 /// results verified with it). A critical value cannot be verified until the call to the clinician is
-/// documented with read-back. Verification sends the critical SMS in the same transaction and in-app alerts after commit.
+/// documented with read-back, for that value: a value phoned and then changed is phoned again, even when it is no
+/// longer critical (<see cref="CriticalCalls"/>). Verification sends the critical SMS in the same transaction and in-app
+/// alerts after commit.
 /// </summary>
 internal sealed class LabResultService(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     LabWorkflow workflow,
     QualityControlService qc,
     CriticalValueNotifier critical,
@@ -53,7 +57,10 @@ internal sealed class LabResultService(
             patient?.FullName ?? string.Empty, patient?.AgeSex(DiagnosticsTime.Today(time)) ?? string.Empty, order.ClinicalNotes, lines);
     }
 
-    /// <summary>Bulk entry (a whole tube, or a batch from the worklist). All-or-nothing, with per-line error messages.</summary>
+    /// <summary>
+    /// Bulk entry (a whole tube, or a batch from the worklist). All-or-nothing, with per-line error messages. The results
+    /// HC360 calculates from those entered (N7) are calculated again on the same tubes, and come back with them.
+    /// </summary>
     public async Task<Result<IReadOnlyList<ResultSheetLine>>> EnterAsync(EnterResultsRequest request, CancellationToken ct)
     {
         var ids = request.Entries.Select(e => e.ResultId).Distinct().ToList();
@@ -83,21 +90,24 @@ internal sealed class LabResultService(
             return Error.Validation("lab.results_invalid", "Some results could not be saved. Correct the highlighted values.", errors);
         }
 
-        await workflow.RefreshAsync(results.Select(r => r.LabOrderId).ToList(), now, ct);
+        var calculated = await calculator.CalculateAsync(results.Select(r => r.SampleId), now, ct);
+        var changed = results.Concat(calculated.Where(c => !results.Contains(c))).ToList();
+        await workflow.RefreshAsync(changed.Select(r => r.LabOrderId).ToList(), now, ct);
         await db.SaveChangesAsync(ct);
 
-        var criticals = results.Where(r => r.IsCritical && r.Status == LabResultStatus.Entered).ToList();
+        var criticals = changed.Where(r => r.IsCritical && r.Status == LabResultStatus.Entered).ToList();
         if (criticals.Count > 0)
         {
             await critical.AlertVerifiersAsync(await AlertsAsync(criticals, ct), ct);
         }
 
-        foreach (var facility in results.GroupBy(r => r.FacilityId))
+        foreach (var facility in changed.GroupBy(r => r.FacilityId))
         {
             await realtime.PublishAsync(facility.Key, "lab.results.entered", new { OrderIds = facility.Select(r => r.LabOrderId).Distinct().ToList() }, ct);
         }
 
-        return Result<IReadOnlyList<ResultSheetLine>>.Ok(await LinesAsync(results, context, ct));
+        var shown = calculated.Count == 0 ? context : await evaluator.LoadAsync(changed, ct);
+        return Result<IReadOnlyList<ResultSheetLine>>.Ok(await LinesAsync(changed, shown, ct));
     }
 
     public async Task<Result<VerificationOutcome>> VerifyAsync(VerifyResultsRequest request, CancellationToken ct)
@@ -172,28 +182,30 @@ internal sealed class LabResultService(
             overrides += await qc.RecordOverridesAsync(lockouts, request.QcOverrideReason, ct, covered);
         }
 
-        // Critical values (LIS-05): a documented call with read-back is mandatory before verification.
+        // Critical values (LIS-05): a documented call with read-back is mandatory before verification, for the value as it
+        // is now. A call made for another value (entered again, rerun or reopened since) counts for none of it: the value is
+        // phoned again, and one no longer critical too, so the ward hears that the value it acted on was wrong.
         var criticalResults = toVerify.Where(r => r.IsCritical).ToList();
-        var criticalIds = criticalResults.Select(r => r.Id).ToList();
-        var alreadyCalled = criticalIds.Count == 0
-            ? []
-            : await db.Set<CriticalCallLog>().Where(c => c.LabResultId != null && criticalIds.Contains(c.LabResultId.Value))
-                .Select(c => c.LabResultId!.Value).Distinct().ToListAsync(ct);
-        var needCall = criticalResults.Where(r => !alreadyCalled.Contains(r.Id)).ToList();
+        var calls = await CallsAsync(toVerify.Select(r => r.Id).ToList(), ct);
+        var needCall = toVerify.Where(r => CriticalCalls.NeedsCall(r, calls[r.Id].ToList())).ToList();
         if (needCall.Count > 0)
         {
             if (request.CriticalCall is null)
             {
-                var callRequired = Error.Rule(
-                    "lab.critical_call_required",
-                    $"Critical values need a documented call before verification: {string.Join(", ", needCall.Select(r => $"{r.TestName} {r.Describe()}"))}.");
-                return callRequired with { Data = new { results = needCall.Select(r => new { r.Id, r.TestName, value = r.Describe(), r.Flag }).ToList() } };
+                var callRequired = Error.Rule("lab.critical_call_required", CallRequired(needCall, calls));
+                return callRequired with
+                {
+                    Data = new
+                    {
+                        results = needCall.Select(r => new { r.Id, r.TestName, value = r.Describe(), r.Flag, told = CriticalCalls.Last(calls[r.Id])?.Finding }).ToList(),
+                    },
+                };
             }
 
             foreach (var result in needCall)
             {
                 var log = CriticalCallLog.Record(
-                    new CriticalFindingRef(DiagnosticKind.Laboratory, result.FacilityId, result.PatientId, $"{result.TestName} {result.Describe()} ({result.Flag})", LabResultId: result.Id),
+                    new CriticalFindingRef(DiagnosticKind.Laboratory, result.FacilityId, result.PatientId, CallFinding(result, calls[result.Id]), LabResultId: result.Id),
                     request.CriticalCall,
                     currentUser.UserId,
                     now);
@@ -273,7 +285,10 @@ internal sealed class LabResultService(
         return Result.Success();
     }
 
-    /// <summary>Documents an (additional) call for a critical result, for example a second attempt or a call to the ward.</summary>
+    /// <summary>
+    /// Documents an (additional) call for a critical result, for example a second attempt or a call to the ward; or the call
+    /// that corrects a value phoned before and changed since, critical or not.
+    /// </summary>
     public async Task<Result<Guid>> RecordCriticalCallAsync(Guid resultId, CriticalCallDetails call, CancellationToken ct)
     {
         var result = await db.Set<LabResult>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == resultId, ct);
@@ -282,13 +297,14 @@ internal sealed class LabResultService(
             return Error.NotFound(nameof(LabResult), resultId);
         }
 
-        if (!result.IsCritical)
+        var calls = (await CallsAsync([result.Id], ct))[result.Id].ToList();
+        if (!result.IsCritical && !CriticalCalls.NeedsCall(result, calls))
         {
             return Error.Rule("lab.not_critical", $"{result.TestName} is not flagged critical.");
         }
 
         var log = CriticalCallLog.Record(
-            new CriticalFindingRef(DiagnosticKind.Laboratory, result.FacilityId, result.PatientId, $"{result.TestName} {result.Describe()} ({result.Flag})", LabResultId: result.Id),
+            new CriticalFindingRef(DiagnosticKind.Laboratory, result.FacilityId, result.PatientId, CallFinding(result, calls), LabResultId: result.Id),
             call,
             currentUser.UserId,
             time.GetUtcNow());
@@ -301,6 +317,44 @@ internal sealed class LabResultService(
         await db.SaveChangesAsync(ct);
         return log.Value.Id;
     }
+
+    /// <summary>
+    /// "Critical values need a documented call before verification: Potassium 7.2 mmol/L." and, for a value phoned before
+    /// and changed since, "The doctor was told another value: Potassium 2.7 mmol/L (told: Potassium 7.2 mmol/L
+    /// (CriticalHigh)). Document the call that corrects it."
+    /// </summary>
+    private static string CallRequired(IReadOnlyCollection<LabResult> needCall, ILookup<Guid, CriticalCallMade> calls)
+    {
+        var parts = new List<string>();
+        var uncalled = needCall.Where(r => !calls[r.Id].Any()).ToList();
+        if (uncalled.Count > 0)
+        {
+            parts.Add($"Critical values need a documented call before verification: {string.Join(", ", uncalled.Select(r => $"{r.TestName} {r.Describe()}"))}.");
+        }
+
+        var changed = needCall.Where(r => calls[r.Id].Any()).ToList();
+        if (changed.Count > 0)
+        {
+            parts.Add($"The doctor was told another value: {string.Join(", ", changed.Select(r => $"{r.TestName} {r.Describe()} (told: {CriticalCalls.Last(calls[r.Id])!.Finding})"))}. " +
+                      "Document the call that corrects it before verification.");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>What a new call about <paramref name="result"/> records: its value, and what it corrects when another value was told.</summary>
+    private static string CallFinding(LabResult result, IEnumerable<CriticalCallMade> calls) =>
+        CriticalCalls.Last(calls) is { } told && !CriticalCalls.IsFor(told, result) ? CriticalCalls.Correcting(result, told) : CriticalCalls.Finding(result);
+
+    /// <summary>The calls documented for each of the results, as the critical call register keeps them.</summary>
+    private async Task<ILookup<Guid, CriticalCallMade>> CallsAsync(IReadOnlyCollection<Guid> resultIds, CancellationToken ct) =>
+        resultIds.Count == 0
+            ? Array.Empty<CriticalCallMade>().ToLookup(_ => Guid.Empty)
+            : (await db.Set<CriticalCallLog>().AsNoTracking()
+                .Where(c => c.LabResultId != null && resultIds.Contains(c.LabResultId.Value))
+                .Select(c => new { ResultId = c.LabResultId!.Value, c.Finding, c.InformedAt, c.CreatedAt })
+                .ToListAsync(ct))
+            .ToLookup(c => c.ResultId, c => new CriticalCallMade(c.Finding, c.InformedAt, c.CreatedAt));
 
     internal async Task<IReadOnlyList<CriticalAlert>> AlertsAsync(IReadOnlyCollection<LabResult> results, CancellationToken ct)
     {
@@ -367,11 +421,10 @@ internal sealed class LabResultService(
     {
         var ids = results.Select(r => r.Id).ToList();
         var itemIds = results.Select(r => r.LabOrderItemId).Distinct().ToList();
-        var called = ids.Count == 0
-            ? []
-            : await db.Set<CriticalCallLog>().AsNoTracking()
-                .Where(c => c.LabResultId != null && ids.Contains(c.LabResultId.Value))
-                .Select(c => c.LabResultId!.Value).Distinct().ToListAsync(ct);
+
+        // Called for the value it has now: a call made for another value does not count (CriticalCalls).
+        var calls = await CallsAsync(ids, ct);
+        var called = results.Where(r => CriticalCalls.Last(calls[r.Id]) is { } last && CriticalCalls.IsFor(last, r)).Select(r => r.Id).ToHashSet();
         var itemNames = await db.Set<LabOrderItem>().AsNoTracking()
             .Where(i => itemIds.Contains(i.Id))
             .ToDictionaryAsync(i => i.Id, i => i.TestName, ct);
@@ -391,7 +444,12 @@ internal sealed class LabResultService(
                     r.InstrumentComment, r.HeldReasons, r.Method, r.Remarks, r.Organism, r.ColonyCount,
                     r.Susceptibilities.Where(s => !s.IsDeleted).OrderBy(s => s.DisplayOrder)
                         .Select(s => new SusceptibilityDto(s.Antibiotic, s.Interpretation, s.Mic)).ToList(),
-                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version, r.InstrumentValue);
+                    r.EnteredAt, r.VerifiedAt, called.Contains(r.Id), r.Version, r.InstrumentValue)
+                {
+                    IsCalculated = CalculatedResults.IsCalculated(r),
+                    Formula = ResultFormulas.For(r.TestCode)?.Expression,
+                    SuggestedValue = ResultFormulas.SuggestedValue(r.TestCode),
+                };
             })
             .ToList();
     }

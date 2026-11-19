@@ -153,7 +153,29 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
             return false;
         }
 
-        // Everything the entry set goes with it, as on a test that never had a value; the method stays the test's.
+        ClearEntry();
+        HeldReasons = [why];
+        return true;
+    }
+
+    /// <summary>
+    /// A result HC360 calculates (<see cref="Rules.CalculatedResults"/>) that cannot be calculated now, with why for whoever
+    /// enters it: the value calculated before goes, verified or not (its inputs changed), and the test is pending again;
+    /// the audit trail keeps the value. On a test with no value yet, only says why.
+    /// </summary>
+    public void LeaveUncalculated(string why)
+    {
+        if (Status != LabResultStatus.Pending)
+        {
+            ClearEntry();
+        }
+
+        HeldReasons = [why];
+    }
+
+    /// <summary>Everything an entry set goes with it, as on a test that never had a value; the method stays the test's.</summary>
+    private void ClearEntry()
+    {
         ValueText = null;
         NumericValue = null;
         Flag = null;
@@ -174,8 +196,9 @@ public sealed class LabResult : AuditableEntity, IFacilityScoped
         Status = LabResultStatus.Pending;
         EnteredAt = null;
         EnteredBy = null;
-        HeldReasons = [why];
-        return true;
+        VerifiedAt = null;
+        VerifiedBy = null;
+        AutoValidated = false;
     }
 
     /// <summary>

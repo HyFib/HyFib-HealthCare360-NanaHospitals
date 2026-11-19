@@ -373,7 +373,81 @@ public interface IAadhaarAuthenticator
 }
 
 // ---------- Accounting (Tally) ----------
-public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null);
+
+/// <summary>How a part of a line on a party's ledger stands against the party's bills (Tally's bill-wise details).</summary>
+public enum AccountingBillType
+{
+    /// <summary>A new bill of the party: what is owed on it starts here (Tally's "New Ref").</summary>
+    NewRef = 0,
+
+    /// <summary>Settles or reduces a bill the party already has (Tally's "Agst Ref").</summary>
+    AgainstRef,
+
+    /// <summary>Paid before the bill it will be set against (Tally's "Advance").</summary>
+    Advance,
+
+    /// <summary>Set against no bill (Tally's "On Account"); it has no name.</summary>
+    OnAccount,
+}
+
+/// <summary>
+/// A part of a ledger line on a party's ledger (a payer, a supplier) set against one of the party's bills, so the party's
+/// outstanding shows bill by bill (Tally's <c>BILLALLOCATIONS.LIST</c>). <paramref name="Amount"/> is positive and takes
+/// the line's side; a line's allocations add up to its amount.
+/// </summary>
+/// <param name="Name">The bill: a bill number, a supplier's invoice number; none for <see cref="AccountingBillType.OnAccount"/>.</param>
+public sealed record AccountingBillAllocation(string? Name, AccountingBillType Type, decimal Amount);
+
+/// <summary>How money moved through the bank (Tally's <c>TRANSACTIONTYPE</c> of a bank allocation).</summary>
+public enum AccountingBankTransaction
+{
+    /// <summary>Anything else: a card or wallet settlement, cash, a transfer HC360 has no reference for.</summary>
+    Others = 0,
+
+    Cheque,
+
+    /// <summary>A transfer the bank identifies by its UTR: NEFT, RTGS, IMPS or UPI (Tally's "e-Fund Transfer").</summary>
+    EFundTransfer,
+}
+
+/// <summary>
+/// The bank details of a part of a line on a bank ledger (Tally's <c>BANKALLOCATIONS.LIST</c>), which the bank
+/// reconciliation in Tally matches with the statement: the cheque's number or the transfer's UTR and the instrument's
+/// date. <paramref name="Amount"/> is positive and takes the line's side; a line's bank allocations add up to its amount.
+/// </summary>
+/// <param name="Date">The voucher's date.</param>
+/// <param name="InstrumentDate">The cheque's date; a transfer's is its day. The voucher's date when not given.</param>
+/// <param name="BankName">The bank a cheque is drawn on, when known.</param>
+public sealed record AccountingBankAllocation(
+    DateOnly Date, AccountingBankTransaction TransactionType, decimal Amount, string? InstrumentNumber = null, DateOnly? InstrumentDate = null, string? BankName = null);
+
+/// <param name="CostCentre">The cost centre the line is allocated to, under the configured cost category.</param>
+public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsDebit, string? CostCentre = null)
+{
+    /// <summary>How the line stands against the party's bills; empty for a ledger without bills. The amounts add up to the line's.</summary>
+    public IReadOnlyList<AccountingBillAllocation> BillAllocations { get; init; } = [];
+
+    /// <summary>The cheques and transfers a line on a bank ledger is made of; empty for any other ledger. The amounts add up to the line's.</summary>
+    public IReadOnlyList<AccountingBankAllocation> BankAllocations { get; init; } = [];
+
+    /// <summary>Two lines are the same when everything sent for them is, their allocations compared part by part.</summary>
+    public bool Equals(AccountingEntry? other) =>
+        other is not null
+        && LedgerName == other.LedgerName && Amount == other.Amount && IsDebit == other.IsDebit && CostCentre == other.CostCentre
+        && BillAllocations.SequenceEqual(other.BillAllocations) && BankAllocations.SequenceEqual(other.BankAllocations);
+
+    public override int GetHashCode() => HashCode.Combine(LedgerName, Amount, IsDebit, CostCentre, BillAllocations.Count, BankAllocations.Count);
+}
+
+/// <summary>
+/// The other party of a voucher registered for GST (a B2B buyer, a supplier), as the accounting system's GST reports and
+/// the matching with GSTR-2B need it.
+/// </summary>
+/// <param name="LedgerName">The party's ledger (Tally's <c>PARTYLEDGERNAME</c>); renamed by the ledger map like any other.</param>
+/// <param name="Gstin">The party's GSTIN (<c>PARTYGSTIN</c>), when it has one.</param>
+/// <param name="StateName">The party's state as GST names it (<c>STATENAME</c>).</param>
+/// <param name="PlaceOfSupply">The state of supply as GST names it (<c>PLACEOFSUPPLY</c>).</param>
+public sealed record AccountingParty(string LedgerName, string? Gstin = null, string? StateName = null, string? PlaceOfSupply = null);
 
 /// <param name="Reference">
 /// HC360's stable key for the voucher (a bill, receipt or refund number). The accounting system keeps it as the voucher's
@@ -381,6 +455,15 @@ public sealed record AccountingEntry(string LedgerName, decimal Amount, bool IsD
 /// </param>
 public sealed record AccountingVoucher(string VoucherType, DateOnly Date, string Number, string Narration, IReadOnlyList<AccountingEntry> Entries, string? Reference = null)
 {
+    /// <summary>The party registered for GST: the buyer of a B2B sale, the supplier of a purchase.</summary>
+    public AccountingParty? Party { get; init; }
+
+    /// <summary>A purchase's bill as the supplier numbered it (Tally's <c>REFERENCE</c>, the supplier's invoice number).</summary>
+    public string? SupplierInvoiceNumber { get; init; }
+
+    /// <summary>The date of the supplier's invoice (Tally's <c>REFERENCEDATE</c>).</summary>
+    public DateOnly? SupplierInvoiceDate { get; init; }
+
     /// <summary>Starts every remote id HC360 gives the accounting system, which tells HC360's vouchers from the hospital's own.</summary>
     public const string RemoteIdPrefix = "HC360-";
 

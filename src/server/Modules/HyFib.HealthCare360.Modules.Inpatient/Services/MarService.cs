@@ -11,8 +11,9 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 
 /// <summary>
 /// Medication chart and administration record (PH-03 MAR feed). Signed in-patient prescriptions become chart lines;
-/// when the IP pharmacy dispenses them, the next 24 hours of doses are scheduled on the ward's medication rounds; nurses
-/// record each dose once. Methods used by domain-event handlers only stage changes (the raising module commits them).
+/// when the IP pharmacy first dispenses them, the next 24 hours of doses are scheduled on the ward's medication rounds, and
+/// <see cref="MarChartAheadJob"/> keeps every such line a day ahead until it stops or ends; nurses record each dose once.
+/// Methods used by domain-event handlers only stage changes (the raising module commits them).
 /// <para>
 /// A ward order is signed at once only by the doctor it is written in the name of, signed in as themselves and holding
 /// <c>clinical.prescriptions.sign</c>. Anyone else (a nurse, or a doctor writing another doctor's order) records that
@@ -20,6 +21,11 @@ namespace HyFib.HealthCare360.Modules.Inpatient.Services;
 /// hospital's time (<see cref="CountersignHoursSetting"/>); a high-alert, controlled or chemotherapy medicine gives no
 /// dose until then unless it was taken as an emergency order. A nurse's stop waits for the doctor's countersignature with
 /// the doses held. What is not countersigned in time is listed for the ward and the doctor, and both are told.
+/// </para>
+/// <para>
+/// A ward order gets the prescribing safety check an e-prescription line of the same medicine gets at signing
+/// (<see cref="IMedicationSafetyCheck"/>, kept by Clinical): a blocking alert (an allergy, a major interaction, a dose above
+/// the maximum, no route) stops it unless a clinical reason is given for going ahead, kept in the audit trail at Critical.
 /// </para>
 /// </summary>
 public sealed class MarService(
@@ -31,7 +37,8 @@ public sealed class MarService(
     INotificationService notifications,
     IAuditLogger audit,
     TimeProvider time,
-    IIncidentRegister incidents)
+    IIncidentRegister incidents,
+    IMedicationSafetyCheck safetyCheck) : IMarChartAhead
 {
     /// <summary>
     /// What a second nurse witnesses on the MAR: a controlled drug or a high-alert medicine given. Whoever keeps the MAR
@@ -50,7 +57,8 @@ public sealed class MarService(
 
     public const int DefaultCountersignHours = 24;
 
-    public static readonly TimeSpan Horizon = TimeSpan.FromHours(24);
+    /// <summary>How far ahead doses are charted (<see cref="MarRules.ChartAhead"/>): a day.</summary>
+    public static readonly TimeSpan Horizon = MarRules.ChartAhead;
 
     /// <summary>Where the orders waiting for a countersignature are listed in the staff app (the notifications link there).</summary>
     public const string CountersignaturesLink = "/nursing/countersignatures";
@@ -84,8 +92,7 @@ public sealed class MarService(
         }
 
         var until = from + Horizon;
-        var doses = DoseSchedule.Between(order.Frequency, from, until, order.StartAt, order.EndAt);
-        if (doses.Count == 0)
+        if (order.DosesToChart(from, []).Count == 0)
         {
             return 0;
         }
@@ -95,13 +102,9 @@ public sealed class MarService(
             .Select(e => e.Entity.ScheduledAt)
             .ToList();
 
-        // A STAT order is a single dose: never chart it twice, whatever the dispense time.
-        if (DoseSchedule.IsImmediate(order.Frequency)
-            && (staged.Count > 0 || await db.Set<MedicationAdministration>().AnyAsync(m => m.MedicationOrderId == order.Id, ct)))
-        {
-            return 0;
-        }
-
+        // A STAT order is a single dose: never charted twice, whatever the dispense time (MedicationOrder.DosesToChart).
+        var hasDoses = DoseSchedule.IsImmediate(order.Frequency)
+                       && (staged.Count > 0 || await db.Set<MedicationAdministration>().AnyAsync(m => m.MedicationOrderId == order.Id, ct));
         var existing = (await db.Set<MedicationAdministration>().AsNoTracking()
                 .Where(m => m.MedicationOrderId == order.Id && m.ScheduledAt >= from && m.ScheduledAt < until)
                 .Select(m => m.ScheduledAt)
@@ -109,14 +112,13 @@ public sealed class MarService(
             .Concat(staged)
             .ToHashSet();
 
-        var added = 0;
-        foreach (var at in doses.Where(d => !existing.Contains(d)))
+        var doses = order.DosesToChart(from, existing, hasDoses);
+        foreach (var at in doses)
         {
             db.Add(NewDose(order, at, isAdHoc: false, batchNumber, dispenseId));
-            added++;
         }
 
-        return added;
+        return doses.Count;
     }
 
     public async Task<Result<MedicationOrderDto>> AddOrderAsync(AdmissionRef admission, AddMedicationOrderRequest request, CancellationToken ct)
@@ -195,13 +197,29 @@ public sealed class MarService(
             EnteredByName = Name(),
             CountersignDueAt = verbal ? now + await CountersignWindowAsync(admission.FacilityId, ct) : null,
         };
+
+        // The prescribing safety check, as an e-prescription line of the medicine gets at signing: a blocking alert stops the
+        // order unless the request gives the clinical reason for going ahead.
+        var safety = await safetyCheck.CheckAsync(admission.PatientId, Proposed(order), ct);
+        var overrideReason = Clean(request.OverrideReason);
+        if (safety.IsBlocked && overrideReason is null)
+        {
+            return SafetyBlock(safety);
+        }
+
+        var overridden = safety.IsBlocked ? $"; written over a safety alert: {overrideReason}" : "";
         db.Add(order);
         await ScheduleAsync(order, start > now ? start : now, null, null, ct);
+        if (safety.IsBlocked)
+        {
+            audit.Add(SafetyOverrideAudit(order, safety, overrideReason!));
+        }
+
         if (verbal)
         {
             audit.Add(OrderAudit(order, "medication.verbal_order",
                 $"{Words(order)}: {(order.Mode == MedicationOrderMode.Telephone ? "telephone" : "verbal")} order of {doctor.DisplayName}, read back, written by {order.EnteredByName}"
-                + (order.IsEmergency ? " as an emergency" : "") + (order.DosesHeld ? "; no dose until countersigned" : ""),
+                + (order.IsEmergency ? " as an emergency" : "") + (order.DosesHeld ? "; no dose until countersigned" : "") + overridden,
                 AuditSeverity.Warning));
         }
 
@@ -210,16 +228,64 @@ public sealed class MarService(
         {
             await NotifyDoctorAsync(doctor.Id, "Verbal order to countersign",
                 $"{Words(order)}, written in your name by {order.EnteredByName}. Countersign it by {Local(order.CountersignDueAt!.Value)}."
-                + (order.DosesHeld ? " No dose is given until you do." : ""), ct);
+                + (order.DosesHeld ? " No dose is given until you do." : "")
+                + (safety.IsBlocked ? $" It was written over a safety alert ({string.Join(" ", safety.Alerts.Where(a => a.IsBlocking).Select(a => a.Message))}), for this reason: {overrideReason}" : ""),
+                ct);
         }
 
         return (await ToDtosAsync([order], ct))[0];
     }
 
     /// <summary>
-    /// A prescriber stops the order at once: doses not yet due are cancelled, overdue ones stay for the nurse to document.
-    /// Anyone else asks for the stop: the doses are held while it waits, and the doctor named (or the patient's consultant)
-    /// confirms it or declines it.
+    /// The prescribing safety check of a ward order before it is written: what <see cref="AddOrderAsync"/> will find, for the
+    /// order form to show, and to ask for the clinical reason a blocking alert needs.
+    /// </summary>
+    public async Task<Result<MedicationSafetyResult>> CheckOrderAsync(AdmissionRef admission, AddMedicationOrderRequest request, CancellationToken ct)
+    {
+        if (request.DrugItemId is { } itemId && !(await DrugClassesAsync([itemId], ct)).ContainsKey(itemId))
+        {
+            return Error.Field("drugItemId", "This medicine is not in the drug master. Choose it again, or type it in.");
+        }
+
+        return await safetyCheck.CheckAsync(admission.PatientId, new WardMedicine(Guid.CreateVersion7(), request.DrugItemId, request.DrugName.Trim(),
+            Clean(request.GenericName), Clean(request.Strength), Clean(request.Route), request.Dose.Trim(), request.Frequency.Trim()), ct);
+    }
+
+    /// <summary>The order as the prescribing safety check reads it.</summary>
+    private static WardMedicine Proposed(MedicationOrder order) =>
+        new(order.Id, order.DrugItemId, order.DrugName, order.GenericName, order.Strength, order.Route, order.Dose, order.Frequency);
+
+    /// <summary>The refusal of a ward order a blocking safety alert stops, with every alert for the form to show, as an e-prescription's.</summary>
+    private static Error SafetyBlock(MedicationSafetyResult safety) =>
+        new("medication.safety_block",
+            "The safety check found problems that stop this order. Change it, or give the clinical reason for ordering it anyway: the reason is recorded and reviewed.")
+        {
+            Data = safety.Alerts,
+        };
+
+    /// <summary>
+    /// A ward order written over a blocking safety alert, audited at Critical as an e-prescription's override is: the reason,
+    /// and the alerts as the check found them.
+    /// </summary>
+    private static AuditEntry SafetyOverrideAudit(MedicationOrder order, MedicationSafetyResult safety, string reason) =>
+        OrderAudit(order, "medication.safety_override", $"{Words(order)}: {reason}", AuditSeverity.Critical) with
+        {
+            Details = new
+            {
+                order.AdmissionId,
+                order.Mode,
+                order.OrderedByPractitionerId,
+                order.EnteredBy,
+                OverrideReason = reason,
+                Overridden = safety.Alerts.Where(a => a.IsBlocking).ToList(),
+                Alerts = safety.Alerts,
+            },
+        };
+
+    /// <summary>
+    /// A prescriber stops the order at once: every dose still due is cancelled, an overdue one too, so none is given after
+    /// the stop. Anyone else asks for the stop: the doses are held while it waits, and the doctor named (or the patient's
+    /// consultant) confirms it or declines it.
     /// </summary>
     public async Task<Result<MedicationOrderDto>> StopOrderAsync(Guid orderId, string reason, CancellationToken ct)
     {
@@ -238,7 +304,7 @@ public sealed class MarService(
                 return stopped.Error!;
             }
 
-            await CancelDueAsync(order.Id, now, "Medication order stopped", ct);
+            await CancelDueAsync(order.Id, "Medication order stopped", ct);
             await db.SaveChangesAsync(ct);
             return (await ToDtosAsync([order], ct))[0];
         }
@@ -298,7 +364,7 @@ public sealed class MarService(
         return (await ToDtosAsync([order], ct))[0];
     }
 
-    /// <summary>The doctor confirms the stop a nurse asked for: the order stops, and doses from the time it was asked for are cancelled.</summary>
+    /// <summary>The doctor confirms the stop a nurse asked for: the order stops, and every dose still due is cancelled.</summary>
     public async Task<Result<MedicationOrderDto>> ConfirmStopAsync(Guid orderId, uint version, CancellationToken ct)
     {
         var order = await db.Set<MedicationOrder>().FirstOrDefaultAsync(o => o.Id == orderId, ct);
@@ -315,16 +381,16 @@ public sealed class MarService(
 
         db.SetExpectedVersion(order, version);
         var now = time.GetUtcNow();
-        var (askedAt, askedBy) = (order.StopRequestedAt, order.StopRequestedByName);
+        var askedBy = order.StopRequestedByName;
         var stopped = order.ConfirmStop(currentUser.UserId!.Value, now);
         if (stopped.IsFailure)
         {
             return stopped.Error!;
         }
 
-        // The doses held since the stop was asked for were never given: they are cancelled with the stop. Doses due before it
-        // stay for the nurse to document, as for any stop.
-        await CancelDueAsync(order.Id, askedAt ?? now, "Medication order stopped", ct);
+        // The doses held since the stop was asked for were never given, and one due before it and not given is not given now:
+        // every dose still due is cancelled with the stop, as for any stop.
+        await CancelDueAsync(order.Id, "Medication order stopped", ct);
         audit.Add(OrderAudit(order, "medication.stop_countersigned", $"{Words(order)}: stop asked for by {askedBy} countersigned by {Name()}", AuditSeverity.Info));
         await db.SaveChangesAsync(ct);
         return (await ToDtosAsync([order], ct))[0];
@@ -365,7 +431,10 @@ public sealed class MarService(
         return (await ToDtosAsync([order], ct))[0];
     }
 
-    /// <summary>Extends the chart by another 24 hours of doses (for orders not re-dispensed daily, such as ward stock).</summary>
+    /// <summary>
+    /// Charts the next 24 hours of doses now: for a line the pharmacy has not supplied (given from ward stock), which
+    /// <see cref="MarChartAheadJob"/> then keeps a day ahead as it does every line already on the chart.
+    /// </summary>
     public async Task<Result<ScheduleResult>> ExtendScheduleAsync(Guid orderId, CancellationToken ct)
     {
         var order = await db.Set<MedicationOrder>().FirstOrDefaultAsync(o => o.Id == orderId, ct);
@@ -394,6 +463,79 @@ public sealed class MarService(
         await db.SaveChangesAsync(ct);
         return new ScheduleResult(order.Id, added);
     }
+
+    /// <summary>
+    /// The orders <see cref="MarChartAheadJob"/> charts now: those whose chart is kept a day ahead
+    /// (<see cref="MedicationOrder.KeptChartedAhead"/>), of patients still in their bed, that lack a dose in the next
+    /// <see cref="Horizon"/>. In every facility: the job has no signed-in user.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> OrdersToChartAsync(CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var kept = (await ChartAheadCandidates(now).ToListAsync(ct))
+            .Where(c => c.Order.KeptChartedAhead(c.HasDoses, now))
+            .Select(c => c.Order)
+            .ToList();
+        if (kept.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = kept.Select(o => o.Id).ToList();
+        var until = now + Horizon;
+        var charted = (await db.Set<MedicationAdministration>().AsNoTracking()
+                .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.ScheduledAt >= now && m.ScheduledAt < until)
+                .Select(m => new { OrderId = m.MedicationOrderId!.Value, m.ScheduledAt })
+                .ToListAsync(ct))
+            .ToLookup(m => m.OrderId, m => m.ScheduledAt);
+        return [.. kept.Where(o => o.DosesToChart(now, charted[o.Id].ToHashSet()).Count > 0).Select(o => o.Id)];
+    }
+
+    /// <summary>
+    /// Charts and saves the order's doses for the day from now (<see cref="ScheduleAsync"/>): <see cref="MarChartAheadJob"/>'s
+    /// work for one order. Nothing once the order is no longer kept ahead, or its patient has left the bed. The doses carry no
+    /// batch: the nurse records the one given, as for a dose charted with the schedule button.
+    /// </summary>
+    public async Task<int> ChartAheadAsync(Guid orderId, CancellationToken ct)
+    {
+        var order = await db.Set<MedicationOrder>().FirstOrDefaultAsync(o => o.Id == orderId, ct);
+        if (order is null || await ActiveAdmissionAsync(order.AdmissionId, ct) is null)
+        {
+            return 0;
+        }
+
+        var now = time.GetUtcNow();
+        var hasDoses = await db.Set<MedicationAdministration>().AnyAsync(m => m.MedicationOrderId == orderId, ct);
+        if (!order.KeptChartedAhead(hasDoses, now))
+        {
+            return 0;
+        }
+
+        var added = await ScheduleAsync(order, now, null, null, ct);
+        if (added > 0)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        return added;
+    }
+
+    /// <summary>
+    /// The active orders that may be kept charted ahead now (not ended, no stop waiting, starting within the day) of patients
+    /// admitted or about to be discharged, each with whether a dose of it is charted. The order decides the rest
+    /// (<see cref="MedicationOrder.KeptChartedAhead"/>).
+    /// </summary>
+    internal IQueryable<ChartAheadCandidate> ChartAheadCandidates(DateTimeOffset now)
+    {
+        var until = now + Horizon;
+        return from o in db.Set<MedicationOrder>().AsNoTracking()
+               join a in db.Set<Admission>() on o.AdmissionId equals a.Id
+               where o.Status == MedicationOrderStatus.Active && o.StopRequestedAt == null && o.StartAt < until && (o.EndAt == null || o.EndAt > now)
+                     && (a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated)
+               select new ChartAheadCandidate(o, db.Set<MedicationAdministration>().Any(m => m.MedicationOrderId == o.Id));
+    }
+
+    internal sealed record ChartAheadCandidate(MedicationOrder Order, bool HasDoses);
 
     public async Task<Result<MarEntryDto>> RecordAsync(Guid entryId, RecordAdministrationRequest request, CancellationToken ct)
     {
@@ -466,7 +608,7 @@ public sealed class MarService(
                 return Error.Field("medicationOrderId", "This medication is not on the patient's chart.");
             }
 
-            // No extra dose of an order whose doses are held, given now or put on the chart for later.
+            // No extra dose of an order that has stopped or whose doses are held, given now or put on the chart for later.
             var held = order.CanGiveDose();
             if (held.IsFailure)
             {
@@ -619,11 +761,13 @@ public sealed class MarService(
         var now = time.GetUtcNow();
         var reason = Fit($"Prescription cancelled: {cancelled.Reason}", 300)!;
         orders.ForEach(o => o.Stop(null, reason, now));
+
+        // Every dose still due, overdue ones too: none of a cancelled prescription is given.
         var ids = orders.Select(o => o.Id).ToList();
-        var future = await db.Set<MedicationAdministration>()
-            .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.Status == MarStatus.Due && m.ScheduledAt >= now)
+        var due = await db.Set<MedicationAdministration>()
+            .Where(m => m.MedicationOrderId != null && ids.Contains(m.MedicationOrderId.Value) && m.Status == MarStatus.Due)
             .ToListAsync(ct);
-        future.ForEach(m => m.CancelIfDue("Prescription cancelled"));
+        due.ForEach(m => m.CancelIfDue("Prescription cancelled"));
     }
 
     /// <summary>
@@ -645,10 +789,13 @@ public sealed class MarService(
     }
 
     /// <summary>
-    /// Schedules the next 24 hours of doses for each dispensed line. Lines without a charted prescription line are
-    /// charted as a single dose to confirm with the doctor (never a guessed schedule), on an order that takes the drug's
-    /// class from the master as one typed on the ward does; for patients already in discharge such lines are treated as
-    /// take-home medicines and not put on the ward MAR.
+    /// Charts what the pharmacy issued, line by line (<see cref="MarRules.OrderSupplied"/>). The chart line a prescription line
+    /// became gets the next 24 hours of its doses (kept a day ahead from then, <see cref="MarChartAheadJob"/>). So does an active
+    /// line of the same drug, for a medicine issued with no prescription line on the chart: a ward indent or a direct issue
+    /// supplies the order already there (a replacement ampoule of a STAT order charts nothing more), and makes no second line.
+    /// Only when the chart has no line of the drug is one made for it, "as directed" and with no dose: the doctor orders the
+    /// dose and frequency before any is given. That line takes the drug's class from the master, as one typed on the ward
+    /// does. For patients already in discharge, a medicine with no line is a take-home medicine and not put on the ward MAR.
     /// </summary>
     public async Task ChartDispenseAsync(MedicationDispensed dispensed, CancellationToken ct)
     {
@@ -664,16 +811,18 @@ public sealed class MarService(
         }
 
         var lineIds = dispensed.Lines.Where(l => l.PrescriptionLineId != null).Select(l => l.PrescriptionLineId!.Value).ToList();
+        var itemIds = dispensed.Lines.Select(l => l.ItemId).Distinct().ToList();
         var orders = await db.Set<MedicationOrder>()
-            .Where(o => o.AdmissionId == admissionId && o.PrescriptionLineId != null && lineIds.Contains(o.PrescriptionLineId.Value))
+            .Where(o => o.AdmissionId == admissionId
+                        && ((o.PrescriptionLineId != null && lineIds.Contains(o.PrescriptionLineId.Value))
+                            || (o.Status == MedicationOrderStatus.Active && o.DrugItemId != null && itemIds.Contains(o.DrugItemId.Value))))
             .ToListAsync(ct);
         var drugs = await DrugClassesAsync(
-            [.. dispensed.Lines.Where(l => orders.TrueForAll(o => o.PrescriptionLineId != l.PrescriptionLineId)).Select(l => l.ItemId).Distinct()], ct);
+            [.. dispensed.Lines.Where(l => MarRules.OrderSupplied(l.PrescriptionLineId, l.ItemId, orders) is null).Select(l => l.ItemId).Distinct()], ct);
 
         foreach (var line in dispensed.Lines)
         {
-            var order = line.PrescriptionLineId is { } lineId ? orders.FirstOrDefault(o => o.PrescriptionLineId == lineId) : null;
-            if (order is not null)
+            if (MarRules.OrderSupplied(line.PrescriptionLineId, line.ItemId, orders) is { } order)
             {
                 order.LastDispensedAt = dispensed.DispensedAt;
                 await ScheduleAsync(order, dispensed.DispensedAt, Fit(line.BatchNumber, 64), dispensed.DispenseId, ct);
@@ -699,17 +848,21 @@ public sealed class MarService(
                 Dose = AsDirected,
                 Frequency = AsDirected,
                 StartAt = dispensed.DispensedAt,
-                Instructions = "Issued by pharmacy without a linked prescription line: confirm dose and frequency with the doctor.",
+                Instructions = PharmacyIssueWaits,
                 Source = MedicationOrderSource.Pharmacy,
                 Status = MedicationOrderStatus.Active,
                 LastDispensedAt = dispensed.DispensedAt,
             };
             db.Add(pharmacyOrder);
-            var dose = NewDose(pharmacyOrder, dispensed.DispensedAt, isAdHoc: true, Fit(line.BatchNumber, 64), dispensed.DispenseId);
-            dose.Notes = "Confirm dose and frequency with the prescribing doctor before giving.";
-            db.Add(dose);
+
+            // Another batch of the same drug in this issue supplies the line just made.
+            orders.Add(pharmacyOrder);
         }
     }
+
+    /// <summary>What a line made for a medicine the pharmacy issued with no order says on the chart.</summary>
+    internal const string PharmacyIssueWaits =
+        "Issued by the pharmacy with no prescription line and no order on the chart: no dose is charted. Confirm the dose and frequency with the doctor, who orders it.";
 
     public async Task<IReadOnlyList<WardMarItem>> WardDueAsync(Guid wardId, int withinMinutes, CancellationToken ct)
     {
@@ -739,6 +892,7 @@ public sealed class MarService(
                     m.Route,
                     m.ScheduledAt,
                     m.Version,
+                    m.Notes,
                     Order = o,
                 })
             .Take(500)
@@ -746,7 +900,7 @@ public sealed class MarService(
         var grace = await GraceAsync(currentUser.FacilityId, ct);
         return rows.Select(r => new WardMarItem(r.Id, r.AdmissionId, r.PatientId, r.Uhid, r.FullName, r.BedLabel, r.DrugName, r.Dose, r.Route, r.ScheduledAt,
                 MarRules.IsOverdue(MarStatus.Due, r.ScheduledAt, now, grace), (int)Math.Max(0, (now - r.ScheduledAt).TotalMinutes), r.Version,
-                MarRules.RequiresWitness(r.Order), HeldBecause(r.Order)))
+                MarRules.RequiresWitness(r.Order), HeldBecause(r.Order), r.Notes, r.Order?.Instructions))
             .ToList();
     }
 
@@ -963,13 +1117,16 @@ public sealed class MarService(
         order.OrderedByPractitionerId
         ?? await db.Set<Admission>().AsNoTracking().Where(a => a.Id == order.AdmissionId).Select(a => a.ConsultantPractitionerId).FirstOrDefaultAsync(ct);
 
-    /// <summary>Cancels the order's doses still due from <paramref name="from"/> on.</summary>
-    private async Task CancelDueAsync(Guid orderId, DateTimeOffset from, string reason, CancellationToken ct)
+    /// <summary>
+    /// Cancels every dose of the order still due, an overdue one too: a stopped medicine is not given, whenever its dose fell
+    /// due. A dose given before the stop and not yet recorded is added as a dose with no order, with the time it was given.
+    /// </summary>
+    private async Task CancelDueAsync(Guid orderId, string reason, CancellationToken ct)
     {
-        var future = await db.Set<MedicationAdministration>()
-            .Where(m => m.MedicationOrderId == orderId && m.Status == MarStatus.Due && m.ScheduledAt >= from)
+        var due = await db.Set<MedicationAdministration>()
+            .Where(m => m.MedicationOrderId == orderId && m.Status == MarStatus.Due)
             .ToListAsync(ct);
-        future.ForEach(m => m.CancelIfDue(reason));
+        due.ForEach(m => m.CancelIfDue(reason));
     }
 
     /// <summary>Tells the doctor, on every staff account linked to their practitioner record.</summary>
@@ -982,7 +1139,7 @@ public sealed class MarService(
         await notifications.NotifyUsersAsync(users, title, body, CountersignaturesLink, Category, severity, ct);
     }
 
-    private AuditEntry OrderAudit(MedicationOrder order, string action, string summary, AuditSeverity severity) =>
+    private static AuditEntry OrderAudit(MedicationOrder order, string action, string summary, AuditSeverity severity) =>
         new(AuditCategories.Clinical, action, summary.Length <= 1000 ? summary : summary[..999] + "…")
         {
             PatientId = order.PatientId,

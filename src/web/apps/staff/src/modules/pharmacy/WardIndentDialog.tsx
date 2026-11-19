@@ -22,10 +22,11 @@ import {
 import { DeleteRegular, PersonRegular } from '@fluentui/react-icons';
 import { isApiError, type PagedResult } from '@hc360/core';
 import { EmptyState, useNotify, useUnsavedChanges, useValuesChanged } from '@hc360/ui';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { usePermission } from '@/lib/permissions';
+import { nursingQueries } from '@/modules/inpatient/nursingApi';
 import type { ItemLookup } from '@/modules/inventory/api';
 import { formatQty, parseNumber } from '@/modules/inventory/format';
 import { ItemPicker, SearchPicker } from '@/modules/inventory/ItemPicker';
@@ -33,6 +34,7 @@ import { LineTable } from '@/modules/inventory/LineTable';
 import { CATALOG_READERS } from '@/modules/inventory/permissions';
 import { ItemFlags } from '@/modules/inventory/StockBits';
 import { pharmacyApi, pharmacyKeys, type AdmissionOption, type IndentUrgency, type PharmacyStockRow } from './api';
+import { indentPrescription, type IndentPrescription } from './indentPrescription';
 import { MedicineSearch } from './MedicineSearch';
 import { COUNTER_STAFF } from './permissions';
 
@@ -49,6 +51,21 @@ const useStyles = makeStyles({
   muted: { color: tokens.colorNeutralForeground3 },
 });
 
+/** Which e-prescription a medicine on the indent supplies, when the patient's chart has it e-prescribed. */
+function IndentFor({ link }: { link: IndentPrescription['lines'][string] | undefined }) {
+  const styles = useStyles();
+  if (!link) {
+    return null;
+  }
+  return (
+    <Caption1 block className={styles.muted}>
+      {link.forIndent
+        ? `For the e-prescription: ${link.order.dose} ${link.order.frequency}`
+        : 'On another e-prescription: indent it on its own to supply that prescription'}
+    </Caption1>
+  );
+}
+
 interface IndentLine {
   itemId: string;
   name: string;
@@ -63,7 +80,9 @@ interface IndentLine {
 
 /**
  * Nurse's request to the IP pharmacy for one admitted patient (PH-03). STAT indents go to the top of the IP counter
- * list. Medicines issued against it are charged to the patient's IP account at MRP.
+ * list. Medicines issued against it are charged to the patient's IP account at MRP. A medicine an active e-prescription
+ * line of the patient's chart names is indented for that prescription (one per indent), so the issue supplies the chart's
+ * own line and the prescription's IP queue does not issue it again.
  */
 export function WardIndentDialog({
   ipStoreId,
@@ -80,6 +99,7 @@ export function WardIndentDialog({
   const canUseCatalog = usePermission(CATALOG_READERS);
   const isCounterStaff = usePermission(COUNTER_STAFF);
   const canReadAdmissions = usePermission('inpatient.admissions.read');
+  const canReadChart = usePermission(['nursing.mar', 'nursing.chart']);
   const [admission, setAdmission] = useState<AdmissionOption | null>(null);
   const [wardName, setWardName] = useState('');
   const [bedLabel, setBedLabel] = useState('');
@@ -103,6 +123,16 @@ export function WardIndentDialog({
     setBedLabel(a.bedLabel ?? '');
   };
 
+  // The patient's chart, to indent an e-prescribed medicine for its prescription.
+  const chart = useQuery({
+    ...nursingQueries.orders(admission?.id ?? '', true),
+    enabled: canReadChart && admission !== null,
+  });
+  const prescription = indentPrescription(
+    lines.map((l) => l.itemId),
+    chart.data ?? [],
+  );
+
   const invalidLines = lines.filter((l) => !((parseNumber(l.quantity) ?? 0) > 0));
   const valid = admission !== null && lines.length > 0 && invalidLines.length === 0;
 
@@ -115,7 +145,7 @@ export function WardIndentDialog({
         wardName: wardName.trim() || null,
         bedLabel: bedLabel.trim() || null,
         urgency,
-        prescriptionId: null,
+        prescriptionId: prescription.prescriptionId,
         remarks: remarks.trim() || null,
         lines: lines.map((l) => ({
           itemId: l.itemId,
@@ -288,6 +318,7 @@ export function WardIndentDialog({
                       <span>
                         <Text weight="semibold">{l.name}</Text>{' '}
                         <ItemFlags schedule={l.schedule} isControlled={l.isControlled} isColdChain={l.isColdChain} />
+                        <IndentFor link={prescription.lines[l.itemId]} />
                         {l.available !== null && (
                           <Caption1 block className={styles.muted}>
                             {l.available > 0

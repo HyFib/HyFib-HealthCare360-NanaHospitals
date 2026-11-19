@@ -184,6 +184,24 @@ public sealed class ResultInterpreterTests
         ResultInterpreter.Interpret(Options("Negative", "Positive"), Answers(["Negative"]), "1+").IsFailure.ShouldBeTrue();
     }
 
+    /// <summary>
+    /// Nana Hospitals writes the strip's words when it enters a urine by hand: "-" is nil (or negative), "+-" trace and
+    /// "++" 2+, stored as the test's own answer and flagged as that answer.
+    /// </summary>
+    [Fact]
+    public void Strip_words_entered_by_hand_are_stored_as_the_tests_answers()
+    {
+        var protein = Options("Nil", "Trace", "1+", "2+", "3+", "4+");
+        var range = Answers(["Nil"]);
+
+        ResultInterpreter.Interpret(protein, range, "-").Value.ShouldBe(new InterpretedResult("Nil", null, ResultFlag.Normal, "Nil"));
+        ResultInterpreter.Interpret(protein, range, "+-").Value.ShouldBe(new InterpretedResult("Trace", null, ResultFlag.Abnormal, "Nil"));
+        ResultInterpreter.Interpret(protein, range, "+ -").Value.ValueText.ShouldBe("Trace");
+        ResultInterpreter.Interpret(protein, range, "++").Value.ShouldBe(new InterpretedResult("2+", null, ResultFlag.Abnormal, "Nil"));
+        ResultInterpreter.Interpret(Options("Negative", "Positive"), Answers(["Negative"]), "-").Value.ValueText.ShouldBe("Negative");
+        ResultInterpreter.Interpret(protein, range, "--").IsFailure.ShouldBeTrue("a word of no grade is refused, not guessed");
+    }
+
     [Fact]
     public void Culture_with_an_isolate_is_abnormal_and_no_growth_is_normal()
     {

@@ -2,7 +2,7 @@ import { Badge, makeStyles, Text, tokens, Tooltip } from '@fluentui/react-compon
 import { StatusBadge } from '@hc360/ui';
 import type { OrderPriority, PatientClass } from './common/types';
 import type { ContainerType, LabOrderItemStatus, LabReportStatus, QcOutcome, ResultFlag, SampleStatus } from './api';
-import { flagDisplay } from './flags';
+import { flagDisplay, flagText } from './flags';
 import {
   containerInfo,
   itemStatusLabel,
@@ -75,8 +75,8 @@ const TONE_COLOR = {
 } as const;
 
 /**
- * Result flag (H, L, HH, LL, A, C). A preview (not yet saved) is shown as an outline so staff can tell it apart from
- * the flag the server stored.
+ * Result flag (↑ H, ↓ L, ↑ HH, ↓ LL, A, C), with the arrow the printed report has. A preview (not yet saved) is shown as
+ * an outline so staff can tell it apart from the flag the server stored.
  */
 export function FlagChip({ flag, preview }: { flag: ResultFlag | null | undefined; preview?: boolean }) {
   const styles = useStyles();
@@ -96,7 +96,7 @@ export function FlagChip({ flag, preview }: { flag: ResultFlag | null | undefine
         shape="rounded"
         size="medium"
       >
-        <span aria-hidden>{display.code}</span>
+        <span aria-hidden>{flagText(display)}</span>
         <span className={styles.srOnly}>{meaning}</span>
       </Badge>
     </Tooltip>

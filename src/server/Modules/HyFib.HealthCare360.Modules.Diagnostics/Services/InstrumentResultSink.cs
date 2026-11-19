@@ -35,15 +35,24 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// flags, status and comment. They are auto-validated only when in range, QC was accepted today on this analyser, the
 /// delta check passed, and the analyser raised no flag, used the test's unit and reported the result as final.
 /// Everything else waits for a pathologist, with the reasons stored on the result, and critical values alert the
-/// pathologists at once.</item>
+/// pathologists at once. The results HC360 calculates from them on the tube (indirect bilirubin, globulin…) are
+/// calculated again (<see cref="ResultCalculator"/>), and wait for a person; a value the analyser measures for one of
+/// them stands instead.</item>
 /// </list>
 /// A collected tube that reaches an analyser before it was scanned at the lab counter is received automatically, and the
 /// other bidirectional analysers that run its tests are sent its order (<see cref="AnalyserOrders"/>), once one of its
 /// results goes on it.
+/// <para>
+/// A sample id is a tube number the technician typed on the analyser, so it is checked before any tube is looked up
+/// (<see cref="TubeNumbers"/>): one whose check digit does not match finds no tube, not even the one whose number it is
+/// closest to. Its results are kept for the lab (<see cref="UnmatchedResultReason.MistypedTubeNumber"/>), and a host query
+/// for it is answered with no order, so the analyser shows no patient for it.
+/// </para>
 /// </summary>
 internal sealed class InstrumentResultSink(
     HospitalDbContext db,
     ResultEvaluator evaluator,
+    ResultCalculator calculator,
     LabWorkflow workflow,
     QualityControlService qc,
     LabResultService results,
@@ -52,6 +61,7 @@ internal sealed class InstrumentResultSink(
     DiagnosticsRealtime realtime,
     AnalyserOrders analyserOrders,
     AnalyserChannelSightings sightings,
+    TubeNumbers tubeNumbers,
     TimeProvider time,
     ILogger<InstrumentResultSink> logger) : IInstrumentResultSink
 {
@@ -103,7 +113,18 @@ internal sealed class InstrumentResultSink(
                 $"{instrument.Code} sent the result without a sample id.", cancellationToken);
         }
 
-        var tube = await db.Set<LabSample>().FirstOrDefaultAsync(s => s.Barcode == barcode, cancellationToken);
+        // A number whose check digit does not match finds no tube (only one numbered before tube numbers had a check digit).
+        var matching = await tubeNumbers.MatchingAsync(barcode, cancellationToken);
+        var tube = await db.Set<LabSample>().Where(matching).FirstOrDefaultAsync(cancellationToken);
+        if (tube is null && TubeNumbers.IsMistyped(barcode))
+        {
+            notOnTube.AddRange(Values(message));
+            logger.LogWarning("Analyser {Instrument} sent sample {Barcode}, whose check digit does not match: a tube number typed wrong; its results are kept for the lab",
+                instrument.Code, barcode);
+            return await KeepAllAsync(instrument, message, tube: null, UnmatchedResultReason.MistypedTubeNumber,
+                TubeNumbers.MistypedByAnalyser(instrument.Code, barcode), cancellationToken);
+        }
+
         if (tube is null || tube.FacilityId != instrument.FacilityId)
         {
             notOnTube.AddRange(Values(message));
@@ -276,6 +297,8 @@ internal sealed class InstrumentResultSink(
             return await KeepAsync(instrument, message, tube, unplaced, cancellationToken);
         }
 
+        // What HC360 calculates from these results is calculated again (N7); never verified automatically.
+        var calculated = await calculator.CalculateAsync([tube.Id], now, cancellationToken);
         await workflow.RefreshAsync([tube.LabOrderId], now, cancellationToken);
         var kept = await AddUnmatchedAsync(instrument, message, tube, unplaced, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
@@ -292,7 +315,7 @@ internal sealed class InstrumentResultSink(
                 instrument.Code, string.Join(", ", told.Select(r => r.TestName).Distinct(StringComparer.Ordinal)), barcode);
         }
 
-        var criticals = recorded.Where(r => r.IsCritical).ToList();
+        var criticals = recorded.Where(r => r.IsCritical).Concat(calculated.Where(r => r.IsCritical && r.Status == LabResultStatus.Entered)).Distinct().ToList();
         if (criticals.Count > 0)
         {
             await critical.AlertVerifiersAsync(await results.AlertsAsync(criticals, cancellationToken), cancellationToken);
@@ -627,10 +650,20 @@ internal sealed class InstrumentResultSink(
         return found is null ? null : new InstrumentProfile(found.Code, found.Name, found.FacilityId, found.IsActive, found.IsBidirectional, found.Protocol.ToString());
     }
 
+    /// <summary>
+    /// The tube of the analyser's facility with the number it asked for, unless the number's check digit does not match
+    /// (<see cref="TubeNumbers"/>): then none, and the analyser gets no order, nor any patient's name, for it.
+    /// </summary>
     private async Task<LabSample?> FindTubeAsync(LabInstrument instrument, string sampleBarcode, CancellationToken ct)
     {
         var barcode = sampleBarcode.Trim();
-        var tube = await db.Set<LabSample>().AsNoTracking().FirstOrDefaultAsync(s => s.Barcode == barcode, ct);
+        var tube = await db.Set<LabSample>().AsNoTracking().Where(await tubeNumbers.MatchingAsync(barcode, ct)).FirstOrDefaultAsync(ct);
+        if (tube is null && TubeNumbers.IsMistyped(barcode))
+        {
+            logger.LogWarning("Analyser {Instrument} asked for sample {Barcode}, whose check digit does not match: a tube number typed wrong; no order is sent",
+                instrument.Code, barcode);
+        }
+
         return tube is not null && tube.FacilityId == instrument.FacilityId ? tube : null;
     }
 

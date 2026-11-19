@@ -217,10 +217,12 @@ function DailyTab() {
                   </Badge>
                 )}
                 {d.movements
-                  .filter((m) => m.patientUhid)
+                  .filter((m) => m.patientUhid || m.remarks)
                   .map((m, i) => (
                     <Caption1 block key={i}>
-                      {formatDateTime(m.at)} · {m.patientUhid} · {formatQty(m.out)}
+                      {[formatDateTime(m.at), m.patientUhid, m.patientUhid ? formatQty(m.out) : null, m.remarks]
+                        .filter(Boolean)
+                        .join(' · ')}
                     </Caption1>
                   ))}
               </span>
@@ -386,7 +388,12 @@ function PatientTab() {
               key: 'rx',
               header: 'Prescription',
               priority: 'low',
-              render: (l) => l.prescriptionNumber ?? movementLabel[l.type],
+              render: (l) => (
+                <span>
+                  {l.prescriptionNumber ?? movementLabel[l.type]}
+                  {l.remarks && <Caption1 block>{l.remarks}</Caption1>}
+                </span>
+              ),
             },
           ]}
           emptyTitle="No narcotics dispensed"

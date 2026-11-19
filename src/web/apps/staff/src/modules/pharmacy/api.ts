@@ -614,6 +614,8 @@ export interface ControlledRegisterRow {
   prescriptionNumber: string | null;
   referenceNumber: string | null;
   recordedBy: string | null;
+  /** A line written from a paper entry says so here, with the paper's time and its invoice. */
+  remarks: string | null;
 }
 
 export interface ScheduleHRegisterRow {

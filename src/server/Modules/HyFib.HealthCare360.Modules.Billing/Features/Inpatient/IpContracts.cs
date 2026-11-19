@@ -166,6 +166,12 @@ public sealed record SettlementResult(Guid? FinalBillId, decimal AdvanceAdjusted
 /// </summary>
 public sealed record ApproveDischargeWithDuesRequest(string Reason, uint Version);
 
+/// <param name="ReturnsToCreditCount">
+/// Returns that came back after a final bill a payer or a package shared, waiting to be credited on it
+/// (<paramref name="FinalBillId"/>) rather than billed; they hold nothing up.
+/// </param>
+/// <param name="ReturnsToCreditAmount">What those returns came to as charged, GST included.</param>
+/// <param name="FinalBillId">The stay's finalized final bill, if it has one.</param>
 public sealed record ClearanceDto(
     bool Cleared,
     decimal Outstanding,
@@ -176,7 +182,10 @@ public sealed record ClearanceDto(
     decimal PatientDue,
     decimal DepositBalance,
     bool DischargeWithDuesApproved,
-    bool BilledOnInterimBills);
+    bool BilledOnInterimBills,
+    int ReturnsToCreditCount = 0,
+    decimal ReturnsToCreditAmount = 0m,
+    Guid? FinalBillId = null);
 
 public sealed class UpdateIpAccountRequestValidator : AbstractValidator<UpdateIpAccountRequest>
 {

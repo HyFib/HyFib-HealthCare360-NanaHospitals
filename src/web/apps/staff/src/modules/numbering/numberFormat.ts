@@ -1,4 +1,5 @@
 import { HOSPITAL_TIME_ZONE } from '@hc360/core';
+import { dammCheckDigit } from '@/lib/damm';
 import type { NumberResetPolicy, NumberSeriesItem } from './api';
 
 /**
@@ -8,7 +9,7 @@ import type { NumberResetPolicy, NumberSeriesItem } from './api';
  */
 
 export type FormatPartKind =
-  'text' | 'facilityCode' | 'year' | 'shortYear' | 'month' | 'day' | 'sequence' | 'unknown' | 'unclosed';
+  'text' | 'facilityCode' | 'year' | 'shortYear' | 'month' | 'day' | 'sequence' | 'checkDigit' | 'unknown' | 'unclosed';
 
 /** A piece of a format: fixed text, a part in braces, or something in braces a number cannot have. */
 export interface FormatPart {
@@ -40,6 +41,7 @@ export const FORMAT_TOKENS: readonly { token: string; label: string; meaning: st
   { token: '{MM}', label: '{MM}', meaning: 'Month, 2 digits' },
   { token: '{DD}', label: '{DD}', meaning: 'Day of the month, 2 digits' },
   { token: '{SEQ:6}', label: '{SEQ:n}', meaning: 'Running number, padded with zeros to n digits' },
+  { token: '{CHK}', label: '{CHK}', meaning: 'Check digit, worked out from the digits before it; it goes last' },
 ];
 
 export const RESTART_LABELS: Record<NumberResetPolicy, string> = {
@@ -69,6 +71,7 @@ const NAMED_PARTS: Record<string, FormatPartKind> = {
   MM: 'month',
   DD: 'day',
   SEQ: 'sequence',
+  CHK: 'checkDigit',
 };
 
 function classify(raw: string): FormatPart {
@@ -157,29 +160,41 @@ export function nextRestart(policy: NumberResetPolicy, today: HospitalDate): Hos
 
 const two = (value: number) => String(value % 100).padStart(2, '0');
 
-/** The number `format` makes for running number `value`. Anything the format may not contain is written as it is. */
+/**
+ * The number `format` makes for running number `value`. Anything the format may not contain is written as it is. A
+ * check digit ({CHK}) is worked out from the digits written before it.
+ */
 export function renderNumber(format: string, value: number, facilityCode: string | null, date: HospitalDate): string {
-  return parseFormat(format)
-    .map((part) => {
-      switch (part.kind) {
-        case 'facilityCode':
-          return facilityCode ?? '';
-        case 'year':
-          return String(date.year).padStart(4, '0');
-        case 'shortYear':
-          return two(date.year);
-        case 'month':
-          return two(date.month);
-        case 'day':
-          return two(date.day);
-        case 'sequence':
-          // A width the rules refuse (saved before they existed) pads no further than they allow.
-          return String(value).padStart(Math.min(part.width ?? 0, MAX_SEQUENCE_WIDTH), '0');
-        default:
-          return part.text;
-      }
-    })
-    .join('');
+  let number = '';
+  for (const part of parseFormat(format)) {
+    switch (part.kind) {
+      case 'facilityCode':
+        number += facilityCode ?? '';
+        break;
+      case 'year':
+        number += String(date.year).padStart(4, '0');
+        break;
+      case 'shortYear':
+        number += two(date.year);
+        break;
+      case 'month':
+        number += two(date.month);
+        break;
+      case 'day':
+        number += two(date.day);
+        break;
+      case 'sequence':
+        // A width the rules refuse (saved before they existed) pads no further than they allow.
+        number += String(value).padStart(Math.min(part.width ?? 0, MAX_SEQUENCE_WIDTH), '0');
+        break;
+      case 'checkDigit':
+        number += dammCheckDigit(number);
+        break;
+      default:
+        number += part.text;
+    }
+  }
+  return number;
 }
 
 /** "a", "a and b", "a, b and c". */
@@ -221,7 +236,7 @@ export function formatProblems(format: string | null | undefined): string[] {
   if (unknown.length > 0) {
     problems.push(
       `${joinWords(unknown, 'and')} ${unknown.length === 1 ? 'is not a part' : 'are not parts'} a number can have. ` +
-        'Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.',
+        'Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.',
     );
   }
   const notAllowed = parts
@@ -241,6 +256,13 @@ export function formatProblems(format: string | null | undefined): string[] {
   }
   if (sequences.some((s) => s.width !== undefined && (s.width < 1 || s.width > MAX_SEQUENCE_WIDTH))) {
     problems.push(`In {SEQ:n}, n is the number of digits and must be from 1 to ${MAX_SEQUENCE_WIDTH}.`);
+  }
+  // The check digit is worked out from the digits before it: once, and last, so the running number comes before it.
+  const checks = parts.filter((p) => p.kind === 'checkDigit').length;
+  if (checks > 1) {
+    problems.push('Use the check digit {CHK} only once.');
+  } else if (checks === 1 && parts[parts.length - 1]?.kind !== 'checkDigit') {
+    problems.push('Put the check digit {CHK} at the end, after the running number: it checks every digit before it.');
   }
   return problems;
 }
@@ -267,18 +289,21 @@ export interface NumberLength {
   facilityCode: number;
   date: number;
   runningNumber: number;
+  /** 1 for a check digit ({CHK}). */
+  checkDigit: number;
   fixedText: number;
   total: number;
 }
 
 /**
  * The longest number `format` can make: the facility code at `facilityCodeLength` letters, the date parts, the running
- * number at its padding or 8 digits, whichever is more, and the fixed text.
+ * number at its padding or 8 digits, whichever is more, its check digit, and the fixed text.
  */
 export function longestNumber(format: string, facilityCodeLength: number): NumberLength {
   let facilityCode = 0;
   let date = 0;
   let runningNumber = 0;
+  let checkDigit = 0;
   let fixedText = 0;
   for (const part of parseFormat(format)) {
     switch (part.kind) {
@@ -296,11 +321,29 @@ export function longestNumber(format: string, facilityCodeLength: number): Numbe
       case 'sequence':
         runningNumber += Math.max(part.width ?? 0, ASSUMED_SEQUENCE_DIGITS);
         break;
+      case 'checkDigit':
+        checkDigit += 1;
+        break;
       default:
         fixedText += part.text.length;
     }
   }
-  return { facilityCode, date, runningNumber, fixedText, total: facilityCode + date + runningNumber + fixedText };
+  return {
+    facilityCode,
+    date,
+    runningNumber,
+    checkDigit,
+    fixedText,
+    total: facilityCode + date + runningNumber + checkDigit + fixedText,
+  };
+}
+
+/**
+ * The running number issued after `lastNumber`: the one after it, or the series' first number when the counter is
+ * below that (the server's NumberFormat.NextNumber).
+ */
+export function nextNumber(lastNumber: number, firstNumber = 1): number {
+  return Math.max(lastNumber + 1, firstNumber, 1);
 }
 
 /**
@@ -348,6 +391,8 @@ export interface FormatChange {
   currentFormat: string;
   currentResetPolicy: NumberResetPolicy;
   lastNumber: number;
+  /** The lowest running number the series issues (1 when absent); the next number cannot be below it. */
+  firstNumber?: number;
   facilityCount: number;
   longestFacilityCode: number;
   otherFormats: readonly OtherFormat[];
@@ -368,6 +413,9 @@ function tooLong(change: FormatChange, parts: FormatPart[], length: NumberLength
     pieces.push(`date ${length.date}`);
   }
   pieces.push(`running number ${length.runningNumber}`);
+  if (length.checkDigit > 0) {
+    pieces.push(`check digit ${length.checkDigit}`);
+  }
   if (length.fixedText > 0) {
     pieces.push(`fixed text ${length.fixedText}`);
   }
@@ -441,7 +489,7 @@ export function gstProblems(format: string, policy: NumberResetPolicy, facilityC
   const width = Math.max(0, ...parts.filter((p) => p.kind === 'sequence').map((p) => p.width ?? 0));
   const runningNumber =
     policy === 'Never' ? Math.max(width, ASSUMED_SEQUENCE_DIGITS) : Math.max(width, GST_ASSUMED_SEQUENCE_DIGITS);
-  const total = base.facilityCode + base.date + runningNumber + base.fixedText;
+  const total = base.facilityCode + base.date + runningNumber + base.checkDigit + base.fixedText;
   if (total > GST_MAX_LENGTH) {
     const pieces: string[] = [];
     if (base.facilityCode > 0) pieces.push(`facility code ${base.facilityCode}`);
@@ -451,6 +499,7 @@ export function gstProblems(format: string, policy: NumberResetPolicy, facilityC
         ? `running number ${runningNumber}, since it never starts again`
         : `running number ${runningNumber}`,
     );
+    if (base.checkDigit > 0) pieces.push(`check digit ${base.checkDigit}`);
     if (base.fixedText > 0) pieces.push(`fixed text ${base.fixedText}`);
     problems.push(
       `GST rule 46 allows at most ${GST_MAX_LENGTH} characters in an invoice or note number; numbers in this format can reach ${total} ` +
@@ -488,12 +537,12 @@ function lengthOf(change: FormatChange): NumberLength {
 }
 
 /**
- * How the numbers of `format` read with every run of digits (the date parts, the running number and digits in the
- * fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read "{FAC}OB#". Two
- * formats that read alike can make the same number: once a running number outgrows its padding ({SEQ:6} reaching
- * 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}. With `facilityCode`, {FAC}
- * reads as that code, so {FAC}AB{SEQ} and AB{FAC}{SEQ} both read "ABAB#" at facility AB; without it, {FAC} stays as
- * written.
+ * How the numbers of `format` read with every run of digits (the date parts, the running number, its check digit and
+ * digits in the fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read
+ * "{FAC}OB#". Two formats that read alike can make the same number: once a running number outgrows its padding
+ * ({SEQ:6} reaching 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}. With
+ * `facilityCode`, {FAC} reads as that code, so {FAC}AB{SEQ} and AB{FAC}{SEQ} both read "ABAB#" at facility AB; without
+ * it, {FAC} stays as written.
  */
 export function outline(format: string, facilityCode?: string | null): string {
   let result = '';
@@ -518,6 +567,7 @@ export function outline(format: string, facilityCode?: string | null): string {
       case 'month':
       case 'day':
       case 'sequence':
+      case 'checkDigit':
         digits();
         break;
       case 'text':
@@ -588,6 +638,9 @@ function shape(format: string, facilityCode?: string | null): ShapePiece[] {
       case 'sequence':
         // A running number is at least its padding long (and at least one digit), and grows past it.
         run.push({ digit: null, length: Math.max(Math.min(part.width ?? 0, MAX_SEQUENCE_WIDTH), 1), grows: true });
+        break;
+      case 'checkDigit':
+        run.push({ digit: null, length: 1, grows: false });
         break;
       case 'facilityCode':
         characters(facilityCode ?? part.text);
@@ -723,7 +776,13 @@ export function checkChange(change: FormatChange): FormatErrors {
 
   if (change.startAt !== null) {
     const largest = syntax.length === 0 ? largestStartAt(change.isLocked, change.format) : null;
-    if (change.startAt < 1) {
+    const first = change.firstNumber ?? 1;
+    if (first > 1 && change.startAt < first) {
+      add(
+        'startAt',
+        `The next number must be ${first} or more, so that these numbers keep the shape other systems read.`,
+      );
+    } else if (change.startAt < 1) {
       add('startAt', 'Enter a number of 1 or more.');
     } else if (change.startAt <= change.lastNumber) {
       add(
