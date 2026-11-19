@@ -49,7 +49,7 @@ export default {
         {
           nav: 'Breakdown tickets',
           say: 'Open Breakdown tickets.',
-          after: 'Anyone can report equipment that does not work. The ticket waits here for you.',
+          after: 'Ward staff report equipment that does not work. The ticket waits here for you.',
           wait: { role: 'row', name: /NHMT26000001/ },
         },
         {
