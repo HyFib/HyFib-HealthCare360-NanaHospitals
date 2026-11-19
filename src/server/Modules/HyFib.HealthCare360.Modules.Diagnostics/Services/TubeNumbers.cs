@@ -3,6 +3,7 @@ using System.Text.Json;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Settings;
+using Microsoft.EntityFrameworkCore.Query;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 
@@ -11,8 +12,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// (<see cref="DiagnosticsNumberSeries.LabSample"/>), so a number whose last digit does not match the others was typed or
 /// read wrong: it finds no tube, and one digit typed wrong or two neighbouring digits swapped never reach another
 /// patient's tube, such as the one drawn just before or after. Every place that finds a tube by a number someone typed or
-/// an analyser sent goes through <see cref="MatchingAsync"/>: analyser results and host queries, receipt at the lab
-/// counter, and the lab screens' look-up and search.
+/// an analyser sent goes through <see cref="MatchingAsync(string, CancellationToken)"/>: analyser results and host
+/// queries, receipt at the lab counter, and the lab screens' look-up and search.
 /// <para>
 /// A database from before the check digit keeps the tubes it numbered without one, and finds them by their exact number:
 /// <see cref="CheckDigitSinceSetting"/> says when its numbers gained the check digit, and only a tube made before then
@@ -20,6 +21,13 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// of (<see cref="Near"/>). New numbers start just above the old ones, so the first new tube's number typed with its last
 /// digit wrong is often an old tube's: that finds neither. A tube made since is never found by a number that does not
 /// check.
+/// </para>
+/// <para>
+/// What a number finds is a filter on tubes that holds the number and a time as values, and nothing else: it goes into
+/// the caller's own query (a search, a look-up) and is translated there, every source of that query keeping its filters.
+/// Whether a tube made since is one slip away is read first, in a query of its own: that reads every facility's tubes,
+/// and inside the caller's query EF Core would lift the facility filter from all of it, which QueryFilterGuard refuses
+/// (once the setting was written, the lab's searches answered 500 and analyser results for such a number were refused).
 /// </para>
 /// </summary>
 internal sealed class TubeNumbers(HospitalDbContext db, ISettingsService settings)
@@ -60,32 +68,55 @@ internal sealed class TubeNumbers(HospitalDbContext db, ISettingsService setting
     }
 
     /// <summary>
-    /// The tubes <paramref name="number"/> may find (<see cref="Matching"/>), as of this database: when its tube numbers
-    /// gained their check digit, and every facility's tubes for the numbers it could be a mistyping of.
+    /// The tubes <paramref name="number"/> may find, as of this database: when its tube numbers gained their check digit,
+    /// and whether any facility's tube made since has a number <paramref name="number"/> could be a mistyping of, which is
+    /// read in a query of its own. The rule is
+    /// <see cref="MatchingAsync(string, DateTimeOffset?, Func{Expression{Func{LabSample, bool}}, Task{bool}})"/>.
     /// </summary>
     public async Task<Expression<Func<LabSample, bool>>> MatchingAsync(string number, CancellationToken ct) =>
-        Matching(number, await CheckDigitSinceAsync(ct), db.Set<LabSample>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]));
+        await MatchingAsync(number, await CheckDigitSinceAsync(ct), madeSince =>
+            db.Set<LabSample>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AnyAsync(madeSince, ct));
 
     /// <summary>
     /// The tubes <paramref name="number"/> may find: the one with that number when it ends in its check digit. Otherwise
     /// only one numbered before tube numbers had a check digit (made before <paramref name="checkDigitSince"/>), and only
-    /// when none of <paramref name="tubes"/> made since has a number <paramref name="number"/> could be a mistyping of
-    /// (<see cref="Near"/>); none in a database whose tubes all have a check digit.
+    /// when no tube made since has a number <paramref name="number"/> could be a mistyping of (<see cref="Near"/>), which
+    /// <paramref name="anyTube"/> says: whether any tube meets the condition it is given. None in a database whose tubes
+    /// all have a check digit. The filter holds the number and the time as values only, so any query on tubes can take it.
     /// </summary>
-    public static Expression<Func<LabSample, bool>> Matching(string number, DateTimeOffset? checkDigitSince, IQueryable<LabSample> tubes)
+    public static async Task<Expression<Func<LabSample, bool>>> MatchingAsync(
+        string number, DateTimeOffset? checkDigitSince, Func<Expression<Func<LabSample, bool>>, Task<bool>> anyTube)
     {
         if (Verifies(number))
         {
             return s => s.Barcode == number;
         }
 
-        if (checkDigitSince is { } since)
+        if (checkDigitSince is not { } since)
         {
-            string[] near = [.. Near(number)];
-            return s => s.Barcode == number && s.CreatedAt < since && !tubes.Any(t => near.Contains(t.Barcode) && t.CreatedAt >= since);
+            return s => false;
         }
 
-        return s => false;
+        string[] near = [.. Near(number)];
+        if (near.Length > 0 && await anyTube(t => near.Contains(t.Barcode) && t.CreatedAt >= since))
+        {
+            return s => false;
+        }
+
+        return s => s.Barcode == number && s.CreatedAt < since;
+    }
+
+    /// <summary>
+    /// A search's condition on a tube: one <paramref name="byNumber"/> finds
+    /// (<see cref="MatchingAsync(string, CancellationToken)"/>), or one <paramref name="otherwise"/> finds (by its patient,
+    /// by its order). One condition with one parameter, made by putting the tube of <paramref name="byNumber"/> in place of
+    /// that of <paramref name="otherwise"/>, not by calling either: EF translates it in the search's own query.
+    /// </summary>
+    public static Expression<Func<LabSample, bool>> Or(Expression<Func<LabSample, bool>> byNumber, Expression<Func<LabSample, bool>> otherwise)
+    {
+        var tube = byNumber.Parameters[0];
+        return Expression.Lambda<Func<LabSample, bool>>(
+            Expression.OrElse(byNumber.Body, ReplacingExpressionVisitor.Replace(otherwise.Parameters[0], tube, otherwise.Body)), tube);
     }
 
     /// <summary>

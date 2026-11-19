@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -59,12 +60,7 @@ internal static class SampleEndpoints
 
         if (page.SearchTerm is { } term)
         {
-            // A tube number whose check digit does not match finds no tube (TubeNumbers); a patient's name or number still does.
-            var code = term.ToUpperInvariant();
-            var matching = db.Set<Patient>().Search(term, protector).Select(p => p.Id);
-            var byNumber = db.Set<LabSample>().Where(await tubeNumbers.MatchingAsync(term, ct)).Select(s => s.Id);
-            tubes = tubes.Where(s => byNumber.Contains(s.Id) || matching.Contains(s.PatientId)
-                                     || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
+            tubes = tubes.Where(SearchFilter(term, await tubeNumbers.MatchingAsync(term, ct), db, protector));
         }
 
         var paged = await tubes.OrderByUrgency(s => s.Priority).ThenBy(s => s.CreatedAt)
@@ -95,6 +91,20 @@ internal static class SampleEndpoints
                 s.Priority, s.Container, s.SpecimenType, s.Section, tests.Select(t => t.TestName).ToList(),
                 tests.Select(t => t.Preparation).OfType<string>().Distinct().ToList(), order?.OrderedAt ?? default, s.RecollectionOfSampleId is not null);
         }));
+    }
+
+    /// <summary>
+    /// The tubes waiting to be drawn that <paramref name="term"/> finds: by tube number (<paramref name="byNumber"/>, from
+    /// <see cref="TubeNumbers"/>), by the patient's name or number, or by the order number. A tube number whose check digit
+    /// does not match finds no tube; a patient's name or number still does. One condition on the tube, translated in the
+    /// list's own query.
+    /// </summary>
+    internal static Expression<Func<LabSample, bool>> SearchFilter(
+        string term, Expression<Func<LabSample, bool>> byNumber, HospitalDbContext db, IFieldProtector protector)
+    {
+        var code = term.ToUpperInvariant();
+        var matching = db.Set<Patient>().Search(term, protector).Select(p => p.Id);
+        return TubeNumbers.Or(byNumber, s => matching.Contains(s.PatientId) || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
     }
 
     private static async Task<IResult> Collect(Guid id, CollectSamplesRequest request, SampleService samples, CancellationToken ct) =>

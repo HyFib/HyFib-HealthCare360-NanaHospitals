@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Seed;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -11,7 +12,8 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Tests.Laboratory;
 /// receipt at the lab counter and the lab screens' look-up and search all apply before a tube is looked up. A number whose
 /// check digit does not match finds no tube, so A's results never go on B's tube. A tube numbered before tube numbers had
 /// a check digit is still found by its exact number, unless that number is also a new tube's number typed wrong; no tube
-/// made since is found by a number that does not check.
+/// made since is found by a number that does not check. The rule is applied here to tubes in memory: whether its filter
+/// translates in the lab's own queries is <see cref="Persistence.TubeSearchQueryTests"/>'s.
 /// </summary>
 public sealed class TubeLookupTests
 {
@@ -29,14 +31,14 @@ public sealed class TubeLookupTests
     private static readonly LabSample[] Tubes = [A, B, Old, LastOld];
 
     [Fact]
-    public void A_tube_number_finds_its_tube_and_no_other()
+    public async Task A_tube_number_finds_its_tube_and_no_other()
     {
         A.Barcode.ShouldBe("1000012342");
         B.Barcode.ShouldBe("1000012350");
 
-        Find(A.Barcode, Switched).ShouldBe([A]);
-        Find(B.Barcode, Switched).ShouldBe([B]);
-        Find(B.Barcode, since: null).ShouldBe([B]);
+        (await FindAsync(A.Barcode, Switched)).ShouldBe([A]);
+        (await FindAsync(B.Barcode, Switched)).ShouldBe([B]);
+        (await FindAsync(B.Barcode, since: null)).ShouldBe([B]);
     }
 
     /// <summary>
@@ -44,24 +46,24 @@ public sealed class TubeLookupTests
     /// swapped: the sink finds no tube, so nothing goes on B's tube, nor on any other.
     /// </summary>
     [Fact]
-    public void A_number_typed_with_one_digit_wrong_or_two_swapped_finds_no_tube_and_never_the_neighbours()
+    public async Task A_number_typed_with_one_digit_wrong_or_two_swapped_finds_no_tube_and_never_the_neighbours()
     {
         foreach (var (typed, how) in TubeNumberTests.Mistyped(A.Barcode))
         {
-            Find(typed, Switched).ShouldBeEmpty($"{typed} is {A.Barcode} {how}");
+            (await FindAsync(typed, Switched)).ShouldBeEmpty($"{typed} is {A.Barcode} {how}");
             TubeNumbers.IsMistyped(typed).ShouldBeTrue($"{typed} is {A.Barcode} {how}");
         }
     }
 
     [Fact]
-    public void The_typo_that_found_the_neighbours_tube_before_the_check_digit_is_now_refused_with_why()
+    public async Task The_typo_that_found_the_neighbours_tube_before_the_check_digit_is_now_refused_with_why()
     {
         // 100001234 and 100001235 differ in their ninth digit: typing 5 for 4 kept A's check digit, which is not B's.
         var typed = A.Barcode[..8] + "5" + A.Barcode[9];
 
         typed.ShouldBe("1000012352");
         typed.ShouldNotBe(B.Barcode);
-        Find(typed, Switched).ShouldBeEmpty();
+        (await FindAsync(typed, Switched)).ShouldBeEmpty();
         TubeNumbers.MistypedMessage(typed).ShouldBe(
             "1000012352 is not a tube number: its last digit, the check digit, does not match the others. A digit was typed wrong, " +
             "or two were swapped. Check the number written on the tube and type it again.");
@@ -72,12 +74,12 @@ public sealed class TubeLookupTests
     }
 
     [Fact]
-    public void A_tube_numbered_before_the_check_digit_is_found_by_its_exact_number()
+    public async Task A_tube_numbered_before_the_check_digit_is_found_by_its_exact_number()
     {
         TubeNumbers.Verifies(Old.Barcode).ShouldBeFalse("the old series had no check digit");
 
-        Find(Old.Barcode, Switched).ShouldBe([Old]);
-        Find(Old.Barcode, since: null).ShouldBeEmpty("a database whose tubes all have a check digit has no such tube");
+        (await FindAsync(Old.Barcode, Switched)).ShouldBe([Old]);
+        (await FindAsync(Old.Barcode, since: null)).ShouldBeEmpty("a database whose tubes all have a check digit has no such tube");
     }
 
     /// <summary>
@@ -85,23 +87,35 @@ public sealed class TubeLookupTests
     /// number exactly: 1000012342 with its last digit typed 6 is the last old tube's. That number finds neither tube.
     /// </summary>
     [Fact]
-    public void An_old_tubes_number_that_a_new_tubes_number_typed_wrong_also_gives_finds_neither()
+    public async Task An_old_tubes_number_that_a_new_tubes_number_typed_wrong_also_gives_finds_neither()
     {
         TubeNumbers.Near(LastOld.Barcode).ShouldContain(A.Barcode);
 
-        Find(LastOld.Barcode, Switched).ShouldBeEmpty();
+        (await FindAsync(LastOld.Barcode, Switched)).ShouldBeEmpty();
         TubeNumbers.IsMistyped(LastOld.Barcode).ShouldBeTrue("the lab is told to check the number on the tube");
         TubeNumbers.Near(Old.Barcode).ShouldNotContain(A.Barcode);
         TubeNumbers.Near(Old.Barcode).ShouldNotContain(B.Barcode);
     }
 
     [Fact]
-    public void A_tube_made_since_the_check_digit_is_never_found_by_a_number_that_does_not_check()
+    public async Task A_tube_made_since_the_check_digit_is_never_found_by_a_number_that_does_not_check()
     {
         // Not one the series makes; were one there (put in by hand), a number that does not check would still not find it.
-        LabSample[] tubes = [Tube("1000000123", Switched.AddMinutes(1))];
+        (await FindAsync("1000000123", Switched, [Tube("1000000123", Switched.AddMinutes(1))])).ShouldBeEmpty();
+    }
 
-        tubes.AsQueryable().Where(TubeNumbers.Matching("1000000123", Switched, tubes.AsQueryable())).ShouldBeEmpty();
+    /// <summary>
+    /// A search finds a tube by its number or by what else it searches (the patient, the order): a mistyped number finds the
+    /// tubes the rest of the search finds, and no other.
+    /// </summary>
+    [Fact]
+    public async Task A_search_finds_a_tube_by_its_number_or_by_its_patient_and_a_mistyped_number_by_its_patient_only()
+    {
+        var patient = B.PatientId;
+
+        Tubes.AsQueryable().Where(TubeNumbers.Or(await MatchingAsync(A.Barcode, Switched), s => s.PatientId == patient)).ShouldBe([A, B]);
+        Tubes.AsQueryable().Where(TubeNumbers.Or(await MatchingAsync("1000012352", Switched), s => s.PatientId == patient)).ShouldBe([B]);
+        Tubes.AsQueryable().Where(TubeNumbers.Or(await MatchingAsync(Old.Barcode, Switched), s => s.PatientId == patient)).ShouldBe([B, Old]);
     }
 
     [Fact]
@@ -129,11 +143,31 @@ public sealed class TubeLookupTests
     public void Only_ten_digits_whose_check_digit_does_not_match_are_a_mistyped_tube_number(string number, bool mistyped) =>
         TubeNumbers.IsMistyped(number).ShouldBe(mistyped);
 
+    /// <summary>
+    /// Whether a tube made since is one slip away is asked, in a query of its own, only of a number that does not check, on
+    /// a database with tubes from before the check digit: a search by a patient's name or UHID asks nothing more.
+    /// </summary>
     [Fact]
-    public void A_sample_id_that_is_not_digits_is_no_tube_number()
+    public async Task Only_a_number_that_does_not_check_asks_whether_a_new_tube_is_one_slip_away()
+    {
+        var asked = new List<string>();
+        foreach (var (number, since) in new (string, DateTimeOffset?)[] { (A.Barcode, Switched), ("NH26000888", Switched), ("1000012352", null), ("1000012352", Switched) })
+        {
+            await TubeNumbers.MatchingAsync(number, since, _ =>
+            {
+                asked.Add(number);
+                return Task.FromResult(false);
+            });
+        }
+
+        asked.ShouldBe(["1000012352"]);
+    }
+
+    [Fact]
+    public async Task A_sample_id_that_is_not_digits_is_no_tube_number()
     {
         TubeNumbers.Verifies("QC-LEVEL-1").ShouldBeFalse();
-        Find("QC-LEVEL-1", Switched).ShouldBeEmpty();
+        (await FindAsync("QC-LEVEL-1", Switched)).ShouldBeEmpty();
     }
 
     /// <summary>
@@ -179,8 +213,13 @@ public sealed class TubeLookupTests
         ]);
     }
 
-    private static List<LabSample> Find(string number, DateTimeOffset? since) =>
-        [.. Tubes.AsQueryable().Where(TubeNumbers.Matching(number, since, Tubes.AsQueryable()))];
+    /// <summary>The tubes <paramref name="number"/> finds among <paramref name="tubes"/> (by default all of the above).</summary>
+    private static async Task<List<LabSample>> FindAsync(string number, DateTimeOffset? since, LabSample[]? tubes = null) =>
+        [.. (tubes ?? Tubes).AsQueryable().Where(await MatchingAsync(number, since, tubes))];
+
+    /// <summary>The rule, its question of whether a tube made since is one slip away answered from <paramref name="tubes"/>.</summary>
+    private static Task<Expression<Func<LabSample, bool>>> MatchingAsync(string number, DateTimeOffset? since, LabSample[]? tubes = null) =>
+        TubeNumbers.MatchingAsync(number, since, madeSince => Task.FromResult((tubes ?? Tubes).AsQueryable().Any(madeSince)));
 
     private static string Number(long running) => NumberFormat.Render(DiagnosticsNumberSeries.LabSample.DefaultFormat, running, null, Now);
 

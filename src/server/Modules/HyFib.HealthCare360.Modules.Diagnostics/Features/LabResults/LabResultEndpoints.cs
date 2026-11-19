@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -54,10 +55,7 @@ internal static class LabResultEndpoints
 
         if (page.SearchTerm is { } term)
         {
-            // A tube number whose check digit does not match finds no tube (TubeNumbers).
-            var code = term.ToUpperInvariant();
-            var byNumber = db.Set<LabSample>().Where(await tubeNumbers.MatchingAsync(term, ct)).Select(s => s.Id);
-            tubes = tubes.Where(s => byNumber.Contains(s.Id) || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
+            tubes = tubes.Where(SearchFilter(term, await tubeNumbers.MatchingAsync(term, ct), db));
         }
 
         var paged = await tubes
@@ -102,6 +100,17 @@ internal static class LabResultEndpoints
                 s.Priority, s.Section, s.Status, s.ReceivedAt, count?.Pending ?? 0, count?.Entered ?? 0, count?.Verified ?? 0, count?.Critical ?? 0,
                 items.Where(i => i.SampleId == s.Id).Select(i => i.TestName).ToList());
         }));
+    }
+
+    /// <summary>
+    /// The tubes in the lab that <paramref name="term"/> finds: by tube number (<paramref name="byNumber"/>, from
+    /// <see cref="TubeNumbers"/>) or by the order number. A tube number whose check digit does not match finds no tube. One
+    /// condition on the tube, translated in the worklist's own query.
+    /// </summary>
+    internal static Expression<Func<LabSample, bool>> SearchFilter(string term, Expression<Func<LabSample, bool>> byNumber, HospitalDbContext db)
+    {
+        var code = term.ToUpperInvariant();
+        return TubeNumbers.Or(byNumber, s => db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
     }
 
     private static async Task<IResult> Sheet(Guid id, LabResultService results, PatientAccessGuard guard, IAuditLogger audit, CancellationToken ct)

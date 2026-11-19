@@ -552,6 +552,9 @@ public sealed class LabAnalyserTests(HospitalServer server)
                 .ShouldBe(1);
         }
 
+        // The worklist's search finds it by that number too: the number is a condition in the search's own query, not a
+        // query of every facility's tubes inside it, which answered 500.
+        (await lab.GetAsync<PagedResult<WorklistItem>>($"/api/v1/lab/worklist?search={old}")).Items.ShouldHaveSingleItem().SampleId.ShouldBe(tube.Id);
         (await AnalyserSendsAsync("EM360", $"O|1|{old}||^^^GLU|R", "R|1|^^^GLU|91|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
         (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("91");
         (await lab.GetAsync<SampleLookup>($"/api/v1/lab/samples/by-barcode/{old}")).Id.ShouldBe(tube.Id);
