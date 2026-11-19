@@ -628,6 +628,9 @@ def cue_texts(text: str) -> list[str]:
 
 
 def draw_ring(im: Image.Image, p0: tuple, p1: tuple, alpha: float) -> None:
+    # A box outside the screen when it was captured is empty or inverted: there is nothing to point at.
+    if p1[0] - p0[0] < 2 or p1[1] - p0[1] < 2:
+        return
     pad = 7
     x0, y0, x1, y1 = p0[0] - pad, p0[1] - pad, p1[0] + pad, p1[1] + pad
     m = 14

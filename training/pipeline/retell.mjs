@@ -37,11 +37,16 @@ story.scenes.forEach((scene, i) => {
     return;
   }
   scene.steps.forEach((step, j) => {
-    if (beats[j].action !== actionOf(step)) problems.push(`${beats[j].id} was captured as ${beats[j].action}; it is now ${actionOf(step)}`);
+    const beat = beats[j];
+    if (beat.action !== actionOf(step)) problems.push(`${beat.id} was captured as ${beat.action}; it is now ${actionOf(step)}`);
+    const r = beat.result;
+    if (step.after && (beat.offScreen || (r && (r[2] <= 0 || r[3] <= 0)))) {
+      problems.push(`${beat.id}: what its narration describes was off the screen when captured`);
+    }
   });
 });
 if (problems.length) {
-  console.error(`✗ ${story.id}: the steps changed since the capture, so make it again (make.sh):`);
+  console.error(`✗ ${story.id}: the capture no longer fits the storyboard, so make it again (make.sh):`);
   for (const p of problems) console.error(`  ${p}`);
   process.exit(1);
 }

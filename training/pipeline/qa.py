@@ -179,8 +179,12 @@ def main():
     gates, report = {}, {"id": vid, "title": cap["title"]}
 
     # run
-    gates["run"] = not (root / "failure.json").exists() and not cap.get("serverErrors")
-    report["run"] = {"steps": sum(1 for b in cap["beats"] if b["type"] == "step"), "serverErrors": cap.get("serverErrors", [])}
+    # What the narration says after a step must have been on the screen (a result scrolled out of view is not).
+    off_screen = [b["id"] for b in cap["beats"] if b["type"] == "step" and b.get("after")
+                  and (b.get("offScreen") or (b.get("result") and (b["result"][2] <= 0 or b["result"][3] <= 0)))]
+    gates["run"] = not (root / "failure.json").exists() and not cap.get("serverErrors") and not off_screen
+    report["run"] = {"steps": sum(1 for b in cap["beats"] if b["type"] == "step"), "serverErrors": cap.get("serverErrors", []),
+                     "offScreen": off_screen}
 
     # speech and pace
     rec = recogniser()
@@ -272,7 +276,7 @@ def main():
     (root / "qa.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
 
     md = [f"# QA: {cap['title']}", "", "| Gate | Result | Measured |", "|---|---|---|"]
-    md.append(f"| Run | {'pass' if gates['run'] else 'FAIL'} | {report['run']['steps']} steps, {len(report['run']['serverErrors'])} server errors |")
+    md.append(f"| Run | {'pass' if gates['run'] else 'FAIL'} | {report['run']['steps']} steps, {len(report['run']['serverErrors'])} server errors{', results off the screen: ' + ', '.join(report['run']['offScreen']) if report['run']['offScreen'] else ''} |")
     md.append(f"| Speech | {'pass' if gates['speech'] else 'FAIL'} | WER {report['speech']['wer']}% over {total_ref} words |")
     md.append(f"| Pace | {'pass' if gates['pace'] else 'FAIL'} | {report['pace']['wordsPerMinute']} words a minute |")
     md.append(f"| Captions | {'pass' if gates['captions'] else 'FAIL'} | {len(cues)} cues, at most {report['captions']['maxCharsPerSecond']} characters a second |")

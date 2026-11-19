@@ -173,9 +173,10 @@ async function boxOf(locator) {
   if (!b) return null;
   const x = Math.max(0, b.x);
   const y = Math.max(0, b.y);
-  return [x, y, Math.min(VIEWPORT.width, b.x + b.width) - x, Math.min(VIEWPORT.height, b.y + b.height) - y].map(
-    (v) => Math.round(v * 10) / 10,
-  );
+  const box = [x, y, Math.min(VIEWPORT.width, b.x + b.width) - x, Math.min(VIEWPORT.height, b.y + b.height) - y];
+  // Outside the screen: nothing to point at.
+  if (box[2] <= 0 || box[3] <= 0) return null;
+  return box.map((v) => Math.round(v * 10) / 10);
 }
 
 let shotNo = 0;
@@ -316,9 +317,18 @@ async function runStep(step, id) {
       await find(e).waitFor({ state: 'visible', timeout: 20000 });
     }
   }
+  // What the narration says after the step is shown on the screen: a result below the fold is scrolled to first.
+  const shown = step.result ?? step.wait;
+  if (shown && step.after) {
+    await find(shown)
+      .scrollIntoViewIfNeeded({ timeout: 5000 })
+      .then(() => quiet(), () => undefined);
+  }
   beat.shotAfter = await shot(`${id}-after`);
-  if (step.result) beat.result = await boxOf(find(step.result));
-  else if (step.wait) beat.result = await boxOf(find(step.wait));
+  if (shown) {
+    beat.result = await boxOf(find(shown));
+    if (!beat.result && step.after) beat.offScreen = true;
+  }
   for (const key of ['zoom', 'say', 'after']) if (step[key] !== undefined) beat[key] = step[key];
   return beat;
 }
