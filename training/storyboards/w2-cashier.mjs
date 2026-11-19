@@ -161,7 +161,6 @@ const story = {
       a: 'Type ₹2,500 as the cash handed over. HC360 shows ₹100.00 as the change to return.',
     },
   ],
-  next: 'Accountant: approve credit notes and discounts, post the Tally day book',
 };
 
 export default story;

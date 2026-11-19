@@ -161,7 +161,7 @@ const story = {
         },
         {
           show: { role: 'table', name: 'Indent lines' },
-          say: 'She asks for 50 IV cannulas and 40 infusion sets. The last column shows how many the store has free.',
+          say: 'The indent asks for 50 IV cannulas and 40 infusion sets. The last column shows how many the store has free.',
           zoom: 1.3,
         },
         {
@@ -257,7 +257,6 @@ const story = {
       a: 'No. Someone else at the issuing store issues it.',
     },
   ],
-  next: 'Purchase officer: raise orders and approve goods receipts',
 };
 
 export default story;

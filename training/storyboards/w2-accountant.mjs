@@ -15,10 +15,10 @@ const story = {
   wave: 2,
   audience: 'For the accountants and the accounts staff of Nana Hospitals.',
   intro:
-    'Cashiers cannot give money back or lower a bill beyond their limit. They ask, and you decide. HC360 then keeps the books in step: every bill, receipt and credit note goes to the day book that is posted to Tally.',
+    'Counter staff cannot give money back, or lower a bill beyond their own limit. They ask, and you decide. HC360 then keeps the books in step: every bill, receipt and credit note goes to the day book that is posted to Tally.',
   objectives: [
-    'Approve a credit note that a cashier asked for.',
-    'Approve a discount above the cashier’s limit.',
+    'Approve a credit note asked for at the billing counter.',
+    'Approve a discount above the limit of the person who asked for it.',
     'Preview the day book and post it to Tally.',
   ],
   modules: ['approvals', 'billing'],
@@ -57,7 +57,7 @@ const story = {
         },
         {
           show: { role: 'row', name: /Credit note of ₹200.00/ },
-          say: 'The cashier asks for a credit note on bill NHOB26000002, because the wrong rate was charged for the consultation. Read the reason before you decide.',
+          say: 'Prakash Iyer asks for a credit note on bill NHOB26000002, because the wrong rate was charged for the consultation. Read the reason before you decide.',
           zoom: 1.3,
         },
         {
@@ -68,7 +68,7 @@ const story = {
         },
         {
           click: { role: 'button', name: 'Approve', last: true },
-          say: 'Click Approve again to confirm. The credit note is made now, as it was when it was asked for.',
+          say: 'Click Approve again to confirm. The credit note is made now, exactly as it was asked for.',
           after: 'Nothing is waiting for your decision now.',
           wait: { text: /Nothing is waiting for your decision/ },
         },
@@ -89,7 +89,7 @@ const story = {
         },
         {
           show: { role: 'row', name: /Ravi Kumar/ },
-          say: 'Prakash Iyer asks for 10% of ₹1,050.00, which is ₹105.00. It is above his own limit, so it waits for you. Read the reason.',
+          say: 'Prakash Iyer asks for 10% of ₹1,050.00, which is ₹105.00. It is above Prakash Iyer’s own limit, so it waits for you. Read the reason.',
           zoom: 1.3,
         },
         {
@@ -100,7 +100,7 @@ const story = {
         },
         {
           fill: [{ label: /^Why is it approved/ }, 'Approved for a retired government servant.'],
-          say: 'Type why you approve it. The cashier sees your reason, and it is kept with the bill.',
+          say: 'Type why you approve it. Prakash Iyer sees your reason, and it is kept with the bill.',
           zoom: 1.4,
         },
         {
@@ -169,15 +169,14 @@ const story = {
   ],
   check: [
     {
-      q: 'Why does the discount wait for you and not for the cashier?',
-      a: 'It is above the cashier’s own limit. Only an approver, who did not ask for it, can approve it.',
+      q: 'Why does the discount wait for your approval?',
+      a: 'It is above the limit of the person who asked for it. Only an approver who did not ask for it can approve it.',
     },
     {
       q: 'What do you check in the day book before you post it to Tally?',
       a: 'That the debit and the credit are the same, and that the vouchers are the day’s bills, receipts and credit notes.',
     },
   ],
-  next: 'Insurance desk: pre-authorisations and claims',
 };
 
 export default story;
