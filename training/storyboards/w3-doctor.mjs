@@ -40,9 +40,15 @@ export default {
           result: { role: 'table', name: "Today's queue" },
         },
         {
+          click: { within: row('GM-010'), role: 'button', name: 'Call to the room' },
+          say: 'Anand Joseph is next. Click Call, to ask him to come in.',
+          after: 'He is now in service, and his token shows on the waiting-area screen.',
+          wait: { within: row('GM-010'), role: 'button', name: 'Finish' },
+          result: row('GM-010'),
+        },
+        {
           click: { within: row('GM-010'), role: 'button', name: 'Start' },
-          say: 'Anand Joseph is next. Click Start to open his consultation note. HC360 marks him as in service, and his token shows it on the waiting-area screen.',
-          after: 'His consultation note opens.',
+          say: 'Click Start to open his consultation note.',
           wait: { role: 'heading', name: 'Complaint and history' },
         },
         {
