@@ -225,5 +225,4 @@ export default {
       a: 'On Maintenance and calibration, on the Calibration tab, with Record calibration.',
     },
   ],
-  next: 'CSSD technician: receive trays, run a sterilizer load, issue sterile packs',
 };

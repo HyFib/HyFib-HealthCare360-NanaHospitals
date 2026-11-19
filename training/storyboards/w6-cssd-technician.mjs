@@ -247,5 +247,4 @@ export default {
       a: 'If a load is recalled, HC360 can find every pack of that load, and where it went.',
     },
   ],
-  next: 'Biomedical engineer: breakdown tickets, calibration and maintenance',
 };

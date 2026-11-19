@@ -169,5 +169,4 @@ export default {
       a: 'A different person. The person who approves must not be the person who processed it.',
     },
   ],
-  next: 'Canteen manager: bill at the counter, keep the menu, check sales and staff credit',
 };

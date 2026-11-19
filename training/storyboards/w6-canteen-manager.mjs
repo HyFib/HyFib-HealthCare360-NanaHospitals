@@ -177,5 +177,4 @@ export default {
       a: 'Switch off Poha under On menu, so that it is not on today’s menu.',
     },
   ],
-  next: 'HR manager: decide leave, plan the roster, start payroll',
 };
