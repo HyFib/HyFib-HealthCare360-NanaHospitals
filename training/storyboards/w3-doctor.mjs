@@ -4,7 +4,6 @@
 
 const nav = { role: 'navigation', name: 'Main navigation' };
 const row = (token) => ({ role: 'row', name: new RegExp(`^${token}`) });
-const signDialog = { role: 'dialog' };
 
 export default {
   id: 'w3-doctor',
@@ -199,12 +198,12 @@ export default {
           wait: { text: 'Sign this encounter?' },
         },
         {
-          show: signDialog,
+          show: { role: 'alertdialog' },
           say: 'HC360 checks the note: one diagnosis is recorded, and there is no unsigned prescription. Signing locks the note. Later corrections are recorded as amendments, with a reason.',
           zoom: 1.4,
         },
         {
-          click: { within: signDialog, role: 'button', name: 'Sign encounter' },
+          click: { role: 'button', name: 'Sign encounter', last: true },
           say: 'Click Sign encounter.',
           wait: { text: 'Signed' },
         },
