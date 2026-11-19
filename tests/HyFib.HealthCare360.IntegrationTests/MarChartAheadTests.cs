@@ -54,12 +54,13 @@ public sealed class MarChartAheadTests(MidnightInIndiaServer midnight)
         var pharmacist = await Server.SignInAsync(Users.Pharmacist);
         var suffix = Letters(6);
 
-        // Ten vials of ceftriaxone in the IP pharmacy; a patient admitted to the male general ward.
+        // Ten vials of ceftriaxone in the IP pharmacy; a patient (a woman) admitted to the semi-private ward, which admits
+        // men and women alike (the general wards are for one sex each).
         var store = (await storeKeeper.GetAsync<List<StoreDto>>("/api/v1/inventory/stores")).Single(s => s.Code == "IPPH").Id;
         var ceftriaxone = await MedicineAsync(storeKeeper, $"Ceftriaxone 1 g Injection {suffix}");
         await ReceiveAsync(storeKeeper, store, ceftriaxone, 10m);
         var patient = (await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice)).Id;
-        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "GWM");
+        var ward = (await frontOffice.GetAsync<List<WardDto>>("/api/v1/inpatient/wards")).Single(w => w.Code == "SPW");
         var admission = await AdmitAsync(frontOffice, doctor, patient, ward.Id);
 
         // The doctor prescribes Inj. Ceftriaxone 1 g IV BD for 5 days at 09:50; the pharmacist issues all ten vials against it.
