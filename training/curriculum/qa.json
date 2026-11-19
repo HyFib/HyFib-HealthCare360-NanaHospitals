@@ -387,5 +387,24 @@
   "seconds": 295.4,
   "megabytes": 14.0,
   "madeBy": "render worker 3"
+ },
+ "w7-system-admin": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 25,
+  "wer": 2.89,
+  "wpm": 127.7,
+  "maxCps": 16.1,
+  "lufs": -16.0,
+  "seconds": 394.8,
+  "megabytes": 19.6,
+  "madeBy": "render worker 1"
  }
 }
