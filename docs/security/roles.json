@@ -4,8 +4,8 @@
   "totals": {
     "roles": 32,
     "permissions": 289,
-    "guardedEndpoints": 1757,
-    "approvalKinds": 84
+    "guardedEndpoints": 1759,
+    "approvalKinds": 85
   },
   "security": {
     "enforceMfa": true,
@@ -24,7 +24,7 @@
       "defaultPermissions": [
         "*"
       ],
-      "endpoints": 1757,
+      "endpoints": 1759,
       "mfa": "required-by-role",
       "canBeTurnedOff": false
     },
@@ -237,7 +237,7 @@
         "visits.manage",
         "visits.read"
       ],
-      "endpoints": 1263,
+      "endpoints": 1264,
       "mfa": "required-by-role",
       "canBeTurnedOff": true
     },
@@ -333,7 +333,7 @@
         "visits.manage",
         "visits.read"
       ],
-      "endpoints": 522,
+      "endpoints": 523,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -426,7 +426,7 @@
         "visits.manage",
         "visits.read"
       ],
-      "endpoints": 550,
+      "endpoints": 551,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -509,7 +509,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 225,
+      "endpoints": 226,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -536,7 +536,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 172,
+      "endpoints": 173,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -1160,7 +1160,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 239,
+      "endpoints": 240,
       "mfa": "required-by-role",
       "canBeTurnedOff": true
     },
@@ -1696,7 +1696,7 @@
         "HospitalAdmin"
       ],
       "administrative": false,
-      "endpoints": 6
+      "endpoints": 7
     },
     {
       "name": "billing.refunds.request",
@@ -1708,7 +1708,7 @@
         "HospitalAdmin"
       ],
       "administrative": false,
-      "endpoints": 7
+      "endpoints": 8
     },
     {
       "name": "billing.shifts",
@@ -3560,7 +3560,7 @@
         "Nurse"
       ],
       "administrative": false,
-      "endpoints": 10
+      "endpoints": 11
     },
     {
       "name": "nursing.restraint.order",
@@ -4742,6 +4742,11 @@
     {
       "kind": "billing.refund_reversal",
       "title": "Refund not paid out",
+      "approvePermission": "billing.refunds.approve"
+    },
+    {
+      "kind": "billing.return_credit",
+      "title": "Returns credited on a bill",
       "approvePermission": "billing.refunds.approve"
     },
     {
