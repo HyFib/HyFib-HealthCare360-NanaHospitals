@@ -389,6 +389,11 @@ public static class SettingGuard
 
         // ---------------------------------------------------------------- where money, patients' data and alerts go
 
+        // TubeNumbers.CheckDigitSinceSetting (the Diagnostics module): written by its seeder when tube numbers gained their
+        // check digit. Moved later, a tube number typed with a digit wrong finds another patient's tube again.
+        ["lab.tubeCheckDigitSince"] = new SettingRedirect("Tubes numbered before the check digit",
+            "When tube numbers started ending in a check digit: only a tube made before then is found by a number whose check digit does not match. Moved later, a tube number typed with one digit wrong can find another patient's tube again."),
+
         // DoctorFeeService.TdsSetting: either way is wrong, so any change waits.
         ["doctorfees.tds.percent"] = new SettingRedirect("TDS on doctors' fees",
             "The income tax withheld from doctors' payouts (section 194J): too little leaves the hospital owing it, too much underpays the doctors."),

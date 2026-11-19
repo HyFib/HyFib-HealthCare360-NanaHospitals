@@ -183,6 +183,8 @@ export function WardMarDue({
                       {item.route ? ` · ${item.route}` : ''}
                     </Caption1>
                     {item.heldBecause && <Caption1 block>{DOSE_HOLD_LABEL[item.heldBecause]}</Caption1>}
+                    {item.notes && <Caption1 block>{item.notes}</Caption1>}
+                    {item.instructions && <Caption1 block>{item.instructions}</Caption1>}
                   </span>
                   <span className={styles.actions}>
                     {!item.heldBecause && (

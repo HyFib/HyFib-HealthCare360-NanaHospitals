@@ -348,6 +348,14 @@ public enum CreditNoteKind
     /// settlement already took the deduction off what the payer owes.
     /// </summary>
     PayerShare,
+
+    /// <summary>
+    /// A GST credit note to the payer for its share of a return that came back after the bill was finalized
+    /// (<see cref="ReturnCredits"/>): it takes that share off what the payer owes and off its invoice, naming the services
+    /// returned. The patient's share of the return, if any, is a credit note of its own. It is an e-invoice (<c>CRN</c>) to
+    /// a payer registered for GST, and in the books it comes off the payer's ledger against the bill.
+    /// </summary>
+    PayerReturn,
 }
 
 /// <summary>

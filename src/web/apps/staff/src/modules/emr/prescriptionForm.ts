@@ -449,24 +449,24 @@ export function templateMedicineDefaults(m: {
 /** What a dosage form (or, without one, the medicine's name) says about how it is given; as the server's DosageForms. */
 export type DosageFormKind = 'injection' | 'oral' | 'local' | 'unknown';
 
-const INJECTION_FORM = /\b(inj(ection)?s?\b|inj\.|infusion|vials?\b|amp(o)?ules?\b)/i;
+// "Injectable" too: a depot injection is often an "injectable suspension", which is not taken by mouth.
+const INJECTION_FORM = /\b(inj(ection|ectable)?s?\b|inj\.|infusion|vials?\b|amp(o)?ules?\b)/i;
 // Before oral: a nebuliser suspension is inhaled, an oral gel is put on the gums.
 const LOCAL_FORM =
   /(inhal|nebuli[sz]|respule|rotacap|metered[- ]dose|\beye\b|ophthalm|\bear\b|\botic\b|nasal|suppositor|rectal|enema|pessar|vaginal|sublingual|cream|ointment|\bgel\b|lotion|jelly|dusting|\bpaint\b|patch|topical)/i;
 const ORAL_FORM =
   /(tablet|\btabs?\b|capsule|\bcaps?\b|syrup|suspension|\boral\b|sachet|granule|elixir|lozenge|chewable)/i;
 const INJECTION_ROUTES = new Set(['IV', 'IM', 'SC']);
+// Routes an injection is not ordered by. Not inhaled, nebulised or nasal: adrenaline, acetylcysteine and colistin are
+// nebulised from the injection, and midazolam put into the nose for a seizure.
 const NON_INJECTION_ROUTES = new Set([
   'Oral',
   'Sublingual',
   'Nasogastric',
   'Rectal',
   'Topical',
-  'Inhalation',
-  'Nebulisation',
   'Eye',
   'Ear',
-  'Nasal',
   'Vaginal',
 ]);
 
@@ -512,7 +512,8 @@ export function defaultRoute(dosageForm: string | null | undefined, drugName?: s
 
 /**
  * Why a medicine's route cannot be signed, or null: every medicine names its route, an injection is given by needle
- * (IV, IM, SC or Other), and a medicine taken by mouth is not given IV, IM or SC. The server blocks the same.
+ * (IV, IM, SC or Other; its solution may also be inhaled, nebulised or put into the nose), and a medicine taken by mouth
+ * is not given IV, IM or SC. The server blocks the same.
  */
 export function routeProblem(line: Pick<RxLineValues, 'drugName' | 'dosageForm' | 'route'>): string | null {
   if (!line.drugName.trim()) {

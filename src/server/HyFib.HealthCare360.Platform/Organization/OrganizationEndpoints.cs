@@ -272,9 +272,11 @@ internal static class OrganizationEndpoints
                     ? TypedResults.Ok(dto)
                     : Error.NotFound(nameof(Facility), id).ToProblem())
             .RequirePermission(PlatformPermissions.MastersRead);
-        masters.MapPost("/facilities", (SaveFacilityRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveFacility(null, r, db, u, ct))
+        masters.MapPost("/facilities", (SaveFacilityRequest r, HospitalDbContext db, ICurrentUser u, ISessionValidator sessions, IAuditLogger audit, TimeProvider time,
+                CancellationToken ct) => SaveFacility(null, r, db, u, sessions, audit, time, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveFacilityRequest>();
-        masters.MapPut("/facilities/{id:guid}", (Guid id, SaveFacilityRequest r, HospitalDbContext db, ICurrentUser u, CancellationToken ct) => SaveFacility(id, r, db, u, ct))
+        masters.MapPut("/facilities/{id:guid}", (Guid id, SaveFacilityRequest r, HospitalDbContext db, ICurrentUser u, ISessionValidator sessions, IAuditLogger audit,
+                TimeProvider time, CancellationToken ct) => SaveFacility(id, r, db, u, sessions, audit, time, ct))
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<SaveFacilityRequest>().RequireVersion();
         masters.MapPost("/facilities/letterhead-preview", PreviewLetterhead)
             .RequirePermission(PlatformPermissions.MastersManage).WithValidation<LetterheadPreviewRequest>();
@@ -398,10 +400,18 @@ internal static class OrganizationEndpoints
         f.Id, f.Code, f.Name, f.LegalName, f.Address, f.Phone, f.Email, f.Website, f.Gstin, f.Pan, f.RegistrationNumber, f.NabhNumber,
         f.HfrId, f.TimeZone, f.Currency, f.LogoFileId, f.LetterheadNote, f.IsActive, f.Version);
 
-    private static async Task<IResult> SaveFacility(Guid? id, SaveFacilityRequest request, HospitalDbContext db, ICurrentUser user, CancellationToken ct)
+    /// <summary>
+    /// Adds or changes a facility. Taken out of use, the sessions signed in to it end at once, as when a facility is taken
+    /// away from a user: a session's tokens carry its facility, and would otherwise go on working there. Their next sign-in
+    /// goes to a facility in use.
+    /// </summary>
+    private static async Task<IResult> SaveFacility(
+        Guid? id, SaveFacilityRequest request, HospitalDbContext db, ICurrentUser user, ISessionValidator sessions, IAuditLogger audit, TimeProvider time,
+        CancellationToken ct)
     {
         var code = request.Code.Trim().ToUpperInvariant();
         Facility facility;
+        var takenOutOfUse = false;
 
         // Taking a facility out of use checks the others in use and saves in one transaction (see TakingOutOfUseProblemAsync).
         await using var transaction = id is not null && !request.IsActive ? await db.Database.BeginTransactionAsync(ct) : null;
@@ -423,6 +433,7 @@ internal static class OrganizationEndpoints
                 return rule.ToProblem();
             }
 
+            takenOutOfUse = found.IsActive && !request.IsActive;
             facility = found;
             if (request.Version is { } v)
             {
@@ -466,12 +477,25 @@ internal static class OrganizationEndpoints
         facility.LogoFileId = request.LogoFileId;
         facility.IsActive = request.IsActive;
 
+        var ended = takenOutOfUse ? await AccountApprovals.RevokeSessionsInAsync(db, facility.Id, time.GetUtcNow(), ct) : [];
+        if (ended.Count > 0)
+        {
+            audit.Add(new AuditEntry(AuditCategories.Security, "facility.sessions_ended",
+                $"{ended.Count} session(s) signed in to {facility.Name} ended: the facility was taken out of use")
+            {
+                EntityType = nameof(Facility),
+                EntityId = facility.Id.ToString(),
+                Details = new { users = ended.Select(s => s.UserId).Distinct() },
+            });
+        }
+
         await db.SaveChangesAsync(ct);
         if (transaction is not null)
         {
             await transaction.CommitAsync(ct);
         }
 
+        AccountApprovals.Invalidate(sessions, ended);
         return id is null ? TypedResults.Created($"/api/v1/masters/facilities/{facility.Id}", new { facility.Id }) : TypedResults.NoContent();
     }
 

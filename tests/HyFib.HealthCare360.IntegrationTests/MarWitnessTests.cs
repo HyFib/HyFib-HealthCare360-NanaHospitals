@@ -136,10 +136,11 @@ public sealed class MarWitnessTests(HospitalServer server)
         var midazolam = await DrugClassApprovalTests.CreateAsync(admin, "Midazolam", DrugSchedule.H1, controlled: false, highAlert: false);
 
         // Ordered on the ward (by the doctor, in his own name) as neither controlled nor high-alert: the orders take what the
-        // master says. Schedule H1 is kept in a register, so it is witnessed as a controlled drug is.
+        // master says. Schedule H1 is kept in a register, so it is witnessed as a controlled drug is. With morphine on the
+        // chart, midazolam is a major interaction the safety check stops: the doctor gives his reason.
         var insulinDose = await WardDoseAsync(doctor, admission.Id, insulin, "Insulin regular 100 IU/ml", "8 IU", "SC");
         var morphineDose = await WardDoseAsync(doctor, admission.Id, morphine, "Morphine 10 mg/ml", "2 mg", "IV");
-        await WardDoseAsync(doctor, admission.Id, midazolam, "Midazolam 1 mg/ml", "1 mg", "IV");
+        await WardDoseAsync(doctor, admission.Id, midazolam, "Midazolam 1 mg/ml", "1 mg", "IV", "Sedation for the procedure, oximetry and the anaesthetist at hand");
         var orders = await nurse.GetAsync<List<MedicationOrderDto>>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders");
         (orders.Single(o => o.DrugItemId == insulin).IsHighAlert, orders.Single(o => o.DrugItemId == insulin).IsControlledDrug).ShouldBe((true, false));
         orders.Single(o => o.DrugItemId == morphine).IsControlledDrug.ShouldBeTrue();
@@ -200,12 +201,13 @@ public sealed class MarWitnessTests(HospitalServer server)
         var (insulinOrder, morphineOrder) = (orders.Single(o => o.DrugItemId == insulin), orders.Single(o => o.DrugItemId == morphine));
         (insulinOrder.IsHighAlert, insulinOrder.IsControlledDrug, morphineOrder.IsControlledDrug).ShouldBe((true, false, true));
 
-        // Their doses, to be confirmed with the doctor, are not recorded as given without a witness.
-        var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
+        // No dose of them is charted until a doctor orders it; one given all the same is witnessed, as the master says.
+        (await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar"))
+            .ShouldNotContain(e => e.MedicationOrderId == insulinOrder.Id || e.MedicationOrderId == morphineOrder.Id);
         foreach (var order in new[] { insulinOrder, morphineOrder })
         {
-            var dose = chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
-            (await RefusalAsync(nurse, $"/api/v1/nursing/mar/{dose.Id}/record", Given(dose, null))).ShouldBe("mar.witness_required");
+            order.Instructions.ShouldNotBeNull().ShouldContain("Confirm the dose and frequency with the doctor");
+            (await RefusalAsync(nurse, $"/api/v1/nursing/admissions/{admission.Id}/mar", Extra(order.Id, null))).ShouldBe("mar.witness_required");
         }
     }
 
@@ -328,13 +330,15 @@ public sealed class MarWitnessTests(HospitalServer server)
 
     /// <summary>
     /// A drug of the master ordered on the ward to be given at once, as the form sends it: neither controlled nor
-    /// high-alert. Written by the doctor in his own name, so it is signed at once and its one dose is due now.
+    /// high-alert. Written by the doctor in his own name, so it is signed at once and its one dose is due now;
+    /// <paramref name="overrideReason"/> is his reason for writing it over a blocking safety alert.
     /// </summary>
-    private static async Task<MarEntryDto> WardDoseAsync(ApiClient doctor, Guid admissionId, Guid itemId, string name, string dose, string route)
+    private static async Task<MarEntryDto> WardDoseAsync(ApiClient doctor, Guid admissionId, Guid itemId, string name, string dose, string route,
+        string? overrideReason = null)
     {
         var order = await doctor.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admissionId}/medication-orders", new AddMedicationOrderRequest(
             DrugItemId: itemId, DrugName: name, GenericName: null, Strength: null, Dose: dose, Route: route, Frequency: "STAT", DurationDays: 1,
-            StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
+            StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null, OverrideReason: overrideReason));
         var chart = await doctor.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admissionId}/mar");
         return chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
     }

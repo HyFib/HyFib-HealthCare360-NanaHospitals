@@ -88,14 +88,24 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal CgstAmount { get; set; }
     public decimal SgstAmount { get; set; }
 
-    /// <summary>GST on a supply to another state: the payer is registered there (IGST Act s.12(2)(a) for services).</summary>
+    /// <summary>
+    /// IGST, on a bill finalized as a supply to another state before every bill took the facility's state as its place of
+    /// supply (<see cref="SetPlaceOfSupply"/>); nothing on any other bill.
+    /// </summary>
     public decimal IgstAmount { get; set; }
 
     public decimal TaxAmount { get; set; }
 
-    /// <summary>The state of supply as its GST code ("33"): the facility's own, or a registered payer's in another state.</summary>
+    /// <summary>
+    /// The state of supply as its GST code ("33"): the facility's own, whoever pays (IGST Act s.12(3) and s.12(4)); null
+    /// while the facility has no GSTIN.
+    /// </summary>
     public string? PlaceOfSupply { get; private set; }
 
+    /// <summary>
+    /// Taxed as a supply to another state (IGST): only a bill finalized so before every bill was supplied in the facility's
+    /// state. Its credit and debit notes take back and add GST as it was charged, as IGST.
+    /// </summary>
     public bool IsInterState { get; private set; }
 
     public decimal RoundOffAmount { get; set; }
@@ -126,6 +136,11 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal DueAmount { get; set; }
     public decimal RefundableAmount { get; set; }
     public decimal PayerSettledAmount { get; set; }
+
+    /// <summary>
+    /// What the payer will not pay of its share: its settlements' deductions (a rejected claim's unpaid balance among them),
+    /// and its share of returns credited on the bill (<see cref="ApplyPayerCredit"/>).
+    /// </summary>
     public decimal PayerDisallowedAmount { get; set; }
 
     /// <summary>What debit notes (supplementary invoices, CGST Act s.34(3)) added to the patient's share, GST included.</summary>
@@ -300,18 +315,21 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     }
 
     /// <summary>
-    /// Where the services are supplied for GST: the payer's registered state when the payer has a GSTIN, else the
-    /// facility's. A draft only; the next <see cref="Recalculate"/> splits the tax as IGST or CGST and SGST.
+    /// Where the bill is supplied for GST: the facility's own state, whoever pays. Health care is supplied where it is
+    /// performed (IGST Act s.12(4)), a room and any service tied to the premises where the hospital stands (s.12(3)), and
+    /// what is used in treatment is handed over there; so a payer registered in another state is billed CGST and SGST
+    /// like any other, its GSTIN naming it as the buyer only. A draft only; the next <see cref="Recalculate"/> splits the
+    /// tax as CGST and SGST.
     /// </summary>
-    public void SetPlaceOfSupply(string? facilityState, string? payerState)
+    public void SetPlaceOfSupply(string? facilityState)
     {
         if (Status != BillStatus.Draft)
         {
             return;
         }
 
-        PlaceOfSupply = payerState ?? facilityState;
-        IsInterState = payerState is not null && facilityState is not null && payerState != facilityState;
+        PlaceOfSupply = facilityState;
+        IsInterState = false;
     }
 
     /// <summary>
@@ -579,6 +597,13 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     /// <summary>
     /// Cancels a finalized bill; whatever the patient paid becomes refundable (BillCancelled is raised). Someone other
     /// than whoever finalized it cancels it, as with refunds and discounts: one person cannot bill, collect and undo.
+    /// <para>
+    /// A cancelled bill is reversed in full: Tally takes back its whole sale and GSTR-1 leaves it out. What was recorded
+    /// against the bill since (a credit note or write-off, a debit note, an insurer's settlement or deduction) stays in
+    /// the books and the returns, so such a bill is not cancelled (<see cref="AdjustedSinceFinalized"/>): it would be
+    /// undone twice. A credit note takes back what remains instead, and what the payer would not pay is charged to the
+    /// patient by a patient debit note.
+    /// </para>
     /// </summary>
     public Result Cancel(string reason, Guid? userId, DateTimeOffset now)
     {
@@ -597,12 +622,92 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
             return Error.Rule("billing.cancel_own_bill", "You finalized this bill, so someone else must cancel it.");
         }
 
+        if (AdjustedSinceFinalized() is { } adjusted)
+        {
+            return adjusted;
+        }
+
         Status = BillStatus.Cancelled;
         CancelReason = reason;
         CancelledAt = now;
         CancelledBy = userId;
         UpdateBalances();
         Raise(new BillCancelled(Id, BillNumber ?? string.Empty, FacilityId, PatientId, NetAmount, reason, now));
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Why the bill can no longer be cancelled: what was recorded against it since it was finalized (a credit note or
+    /// write-off, a debit note, an insurer's settlement or deduction; a rejected claim's unpaid balance is a deduction);
+    /// <c>null</c> when nothing was. Payments are not among them: a cancellation makes them refundable.
+    /// </summary>
+    public Error? AdjustedSinceFinalized()
+    {
+        var recorded = new List<string>();
+        if (CreditAmount > 0)
+        {
+            recorded.Add($"credit notes or write-offs of ₹{Money.FormatInr(CreditAmount)}");
+        }
+
+        if (DebitAmount + PayerDebitAmount > 0)
+        {
+            recorded.Add($"debit notes of ₹{Money.FormatInr(DebitAmount + PayerDebitAmount)}");
+        }
+
+        if (PayerSettledAmount > 0)
+        {
+            recorded.Add($"the payer's settlement of ₹{Money.FormatInr(PayerSettledAmount)}");
+        }
+
+        if (PayerDisallowedAmount > 0)
+        {
+            recorded.Add($"₹{Money.FormatInr(PayerDisallowedAmount)} the payer will not pay");
+        }
+
+        if (recorded.Count == 0)
+        {
+            return null;
+        }
+
+        var what = recorded.Count == 1 ? recorded[0] : string.Join(", ", recorded[..^1]) + " and " + recorded[^1];
+        var recover = PayerDisallowedAmount > 0
+            ? " To recover from the patient a share the payer would not pay (a rejected claim's, say), take it off the payer's invoice with a payer credit note and charge it to the patient with a patient debit note."
+            : string.Empty;
+        return Error.Rule("billing.bill_adjusted",
+            $"Bill {BillNumber} has {what} recorded against it, and cancelling it would reverse the whole bill again in the books and the GST returns. " +
+            $"Issue a credit note for what remains instead.{recover}");
+    }
+
+    /// <summary>
+    /// Takes <paramref name="amount"/> off what the payer owes, for its share of a return credited on the bill
+    /// (<see cref="ReturnCredits"/>): the payer no longer pays for what came back. It counts with what the payer will not
+    /// pay (<see cref="PayerDisallowedAmount"/>), so the payer's outstanding, its claim and the receivables fall with it.
+    /// </summary>
+    public Result ApplyPayerCredit(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (Status is not (BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid))
+        {
+            return Error.Rule("billing.bill_not_creditable", "Credit notes apply to finalized bills only.");
+        }
+
+        if (!HasPayer)
+        {
+            return Error.Rule("billing.no_payer", "This bill has no payer to credit.");
+        }
+
+        if (amount > PayerOutstanding)
+        {
+            return Error.Rule("billing.payer_credit_exceeds_owed",
+                $"The payer owes ₹{Money.FormatInr(PayerOutstanding)} on bill {BillNumber}, less than its ₹{Money.FormatInr(amount)} share of what came back. " +
+                "Its claim was settled already: what it overpaid is taken up with it through the claim desk.");
+        }
+
+        PayerDisallowedAmount += amount;
         return Result.Success();
     }
 

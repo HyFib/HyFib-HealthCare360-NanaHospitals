@@ -210,12 +210,15 @@ export const REFUND_PURPOSE_LABEL: Record<RefundPurpose, string> = {
   Advance: 'Unused patient advance',
 };
 
+/** The kinds of note the desk asks for by hand. */
 export const CREDIT_NOTE_KINDS = ['CreditNote', 'WriteOff', 'PayerShare'] as const;
-export type CreditNoteKind = (typeof CREDIT_NOTE_KINDS)[number];
+/** A note's kind; a payer's credit note for returns comes of crediting the returns on the bill, not of asking by hand. */
+export type CreditNoteKind = (typeof CREDIT_NOTE_KINDS)[number] | 'PayerReturn';
 export const CREDIT_NOTE_KIND_LABEL: Record<CreditNoteKind, string> = {
   CreditNote: 'Credit note',
   WriteOff: 'Write-off (bad debt)',
   PayerShare: "Payer credit note (the payer's disallowed share)",
+  PayerReturn: "Payer credit note (the payer's share of returns)",
 };
 
 export const DISCOUNT_APPROVAL_STATUSES = ['Pending', 'Approved', 'Rejected', 'Withdrawn'] as const;

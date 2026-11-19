@@ -37,9 +37,9 @@ public enum MedicationOrderMode
 }
 
 /// <summary>
-/// A line on the in-patient medication chart: what the doctor ordered. MAR rows are scheduled from its frequency when
-/// the pharmacy dispenses it (or when a ward order is transcribed), so the chart shows only doses that are really
-/// available on the ward.
+/// A line on the in-patient medication chart: what the doctor ordered. MAR rows are scheduled from its frequency once the
+/// pharmacy first supplies it (or when a ward order is transcribed), and from then on the chart is kept a day ahead
+/// (<see cref="KeptChartedAhead"/>) until the order stops or ends, whatever quantity each issue carried.
 /// </summary>
 public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
 {
@@ -137,20 +137,52 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
     /// <summary>A stop a nurse asked for, waiting for the doctor's countersignature.</summary>
     public bool StopPending => StopRequestedAt is not null && Status == MedicationOrderStatus.Active;
 
-    /// <summary>No dose of this order is given now (<see cref="CanGiveDose"/> says why).</summary>
-    public bool DosesHeld => CanGiveDose().IsFailure;
+    /// <summary>
+    /// The order is active but no dose of it is given now: a stop waiting for the doctor, or a high-alert verbal order not
+    /// countersigned (<see cref="CanGiveDose"/> says why). A stopped order is not held: it is over.
+    /// </summary>
+    public bool DosesHeld => Status == MedicationOrderStatus.Active && CanGiveDose().IsFailure;
+
+    /// <summary>
+    /// Whether the chart of this order is kept a day ahead (<c>MarChartAheadJob</c>): the order is active, its doses are not
+    /// held, it has not ended, its frequency has rounds, and it is on the chart already: a dose of it is charted
+    /// (<paramref name="hasDoses"/>), the pharmacy has supplied it, or it is a ward order whose start has come. An
+    /// e-prescription line waits for the pharmacy's first supply; a STAT dose is charted once, and SOS doses as given.
+    /// </summary>
+    public bool KeptChartedAhead(bool hasDoses, DateTimeOffset now) =>
+        Status == MedicationOrderStatus.Active && !DosesHeld && (EndAt is not { } end || end > now)
+        && DoseSchedule.TimesOfDay(Frequency).Count > 0
+        && (hasDoses || LastDispensedAt is not null || (Source == MedicationOrderSource.Manual && StartAt <= now));
+
+    /// <summary>
+    /// The order's doses from <paramref name="from"/> for the next <see cref="MarRules.ChartAhead"/>, on its rounds and within
+    /// its start and end, that are not on the chart yet (<paramref name="charted"/>: the times already charted). A STAT order
+    /// is a single dose: none once a dose of it is on the chart (<paramref name="hasDoses"/>), whatever the time.
+    /// </summary>
+    public IReadOnlyList<DateTimeOffset> DosesToChart(DateTimeOffset from, IReadOnlyCollection<DateTimeOffset> charted, bool hasDoses = false) =>
+        DoseSchedule.IsImmediate(Frequency) && hasDoses
+            ? []
+            : [.. DoseSchedule.Between(Frequency, from, from + MarRules.ChartAhead, StartAt, EndAt).Where(at => !charted.Contains(at))];
 
     public bool CountersignOverdue(DateTimeOffset now) => AwaitingCountersignature && CountersignDueAt is { } due && now > due;
 
     public bool StopCountersignOverdue(DateTimeOffset now) => StopPending && StopCountersignDueAt is { } due && now > due;
 
     /// <summary>
-    /// Whether a dose may be given now. A stop waiting for the doctor holds every dose (the safe direction); so does a
-    /// verbal or telephone order of a high-alert, controlled or chemotherapy medicine until the doctor countersigns it,
-    /// unless the nurse took it as an emergency order, read back.
+    /// Whether a dose may be given now. Never once the order has stopped: a dose still due then, overdue or not, was
+    /// cancelled with the stop. A stop waiting for the doctor holds every dose (the safe direction); so does a verbal or
+    /// telephone order of a high-alert, controlled or chemotherapy medicine until the doctor countersigns it, unless the
+    /// nurse took it as an emergency order, read back.
     /// </summary>
     public Result CanGiveDose()
     {
+        if (Status != MedicationOrderStatus.Active)
+        {
+            return Error.Rule("medication.not_active",
+                $"This medicine was stopped{(string.IsNullOrWhiteSpace(StopReason) ? string.Empty : $" ({StopReason})")}, so none of its doses is given. "
+                + "If the patient still needs it, ask the doctor for a new order.");
+        }
+
         if (StopPending)
         {
             return Error.Rule("medication.stop_pending",
@@ -254,7 +286,7 @@ public enum MarStatus
     Refused,
     Missed,
 
-    /// <summary>The order was stopped before the dose was due.</summary>
+    /// <summary>The order stopped, or the patient was discharged, while the dose was still due, overdue or not: it is never given.</summary>
     Cancelled,
 }
 
@@ -292,6 +324,13 @@ public sealed class MedicationAdministration : AuditableEntity, IFacilityScoped
 
     public Result Record(MarOutcome outcome, Guid? userId, string? userName, bool requiresWitness, DateTimeOffset now)
     {
+        // A dose cancelled when its order stopped (or the patient was discharged) is never given afterwards.
+        if (Status == MarStatus.Cancelled)
+        {
+            return Error.Rule("mar.cancelled",
+                $"This dose was cancelled ({Reason ?? "its order stopped"}), so it is not given. Write a nursing note for anything to add.");
+        }
+
         var check = MarRules.ValidateOutcome(Status, outcome, requiresWitness, now);
         if (check.IsFailure)
         {
@@ -338,10 +377,29 @@ public static class MarRules
     /// <summary>Default window after the scheduled time before a due dose shows as overdue (setting <c>inpatient.marGraceMinutes</c>).</summary>
     public static readonly TimeSpan DefaultGrace = TimeSpan.FromMinutes(30);
 
+    /// <summary>How far ahead an order's doses are on the chart: a day.</summary>
+    public static readonly TimeSpan ChartAhead = TimeSpan.FromHours(24);
+
     private static readonly TimeSpan ClockTolerance = TimeSpan.FromMinutes(5);
 
     public static bool IsOverdue(MarStatus status, DateTimeOffset scheduledAt, DateTimeOffset now, TimeSpan grace) =>
         status == MarStatus.Due && now > scheduledAt + grace;
+
+    /// <summary>
+    /// The chart line an issued medicine supplies: the line its prescription line became; else, for a medicine issued with
+    /// no prescription line on the chart (a ward indent, a direct issue: a replacement ampoule, a ward order's supply), an
+    /// active line of the same drug of the master, one with a dose and frequency before one the pharmacy made, the latest
+    /// first. Null when the chart has no line of the drug.
+    /// </summary>
+    public static MedicationOrder? OrderSupplied(Guid? prescriptionLineId, Guid itemId, IEnumerable<MedicationOrder> orders)
+    {
+        var chart = orders as IReadOnlyCollection<MedicationOrder> ?? [.. orders];
+        return (prescriptionLineId is { } lineId ? chart.FirstOrDefault(o => o.PrescriptionLineId == lineId) : null)
+               ?? chart.Where(o => o.Status == MedicationOrderStatus.Active && o.DrugItemId == itemId)
+                   .OrderBy(o => o.Source == MedicationOrderSource.Pharmacy)
+                   .ThenByDescending(o => o.StartAt)
+                   .FirstOrDefault();
+    }
 
     /// <summary>
     /// Whether a dose given is witnessed by a second nurse: always for a dose with no order behind it (nobody prescribed it,

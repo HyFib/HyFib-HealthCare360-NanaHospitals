@@ -8,9 +8,11 @@ Project: `src/server/Modules/HyFib.HealthCare360.Modules.Inpatient` (references 
 round). Schema `inpatient`. Tests: `tests/Modules/HyFib.HealthCare360.Modules.Inpatient.Tests` (237 unit tests); integration `WardCareTests`,
 `InpatientJourneyTests`.
 
-It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list) and `IAdmissionDirectory` (whether a
-stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled), and asks
-`IBillingStatusProvider` and every `IDischargeHoldSource` before it completes a discharge.
+It implements the Platform contracts `IRoomClassDirectory` (Billing's rate list), `IAdmissionDirectory` (whether a
+stay goes on, read in every facility: Clinical takes no order for a stay that is discharged or cancelled) and
+`IWardMedicines` (what the ward gives a patient that no signed e-prescription carries, for Clinical's prescribing safety
+check), and asks `IBillingStatusProvider` and every `IDischargeHoldSource` before it completes a discharge, and
+`IMedicationSafetyCheck` (Clinical) before it writes a ward medication order.
 
 ## Permissions
 
@@ -317,23 +319,24 @@ view's *Restrained patients* list ([Restraints.tsx](../../src/web/apps/staff/src
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/admissions/{admissionId}/medication-orders?activeOnly` | `nursing.mar` or `nursing.chart` | → `MedicationOrderDto[]` (incl. `roundTimes`) |
-| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`; next 24 h scheduled unless the doses are held) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`; 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
-| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels the future doses at once; anyone else's is asked for (`stopPending`, doses held) |
+| POST | `/admissions/{admissionId}/medication-orders` | `nursing.mar` | `AddMedicationOrderRequest` (a prescriber's own order, signed at once, or a doctor's verbal or telephone order: `orderedByPractitionerId`, `mode`, `readBack`, `emergency`, `overrideReason`; next 24 h scheduled unless the doses are held, then kept a day ahead) → 201; 422 `medication.verbal_order_required`, `medication.read_back_required`, `medication.safety_block` (a blocking safety alert and no `overrideReason`, the alerts in `data`); 400 on `orderedByPractitionerId` (no doctor) or `drugItemId` (not in the master); after the discharge, 422 `medication.discharged` |
+| POST | `/admissions/{admissionId}/medication-orders/check` | `nursing.mar` | `AddMedicationOrderRequest` → `MedicationSafetyResult` (`isBlocked`, `alerts`: what the order would meet, blocking first); nothing is written |
+| POST | `/medication-orders/{id}/stop` | `nursing.mar` | `StopMedicationOrderRequest` → `MedicationOrderDto`: a prescriber's stop cancels at once every dose still due, an overdue one too; anyone else's is asked for (`stopPending`, doses held) |
 | POST | `/medication-orders/{id}/countersign` | `clinical.prescriptions.sign` | `CountersignMedicationOrderRequest` (`version`) → `MedicationOrderDto`; only the doctor named, from their own account (403 `medication.countersign_not_prescriber`); held doses are scheduled |
-| POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, the doses held since the stop was asked for cancelled |
+| POST | `/medication-orders/{id}/stop/countersign` | `clinical.prescriptions.sign` | `ConfirmStopRequest` (`version`) → the order stopped, every dose still due cancelled |
 | POST | `/medication-orders/{id}/stop/decline` | `clinical.prescriptions.sign` | `DeclineStopRequest` (reason, `version`) → the order goes on; the nurse who asked is told |
 | GET | `/medication-orders/awaiting-countersignature?wardId&mine&overdueOnly` | `nursing.mar` or `nursing.in_charge` | → `AwaitingCountersignatureItem[]` (what waits for a doctor: for a ward, for the signed-in doctor, past its time) |
 | GET | `/drugs?search` | `nursing.mar` | → `WardDrugDto[]` (the drug master for the ward's order form, with its controlled and high-alert flags) |
-| POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (extend 24 h); 422 while the doses are held |
+| POST | `/medication-orders/{id}/schedule` | `nursing.mar` | → `ScheduleResult` (charts the next 24 h now: for a line the pharmacy has not supplied, given from ward stock; kept a day ahead from then); 422 while the doses are held |
 | GET | `/admissions/{admissionId}/mar?date` | `nursing.mar` or `nursing.chart` | → `MarEntryDto[]` (day + older undocumented doses, `isOverdue`) |
-| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged` |
-| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`) |
-| GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist) |
+| POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged`; none of an order that has stopped (422 `medication.not_active`) or whose doses are held |
+| POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`), nor a dose of a stopped order (422 `medication.not_active`, `heldBecause` says so), nor a cancelled dose recorded at all (422 `mar.cancelled`) |
+| GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist, with each dose's `notes` and its order's `instructions`) |
 
 A controlled drug given (an order marked controlled: Schedule H1 or X, or NDPS) or a high-alert medicine given is
 witnessed by a second nurse, who proves who they are at the recording nurse's screen (ADR-014). An order that names an
 item of the drug master takes both flags from it when it is made, whatever the order form or the prescription line
-sent; so does the order made for a medicine the pharmacy issues without a prescription line. A ward order typed in
+sent; so does the line made for a medicine the pharmacy issues that no line of the chart carries. A ward order typed in
 without an item of the master is always high-alert (its flags cannot be cleared by typing a name), and a dose with no
 order behind it is always witnessed. The witnesses type their own user name and password there, and
 their authenticator code when their account has one (`POST /api/v1/auth/witness`, purpose `mar.dose`, with the
@@ -353,11 +356,57 @@ until then: nothing goes on the round, and no extra dose is recorded against it,
 emergency verbal order, read back, when its doses are given, each witnessed, and it stays flagged. The doctor has
 `inpatient.verbalOrderCountersignHours` (default 24, 1 to 72; fixed on the order when it is written) to countersign. A
 nurse's stop is asked for: the order stays on the chart with every dose held until the doctor named (or the patient's
-consultant, for an order that names none) confirms it, when the doses held since it was asked for are cancelled, or
+consultant, for an order that names none) confirms it, when every dose still due is cancelled, or
 declines it, when they are given again. `CountersignOverdueJob` (every 15 minutes, nodes that run jobs) tells the doctor
 and the facility's holders of `nursing.in_charge` once of each order or stop past its time, audited at Warning
 (`medication.countersign_overdue`, `medication.stop_countersign_overdue`); the staff app lists them under In-patients ›
 Orders to countersign.
+
+**Safety check of a ward order.** A ward order, the doctor's own or a verbal or telephone one, gets the prescribing
+safety check an e-prescription line of the same medicine gets at signing (`IMedicationSafetyCheck`, kept by Clinical,
+`docs/modules/clinical.md`, *Prescribing safety*): the patient's active allergies; interactions and duplicate therapy
+with their current medicines, which are the signed prescriptions still within their course and the ward's own active
+orders and pharmacy supplies without a prescription line (`IWardMedicines`); the maximum daily dose; and the route
+against the dosage form. The frequency is read as a prescription line's (`OD`, `BD`, `TDS`, `QID`, `HS`, `SOS`, `STAT`,
+`Weekly`, anything else a custom one such as `1-0-1` or `Q6H`). A medicine picked from the drug master is named, and its
+form read, as the master has them. The controlled-drug notice is left out: a ward order makes no register entry. A
+blocking alert (an allergy, a major interaction, a dose above the maximum, no route or a route the form contradicts)
+refuses the order (422 `medication.safety_block`, the alerts in `data`) unless the request gives `overrideReason`, the
+clinical reason for ordering it anyway (at least 10 characters). An override is audited at Critical
+(`medication.safety_override`, the reason and every alert found in its details), and a verbal order's audit and the
+doctor's notice to countersign it say so. The order form runs the check when the order is first sent and shows what it
+finds with the prescription's safety review: the reason for a blocking alert, and a tick that the warnings were read.
+
+**A stopped medicine is not given.** A stop, by a prescriber at once or confirmed by the doctor after a nurse asked for
+it, and a cancelled prescription cancel every dose of the line still due ("Medication order stopped", "Prescription
+cancelled"), an overdue one too: a dose due at 09:00 and not given when the doctor stops the medicine at 09:20 for a
+rash is not given at 09:40. The ward's round no longer lists it, a cancelled dose is not recorded (422 `mar.cancelled`),
+and no dose of a stopped line is given or added (422 `medication.not_active`). A dose given before the stop and not yet
+recorded is added as a dose with no order, with the time it was given (witnessed, as any dose with no order). A
+discharge still leaves the doses that fell due before it for the nurse to document.
+
+**The chart a day ahead.** An e-prescription line goes on the chart at signing with no doses: its first doses are
+scheduled when the pharmacy first supplies it, for the next 24 hours from the issue. A ward order's are scheduled as it is
+written, from its start. From then on `MarChartAheadJob` keeps every such line a day ahead (`MedicationOrder.KeptChartedAhead`):
+every quarter of an hour it charts the rounds of the next 24 hours not on the chart yet, until the line stops or ends,
+whatever quantity each issue carried. So *Inj. Ceftriaxone 1 g BD × 5 days* issued as ten vials has its doses on the round,
+the due list and the overdue doses for all five days, and none after the course's end. The job leaves alone a line whose
+doses are held (a nurse's stop waiting for the doctor, a high-alert verbal order not countersigned), a stopped or ended
+line, a line of a patient no longer admitted, an e-prescription line the pharmacy has not supplied yet, and SOS, "as
+directed" and STAT lines. It charts from the time it runs, never a dose already past. Doses it charts carry no batch: the
+nurse records the one given.
+
+**What the pharmacy issues.** An issue (`MedicationDispensed`) charts the line each medicine supplies, so a medicine is
+on the chart once (`MarRules.OrderSupplied`). A medicine issued for a prescription line supplies the chart line that
+prescription line became. One issued with no prescription line (a ward indent, a direct issue) supplies the active line
+of the same drug of the master already on the chart: the ward's own order before a line the pharmacy made, the latest
+first. So furosemide 40 mg BD ordered on the ward and issued on an indent stays one line, with its own doses, and a
+replacement ampoule of a STAT order charts nothing more. Only a medicine on no line of the chart gets a line of its own
+(source Pharmacy): "as directed", with no dose charted, and instructions to confirm the dose and frequency with the
+doctor, who orders it on the ward's chart. From then on the doctor's order is the line later issues supply. The ward's
+round shows each dose's notes and its order's instructions. An indent the ward raises for an e-prescribed medicine
+carries its prescription, so the pharmacy issues it for the prescription's own line (`docs/modules/pharmacy.md`,
+*In-patient pharmacy*).
 
 Frequencies understood: OD/QD/Daily, BD/BID, TDS/TID, QID/QDS, HS/Nocte, `1-0-1`-style patterns (3 or 4 parts,
 fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" (never auto-scheduled).
@@ -373,8 +422,8 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 | `PatientDischarged` | raised and handled | `DischargeType` = `Normal`, `Referred`, `Lama`, `Dama`, `Absconded` or `Expired`; Diagnostics withdraws the stay's tests whose sample is not drawn. Handled here too: the stay's chart lines stop ("Patient discharged") and the doses scheduled from the discharge on are cancelled; doses that fell due before it stay for the nurse to document |
 | `VisitCreated` / `VisitCompleted` / `VisitCancelled` (Patients) | raised | the in-patient visit is created with Patients' numbering (`visit`, `{FAC}V{YY}{SEQ:7}`), completed on discharge, cancelled with the admission; the OPD visit the patient was admitted from is completed at admission |
 | `PrescriptionSigned` | handled | in-patient lines become medication-chart lines (no doses until dispensed) |
-| `PrescriptionCancelled` | handled | chart lines stopped, future doses cancelled |
-| `MedicationDispensed` | handled | next 24 h of doses scheduled; unlinked lines charted as one dose to confirm |
+| `PrescriptionCancelled` | handled | chart lines stopped, every dose still due cancelled, an overdue one too |
+| `MedicationDispensed` | handled | the line each medicine supplies gets its next 24 h of doses (then kept a day ahead, *The chart a day ahead*); a medicine on no line of the chart gets a line with no dose, for the doctor to order (*What the pharmacy issues*) |
 | `PatientsMerged` (Patients) | handled | re-points patient ids across facilities |
 | `VitalSignsRecorded` (Clinical) | handled | an early-warning escalation for a patient in a bed when NEWS2 calls for a doctor (*NEWS2 escalation*) |
 
@@ -405,6 +454,7 @@ clearance check, so the final bill is complete.
   verified (`VerifiedNumbers`, ASVS V6.6.1); any other discharge gets `discharge.completed` on WhatsApp. A record in a protected category gets
   neither on a number another patient shares (`SharedNumbers`): they name the ward and the doctor.
 * Job: `CountersignOverdueJob` — every 15 minutes when `PlatformOptions.RunsJobs`: tells the doctor and the nurses in charge of each verbal or telephone order, and each nurse's stop, past its countersign time (once each); and the nurses in charge of each urgent transfer not accepted within the hour (once each).
+* Job: `MarChartAheadJob` — every 15 minutes when `PlatformOptions.RunsJobs` (with several servers, on the one holding the job lease): keeps each medication chart line a day ahead (*The chart a day ahead*). One line that cannot be charted is logged and never stops the others.
 * Job: `EarlyWarningReminderJob` — every 5 minutes when `PlatformOptions.RunsJobs`: reminds the consultant and the nurses in charge, once, of each NEWS2 escalation unanswered after 30 minutes, urgent or emergency.
 * Job: `BedDayChargeJob` — runs at start-up and hourly when `PlatformOptions.RunsJobs`; posts missing bed/nursing days of active and recently discharged admissions (`InpatientChargeService.StaysDueAsync`) and retries unaccepted consultant-visit charges. A day or visit billing refuses is kept by billing until it is charged: System health warns of it, the stay's final bill and discharge wait for it, and the stay's days are posted again however long ago it ended (`docs/modules/billing.md`, automatic charges); a ward's bed charge, and the one a stay in progress took with its bed, can't be taken out of use meanwhile (`docs/modules/masters.md`). Each bed day tells Billing whether the bed was in a critical-care ward (`Ward.IsCriticalCareType`: ICU, NICU, PICU, HDU) or a room, which decides its GST (room rent above ₹5,000 a day, see `docs/modules/billing.md`).
 * Seed `InpatientSeeder` (Order 160, only with `SeedDemoData`): GWM General Ward — Male (12, BED-GEN), GWF General Ward — Female (12, BED-GEN), SPW Semi-Private (8 in 4 rooms, BED-SEMI), PVT Private (8 rooms, BED-PVT), DLX Deluxe (4 rooms, BED-DLX), ICU (8, BED-ICU, monitors, 4 ventilators), NICU (6, BED-NICU).

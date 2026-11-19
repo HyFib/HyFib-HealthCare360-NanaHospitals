@@ -48,6 +48,7 @@ import {
 } from '../api';
 import { ServiceLookup } from '../common/ServiceLookup';
 import { containerInfo, resultTypeLabel, sectionLabel, specimenLabel } from '../labels';
+import { isChannelMapping } from './channels';
 import { ComponentsEditor } from './ComponentsEditor';
 import { useLoincNameFollowsCode } from './loincName';
 import { parseList } from './ranges';
@@ -56,7 +57,6 @@ import { SecondPathologistReasonDialog } from './SecondPathologistReasonDialog';
 import { asksForReason, isApprovalRequest, waitsForSecondPathologist } from './secondPathologist';
 
 const CODE = /^[A-Za-z0-9_-]+$/;
-const CHANNEL = /^[A-Za-z0-9._%#^-]+(:[A-Za-z0-9._%#^-]+)?$/;
 
 const schema = z
   .object({
@@ -117,7 +117,7 @@ const schema = z
         message: 'Link an orderable test to its billable service.',
       });
     }
-    const bad = parseList(values.channels).filter((channel) => channel.length > 64 || !CHANNEL.test(channel));
+    const bad = parseList(values.channels).filter((channel) => !isChannelMapping(channel));
     if (bad.length > 0) {
       ctx.addIssue({
         code: 'custom',

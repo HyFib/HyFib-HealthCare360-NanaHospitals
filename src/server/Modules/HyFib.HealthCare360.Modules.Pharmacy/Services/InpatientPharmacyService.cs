@@ -12,7 +12,10 @@ namespace HyFib.HealthCare360.Modules.Pharmacy.Services;
 
 /// <summary>
 /// IP pharmacy (PH-03): nurses raise ward indents per patient; the IP pharmacist issues against the indent, the
-/// in-patient prescription or directly. Each issued line is charged to the admission through
+/// in-patient prescription or directly. An indent raised for an in-patient e-prescription supplies that prescription's
+/// lines of the drugs it carries: the issue is linked to them (so the MAR charts the prescription's own line), held as they
+/// are, and counted on the prescription's queue, which then never issues and charges the same quantity again. Each issued
+/// line is charged to the admission through
 /// <see cref="IChargePoster"/> at MRP (SourceModule "pharmacy.ip", SourceReference = issue line id, so retries
 /// never double-charge), feeds the MAR through <see cref="MedicationDispensed"/>, and returns from the ward
 /// restock the batch and reverse the charge (cancel the untouched line, otherwise a negative credit line). A return with
@@ -92,6 +95,13 @@ public sealed class InpatientPharmacyService(
             return Error.Field("lines", "One of the items is unknown or inactive.");
         }
 
+        // An indent for an e-prescription names one of this stay's in-patient prescriptions.
+        if (request.PrescriptionId is { } prescriptionId
+            && !await db.Set<PharmacyQueueEntry>().AnyAsync(e => e.PrescriptionId == prescriptionId && e.IsInpatient && e.AdmissionId == request.AdmissionId, ct))
+        {
+            return Error.Field("prescriptionId", "This is not one of the admission's in-patient prescriptions.");
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var indent = new WardIndent
         {
@@ -154,6 +164,9 @@ public sealed class InpatientPharmacyService(
 
         WardIndent? indent = null;
         PharmacyQueueEntry? entry = null;
+
+        // The in-patient prescription an indent was raised for, whose lines it supplies.
+        PharmacyQueueEntry? prescribed = null;
         Guid patientId;
         Guid admissionId;
         Guid? visitId;
@@ -172,6 +185,11 @@ public sealed class InpatientPharmacyService(
             }
 
             (patientId, admissionId, visitId, prescriptionId) = (indent.PatientId, indent.AdmissionId, indent.VisitId, indent.PrescriptionId);
+            if (indent.PrescriptionId is { } indented)
+            {
+                prescribed = await db.Set<PharmacyQueueEntry>().Include(e => e.Lines)
+                    .FirstOrDefaultAsync(e => e.PrescriptionId == indented && e.RefillOfEntryId == null && e.IsInpatient && e.AdmissionId == indent.AdmissionId, ct);
+            }
         }
         else if (request.QueueEntryId is { } entryId)
         {
@@ -244,14 +262,24 @@ public sealed class InpatientPharmacyService(
                     return queueLine.OverrideRefusal();
                 }
 
-                var prescribed = queueLine.DrugItemId is { } prescribedId ? items.GetValueOrDefault(prescribedId) : null;
+                var prescribedItem = queueLine.DrugItemId is { } prescribedId ? items.GetValueOrDefault(prescribedId) : null;
                 var substitution = SubstitutionPolicy.Evaluate(new SubstitutionCheck(
-                    queueLine.DrugItemId, queueLine.GenericName ?? prescribed?.GenericName, queueLine.Strength ?? prescribed?.Strength,
+                    queueLine.DrugItemId, queueLine.GenericName ?? prescribedItem?.GenericName, queueLine.Strength ?? prescribedItem?.Strength,
                     item.Id, item.GenericName, item.Strength, input.SubstitutionReason, input.PrescriberConsent));
                 if (substitution.IsFailure)
                 {
                     return PharmacyLookups.Prefixed(substitution.Error!, queueLine.DrugName);
                 }
+            }
+            else if (indentLine is not null && prescribed?.LineSuppliedBy(item.Id) is { } supplied)
+            {
+                // The indent supplies its prescription's line of this drug, held as that line is.
+                if (supplied.NeedsOverrideAcknowledgement)
+                {
+                    return supplied.OverrideRefusal();
+                }
+
+                queueLine = supplied;
             }
 
             planned.Add(new PlannedLine(Guid.CreateVersion7(), input, item, indentLine, queueLine));
@@ -349,6 +377,16 @@ public sealed class InpatientPharmacyService(
             {
                 return recorded.Error!;
             }
+
+            // What the indent brought for its prescription's line is counted there: the IP queue does not offer it again.
+            if (p.IndentLine is not null && p.QueueLine is not null)
+            {
+                var counted = prescribed!.RecordSupplied(p.QueueLine.Id, p.Input.Quantity, now);
+                if (counted.IsFailure)
+                {
+                    return counted.Error!;
+                }
+            }
         }
 
         issue.TotalAmount = issue.Lines.Sum(l => l.Amount);
@@ -381,11 +419,13 @@ public sealed class InpatientPharmacyService(
             line.ChargeId = charge.Value;
         }
 
-        var prescriber = entry is null
+        var supplying = planned.Any(p => p.IndentLine is not null && p.QueueLine is not null);
+        var prescription = entry ?? (supplying ? prescribed : null);
+        var prescriber = prescription is null
             ? null
-            : await db.Set<Practitioner>().AsNoTracking().Where(p => p.Id == entry.PractitionerId).Select(p => new { p.DisplayName, p.RegistrationNumber }).FirstOrDefaultAsync(ct);
+            : await db.Set<Practitioner>().AsNoTracking().Where(p => p.Id == prescription.PractitionerId).Select(p => new { p.DisplayName, p.RegistrationNumber }).FirstOrDefaultAsync(ct);
         register.Record(issue.FacilityId, issued.Value.Movements, StockMovementType.Dispense, inward: false, reference,
-            PharmacyLookups.Party(patient, null, prescriber?.DisplayName, prescriber?.RegistrationNumber, entry?.PrescriptionNumber), items, now);
+            PharmacyLookups.Party(patient, null, prescriber?.DisplayName, prescriber?.RegistrationNumber, prescription?.PrescriptionNumber), items, now);
 
         var saved = await stock.SaveAsync(ct);
         if (saved.IsFailure)
@@ -402,6 +442,11 @@ public sealed class InpatientPharmacyService(
         if (entry is not null)
         {
             await realtime.QueueChangedAsync(entry.FacilityId, entry.Id, entry.Status, ct);
+        }
+
+        if (supplying)
+        {
+            await realtime.QueueChangedAsync(prescribed!.FacilityId, prescribed.Id, prescribed.Status, ct);
         }
 
         return new IpIssueCreated(issue.Id, issue.Number, issue.TotalAmount);

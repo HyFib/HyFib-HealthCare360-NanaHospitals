@@ -18,6 +18,7 @@ export interface NdpsMovement {
   patientName: string | null;
   prescriberName: string | null;
   prescriptionNumber: string | null;
+  remarks: string | null;
 }
 
 export interface NdpsDailyDrug {
@@ -67,6 +68,7 @@ export interface NdpsPatientLine {
   prescriberRegistrationNumber: string | null;
   prescriptionNumber: string | null;
   reference: string | null;
+  remarks: string | null;
 }
 
 export interface NdpsPatientRecord {

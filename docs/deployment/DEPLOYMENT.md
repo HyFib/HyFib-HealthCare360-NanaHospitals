@@ -620,8 +620,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - WhatsApp templates seeded **Not in use** in Administration › Notification templates wait for Meta: the queue token
      (`visit_token`), the payment receipt (`bill_receipt`), the admission (`admission_admitted`), the discharge
      (`discharge_completed`, without a document header), the discharge summary (`discharge_summary`, with a document
-     header: see below), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`) and the
-     complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp Manager as a utility template (the feedback
+     header: see below), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`), the
+     complaint acknowledgement (`complaint_acknowledged`) and the corrected lab report (`lab_report_amended`, in English,
+     Hindi and Tamil; with a document header, as `lab_report_ready`, to send the corrected PDF, ticking "Document header"
+     on it too). Register each in WhatsApp Manager as a utility template (the feedback
      request and the follow-up reminder go only to numbers that opted in), then switch it on; until then those messages
      go by SMS only. Any template can be switched off the same way: when no version of a message is in use, it is not
      sent on that channel (sign-in codes always go).

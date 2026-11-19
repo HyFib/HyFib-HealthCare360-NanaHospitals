@@ -670,15 +670,32 @@ builds the import file.
   `TALLYMESSAGE / VOUCHER` per voucher (`REMOTEID="HC360-<reference>"`, `VCHTYPE`, `ACTION="Create"`,
   `OBJVIEW="Accounting Voucher View"`), and `ALLLEDGERENTRIES.LIST` lines, built with LINQ to XML so every value is
   escaped.
+* Voucher types are the facility's (Billing's `voucherTypes`): the bills' sales under "IP Sales", "OP Sales" or "Lab
+  Sales", the pharmacy's invoices (or its day's summary) under "Pharmacy Sales", goods receipts under "Purchase", by default; the canteen's
+  sales "Sales", and "Credit Note", "Receipt", "Payment", "Journal" and "Debit Note" as before. Tally refuses a voucher
+  whose type it does not have, so they are created there first.
+* A voucher with a GST party (a B2B pharmacy invoice or return, a purchase) carries `PARTYLEDGERNAME` (renamed with
+  `ledgerMap` like any ledger), `PARTYGSTIN`, `STATENAME` and `PLACEOFSUPPLY` (states as GST names them); a purchase
+  carries the supplier's invoice number and date as `REFERENCE` and `REFERENCEDATE` (`yyyyMMdd`). Each is written only
+  when known. Per-line HSN (inventory entries) is not sent: it waits for the hospital's formats (T10).
 * REMOTEIDs: bills `HC360-<bill number>`, cancellations `HC360-<bill number>/C`, receipts, refunds, credit notes and
   payouts their own numbers, claim deductions `HC360-<claim>/<settlement digits>`, doctor-fee journals
   `HC360-DF-<facility>-<yyyyMMdd>-<doctor code>` (`HC360-DF-<yyyyMMdd>-001` on days posted before per-voucher
-  tracking), pharmacy and canteen days `HC360-PH-<facility>-<yyyyMMdd>` and `HC360-CT-…` with `-R` and `-C` for
-  returns and balances collected. The `HC360-` prefix tells HC360's vouchers from the hospital's own.
+  tracking), the pharmacy's invoices and returns their own numbers and an invoice's balances paid on a day
+  `HC360-<invoice>/<yyyyMMdd>`, a summarised pharmacy day and the canteen's `HC360-PH-<facility>-<yyyyMMdd>` and
+  `HC360-CT-…` with `-R` and `-C` for returns and balances collected, goods receipts their own numbers. The `HC360-`
+  prefix tells HC360's vouchers from the hospital's own.
 * Sign convention: a debit is `ISDEEMEDPOSITIVE=Yes` with a negative `AMOUNT`, a credit is `No` with a positive one.
-* Cost centres go under `CATEGORYALLOCATIONS.LIST`. Ledger names are mapped with `ledgerMap`.
-* Every voucher is validated first: balanced, positive amounts, ledgers present, at least two lines. One bad voucher
-  is reported by number instead of Tally's generic totals error, and nothing of the set is sent.
+  A line's bank and bill allocations carry the line's sign.
+* Inside a ledger line, in this order: `BANKALLOCATIONS.LIST` per cheque or transfer of a line on a bank ledger
+  (`DATE`, `INSTRUMENTDATE` (the cheque's date, else the voucher's), `TRANSACTIONTYPE` "Cheque", "e-Fund Transfer" or
+  "Others", `INSTRUMENTNUMBER` and `BANKNAME` when known, `AMOUNT`), `BILLALLOCATIONS.LIST` per bill of a line on a
+  party's ledger (`NAME` except for On Account, `BILLTYPE` "New Ref", "Agst Ref", "Advance" or "On Account", `AMOUNT`),
+  then cost centres under `CATEGORYALLOCATIONS.LIST`. Ledger names are mapped with `ledgerMap`. Which lines carry
+  allocations is Billing's ([billing.md, The Tally day book](billing.md#the-tally-day-book)).
+* Every voucher is validated first: balanced, positive amounts, ledgers present, at least two lines, a party's ledger
+  named, and a line's allocations positive, named (bills, except On Account) and adding up to the line. One bad
+  voucher is reported by number instead of Tally's generic totals error, and nothing of the set is sent.
 * The import goes in batches of `batchSize`. `REMOTEID` makes a retried batch alter rather than duplicate.
 * The response counters `CREATED`, `ALTERED` and `ERRORS`, plus `LINEERROR` texts, are parsed from both the classic
   and the Prime layout. Tally's illegal XML character references are tolerated and DTDs are prohibited.
@@ -692,7 +709,8 @@ builds the import file.
 * `ReadDayAsync` (behind `ReadBackAsync`) first checks that the configured company is open (a closed company would
   read as an empty day), then asks for the day's vouchers as a collection export and streams the answer (20 s).
   `TallyReadBack` matches HC360's vouchers by REMOTEID: present, amount, type, and ledgers as net amounts per ledger
-  after the `ledgerMap` renaming, ignoring case and line order. Voucher numbers are not compared (Tally may renumber);
+  after the `ledgerMap` renaming, ignoring case and line order. Allocations and party details are not compared: the
+  reader takes each line's own `AMOUNT`, never an allocation's. Voucher numbers are not compared (Tally may renumber);
   Tally's number is reported. HC360 vouchers on the day that the expected list does not have are returned as
   `Others`; the hospital's own vouchers are ignored.
 * `PingAsync` asks for the list of open companies and checks the configured one.
@@ -700,7 +718,11 @@ builds the import file.
   integration is disabled.
 * The simulator keeps a company per `companyName` in `integrations.simulator_tally_vouchers` (one row per company and
   REMOTEID, so an import alters as Tally does) and answers the read-back from it, so the whole flow can be tried
-  without Tally.
+  without Tally. It validates as the real exporter does and keeps each voucher's XML as sent, party details and
+  allocations included.
+* **For the connector to come.** The hospital's Tally partner would pull vouchers as JSON through a connector of its
+  own (T1 to T11); its format has not arrived. What the hospital answered for it is recorded as requirements in
+  [NANA-THENI-ANSWERS-ACCOUNTS.md](../deployment/NANA-THENI-ANSWERS-ACCOUNTS.md#4-requirements-for-the-tally-partners-connector).
 
 ### E-invoice portal (IRP, GST rule 48(4))
 
@@ -1096,12 +1118,13 @@ acknowledgements are never acknowledged in turn.
   above apply as written. An unknown name is refused on save and read as E1394 if stored.
   * **HORIBA Yumizen C150** (`YumizenC150`, clinical chemistry; HORIBA's *LIS Communication Protocol* for the C150).
     It connects to HC360 as a network client (*Server IP* and *Port* in its Maintenance › Parameter settings) or over
-    RS-232 (9600 8N1 by default). It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
+    RS-232 (9600 8N1 by default). Its glucose channel, `GLU`, serves every glucose test, the glucose challenge test
+    (LAB-GCT) included: each timed one is drawn into its own tube, so the result goes on the test its tube was drawn for. It writes `H|\^&` but repeats with a backtick (`Q|1|^S1`S2`, `^^^GLU`^^^UREA`), so
     the backtick is the repeat delimiter both ways, and HC360 writes `H|`^&`. Its *Patient ID* (P.3) is the id it keys a
     sample by: it asks for orders by it and uploads results as H, P, R… L **without an O record**, so HC360 sends the
     tube's barcode in P.3 (not the UHID) and reads the sample from P.3 when no O record names one; the patient is then
     named by P.6 (and P.4/P.5 if sent), never by P.3. Lab staff therefore type or scan the tube's barcode as the
-    analyser's Patient ID. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
+    analyser's Patient ID: the 10-digit tube number ending in its check digit, which a lab without barcodes writes on the tube. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
     completion time R.14), as the result frames in the manual show (their checksums match their bytes); a record in
     the manual's table layout (status R.9) is still read. HC360 sends it a 14-digit date of birth (an 8-digit one shows
     "Invalid DateTime"), the name cut to 30 characters, O.16 always (`SERUM`, `PLASMA`, `URINE`, `CSF` or `BLOOD`;
@@ -1115,14 +1138,18 @@ acknowledgements are never acknowledged in turn.
     ordered by panel: O.5 is `^^^CBC`, `^^^DIF` (which also measures the CBC) or `^^^ESR`, and any other test name
     makes it refuse the order, so HC360 turns the channels pending on the tube into panels (DIF when a differential
     parameter such as LYM# or NEU% is pending, else CBC; ESR when ESR is), while each result still comes back under its
-    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). Map the haematology tests' analytes in
-    Lab setup to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT,
-    PDW, P-LCC, P-LCR, LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, ALY#/%, LIC#/%, MIC, MAC, ESR…). It takes orders
+    parameter (R.3 `^^^WBC^6690-2`, the channel code being the 4th component). HC360's catalogue maps the CBC's analytes
+    to the analyser's parameter codes (WBC, RBC, HGB, HCT, MCV, MCH, MCHC, RDW-CV, RDW-SD, PLT, MPV, PCT, PDW, P-LCR,
+    LYM#/%, MON#/%, NEU#/%, EOS#/%, BAS#/%, IMG#/%, and ESR on LAB-ESR), so every one of them is on the report (see *The
+    Yumizen H500's parameters* in [diagnostics.md](diagnostics.md)); its research-use parameters (ALY#/%, LIC#/%, MIC,
+    MAC…) and P-LCC are on none, listed in Lab setup among the channels no test maps. Its units `1E03/mm3`, `1E06/mm3`
+    and `µm3` read as 10³/µL, 10⁶/µL and fL. It takes orders
     **only in answer to its own query** and ignores any other, so no orders are sent unasked (queued ones are closed as
     skipped with that reason), and a queried sample with nothing pending is answered with an empty order (`P|1|`,
     `O|1|id||^^^|||||||N||||||||||||||Y`), exactly as its manual does. The answer's H.5 is a copy of the query's H.10,
     H.13 is `LIS2-A2`, O.6 is `R` or `S` (urgent goes as stat), O.16 is `BLOOD`, the name is cut to 20 characters and
-    the sample id must fit its 16. QC and technician runs (H.12 `Q` or `D`) and control samples (O.16 `CONTROL`) are
+    the sample id must fit its 16 (HC360's tube numbers have 10 digits, which a lab without barcodes writes on the tube
+    and types as the sample id). QC and technician runs (H.12 `Q` or `D`) and control samples (O.16 `CONTROL`) are
     acknowledged but not stored as patient results; R.4 `---` (no result) and `+++` (beyond the reportable range) are
     passed on as results not obtained with that note; R.7 flags (`L`, `H`, `LL`, `HH`, `<`, `>`, `A`, `N`) and R.9
     `W` (suspect) pass as sent. Its text is UTF-8 (the default for this model unless the connection names an

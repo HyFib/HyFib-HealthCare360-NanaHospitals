@@ -80,7 +80,17 @@ const useStyles = makeStyles({
 });
 
 type DialogKind =
-  'discount' | 'finalize' | 'collect' | 'discard' | 'cancel' | 'refund' | 'credit' | 'debit' | 'link' | null;
+  | 'discount'
+  | 'finalize'
+  | 'collect'
+  | 'discard'
+  | 'cancel'
+  | 'refund'
+  | 'credit'
+  | 'debit'
+  | 'link'
+  | 'returns'
+  | null;
 
 /** Refundable balance less refunds already requested or approved (they count against it until paid). */
 function refundableNow(bill: BillDetail): number {
@@ -152,6 +162,10 @@ export function BillWorkspace({
   const hasDue = !isDraft && !isCancelled && bill.dueAmount > 0;
   const refundable = refundableNow(bill);
   const creditable = !isDraft && !isCancelled ? creditableAmount(bill) : 0;
+  // Returns after a bill a payer or a package shared: credited here, split as the bill split them, never refunded on a
+  // bill of their own.
+  const returns = bill.returnsToCredit ?? [];
+  const returnsTotal = fromPaise(returns.reduce((sum, r) => sum + toPaise(r.amount), 0n));
 
   const store = (detail: BillDetail) => {
     queryClient.setQueryData(billingQueries.bill(detail.id).queryKey, detail);
@@ -218,6 +232,18 @@ export function BillWorkspace({
         detail.refundableAmount > 0
           ? `A refund request of ${formatInr(detail.refundableAmount)} awaits approval.`
           : undefined,
+      );
+    },
+  });
+
+  const creditReturns = useMutation({
+    mutationFn: (reason: string) => billingApi.requestReturnCredit(bill.id, reason),
+    onSuccess: () => {
+      setDialog(null);
+      reload();
+      notify.success(
+        'Credit of the returns sent for approval',
+        'An approver issues the credit notes: the payer’s share to the payer, the patient’s to the patient.',
       );
     },
   });
@@ -311,6 +337,26 @@ export function BillWorkspace({
                 Check now
               </Button>
             </MessageBarActions>
+          </MessageBar>
+        )}
+        {returns.length > 0 && (
+          <MessageBar intent="warning" layout="multiline">
+            <MessageBarBody>
+              <MessageBarTitle>
+                {returns.length === 1 ? 'A return' : `${returns.length} returns`} worth {formatInr(returnsTotal)} to
+                credit on this bill
+              </MessageBarTitle>
+              {returns.map((r) => r.description).join('; ')}. They came back after the bill was finalised, and a payer
+              or a package shared it: they are credited here, as the bill split them, not refunded to the patient on a
+              bill of their own.
+            </MessageBarBody>
+            {canCredit && (
+              <MessageBarActions>
+                <Button icon={<ArrowUndoRegular />} onClick={openDialog('returns')}>
+                  Credit the returns
+                </Button>
+              </MessageBarActions>
+            )}
           </MessageBar>
         )}
         {isCancelled && (
@@ -649,6 +695,17 @@ export function BillWorkspace({
         busy={cancel.isPending}
         error={cancel.error}
         onConfirm={(reason) => cancel.mutate(reason)}
+        onCancel={() => setDialog(null)}
+      />
+
+      <ReasonDialog
+        open={dialog === 'returns'}
+        title="Credit the returns on this bill?"
+        description="An approver, someone other than you, issues the credit notes: the payer’s share of what came back comes off what the payer owes, and the patient’s share off what the patient owes."
+        confirmLabel="Ask for the credit"
+        busy={creditReturns.isPending}
+        error={creditReturns.error}
+        onConfirm={(reason) => creditReturns.mutate(reason)}
         onCancel={() => setDialog(null)}
       />
 

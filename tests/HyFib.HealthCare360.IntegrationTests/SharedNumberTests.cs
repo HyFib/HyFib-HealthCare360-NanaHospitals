@@ -103,6 +103,18 @@ public sealed class SharedNumberTests(HospitalServer server)
         (await MessagesAsync(son, ReportDelivery.ReportReadyTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
         (await MessagesAsync(alone, ReportDelivery.ReportReadyTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
 
+        // A report corrected after release goes by the same rules (L3).
+        foreach (var patient in new[] { mother, son, alone })
+        {
+            await using var scope = server.Services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ReportDelivery>().QueueReportAmendedAsync(patient, "LAB-" + Digits(6), null, null, Ct);
+            await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().SaveChangesAsync(Ct);
+        }
+
+        (await MessagesAsync(mother, ReportDelivery.ReportAmendedTemplate)).ShouldBeEmpty("her number is shared and she has no e-mail address");
+        (await MessagesAsync(son, ReportDelivery.ReportAmendedTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+        (await MessagesAsync(alone, ReportDelivery.ReportAmendedTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+
         // A prescription signed in the clinic.
         await PrescribeAsync(mother);
         await PrescribeAsync(alone);

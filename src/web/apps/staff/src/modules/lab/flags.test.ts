@@ -6,6 +6,7 @@ import {
   classifyText,
   deltaCheck,
   flagDisplay,
+  flagText,
   formatDelta,
   interpretLine,
   isBenignAnalyserFlag,
@@ -14,6 +15,7 @@ import {
   isSameUnit,
   limitsFromReferenceText,
   parseNumericResult,
+  requiredCallLabel,
   reviewHints,
   selectRange,
 } from './flags';
@@ -91,6 +93,25 @@ describe('flag display', () => {
     expect(flagDisplay('Critical')).toMatchObject({ code: 'C', critical: true });
     expect(flagDisplay('Normal')).toMatchObject({ code: '', tone: 'normal' });
     expect(flagDisplay(null)).toBeNull();
+  });
+
+  // Nana Hospitals reads high and low results by an arrow (L7): the letter and the words stay beside it.
+  it('puts an up arrow beside a high flag and a down arrow beside a low one, keeping the letter and the words', () => {
+    expect(flagDisplay('High')).toMatchObject({ arrow: '↑', code: 'H', label: 'High' });
+    expect(flagDisplay('CriticalHigh')).toMatchObject({ arrow: '↑', code: 'HH', label: 'Critically high' });
+    expect(flagDisplay('Low')).toMatchObject({ arrow: '↓', code: 'L', label: 'Low' });
+    expect(flagDisplay('CriticalLow')).toMatchObject({ arrow: '↓', code: 'LL', label: 'Critically low' });
+    expect(flagDisplay('Abnormal')).toMatchObject({ arrow: '' });
+    expect(flagDisplay('Critical')).toMatchObject({ arrow: '' });
+    expect(flagDisplay('Normal')).toMatchObject({ arrow: '' });
+
+    expect(flagText(flagDisplay('High'))).toBe('↑ H');
+    expect(flagText(flagDisplay('CriticalHigh'))).toBe('↑ HH');
+    expect(flagText(flagDisplay('Low'))).toBe('↓ L');
+    expect(flagText(flagDisplay('CriticalLow'))).toBe('↓ LL');
+    expect(flagText(flagDisplay('Abnormal'))).toBe('A');
+    expect(flagText(flagDisplay('Normal'))).toBe('');
+    expect(flagText(flagDisplay(null))).toBe('');
   });
 });
 
@@ -265,6 +286,25 @@ describe('line interpretation while typing', () => {
     expect(
       interpretLine(answer, { value: 'Positive' }, { gender: 'Female', ageDays: 9000, ranges: answerRanges }).flag,
     ).toBe('Critical');
+  });
+});
+
+// The server asks for a call before verification for a critical value, and for a value phoned before and changed since.
+describe('required call labels', () => {
+  it('names the value now, and what the doctor was told when that was another value', () => {
+    const potassium = { id: 'k', testName: 'Potassium', value: '7.2 mmol/L', flag: 'CriticalHigh' as const };
+    expect(requiredCallLabel(potassium)).toBe('Potassium: 7.2 mmol/L (critically high)');
+    expect(requiredCallLabel({ ...potassium, told: null })).toBe('Potassium: 7.2 mmol/L (critically high)');
+    expect(
+      requiredCallLabel({
+        ...potassium,
+        value: '2.7 mmol/L',
+        flag: 'Low',
+        told: 'Potassium 7.2 mmol/L (CriticalHigh)',
+      }),
+    ).toBe(
+      'Potassium: 2.7 mmol/L (low). The doctor was told Potassium 7.2 mmol/L (CriticalHigh): tell them the value as it is now.',
+    );
   });
 });
 

@@ -82,7 +82,7 @@ public sealed class RealtimeLatencyTests(HospitalServer server)
         (await console.InvokeAsync(nameof(EventsHub.Subscribe), Topics.Lab(facilityId))).ShouldBeNull();
 
         var elapsed = await TimeAsync(
-            () => LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "139", ["K"] = "7.4", ["CL"] = "100" }),
+            () => LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "139", ["K"] = "7.4", ["CL"] = "100", ["HCO3"] = "24" }),
             console,
             e => e.Name == "lab.critical");
 
