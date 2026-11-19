@@ -127,7 +127,7 @@ export default {
           wait: { role: 'heading', name: 'Quality indicators' },
         },
         {
-          click: { role: 'button', name: 'Record this period’s value', },
+          click: { within: { role: 'row', name: /^Hand hygiene compliance rate/ }, role: 'button', name: /^Record/ },
           say: 'Hand hygiene compliance is entered by hand. Click Record.',
           wait: { role: 'dialog', name: /^Record value Hand hygiene/ },
         },

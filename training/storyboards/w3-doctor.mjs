@@ -42,11 +42,20 @@ export default {
         {
           click: { within: row('GM-010'), role: 'button', name: 'Call to the room' },
           say: 'Anand Joseph is next. Click Call, to ask him to come in.',
-          after: 'He is now in service, and his token shows on the waiting-area screen.',
-          wait: { within: row('GM-010'), role: 'button', name: 'Finish' },
+          after: 'His token, GM-010, is called, and the waiting-area screen shows it.',
+          wait: { within: row('GM-010'), text: 'Called' },
           result: row('GM-010'),
         },
         {
+          // The screen starts the token and the note together, and the two requests can collide (a 409 on the note).
+          // Start the token first, as the screen would, so that the click below only opens the note.
+          before: async ({ api, page, quiet }) => {
+            const doctor = await api('doctor');
+            const { queue } = await doctor.get('/api/v1/emr/worklist');
+            await doctor.post(`/api/v1/queue/${queue.find((q) => q.tokenLabel === 'GM-010').tokenId}/start`);
+            await page.reload();
+            await quiet();
+          },
           click: { within: row('GM-010'), role: 'button', name: 'Start' },
           say: 'Click Start to open his consultation note.',
           wait: { role: 'heading', name: 'Complaint and history' },
