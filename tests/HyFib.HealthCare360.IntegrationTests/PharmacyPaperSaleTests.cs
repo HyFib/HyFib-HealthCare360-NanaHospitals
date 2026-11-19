@@ -91,7 +91,9 @@ public sealed class PharmacyPaperSaleTests(HospitalServer server)
         var morphine = await OwnMedicine.OnTheShelfAsync(
             server, pharmacist, tablets: 20m, storeId: store, schedule: DrugSchedule.X, isControlled: true, genericName: "Morphine sulphate");
         var block = await mrd.PostAsync<DowntimeNumberBlockDetail>(Blocks, new IssueDowntimeNumbersRequest(DowntimeNumberKind.PharmacySale, "Night pharmacy", 1));
-        var paperAt = block.Block.IssuedAt.AddSeconds(1);
+        // The paper's time is just after the block was issued, before the goods receipt below: the whole test can run within
+        // a second, so a paper time a second on would come after the sale is entered.
+        var paperAt = block.Block.IssuedAt.AddMilliseconds(1);
 
         // A goods receipt of 50 is made after the paper's time and before the paper is entered: the register's balance is 70.
         await OwnMedicine.ReceiveAsync(server, storeKeeper, store, morphine.ItemId, 50m);
