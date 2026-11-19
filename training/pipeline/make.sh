@@ -32,8 +32,8 @@ for id in "${ids[@]}"; do
   echo "== $id"
   dir="$OUT/$id"
   rm -rf "$dir" && mkdir -p "$dir"
-  "$HERE/server.sh" restore "$SNAPSHOT" >/dev/null
-  if ! node "$HERE/capture.mjs" "$ROOT/training/storyboards/$id.mjs" "$dir"; then
+  # One run at a time on the training server: restoring it restarts the server under anyone else's run.
+  if ! (flock 9 && "$HERE/server.sh" restore "$SNAPSHOT" >/dev/null && node "$HERE/capture.mjs" "$ROOT/training/storyboards/$id.mjs" "$dir") 9>"${HC360_LOCK:-/var/tmp/hc360-server.lock}"; then
     failed+=("$id (capture)"); continue
   fi
   "$PY" -I "$HERE/narrate.py" "$dir/segments.json" "$dir/audio"

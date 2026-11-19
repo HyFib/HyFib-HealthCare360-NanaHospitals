@@ -28,7 +28,16 @@ const context = await browser.newContext({
   locale: 'en-IN',
   timezoneId: 'Asia/Kolkata',
 });
-const date = new Date((await fetch(`${BASE}/health/live`)).headers.get('date'));
+// The server may be restarting for someone's capture (check.sh, make.sh): wait for it, up to 90 s.
+let date;
+for (let i = 0; !date; i++) {
+  try {
+    date = new Date((await fetch(`${BASE}/health/live`)).headers.get('date'));
+  } catch (error) {
+    if (i > 90) throw error;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
 await context.clock.install({ time: date });
 const page = await context.newPage();
 await page.goto(`${BASE}/login`);

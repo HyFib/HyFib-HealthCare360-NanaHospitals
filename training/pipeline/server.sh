@@ -42,7 +42,7 @@ db_start() {
   if runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PG_DATA" status >/dev/null 2>&1; then return; fi
   runuser -u postgres -- env LD_PRELOAD="$FAKETIME_LIB/libfaketime.so.1" "${faketime_env[@]}" \
     "$PG_BIN/pg_ctl" -D "$PG_DATA" -l "$(dirname "$PG_DATA")/postgres.log" -w \
-    -o "-p $PG_PORT -c max_connections=300 -c shared_buffers=512MB -c listen_addresses=localhost -c unix_socket_directories=/var/tmp/hc360-pg" start >/dev/null
+    -o "-p $PG_PORT -c max_connections=300 -c shared_buffers=512MB -c listen_addresses=localhost -c unix_socket_directories=/var/tmp/hc360-pg" start >/dev/null 9>&-
 }
 
 db_stop() { runuser -u postgres -- "$PG_BIN/pg_ctl" -D "$PG_DATA" -m fast stop >/dev/null 2>&1 || true; }
@@ -79,7 +79,7 @@ start() {
       HC360_HealthCare360__RateLimits__SignIn__PermitLimit=2000 \
       HC360_HealthCare360__RateLimits__PerUser__TokenLimit=4000 \
       HC360_HealthCare360__RateLimits__PerUser__TokensPerPeriod=2000 \
-      nohup dotnet "$SERVER_DLL" >"$LOG_DIR/server.log" 2>&1 &
+      nohup dotnet "$SERVER_DLL" >"$LOG_DIR/server.log" 2>&1 9>&- &  # 9: make.sh's lock, which the server must not keep
     echo $! >"$PID_FILE"
   )
   for _ in $(seq 1 180); do
