@@ -528,5 +528,24 @@
   "seconds": 344.4,
   "megabytes": 17.4,
   "madeBy": "render worker 2"
+ },
+ "w6-cssd-technician": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 33,
+  "wer": 3.93,
+  "wpm": 132.6,
+  "maxCps": 16.2,
+  "lufs": -16.0,
+  "seconds": 386.3,
+  "megabytes": 17.7,
+  "madeBy": "render worker 3"
  }
 }
