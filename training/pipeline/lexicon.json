@@ -146,6 +146,8 @@
     "Sept": "September",
     "Oct": "October",
     "Nov": "November",
-    "Dec": "December"
+    "Dec": "December",
+    "°C": "degrees Celsius",
+    "°F": "degrees Fahrenheit"
   }
 }
