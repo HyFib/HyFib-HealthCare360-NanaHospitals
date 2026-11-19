@@ -21,7 +21,7 @@ for (let i = 0; i < rest.length; i++) {
   else if (rest[i] === '--no-signin') signIn = false;
 }
 
-const browser = await chromium.launch();
+const browser = await chromium.launch({ args: ['--lang=en-IN'], env: { ...process.env, LANG: 'en_IN.UTF-8', LANGUAGE: 'en_IN' } });
 const context = await browser.newContext({
   ignoreHTTPSErrors: true,
   viewport: { width: 1440, height: 810 },

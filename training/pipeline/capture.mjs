@@ -66,7 +66,8 @@ const desk = story.desk ? await deskSettings() : {};
 
 // ----------------------------------------------------------------------------------------------------- the browser
 
-const browser = await chromium.launch();
+// Dates as an Indian workstation shows them (14/06/1988): Chromium formats date fields in its own language.
+const browser = await chromium.launch({ args: ['--lang=en-IN'], env: { ...process.env, LANG: 'en_IN.UTF-8', LANGUAGE: 'en_IN' } });
 const context = await browser.newContext({
   ignoreHTTPSErrors: true,
   viewport: { width: VIEWPORT.width, height: VIEWPORT.height },
@@ -261,6 +262,12 @@ async function runStep(step, id) {
       // A password is typed on screen (the field shows dots) but never written to the capture.
       beat.text = step.secret ? '•'.repeat(text.length) : text;
       await target.click();
+      // A date or time field takes its value whole (2026-11-20), in any display format; it is not typed key by key.
+      if (['date', 'time', 'datetime-local', 'month'].includes(await target.evaluate((el) => el.type ?? ''))) {
+        await target.fill(text);
+        beat.typing = [await shot(`${id}-type`)];
+        break;
+      }
       await target.fill('');
       const parts = Math.min(6, Math.max(2, Math.ceil(text.length / 4)));
       const size = Math.ceil(text.length / parts);
@@ -273,8 +280,20 @@ async function runStep(step, id) {
     }
     case 'select': {
       if (step.native) {
-        // A native <select>: its list is drawn by the system, so the option is chosen by its label.
-        await target.selectOption({ label: step.select[1] });
+        // A native <select>: its list is drawn by the system, so the option is chosen by its label (the whole label,
+        // or failing that one that contains it), once the options have loaded.
+        const wanted = step.select[1];
+        let value;
+        for (let i = 0; i < 40 && value === undefined; i++) {
+          value = await target.evaluate(
+            (el, w) =>
+              ([...el.options].find((o) => o.label.trim() === w) ?? [...el.options].find((o) => o.label.includes(w)))?.value,
+            wanted,
+          );
+          if (value === undefined) await page.waitForTimeout(250);
+        }
+        if (value === undefined) throw new Error(`No option "${wanted}" in ${JSON.stringify(step.select[0])}`);
+        await target.selectOption(value);
         break;
       }
       await target.click();
