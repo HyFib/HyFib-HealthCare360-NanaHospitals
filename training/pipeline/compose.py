@@ -372,7 +372,7 @@ class Video:
             ds = self.dur(beat["id"] + ".say")
             move_len = 0.0
             if target:
-                p = self.to_canvas(cam, (target[0] + target[2] / 2, target[1] + target[3] / 2))
+                p = self.to_canvas(cam, aim(target, beat.get("action")))
                 dist = math.dist(cursor, p)
                 move_len = min(0.9, max(0.35, dist / 1500)) if dist > 4 else 0.0
                 st.cursor_from, st.cursor_to = cursor, p
@@ -467,7 +467,7 @@ class Video:
             cur = st.cursor_to
         if cur and moving_cam and b.get("target"):
             tb = self.box(b.get("target"))
-            cur = self.to_canvas(cam, (tb[0] + tb[2] / 2, tb[1] + tb[3] / 2)) if t >= mv0 + mvl else cur
+            cur = self.to_canvas(cam, aim(tb, b.get("action"))) if t >= mv0 + mvl else cur
         ripple = None
         if b.get("action") in ("click", "nav", "select", "check") and st.act_at <= t < st.act_at + 0.45:
             ripple = (t - st.act_at) / 0.45
@@ -560,14 +560,27 @@ class Video:
                 if nxt - end < 0.6:
                     end = nxt - gap
                 end = min(end, nxt - gap)
-            c[1] = max(end, c[0] + 0.3)
+            c[1] = min(max(end, c[0] + 0.3), c[0] + 7.0)  # at most 7 s on screen
         return [(a, b, t) for a, b, t in cues]
+
+
+def aim(box: tuple, action: str | None) -> tuple:
+    """Where the cursor's tip goes on a box: to point at something, its lower-right edge, so the arrow does not cover
+    it (a small icon would vanish under it); to click, a little below its middle, as a hand would."""
+    x, y, w, h = box
+    if action == "show":
+        return (x + w * 0.88, y + h * 0.9)
+    return (x + w * 0.5, y + h * 0.62)
 
 
 def split_sentence(s: dict) -> list[tuple[float, float, str]]:
     """A sentence as caption cues of at most two lines of 42 characters, timed in proportion to what is spoken."""
     text, start, end = s["text"], s["start"], s["end"]
     cues = cue_texts(text)
+    if len(cues) == 1 and end - start > 6.5:  # a long, slow sentence: two cues, so neither stays over 7 s
+        halves = best_split(text)
+        if halves:
+            cues = cue_texts(halves[0]) + cue_texts(halves[1])
     weights = [max(1, len(c.replace("\n", " "))) for c in cues]
     total = sum(weights)
     out, t = [], start
