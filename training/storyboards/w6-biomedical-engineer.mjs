@@ -113,7 +113,7 @@ export default {
           wait: { text: 'Close ticket' },
         },
         {
-          click: { role: 'button', name: 'Close', exact: true },
+          click: { css: 'button[aria-label="Close"]' },
           say: 'Close the ticket window.',
         },
       ],

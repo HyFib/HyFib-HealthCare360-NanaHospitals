@@ -152,13 +152,18 @@ export default {
           wait: { role: 'heading', name: 'Day-end report' },
         },
         {
+          show: { text: 'IP advances collected' },
+          say: 'The top of the report shows the net collection, and the IP advances collected. Fatima Begum’s ₹5,000 is counted here.',
+          zoom: 1.3,
+        },
+        {
           show: { role: 'table', name: 'Collections by payment mode' },
-          say: 'Collections are listed by payment mode: cash, card and UPI. Lakshmi Narayanan’s ₹2,400 is in the UPI line.',
+          say: 'Collections are listed by payment mode: cash, card and UPI. The UPI line now shows ₹3,950, with Lakshmi Narayanan’s ₹2,400.',
           zoom: 1.3,
         },
         {
           show: { role: 'table', name: 'Collections by cashier' },
-          say: 'And by cashier. Your shift is still open, so the figures can still change. At the end of your shift, close it with Close shift.',
+          say: 'And by cashier. Your shift is still open, so the figures can still change, and the expected cash is what the drawer should hold. At the end of your shift, close it with Close shift.',
           zoom: 1.3,
         },
       ],

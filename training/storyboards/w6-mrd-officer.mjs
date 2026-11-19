@@ -89,8 +89,8 @@ export default {
         {
           click: { role: 'button', name: 'Check for gaps' },
           say: 'Click Check for gaps. HC360 looks for missing notes, diagnoses and discharge summaries.',
-          after: 'Two deficiencies are open, both assigned to Dr. Arjun Mehta. They are on his worklist, and the chart cannot be completed until they are resolved.',
-          wait: { role: 'heading', name: /^Deficiencies \(2 open\)/ },
+          after: 'One deficiency is open: Diagnosis missing, assigned to Dr. Arjun Mehta. It is on his worklist, and the chart cannot be completed until it is resolved.',
+          wait: { role: 'heading', name: /^Deficiencies \(1 open\)/ },
           result: { role: 'table', name: 'Deficiencies' },
         },
       ],

@@ -156,7 +156,8 @@ const story = {
         {
           click: { role: 'button', name: 'Post to Tally', last: true },
           say: 'Confirm.',
-          wait: { role: 'row', name: /^19 Nov 2026/ },
+          after: 'Today is listed in the posting log as Waiting to post. It waits until its file is imported into Tally.',
+          wait: { role: 'row', name: /^19 Nov 2026.*Waiting to post/ },
         },
       ],
     },
@@ -178,25 +179,5 @@ const story = {
   ],
   next: 'Insurance desk: pre-authorisations and claims',
 };
-// DEVTAIL-BEGIN
-import { appendFileSync as __a, writeFileSync as __w } from 'node:fs';
-const __story = story;
-if (process.env.HC360_DUMP) {
-  __w(process.env.HC360_DUMP, '');
-  let n = 0;
-  __story.scenes = __story.scenes.map((sc) => ({
-    ...sc,
-    steps: sc.steps.map((st) => ({
-      ...st,
-      after_do: async (t) => {
-        if (st.after_do) await st.after_do(t);
-        await t.quiet(3000);
-        const dlg = t.page.locator('[role="dialog"]:visible');
-        const root = (await dlg.count()) ? dlg.first() : t.page.locator('#main, main').first();
-        __a(process.env.HC360_DUMP, `\n##### step ${++n} ${JSON.stringify(st.say ?? '').slice(0, 80)} ${t.page.url()}\n${await root.ariaSnapshot().catch((e) => String(e))}\n`);
-      },
-    })),
-  }));
-}
-export default __story;
-// DEVTAIL-END
+
+export default story;
