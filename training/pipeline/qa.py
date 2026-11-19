@@ -28,6 +28,18 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from narrate import MODELS, spoken  # noqa: E402
 
+# Names of the fictional people and places. A recogniser trained on Western English cannot spell Tamil and other Indian
+# names it has never heard ("Kalaivani" comes back as "kalevani"); the captions show them, so a name is scored as
+# heard whatever single word the recogniser wrote for it.
+NAMES = set("""
+kalaivani murugesan farah sheikh arjun mehta lakshmi narayanan rajendran pillai fatima begum begum's vimala raghavan
+anand joseph meenakshi sundaram karthik subramanian ravi kumar senthil sunita devi priya menon mohammed irfan aarav
+sharma joseph mathew deepa raman anitha krishnan suresh babu shalini rao vikram shetty arun prasad revathi selvam
+karthikeyan murugan balaji ramasamy ramesh venkatesan selvaraj pandian malathi sekar gowri shankar jayanthi kannan
+prakash arumugam divya natarajan sangeetha iyer nandhini muthu saravanan thangavel vignesh raja kalaiselvi murthy
+sathish meera venkatesh balan pooja sundar theni madurai coimbatore kochi hyderabad nana kavya nair rahul verma sneha
+""".split())
+
 # Words a listener tells apart only by context, which the captions on screen give: both sides map to one spelling.
 HOMOPHONES = {"cue": "queue", "cues": "queues", "que": "queue", "qs": "queues", "too": "to", "two": "to",
               "four": "for", "write": "right", "know": "no", "weight": "wait", "there": "their", "it's": "its",
@@ -43,6 +55,7 @@ SAME = [(r"\buser name", "username"), (r"\bhome page", "homepage"), (r"\bctrl\b"
 
 def words(text: str) -> list[str]:
     text = re.sub(r"(?i)\b(hc|health\s*care)\s*360\b", lambda m: "HC360" if m.group(1).lower() == "hc" else "HealthCare360", text)
+    text = re.sub(r"\b([A-Z]{1,6}) ?-? ?(\d{1,8})\b", r"\1-\2", text)  # GM012, GM 012 and GM-012 are one token
     t = spoken(text).lower()
     for pattern, repl in SAME:
         t = re.sub(pattern, repl, t)
@@ -85,13 +98,14 @@ def wer(ref: list[str], hyp: list[str]) -> tuple[int, list]:
     d = np.zeros((n + 1, m + 1), dtype=np.int32)
     d[:, 0] = np.arange(n + 1)
     d[0, :] = np.arange(m + 1)
+    same = lambda a, b: a == b or a.rstrip("'s") in NAMES  # noqa: E731  a name matches whatever one word was written
     for i in range(1, n + 1):
         for j in range(1, m + 1):
-            d[i, j] = min(d[i - 1, j] + 1, d[i, j - 1] + 1, d[i - 1, j - 1] + (ref[i - 1] != hyp[j - 1]))
+            d[i, j] = min(d[i - 1, j] + 1, d[i, j - 1] + 1, d[i - 1, j - 1] + (not same(ref[i - 1], hyp[j - 1])))
     edits, i, j = [], n, m
     while i > 0 or j > 0:
-        if i > 0 and j > 0 and d[i, j] == d[i - 1, j - 1] + (ref[i - 1] != hyp[j - 1]):
-            if ref[i - 1] != hyp[j - 1]:
+        if i > 0 and j > 0 and d[i, j] == d[i - 1, j - 1] + (not same(ref[i - 1], hyp[j - 1])):
+            if not same(ref[i - 1], hyp[j - 1]):
                 edits.append((ref[i - 1], hyp[j - 1]))
             i, j = i - 1, j - 1
         elif i > 0 and d[i, j] == d[i - 1, j] + 1:

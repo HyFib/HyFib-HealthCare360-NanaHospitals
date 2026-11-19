@@ -126,7 +126,9 @@ Each video is checked on the finished file, by tools other than those that made 
 | Format | H.264 1920x1080 at 30 fps, AAC 48 kHz, chapters |
 
 The recogniser was trained mostly on Western English. The voice says *p*, *t* and *k* without the puff of air,
-as Indian English does, so the recogniser now and then hears "pause" as "bose". That is the accent the audience
+as Indian English does, so the recogniser now and then hears "pause" as "bose". Names of people and places are
+scored as heard whatever the recogniser writes: it cannot spell Tamil names it has never met ("Kalaivani" comes back as
+"kalevani"), and the captions show them as they are. That is the accent the audience
 knows, not an error for them, and it stays well under the 5% gate.
 
 What machines cannot check needs people: the department head reviews the department's video before its wave (are
