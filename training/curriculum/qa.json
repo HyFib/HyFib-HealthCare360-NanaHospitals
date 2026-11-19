@@ -454,23 +454,23 @@
   "madeBy": "render worker 2 (re-made)"
  },
  "w2-billing": {
-  "passed": false,
+  "passed": true,
   "gates": {
    "run": true,
-   "speech": false,
+   "speech": true,
    "pace": true,
    "captions": true,
    "loudness": true,
    "format": true
   },
   "steps": 24,
-  "wer": 5.1,
-  "wpm": 136.8,
+  "wer": 2.43,
+  "wpm": 136.2,
   "maxCps": 14.8,
   "lufs": -16.0,
-  "seconds": 367.3,
-  "megabytes": 16.8,
-  "madeBy": "render worker 2 (to be re-told)"
+  "seconds": 363.3,
+  "megabytes": 16.7,
+  "madeBy": "render worker 2 (re-told)"
  },
  "w1-store-keeper": {
   "passed": true,
