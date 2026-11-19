@@ -471,5 +471,43 @@
   "seconds": 367.3,
   "megabytes": 16.8,
   "madeBy": "render worker 2 (to be re-told)"
+ },
+ "w1-store-keeper": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 30,
+  "wer": 3.62,
+  "wpm": 129.8,
+  "maxCps": 15.7,
+  "lufs": -16.0,
+  "seconds": 359.6,
+  "megabytes": 17.0,
+  "madeBy": "render worker 3"
+ },
+ "w2-cashier": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 19,
+  "wer": 2.35,
+  "wpm": 139.4,
+  "maxCps": 15.6,
+  "lufs": -16.0,
+  "seconds": 316.6,
+  "megabytes": 14.5,
+  "madeBy": "render worker 3"
  }
 }
