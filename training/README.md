@@ -88,10 +88,12 @@ after it (`after`):
 | `wait`, `expect` | what must appear after the step: the run fails if it does not |
 | `result` | what to outline after the step (defaults to `wait`) |
 | `zoom: 1.4` | magnifies the step's region (forms, small text) |
+| `before`, `after_do` | `async ({ page, find, api, state }) => ...` just before the step is filmed, or after its action: for what has no step type, such as `page.setInputFiles(...)` on `{ css: 'input[type=file]' }` |
 
 Targets are named as a person reads the screen: `{ role: 'button', name: 'Send report' }`, `{ label: 'Reason' }`
 (a field's accessible name), `{ role: 'row', name: /Fatima Begum/ }`, `{ text: 'Now serving' }`,
 `{ within: target, ... }`. Names must match what `explore.mjs` prints; a name can be a regular expression.
+A dialog's name includes its subtitle ("Attach the tracing Electrocardiogram..."): match it with a regular expression.
 
 ## How the narrator speaks
 
