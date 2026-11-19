@@ -129,6 +129,11 @@
     "RBS": "R B S",
     "LFT": "L F T",
     "RFT": "R F T",
-    "INR": "I N R"
+    "INR": "I N R",
+    "QTc": "Q T c",
+    "SCP-ECG": "S C P E C G",
+    "DICOM": "dye com",
+    "BPL": "B P L",
+    "ICICI": "I C I C I"
   }
 }
