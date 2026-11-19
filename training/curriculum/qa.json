@@ -276,5 +276,23 @@
   "seconds": 297.9,
   "megabytes": 12.8,
   "madeBy": "render worker 2"
+ },
+ "w5-dialysis-technician": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 35,
+  "wer": 3.12,
+  "wpm": 124.3,
+  "maxCps": 14.9,
+  "lufs": -16.0,
+  "seconds": 428.2,
+  "madeBy": "render worker 1"
  }
 }
