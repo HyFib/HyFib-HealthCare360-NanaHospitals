@@ -421,6 +421,25 @@ public sealed class VisitService(
         return Result<QueueToken?>.Ok(token);
     }
 
+    /// <summary>
+    /// Starts the visit and puts its queue token in service, as the doctor starting the token does, without saving: opening
+    /// an encounter for the visit starts the consultation in its own unit of work, so no second call writes the visit at the
+    /// same moment. A token already in service or closed is left as it is. Returns the token put in service, if any, whose
+    /// change the caller pushes to the queue screens (<see cref="PublishQueueChangeAsync"/>) once it has saved.
+    /// </summary>
+    public async Task<QueueToken?> StartWithTokenAsync(Visit visit, DateTimeOffset now, CancellationToken ct)
+    {
+        visit.Start();
+        var token = await db.Set<QueueToken>().FirstOrDefaultAsync(t => t.VisitId == visit.Id, ct);
+        if (token is null || token.Status is TokenStatus.InService or TokenStatus.Completed or TokenStatus.Cancelled)
+        {
+            return null;
+        }
+
+        token.Start(now);
+        return token;
+    }
+
     // ------------------------------------------------------------------ queue
 
     public async Task<Result<QueueTokenDto>> CallAsync(Guid tokenId, string? room, CancellationToken ct)

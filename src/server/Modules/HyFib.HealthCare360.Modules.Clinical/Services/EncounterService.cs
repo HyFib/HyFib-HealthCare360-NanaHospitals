@@ -18,6 +18,7 @@ namespace HyFib.HealthCare360.Modules.Clinical.Services;
 public sealed class EncounterService(
     HospitalDbContext db,
     ClinicalAccess access,
+    VisitService visits,
     ICurrentUser currentUser,
     INotificationService notifications,
     ISettingsService settings,
@@ -28,7 +29,34 @@ public sealed class EncounterService(
     /// <summary>Another doctor's signed encounter amended with its author's, or the head of department's, approval (slice 15).</summary>
     public const string AmendKind = "clinical.encounter_amend";
 
+    /// <summary>How many times a start is tried when another write to its visit, token or appointment is saved first.</summary>
+    private const int StartAttempts = 3;
+
+    /// <summary>
+    /// Starts an encounter. Started for a visit, it starts the visit and puts the visit's queue token in service in the same
+    /// transaction (<see cref="VisitService.StartWithTokenAsync"/>): the worklist's <em>Start</em> is this one call. Another
+    /// write to the visit, its token or its appointment saved between this one's reads and its save (the token started from
+    /// the front desk's queue screen, or by a staff app still open from before, which sent both calls at once) is a
+    /// concurrency conflict: the start then reads them again and starts over, rather than fail as changed by someone else.
+    /// </summary>
     public async Task<Result<EncounterDetail>> StartAsync(StartEncounterRequest request, CancellationToken ct)
+    {
+        for (var attempt = 1; attempt < StartAttempts; attempt++)
+        {
+            try
+            {
+                return await StartOnceAsync(request, ct);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+
+        return await StartOnceAsync(request, ct);
+    }
+
+    private async Task<Result<EncounterDetail>> StartOnceAsync(StartEncounterRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
         {
@@ -49,6 +77,8 @@ public sealed class EncounterService(
         var type = request.Type ?? EncounterType.OutPatient;
         var departmentId = request.DepartmentId;
         string? complaint = request.ChiefComplaint;
+        var now = time.GetUtcNow();
+        QueueToken? token = null;
 
         if (request.VisitId is { } visitId)
         {
@@ -75,7 +105,7 @@ public sealed class EncounterService(
             type = request.Type ?? MapVisitType(visit.Type);
             departmentId ??= visit.DepartmentId;
             complaint ??= visit.ChiefComplaint;
-            visit.Start();
+            token = await visits.StartWithTokenAsync(visit, now, ct);
         }
 
         var encounter = new Encounter
@@ -87,7 +117,7 @@ public sealed class EncounterService(
             PractitionerId = practitionerId,
             DepartmentId = departmentId ?? await db.Set<Practitioner>().Where(p => p.Id == practitionerId).Select(p => p.DepartmentId).FirstOrDefaultAsync(ct),
             Type = type,
-            StartedAt = time.GetUtcNow(),
+            StartedAt = now,
             TemplateId = request.TemplateId,
         };
 
@@ -115,6 +145,11 @@ public sealed class EncounterService(
         encounter.Update(content);
         db.Add(encounter);
         await db.SaveChangesAsync(ct);
+        if (token is not null)
+        {
+            await visits.PublishQueueChangeAsync(token, ct);
+        }
+
         return await DetailAsync(encounter, ct);
     }
 
