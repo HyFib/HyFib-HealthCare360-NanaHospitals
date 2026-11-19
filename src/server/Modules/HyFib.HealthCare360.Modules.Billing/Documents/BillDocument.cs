@@ -257,7 +257,10 @@ internal static class BillDocument
                 g.Sum(l => l.SgstAmount), g.Sum(l => l.IgstAmount)))
             .ToList();
 
-    /// <summary>A supply to a payer registered in another state: the whole GST is IGST.</summary>
+    /// <summary>
+    /// A bill charged as a supply to another state, finalized so before every bill was supplied in the facility's state:
+    /// the whole GST is IGST.
+    /// </summary>
     public static bool IsInterState(BillDetail bill) => bill.IgstAmount != 0 || bill.Lines.Any(l => l.IgstAmount != 0);
 
     /// <summary>

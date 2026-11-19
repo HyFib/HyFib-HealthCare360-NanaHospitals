@@ -239,6 +239,40 @@ public sealed class TallyVoucherBuilderTests
     }
 
     [Fact]
+    public void A_debit_note_raises_the_patients_or_the_payers_ledger_with_its_income_and_gst()
+    {
+        // The patient's: a rejected claim's share charged to the patient (exempt services), the debtor raised again.
+        var patient = new TallyDebitNote("NHDB26000001", Day, "NHIB260000001", DebitNoteParty.Patient, null, 50_000m)
+        {
+            Lines = [new TallySaleLine("LAB", "Laboratory", 20_000m, 0m, 0m, 0m), new TallySaleLine("GS", "General Surgery", 30_000m, 0m, 0m, 0m)],
+        };
+
+        // The payer's: a room charged short at 5%, set against the bill on the payer's ledger.
+        var payer = new TallyDebitNote("NHDB26000002", Day, "NHIB260000002", DebitNoteParty.Payer, "Star Health", 1_050m)
+        {
+            Lines = [new TallySaleLine("WARD", "Wards", 1_000m, 0m, 25m, 25m, GstRate: 5m)],
+        };
+
+        var vouchers = TallyVoucherBuilder.Build(Book() with { DebitNotes = [patient, payer] }, Ledgers);
+
+        var toPatient = vouchers.Single(v => v.Number == "NHDB26000001");
+        toPatient.VoucherType.ShouldBe(TallyVoucherBuilder.DebitNoteType);
+        ShouldBalance(toPatient);
+        (Entry(toPatient, "Patient Receivables").Amount, Entry(toPatient, "Patient Receivables").IsDebit).ShouldBe((50_000m, true));
+        Entry(toPatient, "Laboratory Income").ShouldSatisfyAllConditions(e => e.Amount.ShouldBe(20_000m), e => e.IsDebit.ShouldBeFalse(), e => e.CostCentre.ShouldBe("Laboratory"));
+        Entry(toPatient, "Hospital Service Income").Amount.ShouldBe(30_000m);
+        toPatient.Narration.ShouldBe("Debit note NHDB26000001 on bill NHIB260000001");
+
+        var toPayer = vouchers.Single(v => v.Number == "NHDB26000002");
+        ShouldBalance(toPayer);
+        var payerLine = Entry(toPayer, "Star Health");
+        (payerLine.Amount, payerLine.IsDebit).ShouldBe((1_050m, true));
+        payerLine.BillAllocations.ShouldBe([new AccountingBillAllocation("NHIB260000002", AccountingBillType.AgainstRef, 1_050m)]);
+        (Entry(toPayer, "Output CGST @ 2.5%").Amount, Entry(toPayer, "Output SGST @ 2.5%").IsDebit).ShouldBe((25m, false));
+        toPayer.Entries.ShouldNotContain(e => e.LedgerName == "Patient Receivables");
+    }
+
+    [Fact]
     public void Doctor_fees_are_journalised_per_doctor_and_reversals_flip_sides()
     {
         var vouchers = TallyVoucherBuilder.Build(Book(fees: [new TallyDoctorFee("Dr. Arjun Mehta", 1_200m), new TallyDoctorFee("Dr. Kavya Nair", -400m)]), Ledgers);

@@ -7,6 +7,7 @@ import {
   inferTariffPercent,
   NO_BILL_DISCOUNT,
   NO_DISCOUNT_AUTHORITY,
+  payerCreditableAmount,
   previewDiscount,
   requiresApproval,
   SELF_PAY,
@@ -442,5 +443,23 @@ describe('the services a credit note can correct', () => {
 
     expect(lines.map((l) => [l.id, l.left])).toEqual([['room', 5249.9]]);
     expect(lines[0]).toMatchObject({ taxRate: 5, netAmount: 6300, sacCode: '999312' });
+  });
+});
+
+describe('what a payer credit note can still credit', () => {
+  it('is what the payer will not pay less the payer credit notes of deductions and of returns', () => {
+    const credited = (kind: string, amount: number) => ({ kind, amount });
+
+    expect(payerCreditableAmount({ payerDisallowedAmount: 5_000, creditNotes: [] })).toBe(5_000);
+    // ₹3,000 of it was the payer's share of a return, credited to it already; ₹500 a deduction credited too.
+    expect(
+      payerCreditableAmount({
+        payerDisallowedAmount: 5_000,
+        creditNotes: [credited('PayerReturn', 3_000), credited('PayerShare', 500), credited('CreditNote', 300)],
+      }),
+    ).toBe(1_500);
+    expect(payerCreditableAmount({ payerDisallowedAmount: 3_000, creditNotes: [credited('PayerReturn', 3_000)] })).toBe(
+      0,
+    );
   });
 });

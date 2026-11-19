@@ -257,7 +257,7 @@ public sealed class PeakMixTests(HospitalServer server)
             AdmittedAt: null, Notes: null));
         var paracetamol = await DrugClassApprovalTests.CreateAsync(admin, "Paracetamol", DrugSchedule.Otc, controlled: false, highAlert: false);
         var order = await doctor.PostAsync<MedicationOrderDto>($"/api/v1/nursing/admissions/{admission.Id}/medication-orders", new AddMedicationOrderRequest(
-            DrugItemId: paracetamol, DrugName: "Paracetamol 500 mg Tablet", GenericName: null, Strength: null, Dose: "1 tablet", Route: "PO", Frequency: "STAT",
+            DrugItemId: paracetamol, DrugName: "Paracetamol 1 g Injection", GenericName: null, Strength: null, Dose: "1 vial", Route: "IV", Frequency: "STAT",
             DurationDays: 1, StartAt: null, Instructions: null, IsControlledDrug: false, OrderedByPractitionerId: null));
         var chart = await doctor.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
         return (ward.Id, admission.Id, chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due).Id);

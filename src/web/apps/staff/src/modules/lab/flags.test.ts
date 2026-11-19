@@ -15,6 +15,7 @@ import {
   isSameUnit,
   limitsFromReferenceText,
   parseNumericResult,
+  requiredCallLabel,
   reviewHints,
   selectRange,
 } from './flags';
@@ -285,6 +286,25 @@ describe('line interpretation while typing', () => {
     expect(
       interpretLine(answer, { value: 'Positive' }, { gender: 'Female', ageDays: 9000, ranges: answerRanges }).flag,
     ).toBe('Critical');
+  });
+});
+
+// The server asks for a call before verification for a critical value, and for a value phoned before and changed since.
+describe('required call labels', () => {
+  it('names the value now, and what the doctor was told when that was another value', () => {
+    const potassium = { id: 'k', testName: 'Potassium', value: '7.2 mmol/L', flag: 'CriticalHigh' as const };
+    expect(requiredCallLabel(potassium)).toBe('Potassium: 7.2 mmol/L (critically high)');
+    expect(requiredCallLabel({ ...potassium, told: null })).toBe('Potassium: 7.2 mmol/L (critically high)');
+    expect(
+      requiredCallLabel({
+        ...potassium,
+        value: '2.7 mmol/L',
+        flag: 'Low',
+        told: 'Potassium 7.2 mmol/L (CriticalHigh)',
+      }),
+    ).toBe(
+      'Potassium: 2.7 mmol/L (low). The doctor was told Potassium 7.2 mmol/L (CriticalHigh): tell them the value as it is now.',
+    );
   });
 });
 

@@ -17,16 +17,34 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Services;
 /// number typed one digit wrong, or one the telco gave to someone new, gets the notice without the report. The e-mail
 /// keeps its PDF either way.
 /// </para>
+/// <para>
+/// A released report that is amended is sent again as <c>lab.report_amended</c>, with the corrected report, in the
+/// amendment's transaction: on the same channels, under the same rules, so the patient does not keep the wrong one.
+/// </para>
 /// </summary>
 internal sealed class ReportDelivery(DiagnosticsLookups lookups, HospitalDbContext db, INotificationService notifications, ISettingsService settings)
 {
     public const string ReportReadyTemplate = "lab.report_ready";
 
+    /// <summary>The notice that a released report was corrected, with the corrected report.</summary>
+    public const string ReportAmendedTemplate = "lab.report_amended";
+
     /// <summary>Send the report's PDF with the "report ready" e-mail and WhatsApp message (bool, default true).</summary>
     public const string SendPdfSetting = "diagnostics.reports.sendPdf";
 
     /// <param name="document">The report's PDF to send with the message, or null for a notice only.</param>
-    public async Task QueueReportReadyAsync(Guid patientId, string reference, NotificationDocument? document, Guid? facilityId, CancellationToken ct)
+    public Task QueueReportReadyAsync(Guid patientId, string reference, NotificationDocument? document, Guid? facilityId, CancellationToken ct) =>
+        QueueAsync(ReportReadyTemplate, patientId, reference, document, facilityId, ct);
+
+    /// <summary>
+    /// Tells the patient that a released report was corrected, with the corrected report (<paramref name="document"/>), as
+    /// <see cref="QueueReportReadyAsync"/> tells them a report is ready: the same channels, PDF and protected-category
+    /// rules, and the patient's own language.
+    /// </summary>
+    public Task QueueReportAmendedAsync(Guid patientId, string reference, NotificationDocument? document, Guid? facilityId, CancellationToken ct) =>
+        QueueAsync(ReportAmendedTemplate, patientId, reference, document, facilityId, ct);
+
+    private async Task QueueAsync(string template, Guid patientId, string reference, NotificationDocument? document, Guid? facilityId, CancellationToken ct)
     {
         var patient = await lookups.PatientAsync(patientId, ct);
 
@@ -48,7 +66,7 @@ internal sealed class ReportDelivery(DiagnosticsLookups lookups, HospitalDbConte
         var values = new Dictionary<string, string> { ["name"] = patient.FullName, ["reference"] = reference };
         foreach (var (channels, carried) in Messages(phone is not null, patient.Email is not null, pdf, numberVerified))
         {
-            notifications.Queue(ReportReadyTemplate, recipient, values, channels, TimeSpan.FromDays(3), facilityId, carried);
+            notifications.Queue(template, recipient, values, channels, TimeSpan.FromDays(3), facilityId, carried);
         }
     }
 

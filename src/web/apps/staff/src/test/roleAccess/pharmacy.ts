@@ -413,6 +413,7 @@ const CONTROLLED: ControlledRegisterRow[] = [
     prescriptionNumber: 'RX2600297',
     referenceNumber: 'PS2600812',
     recordedBy: 'Suresh Patil',
+    remarks: null,
   },
   {
     id: id('602'),
@@ -437,6 +438,7 @@ const CONTROLLED: ControlledRegisterRow[] = [
     prescriptionNumber: null,
     referenceNumber: 'GRN2600091',
     recordedBy: 'Suresh Patil',
+    remarks: null,
   },
 ];
 

@@ -4,6 +4,7 @@ import {
   applyDefaults,
   autoQuantity,
   defaultRoute,
+  dosageFormKind,
   drugMasterDefaults,
   drugOptionView,
   duplicateGenerics,
@@ -324,6 +325,20 @@ describe('route', () => {
     expect(routeProblem({ ...paracetamol, route: 'IV' })).toBe('A medicine taken by mouth is not given IV.');
     expect(routeProblem({ ...paracetamol, route: 'Oral' })).toBeNull();
     expect(routeProblem({ ...paracetamol, route: '' })).toBe('Choose how the medicine is given.');
+  });
+
+  it('lets an injection be nebulised, inhaled or put into the nose, and reads an injectable suspension as an injection', () => {
+    const adrenaline = line({ drugName: 'Adrenaline 1 mg/ml Injection', dosageForm: 'Injection' });
+    expect(routeProblem({ ...adrenaline, route: 'Nebulisation' })).toBeNull();
+    expect(routeProblem({ ...adrenaline, route: 'Inhalation' })).toBeNull();
+    expect(routeProblem({ ...adrenaline, route: 'Nasal' })).toBeNull();
+    expect(routeProblem({ ...adrenaline, route: 'Rectal' })).toBe('An injection is not given by the rectal route.');
+
+    const depot = line({ drugName: 'Medroxyprogesterone acetate 150 mg/ml', dosageForm: 'Injectable suspension' });
+    expect(dosageFormKind('Injectable suspension')).toBe('injection');
+    expect(defaultRoute('Injectable suspension')).toBe('');
+    expect(routeProblem({ ...depot, route: 'IM' })).toBeNull();
+    expect(routeProblem({ ...depot, route: 'Oral' })).toBe('An injection is not given by the oral route.');
   });
 
   it('keeps the route of a medicine continued from its name', () => {

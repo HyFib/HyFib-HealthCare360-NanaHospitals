@@ -198,6 +198,7 @@ describe("the ward's medicines tab", SCREEN_TESTS, () => {
       'GET /api/v1/masters/lookups/practitioners': [
         { id: STAFF_USER.practitionerId, code: 'DR001', name: 'Dr. Meera Iyer' },
       ],
+      [`POST ${ORDERS}/check`]: { isBlocked: false, alerts: [] },
       [`POST ${ORDERS}`]: order({ drugItemId: null, drugName: 'Inj. Ondansetron', isHighAlert: true }),
     });
     const user = userEvent.setup();
@@ -226,8 +227,11 @@ describe("the ward's medicines tab", SCREEN_TESTS, () => {
     await user.click(within(dialog).getByRole('checkbox', { name: /I read the order back to the doctor/ }));
     await user.click(within(dialog).getByRole('button', { name: 'Add verbal order' }));
 
-    await vi.waitFor(() => expect(posts()).toHaveLength(1));
-    expect(posts()[0]?.body).toMatchObject({
+    // The safety check finds nothing, so the order is written at once.
+    await vi.waitFor(() => expect(posts()).toHaveLength(2));
+    expect(posts()[0]?.path).toBe(`${ORDERS}/check`);
+    expect(posts()[1]?.path).toBe(ORDERS);
+    expect(posts()[1]?.body).toMatchObject({
       drugItemId: null,
       drugName: 'Inj. Ondansetron',
       orderedByPractitionerId: STAFF_USER.practitionerId,

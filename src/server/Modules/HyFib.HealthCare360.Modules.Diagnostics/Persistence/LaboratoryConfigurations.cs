@@ -298,7 +298,7 @@ internal sealed class CriticalCallLogConfiguration : IEntityTypeConfiguration<Cr
     public void Configure(EntityTypeBuilder<CriticalCallLog> b)
     {
         b.ToTable("critical_call_logs", DiagnosticsSchema.Name);
-        b.Property(x => x.Finding).HasMaxLength(300);
+        b.Property(x => x.Finding).HasMaxLength(CriticalCallLog.FindingLength);
         b.Property(x => x.InformedPersonName).HasMaxLength(200);
         b.Property(x => x.InformedPersonRole).HasMaxLength(100);
         b.Property(x => x.Notes).HasMaxLength(1000);

@@ -29,7 +29,8 @@ public sealed record ControlledRegisterRow(
     string? PrescriberRegistrationNumber,
     string? PrescriptionNumber,
     string? ReferenceNumber,
-    string? RecordedBy);
+    string? RecordedBy,
+    string? Remarks);
 
 public sealed record ScheduleHRegisterRow(
     DateTimeOffset IssuedAt,
@@ -129,9 +130,9 @@ internal static class RegisterEndpoints
                 Csv.Time(r.OccurredAt), r.StoreName, r.ItemName, r.IsControlled ? $"{r.Schedule} / NDPS" : r.Schedule.ToString(), r.BatchNumber,
                 Csv.Date(r.ExpiryDate), r.MovementType.ToString(), Csv.Number(r.QuantityIn), Csv.Number(r.QuantityOut), Csv.Number(r.BalanceAfter),
                 r.PatientName, r.PatientUhid, r.PatientAddress, r.PrescriberName, r.PrescriberRegistrationNumber, r.PrescriptionNumber,
-                r.ReferenceNumber, r.RecordedBy))
+                r.ReferenceNumber, r.RecordedBy, r.Remarks))
             .Prepend(Csv.Row("Date/time", "Store", "Drug", "Schedule", "Batch", "Expiry", "Movement", "In", "Out", "Balance", "Patient", "UHID",
-                "Address", "Prescriber", "Reg. no.", "Prescription", "Reference", "Recorded by"));
+                "Address", "Prescriber", "Reg. no.", "Prescription", "Reference", "Recorded by", "Remarks"));
         return TypedResults.File(Csv.Build(lines), "text/csv; charset=utf-8", string.Create(CultureInfo.InvariantCulture, $"controlled-drug-register-{range.From:yyyyMMdd}-{range.To:yyyyMMdd}.csv"));
     }
 
@@ -194,7 +195,8 @@ internal static class RegisterEndpoints
                 r.ItemId, r.ItemName, r.Schedule, r.IsControlled, r.BatchNumber, r.ExpiryDate, r.MovementType, r.QuantityIn, r.QuantityOut,
                 r.BalanceAfter, r.PatientName, r.PatientUhid, r.PatientAddress, r.PrescriberName, r.PrescriberRegistrationNumber,
                 r.PrescriptionNumber, r.ReferenceNumber,
-                db.Set<User>().Where(u => u.Id == r.RecordedByUserId).Select(u => u.DisplayName).FirstOrDefault()));
+                db.Set<User>().Where(u => u.Id == r.RecordedByUserId).Select(u => u.DisplayName).FirstOrDefault(),
+                r.Remarks));
     }
 
     /// <summary>Schedule H medicines handed out at the counters and to the wards in the period (Rule 65: record of H sales).</summary>

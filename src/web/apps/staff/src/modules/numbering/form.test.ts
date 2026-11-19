@@ -107,8 +107,8 @@ describe('the list', () => {
       key: 'lab.sample',
       name: 'Sample tube number',
       area: 'Laboratory',
-      format: '{SEQ:10}',
-      firstNumber: 1_000_000_000,
+      format: '{SEQ:9}{CHK}',
+      firstNumber: 100_000_000,
     }),
   ];
 
@@ -125,7 +125,7 @@ describe('the list', () => {
 
   it('is filtered by area and by name, area or format', () => {
     expect(filterSeries(rows, 'Billing', undefined).map((s) => s.name)).toEqual(['OP bill', 'IP bill']);
-    expect(filterSeries(rows, undefined, 'seq:10').map((s) => s.name)).toEqual(['Sample tube number']);
+    expect(filterSeries(rows, undefined, '{chk}').map((s) => s.name)).toEqual(['Sample tube number']);
     expect(filterSeries(rows, undefined, 'patients').map((s) => s.name)).toEqual(['UHID (patient number)']);
   });
 });

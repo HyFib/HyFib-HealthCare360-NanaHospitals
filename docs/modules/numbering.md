@@ -23,9 +23,17 @@ A format is fixed text and parts in braces. Each number fills in the parts at th
 | `{DD}` | the day of the month, 2 digits | `02` |
 | `{SEQ}` | the running number | `124` |
 | `{SEQ:n}` | the running number padded with zeros to n digits (n from 1 to 12) | `{SEQ:7}` → `0000124` |
+| `{CHK}` | a check digit, worked out from every digit before it; it goes last | `{SEQ:9}{CHK}` → `0000001242` |
 
 So `{FAC}OB{YY}{SEQ:7}` makes `NHOB260000124`, and `{FAC}/OP/{YYYY}/{SEQ:6}` makes `NH/OP/2026/000124`. The running
 number is never cut short: once it outgrows its padding it simply has more digits.
+
+**The check digit.** `{CHK}` is the Damm check digit (H. Michael Damm, 2004) of every digit written before it: the
+date parts, the running number and any digits in the fixed text; letters, `-` and `/` are passed over. A number copied by
+hand with one digit wrong, or with two neighbouring digits swapped, no longer ends in its check digit, so it is never
+taken for another number the series issued. `{SEQ:9}{CHK}` makes `1000012342` for running number 100001234, and
+`{FAC}{YY}{SEQ:6}{CHK}` makes `NH260001240` for 124. A number with a check digit is one character longer. The rules
+(`Platform/Numbering/DammCheckDigit.cs`) and the staff app (`lib/damm.ts`) work it out alike.
 
 Dates are India Standard Time. A series shared by all facilities fills in `{FAC}` with the code of the first facility set
 up (the hospital's main one).
@@ -61,13 +69,15 @@ again from 1 only at the next boundary. For example, an OP bill series at bill 5
 The screen checks these as the administrator types, with the same words the server uses when it checks them again on
 saving.
 
-* Only the parts above, and one running number (`{SEQ}` or `{SEQ:n}`).
+* Only the parts above, one running number (`{SEQ}` or `{SEQ:n}`), and at most one check digit (`{CHK}`), at the end,
+  after the running number ("Put the check digit {CHK} at the end, after the running number: it checks every digit
+  before it.").
 * Fixed text uses capital letters A to Z, digits, `-` and `/`; no spaces.
 * The date parts of the period, when numbers start again (see above).
 * `{FAC}`, for numbers each facility counts on its own, once the hospital has more than one facility. Number columns
   are unique across all facilities, so without the facility code two facilities would issue the same numbers.
-* The numbers must fit where they are stored. The longest number is measured with the longest facility code in use and
-  a running number of at least 8 digits (it grows over the years). Most numbers have room for 24 characters; UHIDs, tube
+* The numbers must fit where they are stored. The longest number is measured with the longest facility code in use,
+  a running number of at least 8 digits (it grows over the years) and its check digit. Most numbers have room for 24 characters; UHIDs, tube
   barcodes, donor numbers and employee codes for 20. The message says which part to shorten.
 * A changed format must not be able to make the numbers of another series (OP and IP bills share one table, so that
   would issue a bill number twice), nor those this series makes at another facility (number columns are unique across
@@ -103,7 +113,7 @@ for example to carry on from an older system, within the padding of the running 
 | Series | Why |
 |---|---|
 | UHID (`uhid`) | The AI assistant recognises UHIDs by their shape (the facility code followed by 8 digits) to find patients and to keep their details private. |
-| Sample tube number (`lab.sample`) | Tube numbers are written on the tubes, typed on the analysers and scanned as plain 10-digit numbers, which the analysers send back with each result. They start at 1000000000, so every one has 10 digits and none starts with 0. |
+| Sample tube number (`lab.sample`) | Tube numbers are written on the tubes, typed on the analysers and scanned as plain 10-digit numbers ending in a check digit, which the analysers send back with each result. The running number starts at 100000000, so every number has 10 digits and none starts with 0; a number typed with one digit wrong or two swapped finds no tube (diagnostics.md, *Tube numbers*). |
 | Lab accession number (`lab.accession`) | Barcode scanners on the laboratory screens recognise accession numbers by their shape. |
 | Radiology accession number (`radiology.accession`) | Barcode scanners on the diagnostics screens recognise them by their shape. |
 | Cardiology accession number (`cardiology.accession`) | Barcode scanners on the diagnostics screens recognise them by their shape. |
@@ -120,15 +130,18 @@ is recorded in the audit trail as a warning, because auditors of bills and recei
 
 **A series' first number.** Most series count from 1. A series whose numbers must all have as many digits as their
 padding, with no leading zero, starts at the smallest number of that many digits instead
-(`NumberSeriesDefinition.FirstNumber`): tube numbers (`{SEQ:10}`) start at 1000000000. The allocation never issues a
-number below it, so a counter left lower (a database from before the series started there) jumps to it at the next
-number, and the next number cannot be set below it ("The next number must be 1000000000 or more, so that these numbers
-keep the shape other systems read."). The list shows the next number from there.
+(`NumberSeriesDefinition.FirstNumber`): tube numbers (`{SEQ:9}{CHK}`) count from 100000000, so the first is
+1000000005. The allocation never issues a number below it, so a counter left lower (a database from before the series
+started there) jumps to it at the next number, and the next number cannot be set below it ("The next number must be
+100000000 or more, so that these numbers keep the shape other systems read."). The list shows the next number from
+there.
 
-**Tube numbers before November 2026.** They had 9 digits (`{SEQ:9}`, from 000000001). On upgrade, the Diagnostics
-seeder brings the stored format of `lab.sample` to `{SEQ:10}` (a locked series keeps the format it was created with
-otherwise), and the next tube is 1000000000 whatever the counter was; tubes numbered before keep their numbers, and
-the lab screens still find them (they accept 6 to 20 digits). Nothing was live then.
+**Tube numbers before November 2026.** They had 9 digits (`{SEQ:9}`, from 000000001), then 10 (`{SEQ:10}`, from
+1000000000), with no check digit. On upgrade, the Diagnostics seeder brings the stored format of `lab.sample` to
+`{SEQ:9}{CHK}` (a locked series keeps the format it was created with otherwise) and counts its counter in tens of the
+old numbers (`NumberFormat.CounterIn`), so the next tube is above every number issued: 1000012346 is followed by
+1000012350. Tubes numbered before keep their numbers, and the lab screens and analysers still find them by their exact
+number (diagnostics.md, *Tube numbers*). Nothing was live then.
 
 ## After a restore: the high-water mark
 
@@ -175,7 +188,12 @@ database, and moves each series past it as it starts.
   (`numbering.startup_check_failed`).
 
 Nothing else lowers a counter: the next number an administrator sets must be above the last one issued, and a change of
-reset keeps counting from it. So a series behind the mark has been put back by a restore.
+reset keeps counting from it. So a series behind the mark has been put back by a restore. The one exception is a
+series brought to a check digit by an upgrade: each running number then stands for ten of its former numbers, so its
+counter is counted in tens (1000012346 under `{SEQ:10}` is 100001234 under `{SEQ:9}{CHK}`, whose next number,
+1000012350, is above it). The mark compares a counter and a mark of which only one has a check digit in the counter's
+terms (`NumberFormat.CounterIn`), the margin counted in the mark's: the upgrade is followed, not raised, and a database
+restored to before it is still raised past the numbers issued after it.
 
 ## Who sees what
 
@@ -235,8 +253,8 @@ order.AccessionNumber = await numbers.NextAsync(DiagnosticsNumberSeries.LabAcces
 * `PerFacility = false` for one counter shared by all facilities (`NextAsync` then ignores the facility).
 * `LockedReason` for numbers other code or devices read by their shape; `Hidden` for internal counters, which may
   have a key per use (queue tokens).
-* `FirstNumber` for numbers that must all have the same number of digits with no leading zero (tube numbers start at
-  1000000000); the allocation never issues a number below it.
+* `FirstNumber` for numbers that must all have the same number of digits with no leading zero (tube numbers count
+  from 100000000); the allocation never issues a number below it.
 
 `NextAsync` refuses a definition no module declares, and the architecture tests check that every definition is declared
 and that every default format follows the rules above. Allocate inside the transaction that saves the document, so
@@ -287,7 +305,7 @@ needs nothing of its own for any of this: every row of `platform.number_series` 
 | Insurance | Insurance claim | `insurance.claim` | `{FAC}CL{YY}{SEQ:6}` | every year | per facility | 24 |
 | Insurance | Pre-authorisation | `insurance.preauth` | `{FAC}PA{YY}{SEQ:6}` | every year | per facility | 24 |
 | Laboratory | Lab accession number (locked) | `lab.accession` | `{FAC}LB{YY}{SEQ:7}` | every year | per facility | 24 |
-| Laboratory | Sample tube number (locked, from 1000000000) | `lab.sample` | `{SEQ:10}` | never | shared | 20 |
+| Laboratory | Sample tube number (locked, from 1000000005) | `lab.sample` | `{SEQ:9}{CHK}` | never | shared | 20 |
 | Medical records | Medical record request | `mrd-request` | `{FAC}RR{YY}{SEQ:6}` | every year | per facility | 24 |
 | Operation theatre | Surgery booking | `ot-booking` | `{FAC}OT{YY}{SEQ:6}` | every year | per facility | 24 |
 | Patient feedback | Complaint | `feedback.complaint` | `{FAC}CMP{YY}{SEQ:5}` | every year | per facility | 24 |

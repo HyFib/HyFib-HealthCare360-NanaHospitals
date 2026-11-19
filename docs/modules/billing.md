@@ -29,14 +29,21 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 
 * `decimal` only; every amount is rounded with `Money.Round` (half away from zero) per line.
 * GST is charged on the discounted value of each line and split into CGST/SGST (`Money.SplitGst`, SGST takes the paisa).
-* **Place of supply** (IGST Act s.12(2)(a)): the state of a payer registered for GST (the first two digits of its
-  GSTIN), else the facility's own state (`BillPlaceOfSupply`, set while the bill is a draft). A payer registered in
-  another state is billed **IGST** for the whole tax instead of CGST and SGST, on every line and in the totals; the bill
-  stores `placeOfSupply` and `igstAmount`. Tally posts IGST to the `Output IGST` ledger. A facility without a GSTIN bills
-  CGST and SGST as before.
+* **Place of supply**: the facility's own state, the first two digits of its GSTIN, on every bill whoever pays it
+  (`BillPlaceOfSupply`, set while the bill is a draft; the bill stores `placeOfSupply`). Health care is supplied where it
+  is performed (IGST Act 2017, s.12(4)); a room, and any service tied to the hospital's premises, where the hospital
+  stands (s.12(3)); and the medicines and devices used in treatment are handed over there. So every bill is an
+  intra-state supply, taxed **CGST and SGST**, even to a payer registered in another state (an insurer or company in
+  Kerala, say, which borders Theni): the payer's GSTIN names it as the buyer on the e-invoice and in GSTR-1, and does
+  not move the place of supply. The e-invoice's place of supply (`Pos`) is the hospital's state and the buyer's state
+  code (`Stcd`) the payer's; GSTR-1 reports the bill as a B2B invoice within the state; Tally posts its CGST and SGST.
+  A bill finalized before this rule as a supply to another state keeps its IGST (`igstAmount`, `isInterState`), and its
+  credit and debit notes take back and add IGST as it charged. A facility without a GSTIN has no place of supply and
+  bills CGST and SGST. The pharmacy's own invoices are not bills: goods it sends to another state are supplied there
+  (s.10) and carry IGST ([pharmacy.md](pharmacy.md)).
 * **Room rent** (`RoomRentGst`; notification 12/2017-CT(R) entry 74 as amended by 4/2022, and 11/2017-CT(R) entry 31A
   inserted by 3/2022, from 18 July 2022): health care is exempt, but a day of a room other than intensive or critical
-  care charged above ₹5,000 is taxed at 5% on the whole charge (CGST and SGST of 2.5% each, or IGST), without input tax
+  care charged above ₹5,000 is taxed at 5% on the whole charge (CGST and SGST of 2.5% each), without input tax
   credit. At or below ₹5,000, or in critical care (ICU, CCU, ICCU, NICU: Inpatient's ICU, NICU, PICU and HDU wards), a
   day is exempt. The rule replaces the room's rate in the service master for the bed days Inpatient charges (each tells
   Billing its `RoomCharge`, kept on the charge as `room`), and again when a stay is re-priced on another plan. A day is
@@ -80,7 +87,9 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 * A **return** is a negative-quantity charge (credit line). It mirrors its sale — same tariff concession, same GST, amounts
   negated — takes a proportional (negative) share of any bill discount, never receives a staff line discount, gives a
   package back what the package absorbed (after first refunding what the patient paid beyond the package), and can
-  make a bill's patient share negative, in which case the difference is refundable.
+  make a bill's patient share negative, in which case the difference is refundable. A return that comes back after its
+  bill was finalized goes on a bill of its own only when that bill was self-paying; after a bill a payer or a package
+  shared it is credited on that bill instead ([Returns after the bill](#returns-after-the-bill)).
 
 ## Permissions
 
@@ -94,8 +103,8 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.bills.cancel` | Cancel finalized bills | HospitalAdmin, Accountant |
 | `billing.discounts.approve` | Approve discounts above a user's limit (never one's own), approve charges cancelled at the desk, discharge with dues, set limits (raising one waits for another holder) | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
-| `billing.refunds.request` | Request refunds, credit notes and write-offs, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
-| `billing.refunds.approve` | Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included, see [pharmacy.md](pharmacy.md)), credit notes, write-offs, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
+| `billing.refunds.request` | Request refunds, credit notes, write-offs, debit notes and the credit of returns on a bill, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
+| `billing.refunds.approve` | Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included, see [pharmacy.md](pharmacy.md)), credit notes, write-offs, debit notes, returns credited on a bill, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
@@ -222,10 +231,11 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | POST | `/{id}/refresh` | `billing.op.create` | `BillVersionRequest` → `BillDetail` (pulls charges posted since the draft was made) |
 | POST | `/{id}/discount` | `op.create` / `ip.manage` | `ApplyDiscountRequest` (bill % or ₹, line ₹, reason) → `DiscountOutcome` (applied, or an approval request above the user's limit) |
 | POST | `/{id}/finalize` | `billing.bills.finalize` | `BillVersionRequest` → `BillDetail`; allocates `{FAC}OB{YY}{SEQ:7}` / `{FAC}IB{YY}{SEQ:7}`; adjusts the visit's online prepayment |
-| POST | `/{id}/cancel` | `billing.bills.cancel` | `CancelBillRequest(reason, version)` → `BillDetail`; charges released, advances restored, cash refunds requested |
+| POST | `/{id}/cancel` | `billing.bills.cancel` | `CancelBillRequest(reason, version)` → `BillDetail`; charges released, advances restored, cash refunds requested. 422 `billing.bill_adjusted` once anything was recorded against the bill ([Cancelling a bill](#cancelling-a-bill)), `billing.bill_has_claim` while a claim is open, `einvoice.active` while it has a live IRN |
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
 | POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP), `billing.bill_number_unverified` (the number is not verified on the patient's record); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
 | POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason, lines?)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. A credit note names the services it corrects (`lines`: `billLineId` and `amount`, GST included; `amount` is their sum, 400 otherwise), and must on a bill with GST (400 `lines`); 422 `billing.credit_exceeds_line` past what is left of a service after earlier credit notes, or on a return; a write-off names none (400 `lines`). The approver sees the GST each service gives back ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)). An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
+| POST | `/{id}/return-credit` | `refunds.request` / `refunds.approve` | `CreditReturnsRequest(reason)` → 202 `ApprovalRequestDto` (kind `billing.return_credit`): asks for the returns waiting on the bill (`BillDetail.returnsToCredit`) to be credited on it ([Returns after the bill](#returns-after-the-bill)). 422 `billing.no_returns_to_credit`, `billing.returns_not_credited_here` (a self-paying bill), `billing.return_claim_open`, `billing.payer_credit_exceeds_owed`, `billing.return_not_on_bill`; 409 `approval.already_requested` while one waits |
 | POST | `/{id}/debit-notes` | `refunds.request` / `refunds.approve` | `IssueDebitNoteRequest(party, reason, lines)` → 202 `ApprovalRequestDto` (kind `billing.debit_note`): asks for a debit note ([Debit notes](#debit-notes)); `lines` are `billLineId` and the `taxableAmount` each service is raised by (GST at its rate is added); `party` `Patient` or `Payer`. 422 `billing.bill_not_debitable` (not finalized, or cancelled), `billing.no_payer`, `billing.debit_on_return`, `billing.debit_not_payer_payable`. An approver, never the person who asked, issues it (`{FAC}DB{YY}{SEQ:6}`), on the bill's version it was asked against (422 `approval.stale`) |
 | GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it (until then, for a note due one, a notice that it has none); guarded and audited ("Printed credit note …") |
 | GET | `/{id}/credit-notes/{noteId}/pdf` | readers | → `application/pdf` attachment `credit-note-<number>.pdf` (`write-off-<number>.pdf`), the same document; guarded and audited |
@@ -380,9 +390,9 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
 | PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only, or one priced for another tariff plan than the stay's |
 | POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail`: the services not billed yet up to the end of `upTo` (today when empty). Self-pay, non-package stays only; 422 `billing.interim_insured`, `billing.interim_package`, `billing.ip_account_inactive`, `billing.nothing_to_bill` ([Interim bills](#interim-bills-ipb-05)) |
-| POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged |
+| POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services, which takes no return after a final bill a payer or a package shared); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged, `billing.returns_to_credit` when only such returns came after the final bill ([Returns after the bill](#returns-after-the-bill)) |
 | POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request). Once the discharge has been initiated (422 `billing.discharge_not_initiated` while the account is open, a revoked discharge included) and every draft interim bill is finalized (422 `billing.interim_bill_draft`: the advance pays finalized bills only); after the final bill, or with nothing for one (`finalBillId` null; `billing.final_bill_missing` while services wait for it) |
-| GET | `/{id}/clearance` | readers | → `ClearanceDto` (`billedOnInterimBills`: interim bills took every service, so no final bill is needed) |
+| GET | `/{id}/clearance` | readers | → `ClearanceDto` (`billedOnInterimBills`: interim bills took every service, so no final bill is needed; `returnsToCreditCount` and `returnsToCreditAmount`: returns waiting to be credited on the final bill `finalBillId`, which hold nothing up) |
 | POST | `/{id}/discharge-approval` | `billing.discounts.approve` | `ApproveDischargeWithDuesRequest(reason)` → 204 |
 
 IP account statuses: `Open`, `DischargeInitiated`, `Discharged`, `Closed`, `Cancelled` (admission cancelled; no new
@@ -819,7 +829,8 @@ language*).
   date on the right.
 * Patient, UHID, status, payer, tariff, package and co-pay; every line with service code, doctor, date, SAC code, quantity, rate,
   package cover (when a package covers anything), discount and, on a tax invoice, taxable value, GST rate, CGST and SGST
-  (or IGST, with the place of supply, for a payer registered in another state).
+  (or IGST, with the place of supply, on a bill finalized as a supply to another state before every bill was placed in
+  the hospital's state).
 * Totals from the gross amount to the net amount, the payer's and the patient's share, credit notes, paid, refunded,
   and the balance due or the refund due; the patient's share in words (Indian system, "Rupees … Only").
 * On a tax invoice, the GST summary by SAC code and rate. Then the payments received (advances adjusted included), the
@@ -895,6 +906,33 @@ from the sign-in page and *Bills*), so a patient can see what a visit costs befo
   most one of its places, and each version of the list is made once (`Services/PublicRateListPdf.cs`: kept by the
   SHA-256 of its HTML, an hour after it was last asked for), so they cannot hold up staff's.
 
+## Cancelling a bill
+A cancelled bill is undone in full: the Tally day book reverses its whole sale (a Credit Note `<bill>/C` for the
+patient's and the payer's shares), GSTR-1 leaves it out, its charges go back to the unbilled pool and what the patient
+paid becomes refundable. That is right only while nothing else was recorded against the bill. A credit note, a
+write-off, a debit note, an insurer's settlement or a deduction (a rejected claim's unpaid balance is one) stays in the
+books and the returns, so cancelling the bill after it would reverse that part twice: Tally's ledgers go wrong and the
+credit notes against the cancelled invoice under-report GST.
+
+So a bill with any of them is not cancelled (`Bill.AdjustedSinceFinalized`, 422 `billing.bill_adjusted`). The refusal
+says what was recorded and what to do instead:
+
+* **Correct what remains with a credit note.** It names the services it takes back, with their GST
+  ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)); what the patient paid beyond what is left
+  becomes refundable.
+* **Recover from the patient what the payer would not pay** (a rejected claim, a deduction the patient should bear) on
+  the same bill, in two steps, each asked for by one person and approved by another: a
+  [payer credit note](#payer-credit-notes) for the share takes it off the payer's invoice, with its GST, and back out
+  of insurance disallowances; then a patient [debit note](#debit-notes) for the same services charges it to the
+  patient as a supplementary invoice, with the GST at each service's rate. The bill owes the share again, and the
+  patient pays it at the counter. The books show the share moved from the payer to the patient, and the GST of the
+  supply is the bill's, once.
+
+A claim that is still open refuses the cancellation too (`billing.bill_has_claim`), and so does a live IRN
+(`einvoice.active`). A bill with only payments on it, or a payer whose claim was rejected with nothing recorded against
+the bill, is cancelled as before. `BillCancellationTests` (in `tests/HyFib.HealthCare360.IntegrationTests`) proves these
+rules end to end.
+
 ## Credit notes are GST credit notes
 A credit note corrects what a bill charged (a wrong rate, a service not given) and, under CGST Act 2017 s.34, lowers
 the taxable value and the GST of the supply with it. A write-off of a due that cannot be recovered is not one: GST was
@@ -907,10 +945,11 @@ due on the supply whether or not it was paid, and a write-off reduces no tax.
   (422 `billing.credit_exceeds_line`); a return or a line that comes to nothing is not credited. On a bill without GST
   the services may be named or not.
 * **The split is exact.** Each line's credit is split into taxable value and GST in proportion to the line
-  (`GstCreditNotes.Share`, in the shared kernel), as IGST on a supply to another state and as CGST and SGST within it.
-  Each credit's share is the difference of the shares of the running totals before and after it, so however a line is
-  credited, its credits add up to its own taxable value and GST to the paisa. The note keeps its lines
-  (`credit_note_lines`) and its CGST, SGST and IGST.
+  (`GstCreditNotes.Share`, in the shared kernel), as CGST and SGST as the bill charged them (as IGST on a bill finalized
+  as a supply to another state before every bill was placed in the hospital's state). Each credit's share is the
+  difference of the shares of the running totals before and after it, so however a line is credited, its credits add
+  up to its own taxable value and GST to the paisa. The note keeps its lines (`credit_note_lines`) and its CGST, SGST
+  and IGST.
 * **Until 30 November after the financial year** (s.34(2)). The GST of a bill can be reduced by a credit note issued by
   30 November after the end of the financial year (April to March) of the bill (`GstCreditNotes.LastDay`). One issued
   later lowers what the patient owes and not the GST (`gstTimeBarred`): its lines carry no GST, the books take back the
@@ -943,16 +982,68 @@ gets and the payer's GSTR-2B keeps the full credit. A **payer credit note** (`ki
   GST. In the Tally day book its Credit Note debits sales returns and output GST and credits **Insurance
   Disallowances**, taking back the deduction the claim's journal put there.
 
+A payer credit note is also the first step of recovering from the patient what the payer would not pay (a rejected
+claim's share, say): a patient debit note for the same services then charges it to the patient, on the same bill,
+which is never cancelled for it ([Cancelling a bill](#cancelling-a-bill)).
+
+### Returns after the bill
+A return can come back after the bill that charged it was finalized: the ward sends an unopened ₹3,000 injection back
+to the IP pharmacy after the stay's final bill, say. After a self-paying bill it goes, as before, on a bill of its own
+(a supplementary bill of the stay, the visit's next OP bill), and the patient is refunded. After a bill a payer or a
+package shared (`ReturnCredits.CreditedOnTheBill`) that would be wrong: on a bill of returns alone the payer's share is
+nothing (it is never negative), so the whole credit fell to the patient, who was refunded what the insurer or the
+package paid. So such a return goes on no other bill:
+
+* **Only a return of what that bill charged.** A return names what it returns (the IP pharmacy's names the item and its
+  batch). It is the bill's when one of its lines of the same service and GST rate bears that name. Failing that, it is
+  the bill's when the bill charged that service at that rate and no other charge of the stay or visit bears the name
+  (`ReturnCredits.IsCreditedOn`). The return of something issued after the bill goes with it, on a bill of its own
+  (the stay's supplementary bill, the visit's next OP bill), as after a self-paying bill: the payer paid nothing for it.
+* **It waits on the bill that charged it.** The supplementary bill takes the late services and leaves the returns
+  (422 `billing.returns_to_credit` when only returns came); an OP draft of the visit leaves them too. The bill lists
+  them (`BillDetail.returnsToCredit`), and the stay's discharge clearance counts them apart
+  (`ClearanceDto.returnsToCreditCount` and `returnsToCreditAmount`, with `finalBillId`): they are not unbilled services,
+  hold up no discharge (the clearance says they wait) and keep the account from closing. The staff app shows them on
+  the discharge panel and on the bill, with "Credit the returns".
+* **The billing desk asks, an approver credits** (`POST /bills/{id}/return-credit`, approval `billing.return_credit`,
+  permission `billing.refunds.approve`; the person who asked never approves). The bill works the credit out as it
+  worked out the sale (`ReturnCredits.Split`): each return's package gives back what it absorbed, the rest is credited
+  at the sale's tariff concession with a proportional share of the bill discount and its GST, and the payer's share is
+  worked out again with the returns, on the bill's co-pay and cap. An insurer that paid all of the injection gets
+  ₹3,000 off what it owes, and the patient nothing; with a 10% co-pay, ₹2,700 and ₹300; an insurer capped at its
+  approved amount still pays it, so the return is the patient's; a return the package absorbed gives the package its
+  allowance back and nobody money. The approver sees each return with its two shares.
+* **Two credit notes at most, through the credit-note flow.** The patient's share is a credit note to the patient (it
+  lowers what the patient owes, and what the patient paid beyond that becomes refundable). The payer's share is a
+  payer credit note for returns (`kind: PayerReturn`): it takes the share off what the payer owes, counted with what
+  the payer will not pay (`payerDisallowedAmount`, so its claim, its outstanding and the receivables fall with it), off
+  its invoice in GST terms (a `CRN` e-invoice to a payer registered for GST), and off its ledger in Tally against the
+  bill. Each note names the bill lines that charged what came back (the line it came from first) and takes back their
+  GST at their rate. The returns are then billed on the bill, with nothing left to bill.
+* **Not while the payer's claim is under way** (422 `billing.return_claim_open`): the claim was for the payer's share
+  before the return, and its settlement would no longer fit. Tell the insurer; once it settles or rejects the claim,
+  the return is credited. When the payer has paid in full already, its share cannot come off what it owes, which is
+  nothing (422 `billing.payer_credit_exceeds_owed`): the claim desk takes up the overpayment with the payer.
+
+The desk's own credit-note form does not issue a `PayerReturn` (422 `billing.credit_returns_on_the_bill`), and a
+payer credit note of deductions counts the payer's credit notes for returns, so nothing is credited twice.
+`WardReturnAfterFinalBillTests` (in `tests/HyFib.HealthCare360.IntegrationTests`) proves an insured stay's and a
+self-paying stay's late return end to end, and the return of something issued after an insured stay's final bill.
+
 ## Debit notes
 A **debit note** (supplementary invoice, CGST Act s.34(3), CGST rule 53) raises what a finalized bill charged for
 services on it: a rate charged short, a quantity under-billed. The billing desk names the services and the taxable
-value each is raised by; GST is added at each service's rate, IGST to another state or CGST and SGST within it
+value each is raised by; GST is added at each service's rate, as CGST and SGST (IGST on a bill that charged IGST)
 (`DebitNotes.Gst`). It is charged to the patient (`debitAmount`: the bill owes again, a paid bill becomes partly paid)
 or to the payer (`payerDebitAmount`, added to what the payer owes). One person asks and another issues it (approval
 `billing.debit_note`, permission `billing.refunds.approve`), on the bill as it was asked against. It is numbered in its
 own series (`billing.debitnote`, `{FAC}DB{YY}{SEQ:6}`) and listed on the bill (`debitNotes`). A debit note to a payer
 registered for GST on a bill with GST is a `DBN` e-invoice naming the bill (`DebitNoteEInvoiceSource`), after the
-bill's IRN. It is in GSTR-1 (CDNR, or netted into B2CS for a patient) and GSTR-3B.
+bill's IRN. It is in GSTR-1 (CDNR, or netted into B2CS for a patient) and GSTR-3B. In the Tally day book it is a
+Debit Note numbered by the note: the patient's ledger, or the payer's against the bill, is debited with it, and income
+by the department of each service and output GST by rate are credited, as the bill's own sale credited them. A patient
+debit note is also how a share the payer would not pay is charged to the patient, after a payer credit note took it off
+the payer's invoice ([Cancelling a bill](#cancelling-a-bill)).
 
 ## GST e-invoicing
 GST rule 48(4) requires a B2B tax invoice of a taxpayer above the notified turnover to carry an IRN from the Invoice
@@ -973,7 +1064,8 @@ is not set, nothing is listed and nothing can be recorded.
   to reduce the GST, and a return after it are not reported.
 * **The JSON.** `InvoiceRegistrationPayload` writes the portal's INV-01 schema, version 1.1: B2B, `INV` or `CRN` (a
   credit note names the invoice it reduces in `RefDtls.PrecDocDtls`, its number and date), the facility as
-  the supplier (legal name, address line, city, PIN code and state from its GSTIN), the buyer with the place of supply,
+  the supplier (legal name, address line, city, PIN code and state from its GSTIN), the buyer with its own state code
+  and the place of supply (for a bill or its note, the hospital's state, wherever the buyer is registered),
   every line with its SAC (services, `IsServc` Y) or HSN code (medicines, unit `NOS`), quantity, unit price, discount,
   taxable value, GST rate and IGST or CGST and SGST, and the totals. A pharmacy line goes at its taxable value (MRP
   includes GST), with no separate discount.
@@ -1328,6 +1420,7 @@ Handled (all inside the raising transaction; handlers stage changes and never sa
 | `BillFinalized`, `BillPaid`, `BillCancelled`, `BillPaymentReversed` | Doctor-fee accrual (idempotent per bill line; a line whose accrual was reversed accrues again) and reversal |
 | `BillFinalized` | A bill with GST to a payer with a GSTIN queues `billing.einvoice.generate` ([Automatic IRNs](#automatic-irns)) |
 | `GoodsReceiptPosted` (Supply chain) | A goods receipt of an earlier day queues `billing.tally.late-purchase`: its day goes to Tally again if it went already ([The Tally day book](#the-tally-day-book)) |
+| `DayBookEntryBackdated` (Pharmacy) | A pharmacy sale entered from paper for an earlier day queues `billing.tally.late-entry`: its day goes to Tally again if it went already ([The Tally day book](#the-tally-day-book)) |
 
 ### Appointment prepayments (OA-03)
 Scheduling posts nothing to billing. The outbox handler `billing.appointment.prepayment` (retried with back-off)
@@ -1649,10 +1742,11 @@ bank references, one voucher per pharmacy invoice, GST by rate, purchases) are r
   Sales"). The bill number stays the voucher's number. A bill cancelled on the day is a Credit Note `<bill>/C`, whatever
   its type;
 * a Receipt per receipt (a Journal for an advance adjustment), a Payment per refund paid, a Credit Note per credit note
-  or write-off, a Journal per claim deduction (`<claim>/<six hex digits of the settlement>`). A credit note debits sales
-  returns with its taxable value and the output CGST, SGST or IGST ledgers with the GST it takes back, at the rate of the
-  lines it corrects ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)); a write-off debits
-  write-offs with the whole amount;
+  or write-off, a Debit Note per debit note, a Journal per claim deduction (`<claim>/<six hex digits of the
+  settlement>`). A credit note debits sales returns with its taxable value and the output CGST, SGST or IGST ledgers with
+  the GST it takes back, at the rate of the lines it corrects ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes));
+  a write-off debits write-offs with the whole amount. A debit note debits the patient's ledger, or the payer's, with
+  what it adds, and credits income by department and output GST by rate ([Debit notes](#debit-notes));
 * a Journal per reversal made on the day, numbered by the reversal: money not received (`RR…`) turns the receipt's
   entries round for the lines taken back, and a refund not paid out (`RX…`) turns its payment round. The day the
   receipt or refund was recorded keeps its own voucher;
@@ -1687,6 +1781,13 @@ bank references, one voucher per pharmacy invoice, GST by rate, purchases) are r
   `All` or `None`. A goods receipt posted after the day it was received joins that day's day book. When that day went
   to Tally already, posting the receipt (Platform event `GoodsReceiptPosted`) queues `billing.tally.late-purchase`, and
   `TallyCorrections` queues the day again if the facility posts that receipt as a purchase;
+* A bill, a receipt or a pharmacy sale entered from paper is dated at the time on the paper, so it is in the day book of
+  that day. When the paper is of an earlier day (India time), saving it queues `billing.tally.late-entry` in the same
+  transaction (`BillService.FinalizeAsync` and `ReceiptService.CollectForBillAsync` through `LateEntryQueue`; for a
+  pharmacy sale, Platform event `DayBookEntryBackdated`, handled in Billing), and `TallyCorrections` queues that day
+  again when it went to Tally already. The nightly post sends yesterday only and leaves alone a day already sent after it
+  ended, so without this such an entry would never reach Tally. A day not yet sent is left to the nightly post, and an
+  entry dated today needs nothing;
 * a Debit Note per purchase return and a Journal per supplier payable adjustment posted on the day
   (`IVendorAccountsSource`, see [supplychain.md](supplychain.md)): input GST taken back by rate;
 * a Journal per payment gateway settlement processed on the day (see [Settlement journal](#gateway-reconciliation-int-pg));
@@ -1715,13 +1816,14 @@ so their outstandings show bill by bill in Tally (`BILLALLOCATIONS.LIST`):
 | Voucher | Line | Reference |
 |---|---|---|
 | Sales voucher of a bill | the payer's share | New Ref, the bill number |
-| Its cancellation, an insurer's settlement receipt, a claim deduction | the payer | Agst Ref, the bill number |
+| Its cancellation, an insurer's settlement receipt, a claim deduction, a debit note to the payer, the payer's credit note for returns | the payer | Agst Ref, the bill number |
 | Purchase | the supplier | New Ref, the supplier's invoice number |
 | Purchase return (Debit Note) | the supplier | Agst Ref, the supplier's invoice of the goods receipt the note names; On Account when it names none |
 | Supplier payable adjustment | the supplier | On Account: HC360 ties an adjustment to no invoice |
 
-A payer credit note posts nothing to the payer's ledger: the claim deduction it converts already reduced the bill. The
-patients' ledgers carry no references. A line merged with a part that names no bill (two shares on one ledger) has that
+A payer credit note of deductions posts nothing to the payer's ledger: the claim deduction it converts already reduced
+the bill. A payer's credit note for returns does: its Credit Note debits sales returns and output GST, and credits the
+payer, against the bill. The patients' ledgers carry no references. A line merged with a part that names no bill (two shares on one ledger) has that
 part On Account, so a line's allocations always add up to it.
 
 **Bank details** (T15). A line on a ledger listed as a bank account in Tally (`bankLedgers`) carries the cheque or UTR
@@ -1791,7 +1893,7 @@ vouchers that left the day book (the screen lists them for deleting in Tally fir
 **Records check** (`TallyRecordsCheck`, inside HC360). The day book's figures against the records they come from:
 bills finalised and cancelled (count and amount), money received and paid back per payment mode against the cashier
 day-end report, deposits and advances, advance adjustments, insurer settlements, claim deductions, credit notes,
-write-offs, doctor-fee accruals and payouts. Open shifts and cash shortages or excesses are listed as notes (the day
+write-offs, debit notes, doctor-fee accruals and payouts. Open shifts and cash shortages or excesses are listed as notes (the day
 book has no voucher for them). The pharmacy and canteen lines are totals only: the day book takes them from the
 counter's own day, which HC360 has no second record of, so they are shown but never counted as matched or different;
 the pharmacy's totals are the same whether its day goes invoice by invoice or summarised. Purchases are not in the
@@ -1830,6 +1932,9 @@ the bill's day again, never to delete it.
 * `billing.tally.late-purchase` — a goods receipt of an earlier day was posted into stock (queued by
   `GoodsReceiptPostedHandler` in Supply chain's transaction): its day is queued again when it went to Tally already and
   the facility posts the receipt as a purchase. Local lane.
+* `billing.tally.late-entry` — a paper bill, a receipt from the manual receipt book or a pharmacy sale dated in an
+  earlier day was saved (queued by `LateEntryQueue` in the entry's transaction, for a pharmacy sale by
+  `DayBookEntryBackdatedHandler`): that day is queued again when it went to Tally already. Local lane.
 * `billing.appointment.prepayment` — see above.
 * `billing.einvoice.generate` — asks the portal for a document's IRN once it is final, retried while the portal does not
   answer or a note's invoice waits for its IRN, not after a refusal; see [Automatic IRNs](#automatic-irns).
@@ -1996,8 +2101,8 @@ bill line, restrict; unique number), `bills.debit_amount` and `payer_debit_amoun
 * **A payer credit note does not come from the settlement.** The claim desk records the deduction; the billing desk
   asks for the GST credit note on the bill afterwards. A deduction that is not a price reduction (a non-payable item
   the patient pays) needs none.
-* **Debit notes print and post nowhere yet.** A debit note has no printed document and no Tally voucher; the payer
-  receivable ageing (insurance claims) does not add payer debit notes.
+* **Debit notes have no print yet.** A debit note has no printed document; the payer receivable ageing (insurance
+  claims) does not add payer debit notes.
 * **GST returns.** The canteen's bills are not in them; amendments of earlier periods (B2BA, CDNRA), filing through a
   GSP, the rule 42 reversal and the GSTR-2B match are the accountant's. A series already in use with a stored number
   format longer than 16 characters keeps it until an administrator changes it.

@@ -1,9 +1,10 @@
 namespace HyFib.HealthCare360.IntegrationTests;
 
 /// <summary>
-/// The tests that cross midnight in India (<see cref="MidnightInIndiaTests"/>), on a server of their own whose clock they
-/// set. xUnit runs a collection with parallelization disabled by itself, after all the others, so that server never runs
-/// beside the shared server's tests, and none of them waits for it.
+/// The tests that cross midnight in India (<see cref="MidnightInIndiaTests"/>, and <see cref="MarChartAheadTests"/>, which
+/// lets a week of a patient's medicines pass), on a server of their own whose clock they set. xUnit runs a collection with
+/// parallelization disabled by itself, after all the others, so that server never runs beside the shared server's tests,
+/// and none of them waits for it.
 /// </summary>
 [CollectionDefinition(Name, DisableParallelization = true)]
 public sealed class MidnightInIndiaCollection : ICollectionFixture<MidnightInIndiaServer>
@@ -15,7 +16,8 @@ public sealed class MidnightInIndiaCollection : ICollectionFixture<MidnightInInd
 /// A hospital server on a database of its own and on a clock the tests set (<see cref="TestClock"/>), seeded as the shared
 /// server is. The clock starts at 09:00 on Monday 21 December 2026 in India and only goes forward. Each test takes the next
 /// evening it needs (<see cref="NextEvening"/>): the test of the year's turn takes New Year's Eve, which no other test takes,
-/// and the others an ordinary day each, so the tests may run in any order and none waits for another's day.
+/// and the others an ordinary day each (the medication chart's test a week of them), so the tests may run in any order and
+/// none waits for another's day.
 /// </summary>
 public sealed class MidnightInIndiaServer : IAsyncLifetime
 {

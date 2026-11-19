@@ -82,6 +82,21 @@ public sealed class TallyService(
             .Where(c => c.FacilityId == facilityId && c.IssuedAt >= start && c.IssuedAt < end)
             .OrderBy(c => c.IssuedAt)
             .ToListAsync(ct);
+
+        // A payer's credit note for returns comes off the payer's ledger, against its bill.
+        var returnBillIds = creditNotes.Where(c => c.Kind == CreditNoteKind.PayerReturn).Select(c => c.BillId).Distinct().ToList();
+        var returnBills = returnBillIds.Count == 0
+            ? []
+            : await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(b => returnBillIds.Contains(b.Id))
+                .ToDictionaryAsync(b => b.Id, b => new { b.BillNumber, b.PayerId }, ct);
+        var debitNotes = await (
+                from n in db.Set<DebitNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(n => n.Lines)
+                join b in db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on n.BillId equals b.Id
+                where n.FacilityId == facilityId && n.IssuedAt >= start && n.IssuedAt < end
+                orderby n.IssuedAt
+                select new { Note = n, b.BillNumber, b.PayerId })
+            .ToListAsync(ct);
         var fees = await db.Set<DoctorFeeAccrual>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(a => a.FacilityId == facilityId && a.AccruedOn == date)
             .GroupBy(a => a.PractitionerId)
@@ -103,10 +118,22 @@ public sealed class TallyService(
         var payerIds = bills.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value)
             .Concat(receipts.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value))
             .Concat(disallowances.Select(d => d.PayerId))
+            .Concat(debitNotes.Where(d => d.Note.Party == DebitNoteParty.Payer && d.PayerId is not null).Select(d => d.PayerId!.Value))
+            .Concat(returnBills.Values.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value))
             .Distinct()
             .ToList();
         var payers = await db.Set<Payer>().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
-        var departmentIds = bills.SelectMany(b => b.Lines).Where(l => l.DepartmentId is not null).Select(l => l.DepartmentId!.Value).Distinct().ToList();
+
+        // A debit note's income goes to the department of each service it raises, as the bill's sale did.
+        var debitedLineIds = debitNotes.SelectMany(d => d.Note.Lines).Select(l => l.BillLineId).Distinct().ToList();
+        var debitedDepartments = debitedLineIds.Count == 0
+            ? []
+            : await db.Set<BillLine>().AsNoTracking()
+                .Where(l => debitedLineIds.Contains(l.Id))
+                .ToDictionaryAsync(l => l.Id, l => l.DepartmentId, ct);
+        var departmentIds = bills.SelectMany(b => b.Lines).Select(l => l.DepartmentId)
+            .Concat(debitedDepartments.Values)
+            .Where(d => d is not null).Select(d => d!.Value).Distinct().ToList();
         var departments = await db.Set<Department>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(d => departmentIds.Contains(d.Id))
             .ToDictionaryAsync(d => d.Id, d => new { d.Code, d.Name }, ct);
@@ -118,12 +145,13 @@ public sealed class TallyService(
         var counters = await CountersAsync(facilityId, date, ct);
         var counterInvoices = await CounterInvoicesAsync(facilityId, date, ct);
 
-        // The patients of the day's bills, receipts, refunds and credit notes, and of the counters' invoices, returns and
-        // balances paid, in one read, for the narrations.
+        // The patients of the day's bills, receipts, refunds, credit and debit notes, and of the counters' invoices, returns
+        // and balances paid, in one read, for the narrations.
         var patientIds = bills.Select(b => b.PatientId)
             .Concat(receipts.Select(r => r.PatientId))
             .Concat(refunds.Select(r => r.PatientId))
             .Concat(creditNotes.Select(c => c.PatientId))
+            .Concat(debitNotes.Select(d => d.Note.PatientId))
             .Concat(counterInvoices.SelectMany(c => c.Invoices.Select(i => i.PatientId)
                 .Concat(c.Returns.Select(r => r.PatientId))
                 .Concat(c.Collections.Select(x => x.PatientId)))
@@ -209,6 +237,8 @@ public sealed class TallyService(
             {
                 Patient = patients.GetValueOrDefault(c.PatientId),
                 Gst = c.Lines.Where(l => l.GstAmount != 0).Select(l => new TallyGstLine(l.GstRate, l.CgstAmount, l.SgstAmount, l.IgstAmount)).ToList(),
+                PayerName = returnBills.GetValueOrDefault(c.BillId)?.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null,
+                BillNumber = returnBills.GetValueOrDefault(c.BillId)?.BillNumber,
             }).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",
@@ -228,6 +258,17 @@ public sealed class TallyService(
             CounterInvoices = counterInvoices,
             Patients = patients,
             LegacyDoctorFeeNumbers = legacy,
+            DebitNotes = debitNotes.Select(d => new TallyDebitNote(
+                d.Note.Number, date, d.BillNumber ?? string.Empty, d.Note.Party,
+                d.Note.Party == DebitNoteParty.Payer && d.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null, d.Note.Amount)
+            {
+                Patient = patients.GetValueOrDefault(d.Note.PatientId),
+                Lines = d.Note.Lines.OrderBy(l => l.SortOrder).Select(l =>
+                {
+                    var department = debitedDepartments.GetValueOrDefault(l.BillLineId) is { } id ? departments.GetValueOrDefault(id) : null;
+                    return new TallySaleLine(department?.Code, department?.Name, l.TaxableAmount, 0m, l.CgstAmount, l.SgstAmount, l.IgstAmount, l.GstRate);
+                }).ToList(),
+            }).ToList(),
             PosSettlements = await PosSettlementService.ForDayBookAsync(db, facilityId, date, facilityCode, ct),
             // An insurer's settlement is never reversed (ReversalRules), so no reversal posts to a payer's ledger.
             ReceiptReversals = receiptReversals.Select(r => new TallyReceiptReversal(

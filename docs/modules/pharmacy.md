@@ -62,8 +62,9 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   until a pharmacist (`pharmacy.dispense`) acknowledges it from their own sign-in, with what they did if they wish ("spoke
   to the doctor"). The account that signed the prescription never acknowledges it (403). The acknowledgement is audited
   at Warning (`pharmacy.safety_override_acknowledged`) with the patient, the alert, the doctor's reason, the note and the
-  pharmacist. A refill is acknowledged again by whoever dispenses it. A ward indent is not tied to a prescription line, so
-  an issue against an indent does not carry the override (the ward's own order did, and the MAR witnesses its doses).
+  pharmacist. A refill is acknowledged again by whoever dispenses it. An indent raised for an e-prescription supplies its
+  lines (*In-patient pharmacy*), so such a line goes out on the indent only once it is acknowledged too. An indent for no
+  prescription carries no override: the ward's own order did, and the MAR witnesses its doses.
 * **Partial supply**: each line dispenses up to its remaining quantity (`queue.over_dispense`). The entry stays
   *PartiallyDispensed* until every line is done.
 * **FEFO** or a scanned batch, with a minimum shelf life of min(course days, 30), so medicine never expires mid-course.
@@ -151,12 +152,15 @@ Patients module's `DowntimeNumberService`, which the pharmacy registers the seri
 series, out of order within the block, or in the future (400 on `paper.at`), and one past the *Pharmacy sale from paper*
 back-entry window (`downtime.backEntryHours.pharmacySale`, 72 hours, at most 14 days) with no late back-entry approval
 (422 `backentry.late`). The invoice then takes the number as its invoice number and the time as `soldAt`, its payments,
-the controlled-drug register lines and the day book are dated at the time on the paper, and `enteredFromPaperAt` records
-when it was entered (`PharmacySaleDetail.enteredFromPaperAt`; the entry is audited as `patients.entered_from_paper`
+the day book is dated at the time on the paper, and `enteredFromPaperAt` records when it was entered (`PharmacySaleDetail.enteredFromPaperAt`; the entry is audited as `patients.entered_from_paper`
 against the sale). Stock moves when the sale is entered, from the batches handed over: the stock ledger shows the entry
-time, not the paper's. A counter sale made on paper whose prescription reference is the number of an open OP queue entry
+time, not the paper's. The controlled-drug register is dated the same way, when the line is written: a bound register is
+in order, and each line's running balance is the stock after its own movement, so a line dated at the paper's time would
+sit among movements made since and carry a balance that does not follow from them. The line's `remarks` say "Entered from
+the paper sale of 10 Nov 2026 22:30 IST, invoice …", with the paper's time and the invoice. A counter sale made on paper whose prescription reference is the number of an open OP queue entry
 of the same patient closes that entry as dispensed on paper (the entry's `paperSaleNumber` names the invoice), so the
-prescription does not come back in the queue. Nothing is changed when any check fails.
+prescription does not come back in the queue. A paper of an earlier day also raises `DayBookEntryBackdated`, so that day's
+Tally day book is sent again if it went already. Nothing is changed when any check fails.
 
 OTC blocking (`SchedulePolicy`, Drugs & Cosmetics Rules): Schedule H, H1, X and NDPS medicines are never sold
 without a prescription (`pharmacy.prescription_required`, with the offending items in `data.items`). H1/X also
@@ -256,11 +260,23 @@ Money out of the pharmacy, and stock written off, are made only when a second pe
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/ward-indents?page&status&admissionId&includeClosed` · `/ward-indents/{id}?storeId` | `pharmacy.ip.issue` or `pharmacy.ip.indent` | → paged `WardIndentListItem` (STAT first, then oldest) · `WardIndentDetail` (lines with availability) |
-| POST | `/ward-indents` | `pharmacy.ip.indent` | `RaiseWardIndentRequest` (patientId, admissionId, visitId, wardName, bedLabel, urgency Routine/Stat, prescriptionId?, remarks, lines[itemId, quantity, remarks]) → 201 `PharmacyDocumentCreated` |
+| POST | `/ward-indents` | `pharmacy.ip.indent` | `RaiseWardIndentRequest` (patientId, admissionId, visitId, wardName, bedLabel, urgency Routine/Stat, prescriptionId? (the in-patient e-prescription it supplies), remarks, lines[itemId, quantity, remarks]) → 201 `PharmacyDocumentCreated`; 400 on `prescriptionId` (not one of the admission's in-patient prescriptions) |
 | POST | `/ward-indents/{id}/cancel` | `pharmacy.ip.issue` or `pharmacy.ip.indent` | `PharmacyReasonRequest` → 204 (what was already issued stays issued) |
 | GET | `/ip-issues?page&admissionId&patientId` · `/ip-issues/{id}` | same | → paged `IpIssueListItem` · `IpIssueDetail` (lines with charge ids, returns, `pending`: a ward return waiting for a second pharmacist) |
-| POST | `/ip-issues` | `pharmacy.ip.issue` | `IpIssueRequest` (storeId, wardIndentId? or queueEntryId?, patientId, admissionId, visitId, lines[itemId, quantity, batchId?, wardIndentLineId?, queueLineId?, substitutionReason, prescriberConsent], confirmControlledDrugs) → 201 `IpIssueCreated` (id, number, totalAmount) |
+| POST | `/ip-issues` | `pharmacy.ip.issue` | `IpIssueRequest` (storeId, wardIndentId? or queueEntryId?, patientId, admissionId, visitId, lines[itemId, quantity, batchId?, wardIndentLineId?, queueLineId?, substitutionReason, prescriberConsent], confirmControlledDrugs) → 201 `IpIssueCreated` (id, number, totalAmount); an indent's line of a drug its prescription carries is issued for that prescription line (below) |
 | POST | `/ip-issues/{id}/returns` | `pharmacy.ip.issue` | `WardReturnRequest` (lines[ipIssueLineId, quantity, restock], reason; each line once) → 201 `WardReturnCreated` (id, number, creditAmount) when every line is restocked; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.ward_return`) for a second pharmacist |
+
+**An indent for an e-prescription.** The ward raises an indent for an e-prescribed medicine with its prescription
+(`prescriptionId`): the staff app's indent form sets it when an active e-prescription line of the patient's chart names
+the drug (for staff who can read the chart), one prescription per indent, and says which medicines are on another one,
+to indent on their own. A medicine on the indent that the prescription's IP queue entry has a line for, with a quantity
+left to supply, is issued for that line. The line is held as the queue holds it: not before a pharmacist acknowledges a
+prescriber's override (422 `pharmacy.override_unacknowledged`), and a restricted antibiotic only as stewardship allows.
+The issue line carries the prescription line, so the MAR charts the prescription's own line and makes no second one.
+What is issued, up to what is left on the line, is counted on the queue entry, which then does not offer, issue or
+charge it again; more than is left (a replacement ampoule) is the indent's own. A statutory register entry names the
+prescription and its doctor. A medicine the prescription does not carry is issued on the indent alone, and the MAR
+charts it on the chart's line of that drug, if any (`docs/modules/inpatient.md`, *What the pharmacy issues*).
 
 **Charges** go through `IChargePoster`, which is implemented by Billing and idempotent on SourceModule + SourceReference:
 * Each issue line is posted at its price (`UnitPriceOverride` = the line's `unitPrice`) with
@@ -280,13 +296,16 @@ Money out of the pharmacy, and stock written off, are made only when a second pe
 ### Registers — `/registers` (PH-06 statutory)
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
-| GET | `/registers/controlled?page&storeId&itemId&schedule&from&to` | `pharmacy.registers` | → paged `ControlledRegisterRow` (Schedule H1/X and NDPS; per item and store in posting order: movement, quantity in/out, running balance, batch/expiry, patient name/UHID/address, prescriber and registration number, prescription and document number, recorded by) |
+| GET | `/registers/controlled?page&storeId&itemId&schedule&from&to` | `pharmacy.registers` | → paged `ControlledRegisterRow` (Schedule H1/X and NDPS; per item and store in posting order: movement, quantity in/out, running balance, batch/expiry, patient name/UHID/address, prescriber and registration number, prescription and document number, recorded by, remarks) |
 | GET | `/registers/controlled/export?…` | `pharmacy.registers` | → CSV (UTF-8 BOM, IST times, formula-injection-safe cells); the export is audited |
 | GET | `/registers/schedule-h?page&storeId&from&to` | `pharmacy.registers` | → paged `ScheduleHRegisterRow` (Schedule H supplies from sales and IP issues, with patient, prescriber and prescription; H1 lines are in the controlled register) |
 | GET | `/registers/schedule-h/export?…` | `pharmacy.registers` | → CSV, audited |
 
 The controlled-drug register holds exactly one line per stock-ledger movement (unique `ledger_entry_id`). Pharmacy
-documents write their own lines with the patient and prescriber. Everything else arrives through
+documents write their own lines with the patient and prescriber. A line is dated when it is written: a sale entered from
+paper after a downtime is written when it is entered, and its `remarks` carry the paper's time and the invoice (the
+invoice, the GST return and the day book keep the paper's date). `remarks` are shown on the register page, in its CSV, and
+on the NDPS accounts (Form 3H, Form 3E and the Form 3H CSV). Everything else arrives through
 `ControlledStockMoved` (see Events): GRN, transfers, adjustments, write-offs, OT consumption.
 
 ### Recall trace — `/recalls/trace`
@@ -376,6 +395,7 @@ Refill rules. Authorised on the original OP prescription only, at most 12 refill
 | `PatientDischarged` (Inpatient) | handled | Cancels pending ward indents and closes open IP queue entries |
 | `PatientsMerged` (Patients) | handled | Moves queue entries, sales, returns, ward indents/issues/returns, refill requests and register links to the surviving patient (printed names/UHIDs on register lines are kept) |
 | `ControlledStockMoved` (SupplyChain) | handled | Writes the register line for movements whose reference module does not start with `pharmacy.` (pharmacy writes its own) |
+| `DayBookEntryBackdated` (Platform.Contracts) | raised | When a sale is entered from paper for an earlier day (India time), in the sale's transaction. Billing queues that day's Tally day book again if it went already (docs/modules/billing.md). Nothing is raised for a paper of today |
 | `MedicationDispensed` (Platform.Contracts) | raised | On OP dispensing and counter sales to a registered patient (walk-in customers have none), and on every IP issue. Feeds medication history and the nursing MAR (handled by Inpatient) |
 
 Stock ledger references written by this module: `pharmacy.dispense`, `pharmacy.sale`, `pharmacy.return`,

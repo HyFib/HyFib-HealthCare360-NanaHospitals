@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
@@ -36,6 +37,7 @@ internal static class SampleEndpoints
         HospitalDbContext db,
         DiagnosticsLookups lookups,
         IFieldProtector protector,
+        TubeNumbers tubeNumbers,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -58,10 +60,7 @@ internal static class SampleEndpoints
 
         if (page.SearchTerm is { } term)
         {
-            var code = term.ToUpperInvariant();
-            var matching = db.Set<Patient>().Search(term, protector).Select(p => p.Id);
-            tubes = tubes.Where(s => s.Barcode == term || matching.Contains(s.PatientId)
-                                     || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
+            tubes = tubes.Where(SearchFilter(term, await tubeNumbers.MatchingAsync(term, ct), db, protector));
         }
 
         var paged = await tubes.OrderByUrgency(s => s.Priority).ThenBy(s => s.CreatedAt)
@@ -94,6 +93,20 @@ internal static class SampleEndpoints
         }));
     }
 
+    /// <summary>
+    /// The tubes waiting to be drawn that <paramref name="term"/> finds: by tube number (<paramref name="byNumber"/>, from
+    /// <see cref="TubeNumbers"/>), by the patient's name or number, or by the order number. A tube number whose check digit
+    /// does not match finds no tube; a patient's name or number still does. One condition on the tube, translated in the
+    /// list's own query.
+    /// </summary>
+    internal static Expression<Func<LabSample, bool>> SearchFilter(
+        string term, Expression<Func<LabSample, bool>> byNumber, HospitalDbContext db, IFieldProtector protector)
+    {
+        var code = term.ToUpperInvariant();
+        var matching = db.Set<Patient>().Search(term, protector).Select(p => p.Id);
+        return TubeNumbers.Or(byNumber, s => matching.Contains(s.PatientId) || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
+    }
+
     private static async Task<IResult> Collect(Guid id, CollectSamplesRequest request, SampleService samples, CancellationToken ct) =>
         (await samples.CollectAsync(id, request, ct)).ToOk();
 
@@ -110,7 +123,5 @@ internal static class SampleEndpoints
         (await samples.RecollectAsync(id, ct)).ToOk();
 
     private static async Task<IResult> ByBarcode(string barcode, SampleService samples, CancellationToken ct) =>
-        await samples.FindByBarcodeAsync(barcode, ct) is { } sample
-            ? TypedResults.Ok(sample)
-            : Error.NotFound(nameof(LabSample), barcode).ToProblem();
+        (await samples.FindByBarcodeAsync(barcode, ct)).ToOk();
 }

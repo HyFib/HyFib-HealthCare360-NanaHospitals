@@ -120,7 +120,9 @@ public sealed class CreditNoteGstTests(HospitalServer server)
         await MakerChecker.ApproveAsync(accountant, await AskAsync(billing, bill, new IssueCreditNoteRequest(
             CreditNoteKind.CreditNote, 118m, "Lounge charged for a day not used", [new(loungeLine.Id, 118m)])));
         var note = (await BillOfAsync(billing, bill)).CreditNotes.ShouldHaveSingleItem();
-        (note.TaxableAmount, note.Lines!.Single().Igst).ShouldBe((100m, 18m), "To Kerala the GST given back is IGST, as the bill charged it.");
+        // The bill to the Kerala company was supplied in Tamil Nadu (IGST Act s.12(4)), so the GST given back is CGST and SGST, as
+        // the bill charged it.
+        (note.TaxableAmount, note.Lines!.Single().Cgst, note.Lines!.Single().Sgst, note.Lines!.Single().Igst).ShouldBe((100m, 9m, 9m, 0m));
 
         // It waits in the register as a credit note against the bill, and goes to the portal after the bill's own IRN.
         var row = (await accountant.GetAsync<EInvoiceRegister>(Register)).Rows.Single(r => r.Id == note.Id);
@@ -146,7 +148,9 @@ public sealed class CreditNoteGstTests(HospitalServer server)
         (crn["DocDtls"]!["Typ"]!.GetValue<string>(), crn["DocDtls"]!["No"]!.GetValue<string>()).ShouldBe(("CRN", note.Number));
         crn["RefDtls"]!["PrecDocDtls"]![0]!["InvNo"]!.GetValue<string>().ShouldBe(bill.BillNumber);
         var item = crn["ItemList"]!.AsArray().ShouldHaveSingleItem()!;
-        (item["AssAmt"]!.GetValue<decimal>(), item["IgstAmt"]!.GetValue<decimal>(), item["HsnCd"]!.GetValue<string>()).ShouldBe((100m, 18m, "999799"));
+        (item["AssAmt"]!.GetValue<decimal>(), item["CgstAmt"]!.GetValue<decimal>(), item["SgstAmt"]!.GetValue<decimal>(), item["IgstAmt"]!.GetValue<decimal>(),
+            item["HsnCd"]!.GetValue<string>()).ShouldBe((100m, 9m, 9m, 0m, "999799"));
+        crn["BuyerDtls"]!["Pos"]!.GetValue<string>().ShouldBe("33");
         crn["ValDtls"]!["TotInvVal"]!.GetValue<decimal>().ShouldBe(118m);
 
         // The IRN the portal gave it must be a credit note's; the note then prints it.
@@ -167,7 +171,8 @@ public sealed class CreditNoteGstTests(HospitalServer server)
         printed.Html.ShouldNotContain("class=\"einvoice-due");
         printed.Html.ShouldContain($"Against tax invoice: <b>{bill.BillNumber}</b>");
         printed.Html.ShouldContain($"GSTIN <b>{EInvoicing.KeralaCompany}</b>");
-        printed.Html.ShouldContain("<tr><td>IGST credited</td><td class=\"num\">₹18.00</td></tr>");
+        printed.Html.ShouldContain("<tr><td>CGST credited</td><td class=\"num\">₹9.00</td></tr>");
+        printed.Html.ShouldContain("<tr><td>SGST credited</td><td class=\"num\">₹9.00</td></tr>");
         using (var pdf = await billing.SendRawAsync(HttpMethod.Get, $"/api/v1/billing/bills/{bill.Id}/credit-notes/{Guid.NewGuid()}/pdf"))
         {
             pdf.StatusCode.ShouldBe(HttpStatusCode.NotFound, "A note of another bill, or none, is not printed under this one.");

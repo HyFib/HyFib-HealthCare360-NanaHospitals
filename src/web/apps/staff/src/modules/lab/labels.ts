@@ -151,6 +151,7 @@ export const unmatchedReasonLabel: Record<UnmatchedResultReason, string> = {
   RepeatedInMessage: 'Sent twice, differently',
   Withdrawn: 'Withdrawn by the analyser',
   PatientMismatch: "Not this sample's patient",
+  MistypedTubeNumber: 'Tube number typed wrong',
 };
 
 export const unmatchedStatusLabel: Record<UnmatchedResultStatus, string> = {

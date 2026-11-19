@@ -122,9 +122,9 @@ writes the label (`lab-tubes`); otherwise the 50 × 25 mm label page prints. See
 | GET | `/worklist?section&status&priority` | results.enter or results.verify | → `PagedResult<WorklistItem>` (STAT first, then tubes with unverified critical values; pending/entered/verified/critical counts) |
 | GET | `/samples/{id}/results` | results.enter or results.verify | → `ResultSheet` (`ResultSheetLine`: value, flag, isCritical, referenceText, previous value, delta %, autoValidated, what the analyser said (instrumentCode, instrumentUnit, instrumentFlags, instrumentStatus, instrumentComment, and instrumentValue, its own word for an answer read as one of the test's), heldReasons (why it was not auto-validated), isCalculated and formula (a result HC360 calculated from others: see Calculated results), suggestedValue (a value the sheet fills in for a person to confirm: an arterial blood gas's FiO2, `21`; never stored until entered), susceptibilities, hasCriticalCall, version) |
 | POST | `/results` | `lab.results.enter` | `EnterResultsRequest` (`ResultEntry[]`: resultId, value, remarks, organism, colonyCount, susceptibilities) → `ResultSheetLine[]` (flags, reference text and delta computed server-side) |
-| POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` |
+| POST | `/results/verify` | `lab.results.verify` | `VerifyResultsRequest` (resultIds, qcOverrideReason, criticalCall `CriticalCallDetails`, release) → `VerificationOutcome`; 422 `lab.qc_lockout` (data: locked assays) or `lab.critical_call_required` (data.results: id, testName, value, flag, told; see *Critical values*) |
 | POST | `/results/{id}/reopen` | `lab.results.verify` | `ReopenResultRequest` (reason) → 204 (unreleased results only; released ones are amended) |
-| POST | `/results/{id}/critical-calls` | results.verify or results.enter | `CriticalCallDetails` (informedPersonName, role, informedPractitionerId, method, informedAt, readBackConfirmed = true, notes) → 201 |
+| POST | `/results/{id}/critical-calls` | results.verify or results.enter | `CriticalCallDetails` (informedPersonName, role, informedPractitionerId, method, informedAt, readBackConfirmed = true, notes) → 201; for a critical result, or one phoned before at another value (the call that corrects it); 422 `lab.not_critical` otherwise |
 
 ### Unmatched analyser results — `/api/v1/lab/unmatched-results`
 | Method | Path | Permission | Request → response |
@@ -345,10 +345,34 @@ diagnostics screen.
   their own tube. So the glucose tests that share the analyser's glucose channel (GLU: fasting, post-prandial and the
   glucose challenge test) never share a tube, and a GLU result goes on the test its tube was drawn for. An arterial
   blood gas (specimen `ArterialBlood`, a heparinised blood-gas syringe: container `Heparin`) is a syringe of its own
-  moment and of the FiO2 the patient breathed then, so two on one order are two syringes. Tube numbers (the "barcode") are numeric and unique across facilities: exactly 10 digits, from
-  1000000000 on, never with a leading zero (series `lab.sample`). Where the lab uses no barcodes (Nana Hospitals), the
-  technician writes the number on the tube and types it on the analyser as its sample id; the analyser's results come
-  back under it and are matched to the tube by the exact number, as a scanned barcode is.
+  moment and of the FiO2 the patient breathed then, so two on one order are two syringes.
+* **Tube numbers** (the "barcode") are numeric and unique across facilities: exactly 10 digits, never with a leading
+  zero, the last a check digit (series `lab.sample`, `{SEQ:9}{CHK}`: 1000000005, 1000000018 and on). Where the lab uses no
+  barcodes (Nana Hospitals), the technician writes the number on the tube and types it on the analyser as its sample id;
+  the analyser's results come back under it and are matched to the tube by the exact number, as a scanned barcode is.
+  The check digit (Damm's, see [numbering.md](numbering.md#how-a-number-is-made)) catches every number typed with one
+  digit wrong and every one with two neighbouring digits swapped: such a number is no tube's number, so it never
+  finds another patient's tube, such as the one drawn just before (`TubeNumbers`). Every place that finds a tube by a
+  number someone typed or an analyser sent checks it first:
+  - analyser results: kept among the unmatched results as `MistypedTubeNumber`, and no tube changes or is received;
+  - host queries: answered with no order, so the analyser shows no patient for the number;
+  - `GET /samples/by-barcode/{barcode}`: 422 `lab.tube_number_mistyped`;
+  - `POST /samples/receive`: that number's outcome is not received;
+  - the worklist's and collection list's search: finds no tube by that number (a patient or accession still matches).
+
+  Staff read: "1000012352 is not a tube number: its last digit, the check digit, does not match the others. A digit was
+  typed wrong, or two were swapped. Check the number written on the tube and type it again." The staff app's scan boxes
+  (result entry, receipt, assigning an unmatched result) warn as soon as such a number is typed: "The last digit does
+  not match the others: check the tube number."
+
+  **Tubes numbered before the check digit** (a database from before November 2026) keep their numbers and are found by
+  them exactly. On upgrade the seeder brings the series to `{SEQ:9}{CHK}` and counts its counter in tens of the old
+  numbers, so the next tube is above every number issued (a counter at 1000012346 goes on from 1000012350), and writes
+  when it did so to `lab.tubeCheckDigitSince` (see *Settings*): only a tube made before then is found by a number whose
+  check digit does not match. New numbers start just above the old ones, so a new tube's number typed with its last
+  digit wrong can be an old tube's exact number; such a number finds neither tube while a tube made since has a number
+  it could be a mistyping of (`TubeNumbers.Near`). An old tube's own number typed wrong cannot be caught (it had no
+  check digit): while old tubes are in the lab, check the patient's name the analyser or the screen shows.
 * **Sample state machine**: Pending → Collected → Received → InProcess → Completed; Rejected from Collected/Received/
   InProcess (reason; remarks required for Other) with a linked recollection tube; Cancelled when every test on it is
   cancelled. A second scan at receipt returns 409 `sample.already_received`; receipt before collection is refused.
@@ -459,7 +483,15 @@ diagnostics screen.
   ≤ 3 warning, above unacceptable). An unacceptable round is accepted only with its corrective action linked from the
   Quality module's CAPA register; a round not reported by its due date is overdue, and both are on the lab dashboard.
 * **Critical values**: verifying a critical result (or signing a critical imaging/cardiology finding) requires a
-  documented call with read-back (`CriticalCallLog`). The ordering doctor gets the `lab.critical` /
+  documented call with read-back (`CriticalCallLog`). For a lab result the call counts only for the value it was made
+  for (`CriticalCalls`): the register keeps each call's finding as text ("Potassium 7.2 mmol/L (CriticalHigh)"), and the
+  last call made is what the doctor or ward was last told. A value phoned and then changed before verification
+  (entered again, rerun, reopened) needs a new call, even when the new value is not critical: the ward may have acted on
+  the first value, and the new call corrects what it was told. Its finding says so ("Potassium 2.7 mmol/L (Low),
+  correcting Potassium 7.2 mmol/L (CriticalHigh)"). The same value with another flag (critical limits changed since)
+  keeps its call. Until then verification is refused with 422 `lab.critical_call_required`, whose `data.results` give,
+  for each result, the value now and `told`, the finding of the last call when that was another value; the result
+  sheet's `hasCriticalCall` is true only for a call made for the value as it is now. The ordering doctor gets the `lab.critical` /
   `diagnostics.critical_finding` SMS in the same transaction, plus in-app alerts to the doctor's user and to holders of
   `diagnostics.critical.alerts` after commit. Critical results are never auto-validated. An analyser result the analyser
   flagged critical (`HH`, `LL` or `AA`, HL7 OBX-8 or ASTM R.7) that is kept among the unmatched results is on no test,
@@ -471,6 +503,17 @@ diagnostics screen.
   the clinical `OrderItemId`. The QR code is assigned at first release. Corrections after release are numbered
   amendments with the reason and old → new values, re-announced as "(amended)"; a correction of an input carries the
   results calculated from it (see Calculated results).
+* **Who hears of an amendment**: the patient is sent the corrected report (`lab.report_amended`) in the amendment's
+  transaction, as the first one went (`lab.report_ready`): the same channels, the PDF on the same terms, in the patient's
+  language, and the same rules for a deceased patient and for a record in a protected category whose number another
+  patient shares (`ReportDelivery`), so they do not keep the wrong report. The ordering doctor is alerted in the app
+  ("Lab report amended: …"). Where no doctor in HC360 can be alerted (the order links none: a walk-in, or an outside
+  referral whose doctor is named in words; or the linked doctor has no staff account), holders of `lab.results.verify`
+  at the report's facility are alerted instead, through the outbox, naming the doctor to phone: "Lab report amended:
+  NHLR2600042: tell the doctor" and "Revision 1 of report NHLR2600042 corrects released results, and no doctor in HC360 is
+  alerted of it. Phone Dr. S. Murugan, Bodinayakanur, the doctor named on the order, and tell them the changes." (or,
+  when the order names none, to ask the patient who their doctor is). A correction that waits for a second pathologist
+  sends both when it is approved, not before.
 * **Charges**: posted when the item/study is created (`diagnostics.lab`, `diagnostics.radiology`,
   `diagnostics.cardiology`; SourceReference = item/study id; quantity from the order; departments LAB, RAD, CDX) and
   reversed on cancellation. A billing failure never blocks clinical work: the error is stored and can be retried.
@@ -580,6 +623,7 @@ event handlers go through the outbox (`diagnostics.realtime`, `diagnostics.staff
 | Key | Channels | Placeholders | Use |
 |---|---|---|---|
 | `lab.report_ready` | SMS, WhatsApp (platform defaults), Email (seeded here) | `name`, `reference`, `hospital` | Any diagnostic report released (lab, radiology, cardiology); skipped for deceased patients |
+| `lab.report_amended` | SMS, WhatsApp, Email (seeded here in English, Hindi and Tamil; WhatsApp seeded *Not in use* until Meta approves `lab_report_amended`) | `name`, `reference`, `hospital` | A released lab report corrected (amended), with the corrected report; the same rules as `lab.report_ready` |
 | `lab.critical` | SMS (platform default) | `patient`, `uhid`, `test`, `value` | Critical lab value to the ordering doctor |
 | `diagnostics.critical_finding` | SMS (seeded here) | `patient`, `uhid`, `study`, `finding` | Critical imaging/cardiology finding to the ordering doctor |
 
@@ -603,6 +647,7 @@ either way. SMS never carries it. Only released content is ever made into these 
 | `lab.requirePaymentBeforeCollection` | `true` | OP/external collection requires payment |
 | `lab.deltaCheckPercent` | `50` | Facility delta threshold when the test has none |
 | `lab.deltaCheckWindowDays` | `30` | How far back the previous result is looked for |
+| `lab.tubeCheckDigitSince` | none | Hospital-wide, written by the seeder (not by hand): when this database's tube numbers started ending in a check digit (UTC). Only a tube made before then is found by a number whose check digit does not match (see *Tube numbers*). Unset on a database that never numbered a tube without one. Any change waits for a second administrator, since moving it later lets a mistyped tube number find another patient's tube again |
 | `lab.barometricPressureMmHg` | `760` | The laboratory's barometric pressure in mmHg, the Patm of the arterial blood gas's A-a gradient (alveolar gas equation). 760 is sea level; at about 300 m, as at Theni, it is about 733. A value outside 400 - 800 leaves the gradient uncalculated, with why. Read when a gradient is calculated, so a change applies from the next result entered |
 | `radiology.pacs.autoLink` | `true` | Link the facility's new imaging studies with PACS every five minutes (`PacsLinkJob`) |
 | `pcpndt.registrationNumber` | none | The facility's PCPNDT registration (Form B), printed on every Form F. Until it is set, no Form F is recorded and ultrasounds in pregnancy cannot start |
@@ -613,7 +658,7 @@ either way. SMS never carries it. Only released content is ever made into these 
 | Key | Format | Reset | Scope |
 |---|---|---|---|
 | `lab.accession` | `{FAC}LB{YY}{SEQ:7}` (e.g. `NHLB260000123`) | Yearly | Facility |
-| `lab.sample` | `{SEQ:10}` (tube number, from 1000000000: always 10 digits, no leading zero) | Never | Global (analysers look samples up by this number only) |
+| `lab.sample` | `{SEQ:9}{CHK}` (tube number: 10 digits ending in a check digit, from 1000000005, no leading zero) | Never | Global (analysers look samples up by this number only) |
 | `radiology.accession` | `{FAC}RD{YY}{SEQ:7}` | Yearly | Facility |
 | `cardiology.accession` | `{FAC}CD{YY}{SEQ:7}` | Yearly | Facility |
 | `radiology.form-f` | `{FAC}FF{YY}{SEQ:6}` | Yearly | Facility |
@@ -658,7 +703,13 @@ creates ServiceItems (SAC 999316) and masters with 2026 INR tariffs:
 * **Cardiology**: CARD-ECG ₹250, CARD-ECHO ₹2,000, CARD-TMT ₹2,000, CARD-HOLTER ₹3,000, CARD-ABPM ₹2,500.
 * **Report templates**: TPL-DX-CHEST, TPL-DX-LSSPINE, TPL-US-ABDOMEN, TPL-US-PELVIS-F, TPL-CT-HEAD, TPL-CT-ABDOMEN,
   TPL-MR-BRAIN, TPL-MR-LSSPINE, TPL-MG-BIRADS (one per seeded procedure).
-* **Notification templates**: `lab.report_ready` (Email), `diagnostics.critical_finding` (SMS).
+* **Notification templates**: `lab.report_ready` (Email), `diagnostics.critical_finding` (SMS), and `lab.report_amended`
+  (SMS, WhatsApp and Email, each in English, Hindi and Tamil; the WhatsApp ones *Not in use* until an administrator
+  switches them on once Meta has approved them). Only a template missing for its key, channel and language is added.
+* **Tube numbers, on a database from before**: the series `lab.sample` is brought to `{SEQ:9}{CHK}` with its counter
+  counted in tens of the old numbers, in one statement, and `lab.tubeCheckDigitSince` is written in the same
+  transaction; audited `numbering.tube_check_digit` (a warning) with the format and counter before and after (see
+  *Tube numbers*). A database whose tube numbers have their check digit, or that never numbered a tube, is left as it is.
 
 `DiagnosticsDemoSeeder` (Order 210, only with `SeedDemoData`): analysers XN550 (Sysmex XN-550, ASTM; earlier demo
 databases that have it as HL7 are corrected), EM360 (Erba EM 360), CL900I (Mindray CL-900i), reference lab MRL, and
@@ -690,7 +741,8 @@ sample's results on screen and sends them as that analyser would, so they are ch
 `IInstrumentResultSink` is implemented by `InstrumentResultSink` (registered in `AddServices`):
 
 * `ReceiveAsync` maps the instrument code + channel (`XN550:HGB` beats a generic `HGB`) to the analyte, finds the tube
-  by barcode in the analyser's facility, checks that the patient the analyser named for it, if any, can be the tube's
+  by barcode in the analyser's facility (none for a tube number whose check digit does not match: see *Tube numbers*),
+  checks that the patient the analyser named for it, if any, can be the tube's
   (see *Patient identity check* below), receives a collected tube automatically (the other bidirectional analysers
   that run its tests are then sent its order, once a result goes on it), records unverified results with the
   analyser's unit, flags, status and comment, auto-validates when allowed (else stores why not) and raises critical
@@ -698,7 +750,7 @@ sample's results on screen and sends them as that analyser would, so they are ch
   acknowledged; only an analyser that Lab setup does not have, or has switched off, is refused, and a failure to store
   (the database away) refuses the whole message, so the analyser sends it again and nothing is stored twice.
 * `GetOrderForSampleAsync` answers host queries with the channels still pending for the barcode (collected, received or
-  in-process tubes of the analyser's facility).
+  in-process tubes of the analyser's facility), and with no order for a tube number whose check digit does not match.
 * `GetOrderToSendAsync` builds an order to send unasked: the tests of a received or in-process tube that this analyser
   runs and that are not yet verified, with the UHID, priority, collection time and specimen type. It is called when the
   order is sent, so a test cancelled or resulted meanwhile is left out.
@@ -720,6 +772,7 @@ acknowledged:
 | `RepeatedInMessage` | The message gave the test twice, the second time with another value or the same value read otherwise; the first is on the test |
 | `Withdrawn` | The analyser withdrew its result (HL7 OBX-11 `W` posted in error, `D` deleted) for a test verified, or released, with its value: the result stands until a person checks it, and reopens or amends it. Never assigned to a test, only discarded |
 | `PatientMismatch` | The analyser named another patient for the sample than the tube's: another registered patient's UHID, or no UHID to go by and a name that cannot be the tube patient's (see *Patient identity check*). Every value of the message is kept, and nothing of the tube changes, not even what the message withdraws |
+| `MistypedTubeNumber` | The sample id is 10 digits whose last digit, the check digit, does not match the others: a tube number typed on the analyser with a digit wrong or two neighbouring digits swapped (see *Tube numbers*). No tube changes, not even the one whose number it is closest to. Assigned by hand, the result waits for a pathologist with a second held reason, "The analyser sent a tube number whose check digit does not match, so a person chose the tube: … was typed on the analyser." |
 
 **Withdrawn results and results not obtained.** The gateway passes on what an analyser says of a test instead of a
 value (`InstrumentResult.Kind`, read from the protocol's status: HL7 OBX-11 `W` and `D` withdraw a result, HL7 and ASTM

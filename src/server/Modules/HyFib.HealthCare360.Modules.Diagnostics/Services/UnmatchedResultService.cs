@@ -31,9 +31,22 @@ internal sealed class UnmatchedResultService(
     /// </summary>
     internal const string PatientMismatchReason = "The analyser named another patient for the sample:";
 
-    /// <summary>Why a result assigned by hand waits for a person: always that a person chose where it goes, and a patient mismatch.</summary>
-    internal static IReadOnlyList<string> HeldReasons(UnmatchedLabResult unmatched) =>
-        unmatched.Reason == UnmatchedResultReason.PatientMismatch ? [AssignedReason, $"{PatientMismatchReason} {unmatched.Detail}"] : [AssignedReason];
+    /// <summary>
+    /// Stored as well on a result kept for a mistyped tube number and assigned by hand, followed by the number the analyser
+    /// sent: the pathologist verifying it sees that a person, not the tube number, chose the tube.
+    /// </summary>
+    internal const string MistypedTubeNumberReason = "The analyser sent a tube number whose check digit does not match, so a person chose the tube:";
+
+    /// <summary>
+    /// Why a result assigned by hand waits for a person: always that a person chose where it goes, and a patient mismatch or
+    /// a mistyped tube number.
+    /// </summary>
+    internal static IReadOnlyList<string> HeldReasons(UnmatchedLabResult unmatched) => unmatched.Reason switch
+    {
+        UnmatchedResultReason.PatientMismatch => [AssignedReason, $"{PatientMismatchReason} {unmatched.Detail}"],
+        UnmatchedResultReason.MistypedTubeNumber => [AssignedReason, $"{MistypedTubeNumberReason} {unmatched.SampleBarcode} was typed on the analyser."],
+        _ => [AssignedReason],
+    };
 
     /// <summary>The facility's results waiting to be matched (or those assigned or discarded), newest first.</summary>
     public async Task<PagedResult<UnmatchedResultDto>> ListAsync(PageRequest page, UnmatchedResultStatus status, CancellationToken ct)
