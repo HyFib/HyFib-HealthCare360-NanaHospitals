@@ -73,7 +73,7 @@ All paths below are under `/api/v1`. Lists accept `page`, `pageSize`, `search` w
 | GET | `/emr/patients/{patientId}/timeline?types=Encounter,Vitals,…&encounterTypes=OutPatient,InPatient,…&from&to&departmentId&page` | emr.read | → `PagedResult<TimelineEntry>` (types: Encounter, Vitals, Diagnosis, Prescription, Order, Note, Immunization, Document, DischargeSummary, Result, Procedure). `encounterTypes` (OutPatient, InPatient, Emergency, Telehealth, HealthCheckup) and `departmentId` keep the matching encounters and the entries recorded in one of them; documents and entries recorded outside an encounter then drop out. An unknown name is a 400 on `types` or `encounterTypes`. A `Result`'s `id` is the released report's id in its department and `reportKind` (`Laboratory`, `Radiology`, `Cardiology`; null on other entries) says which (see *Results on the patient's record*) |
 | GET | `/emr/patients/{patientId}/medications` | emr.read | → `CurrentMedication[]` |
 | GET | `/emr/patients/{patientId}/encounters?type&page` | emr.read | → `PagedResult<EncounterListItem>` |
-| POST | `/emr/encounters` | emr.write | `StartEncounterRequest{patientId, visitId?, admissionId?, type?, departmentId?, practitionerId?, templateId?, chiefComplaint?}` → 201 `EncounterDetail` (409 `encounter.already_open` with `encounterId`) |
+| POST | `/emr/encounters` | emr.write | `StartEncounterRequest{patientId, visitId?, admissionId?, type?, departmentId?, practitionerId?, templateId?, chiefComplaint?}` → 201 `EncounterDetail` (409 `encounter.already_open` with `encounterId`). With `visitId`, this call starts the visit and puts its queue token in service (from waiting, called, skipped or no-show; a token in service or closed is left as it is) in the same transaction, and pushes the change to the queue screens: the worklist's *Start* is this one call, with no `POST /queue/{id}/start` beside it. Sent together, the two raced for the visit and the one saved second was refused with 409 "changed by someone else". A write to the visit, its token or its appointment saved first, such as the front desk starting the token from the queue screen, makes the start read them again and start over, up to three tries (`ConsultationStartTests`) |
 | GET | `/emr/encounters/{id}` | emr.read | → `EncounterDetail` (SOAP, follow-up, referral, amendments) |
 | GET | `/emr/encounters/{id}/previous-visit` | emr.read | → `PreviousVisitResponse{previous}`: the previous visit summary the encounter workspace shows (EMR-02..07), of the patient's latest signed or amended encounter that started before this one, at any facility; null when there is none. Never the encounter itself, a later one or one still in progress. `PreviousVisitSummary{encounterId, type, status, startedAt, practitionerName, departmentName, chiefComplaint, diagnoses[], assessment, plan, followUpDate, followUpAdvice, medicines[{drugName, strength, dose, frequency, durationDays, instructions}], vitals}`. Diagnoses leave out the differential ones (only considered, not found); medicines are those of its signed prescriptions (a draft is not what the patient was given); `vitals` is the last set recorded in it, flagged for the patient's age on that day. Each read is recorded as "Viewed previous visit" (`PreviousVisitTests`) |
 | PUT | `/emr/encounters/{id}` | emr.write | `UpdateEncounterRequest{chiefComplaint, historyOfPresentIllness, examination, assessment, plan, followUpDate, followUpAdvice, referral*, version}` |
@@ -893,11 +893,13 @@ result to review opens the report itself, with an imaging study's images and the
 patient's record*), a note and *Acknowledge*. The main panel has three tabs, kept in the address (`?view=appointments`,
 `?view=rounds`):
 
-* **Queue**: today's tokens for the department, as before. F2 calls the next patient.
+* **Queue**: today's tokens for the department, as before. F2 calls the next patient. *Start*, on a waiting or called
+  token, makes one call: `POST /emr/encounters` for the visit starts the visit and puts the token in service on the
+  server, in the same transaction, then opens the note (`worklistStart.test.tsx`).
 * **Appointments**: the day's bookings in slot order, with a count of those still to come, arrived, seen and absent.
   A booking not arrived 15 minutes after its slot is marked *Late*; an arrived one shows its token. *Start* or
-  *Continue* opens the consultation from the visit exactly as the queue does (the token goes in service), and a video
-  booking links to the video consultations. The department's view adds each booking's doctor.
+  *Continue* opens the consultation from the visit exactly as the queue does (the encounter's start puts the token in
+  service), and a video booking links to the video consultations. The department's view adds each booking's doctor.
 * **Ward round** (needs `inpatient.admissions.read` as well): the doctor's in-patients from
   `GET /api/v1/inpatient/rounds`, in the bed board's walking order or *most urgent first* (critical vital signs or a
   critical result, then abnormal vital signs, results waiting and patients not yet seen today). Each row shows the bed
