@@ -70,7 +70,7 @@ export default {
         },
         {
           click: { within: { role: 'group', name: 'Add a payment mode' }, role: 'button', name: 'UPI' },
-          say: 'Mrs. Narayanan pays by UPI. Choose UPI. The amount is the whole balance, ₹2,400.',
+          say: 'Lakshmi Narayanan pays by UPI. Choose UPI. The amount is the whole balance, ₹2,400.',
           wait: { within: pay, label: 'UPI reference (UTR)' },
           zoom: 1.4,
         },
@@ -119,7 +119,7 @@ export default {
         },
         {
           fill: [{ within: advance, label: 'Amount' }, '5000'],
-          say: 'Her husband pays ₹5,000 in cash. Type the amount. Cash is already chosen.',
+          say: 'A family member pays ₹5,000 in cash. Type the amount. Cash is already chosen.',
           zoom: 1.4,
         },
         {
