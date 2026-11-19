@@ -419,12 +419,16 @@ and grants nothing.
   - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
     (`patients.break_glass_grants`), so it holds, and expires, on every server alike.
   - Lists don't name them unless the user may open restricted records, or has break-the-glass access to that one. Patient
-    search and the board of patients in the hospital show the initials, "R. K. S. (restricted)", so the desk can tell two
-    results apart. The bed board, the doctor's worklist and the ward round show "Restricted patient". The worklist also
-    leaves out the complaint, booking reason, note title, result name and deficiency, and the round leaves out the
-    diagnosis and vital-sign details. The token, bed, UHID and safety flags stay, so the patient is still seen to.
+    search, the visit list and its search, the OPD queue and the board of patients in the hospital show the initials,
+    "R. K. S. (restricted)", so the desk can tell two results apart; the waiting-area display shows the initials alone.
+    The bed board, the doctor's worklist and the ward round show "Restricted patient". The worklist and the OPD queue
+    also leave out the complaint (the worklist the booking reason, note title, result name and deficiency too), and the
+    round leaves out the diagnosis and vital-sign details. The token, bed, UHID and safety flags stay, so the patient is
+    still seen to.
   - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
+    So do a visit opened by its id, and the patient's visit history and payer: each opening is also recorded as access
+    to the record.
 - **Sensitive categories** (HIV, mental health, termination of pregnancy, sexual violence; HIV/AIDS Act 2017, Mental
   Healthcare Act 2017, MTP Act s.5A, Bharatiya Nyaya Sanhita 2023 s.72 and POCSO Act 2012 s.23):
   - An HIV (B20–B24, Z21), mental-illness (F20–F69), medical-abortion (O04) or sexual-abuse (T74.2, T76.2, Y05, Z04.4)
@@ -441,6 +445,9 @@ and grants nothing.
   - The patient's details, bills, pharmacy, lab and radiology orders, appointments, allergies and alerts are not closed,
     so the desk and the departments keep serving the patient; the categories themselves show only to doctors. The
     patient's journey (where they are in their visit, stay and lab orders) stays open too, without their operations.
+  - The OPD queue and a visit's details still name the patient. For staff who do not hold the category they leave out
+    the complaint, and a visit's notes and MLC number, as the doctor's worklist leaves out the clinical text. Nothing
+    says why, so the desk is not told the category.
   - The FHIR API does not list these patients to clients that may not open restricted records.
   - **A shared number.** Families often share one mobile number, and whoever holds it signs in to the patient portal
     and reads what is sent to it. So a record in a category is reached through a number only when the number is the
@@ -1123,8 +1130,9 @@ and grants nothing.
     unchanged: a report still goes with its PDF to the patient's own address.
   - After the upgrade, only numbers given with a code (a number change) count as verified.
 - Every access to a patient record is audited, and so is every way staff see one: a patient search (what was searched
-  for, how many matched and which patients were shown, `patient.searched`), the summary the banner shows and a lookup
-  by UHID (`PatientAccessAuditTests`).
+  for, how many matched and which patients were shown, `patient.searched`), the visit list and its search, alike
+  (`visit.searched`), the summary the banner shows, a lookup by UHID, a visit's details and the patient's visit history
+  and payer (`PatientAccessAuditTests`, `VisitAndQueuePrivacyTests`).
 - **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
   people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A
   study's images are found by the study UID in HC360's database, and only series and objects PACS lists for that study

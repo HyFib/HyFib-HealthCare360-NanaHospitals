@@ -73,7 +73,13 @@ internal static class QueueEndpoints
         group.MapGet("/display", Display).RequirePermission(PatientsPermissions.QueueDisplay);
     }
 
-    private static async Task<IResult> List(Guid departmentId, Guid? practitionerId, bool? includeClosed, HospitalDbContext db, TimeProvider time, CancellationToken ct)
+    /// <summary>
+    /// The department's queue today. As on the doctor's worklist, a restricted (VIP) patient the user may not open is named by
+    /// initials, and the complaint of a chart closed to the user (restricted, or in a sensitive category they do not hold) is
+    /// left out (<see cref="VisitPrivacy"/>); the token, the UHID, the age and the sex stay, so the patient is still called.
+    /// </summary>
+    private static async Task<IResult> List(
+        Guid departmentId, Guid? practitionerId, bool? includeClosed, HospitalDbContext db, PatientAccessGuard guard, TimeProvider time, CancellationToken ct)
     {
         var today = time.Today();
         var now = time.GetUtcNow();
@@ -101,13 +107,21 @@ internal static class QueueEndpoints
                 select new { t, p.Uhid, p.FullName, p.Gender, p.DateOfBirth, v.ChiefComplaint, v.IsFollowUp })
             .ToListAsync(ct);
 
-        return TypedResults.Ok(rows.Select(r => new QueueEntry(
-            r.t.Id, r.t.Label, r.t.Status, r.t.Priority, r.t.VisitId, r.t.PatientId, r.Uhid, r.FullName, r.Gender,
-            r.DateOfBirth is { } dob ? Age.Format(dob, today) : null, r.t.PractitionerId, r.t.Room, r.t.IssuedAt, r.t.CalledAt,
-            (int)Math.Max(0, ((r.t.CalledAt ?? now) - r.t.IssuedAt).TotalMinutes), r.ChiefComplaint, r.IsFollowUp)).ToList());
+        var withheld = await guard.WithheldChartsAsync([.. rows.Select(r => r.t.PatientId).Distinct()], ct);
+        return TypedResults.Ok(rows.Select(r =>
+        {
+            var entry = new QueueEntry(
+                r.t.Id, r.t.Label, r.t.Status, r.t.Priority, r.t.VisitId, r.t.PatientId, r.Uhid, r.FullName, r.Gender,
+                r.DateOfBirth is { } dob ? Age.Format(dob, today) : null, r.t.PractitionerId, r.t.Room, r.t.IssuedAt, r.t.CalledAt,
+                (int)Math.Max(0, ((r.t.CalledAt ?? now) - r.t.IssuedAt).TotalMinutes), r.ChiefComplaint, r.IsFollowUp);
+            return withheld.TryGetValue(r.t.PatientId, out var why) ? VisitPrivacy.Mask(entry, why) : entry;
+        }).ToList());
     }
 
-    /// <summary>Waiting-area board: now serving (with room) and up next. Names are masked for privacy.</summary>
+    /// <summary>
+    /// Waiting-area board: now serving (with room) and up next. Names are masked for privacy: the first name and the last
+    /// name's initial, and a restricted (VIP) patient's initials only, since nobody may open a restricted record there.
+    /// </summary>
     private static async Task<IResult> Display(string? departmentIds, HospitalDbContext db, TimeProvider time, CancellationToken ct)
     {
         var today = time.Today();
@@ -129,7 +143,7 @@ internal static class QueueEndpoints
                 join p in db.Set<Patient>() on t.PatientId equals p.Id
                 where t.TokenDate == today && departmentIdList.Contains(t.DepartmentId)
                       && (t.Status == TokenStatus.Waiting || t.Status == TokenStatus.Called || t.Status == TokenStatus.InService)
-                select new { t.DepartmentId, t.Label, t.Status, t.Priority, t.Sequence, t.Room, t.CalledAt, p.FirstName, p.LastName })
+                select new { t.DepartmentId, t.Label, t.Status, t.Priority, t.Sequence, t.Room, t.CalledAt, p.FirstName, p.LastName, p.FullName, p.IsVip })
             .ToListAsync(ct);
 
         var boards = departments.Select(d =>
@@ -138,7 +152,7 @@ internal static class QueueEndpoints
             var serving = mine.Where(t => t.Status is TokenStatus.Called or TokenStatus.InService)
                 .OrderByDescending(t => t.CalledAt)
                 .Take(4)
-                .Select(t => new DisplayToken(t.Label, MaskName(t.FirstName, t.LastName), t.Room, t.CalledAt))
+                .Select(t => new DisplayToken(t.Label, t.IsVip ? PatientNames.Initials(t.FullName) : MaskName(t.FirstName, t.LastName), t.Room, t.CalledAt))
                 .ToList();
             var waiting = mine.Where(t => t.Status == TokenStatus.Waiting).OrderByDescending(t => t.Priority).ThenBy(t => t.Sequence).ToList();
             return new DisplayDepartment(d.Id, d.Name, serving, waiting.Take(6).Select(t => t.Label).ToList(), waiting.Count);
