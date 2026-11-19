@@ -335,8 +335,9 @@ public sealed class BillDocumentTests
     }
 
     [Fact]
-    public void A_bill_to_a_payer_in_another_state_shows_igst_and_the_place_of_supply()
+    public void A_bill_that_charged_igst_shows_it_and_the_place_of_supply()
     {
+        // Bills are supplied in the hospital's state now; one finalized before as a supply to another state still prints so.
         var taxed = Taxed();
         var line = taxed.Lines[0] with { CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m };
         var bill = taxed with { Lines = [line], CgstAmount = 0m, SgstAmount = 0m, IgstAmount = 180m, PlaceOfSupply = "32", IsInterState = true };

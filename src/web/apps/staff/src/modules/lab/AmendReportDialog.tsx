@@ -25,7 +25,7 @@ import { errorMessage, hasErrorCode } from './common/errors';
 import type { CriticalCallDetails } from './common/types';
 import { approvalKeys } from '@/modules/approvals/api';
 import { labApi, labKeys, type AmendmentChange, type LabReportView, type ResultFlag } from './api';
-import { flagDisplay } from './flags';
+import { flagDisplay, flagText } from './flags';
 
 const useStyles = makeStyles({
   content: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -210,7 +210,7 @@ export function AmendReportDialog({ view, onClose }: { view: LabReportView; onCl
                             <td className={styles.td}>{row.name}</td>
                             <td className={styles.td}>
                               {row.value} {row.unit}{' '}
-                              {flagDisplay(row.flag)?.code ? `(${flagDisplay(row.flag)?.code})` : ''}
+                              {flagDisplay(row.flag)?.code ? `(${flagText(flagDisplay(row.flag))})` : ''}
                             </td>
                             <td className={styles.td}>
                               <Input

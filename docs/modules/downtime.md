@@ -79,6 +79,14 @@ pre-downtime pack.
      counted into the cashier's shift open at entry;
    - a pharmacy sale through the pharmacy's *Counter sale* or *Dispense* screen with `paper {number, at}` (see
      *Pharmacy sales on paper* below).
+   **The day book follows the paper's date, and reaches Tally.** A paper bill, a receipt and a pharmacy sale are each in
+   the day book of the day on the paper. The nightly post sends yesterday only, and does not send a day again once it
+   was sent after the day ended, so an entry made after its day went to Tally would be left out of the books. Saving an
+   entry dated in an earlier day (India time) therefore queues that day again, when it went already: Billing's
+   `billing.tally.late-entry` message, queued in the entry's own transaction (a pharmacy sale raises the Platform event
+   `DayBookEntryBackdated`, which Billing turns into the same message). The day posts again without duplicates, because
+   each voucher has a stable number. A day not yet sent is left to the nightly post, and an entry dated today needs
+   nothing.
 5. **Return the block** when it is no longer needed: every number not entered is voided as "Returned unused", in one
    audited step, and the block takes no more entries. A single spoilt number is voided on its own with a reason.
    Voided bill numbers stay in the GST series: GSTR-1 table 13 counts them as cancelled in the month they were voided
@@ -117,10 +125,16 @@ block was issued, in the series' year, in order with the block's other entries, 
 `downtime.backEntryHours.pharmacySale`): the refusals are the table above. The invoice then:
 
 - takes the number on the paper as its invoice number and the time on the paper as its time of sale (the day book, the
-  GST return and the invoice print follow the paper's date);
+  GST return and the invoice print follow the paper's date); when the paper is of an earlier day, that day's Tally day
+  book is queued again if it went already (see step 4 above);
 - takes stock off now, from the batches handed over (FEFO or the batch named), books the payment split, the controlled
   drug register and any e-invoice as for any sale; the stock ledger shows the time the entry was made, because the shelf
   moves when HC360 is told;
+- is written in the controlled-drug register when it is entered, not at the time on the paper: a bound register is in
+  order, and each line's running balance is the stock after its own movement. The line's remarks give the paper's time
+  and the invoice ("Entered from the paper sale of 10 Nov 2026 22:30 IST, invoice …"). So the registers date a late entry
+  when it is made, while the invoice, the GST return and the day book follow the paper's date. The day's narcotic account
+  (Form 3H) of the paper's day therefore does not include the sale; the day it was entered does, with the remark;
 - records when it was entered (`PharmacySaleDetail.enteredFromPaperAt`: the drawer says "Written on paper during a
   downtime, entered ...") and is audited as `patients.entered_from_paper` against the sale, Warning when entered late
   under an approval.

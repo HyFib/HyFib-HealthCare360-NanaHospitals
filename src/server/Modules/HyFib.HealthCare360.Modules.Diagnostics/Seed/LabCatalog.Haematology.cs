@@ -2,7 +2,11 @@ using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
-/// <summary>Haematology: CBC, ESR, coagulation, blood grouping and malaria antigen.</summary>
+/// <summary>
+/// Haematology: CBC, ESR, coagulation, blood grouping and malaria antigen. The CBC's analytes carry the HORIBA Yumizen
+/// H500's parameter codes as their channels (WBC, HGB, NEU%, NEU#…), so its results go on them as they come; the codes
+/// another analyser uses for the differential (NEUT%, LYMPH%…) are kept beside them.
+/// </summary>
 internal static partial class LabCatalog
 {
     private static IEnumerable<AnalyteSeed> HaematologyAnalytes()
@@ -34,13 +38,40 @@ internal static partial class LabCatalog
             Ages(adult, null, 4.0m, 11.0m, 2.0m, 30.0m),
         ], "WBC", delta: 50m));
 
+        // The differential in per cent: the Yumizen H500 sends NEU%, LYM%, MON%, EOS% and BAS%; other analysers NEUT%,
+        // LYMPH%, MONO%, EO% and BASO%. The H500's code comes first, as its host queries ask for it (a NEU% pending makes it
+        // run the differential, DIF).
         yield return new("NEUT", "Neutrophils", Section, Blood, Edta, "770-8",
-            Numeric("%", 0, [Ages(0, 30, 40, 80), Ages(30, Years(6), 25, 60), Ages(Years(6), null, 40, 80)], "NEUT%"));
+            Numeric("%", 0, [Ages(0, 30, 40, 80), Ages(30, Years(6), 25, 60), Ages(Years(6), null, 40, 80)]) with { Channels = ["NEU%", "NEUT%"] });
         yield return new("LYMPH", "Lymphocytes", Section, Blood, Edta, "736-9",
-            Numeric("%", 0, [Ages(0, 30, 20, 50), Ages(30, Years(6), 35, 65), Ages(Years(6), null, 20, 40)], "LYMPH%"));
-        yield return new("MONO", "Monocytes", Section, Blood, Edta, "5905-5", Numeric("%", 0, [All(2, 10)], "MONO%"));
-        yield return new("EOS", "Eosinophils", Section, Blood, Edta, "713-8", Numeric("%", 0, [All(1, 6)], "EO%"));
-        yield return new("BASO", "Basophils", Section, Blood, Edta, "706-2", Numeric("%", 0, [All(0, 2)], "BASO%"));
+            Numeric("%", 0, [Ages(0, 30, 20, 50), Ages(30, Years(6), 35, 65), Ages(Years(6), null, 20, 40)]) with { Channels = ["LYM%", "LYMPH%"] });
+        yield return new("MONO", "Monocytes", Section, Blood, Edta, "5905-5", Numeric("%", 0, [All(2, 10)]) with { Channels = ["MON%", "MONO%"] });
+        yield return new("EOS", "Eosinophils", Section, Blood, Edta, "713-8", Numeric("%", 0, [All(1, 6)]) with { Channels = ["EOS%", "EO%"] });
+        yield return new("BASO", "Basophils", Section, Blood, Edta, "706-2", Numeric("%", 0, [All(0, 2)]) with { Channels = ["BAS%", "BASO%"] });
+
+        // The rest of what the Yumizen H500 sends for a CBC or DIF (its parameter codes are the channels), reported on the
+        // CBC, as Nana Hospitals asked: "Analyser sent all parameter to test code", "PCT, PLT: all parameters are shown on
+        // patient reports". Adult intervals only, as defaults the laboratory reviews and replaces with its own (by sex
+        // where it has them); a child's result prints without one rather than against an adult's:
+        // * RDW and the absolute counts: Dacie and Lewis Practical Haematology, 12th ed. (Bain BJ, Bates I, Laffan MA, eds.;
+        //   Elsevier, 2017), chapter 2, adult reference ranges (the CBC intervals above follow the same table).
+        // * MPV, PDW, plateletcrit and P-LCR: Sachdev R et al., "Establishing biological reference intervals for novel
+        //   platelet parameters", Indian J Pathol Microbiol 2014;57(2):231-5, doi:10.4103/0377-4929.134676 (945 healthy
+        //   Indian adults, on a Sysmex XE-2100). The H500 counts platelets by impedance and may report PDW in %: compare with
+        //   HORIBA's intervals for the H500 before go-live.
+        // * Immature granulocytes: Monteiro WO et al., "Definition of reference range for the immature granulocytes parameter
+        //   provided by a hematology analyzer", Clin Lab 2021;67(1), doi:10.7754/Clin.Lab.2020.200439.
+        // The H500's research-use parameters (ALY, LIC, MIC, MAC…) and its large platelet count (P-LCC, for which no adult
+        // interval was found to cite) are not reported: Lab setup lists them among the channels no test maps.
+        const string Count = "10³/µL";
+        yield return new("NEUT-ABS", "Absolute neutrophil count", Section, Blood, Edta, "751-8", Numeric(Count, 2, [Ages(adult, null, 2.00m, 7.00m)], "NEU#"));
+        yield return new("LYMPH-ABS", "Absolute lymphocyte count", Section, Blood, Edta, "731-0", Numeric(Count, 2, [Ages(adult, null, 1.00m, 3.00m)], "LYM#"));
+        yield return new("MONO-ABS", "Absolute monocyte count", Section, Blood, Edta, "742-7", Numeric(Count, 2, [Ages(adult, null, 0.20m, 1.00m)], "MON#"));
+        yield return new("EOS-ABS", "Absolute eosinophil count", Section, Blood, Edta, "711-2", Numeric(Count, 2, [Ages(adult, null, 0.02m, 0.50m)], "EOS#"));
+        yield return new("BASO-ABS", "Absolute basophil count", Section, Blood, Edta, "704-7", Numeric(Count, 2, [Ages(adult, null, 0.02m, 0.10m)], "BAS#"));
+        yield return new("IG", "Immature granulocytes", Section, Blood, Edta, null, Numeric("%", 1, [Ages(adult, null, 0.0m, 0.6m)], "IMG%"));
+        yield return new("IG-ABS", "Immature granulocytes, absolute count", Section, Blood, Edta, null,
+            Numeric(Count, 2, [Ages(adult, null, 0.00m, 0.06m)], "IMG#"));
 
         yield return new("RBC", "RBC count", Section, Blood, Edta, "789-8", Numeric("10⁶/µL", 2,
         [
@@ -64,8 +95,20 @@ internal static partial class LabCatalog
             Numeric("pg", 1, [Ages(0, 30, 31.0m, 37.0m), Ages(30, Years(12), 24.0m, 31.0m), Ages(Years(12), null, 27.0m, 32.0m)], "MCH"));
         yield return new("MCHC", "Mean corpuscular haemoglobin concentration (MCHC)", Section, Blood, Edta, "786-4",
             Numeric("g/dL", 1, [All(31.5m, 34.5m)], "MCHC"));
+        yield return new("RDW-CV", "Red cell distribution width (RDW-CV)", Section, Blood, Edta, "788-0",
+            Numeric("%", 1, [Ages(adult, null, 11.6m, 14.0m)], "RDW-CV"));
+        yield return new("RDW-SD", "Red cell distribution width (RDW-SD)", Section, Blood, Edta, "21000-5",
+            Numeric("fL", 1, [Ages(adult, null, 39.0m, 46.0m)], "RDW-SD"));
         yield return new("PLT", "Platelet count", Section, Blood, Edta, "777-3",
             Numeric("10³/µL", 0, [All(150, 410, 20, 1000)], "PLT", delta: 50m));
+        yield return new("MPV", "Mean platelet volume (MPV)", Section, Blood, Edta, "32623-1",
+            Numeric("fL", 1, [Ages(adult, null, 8.6m, 15.5m)], "MPV"));
+        yield return new("PCT", "Plateletcrit (PCT)", Section, Blood, Edta, "51637-7",
+            Numeric("%", 3, [Ages(adult, null, 0.150m, 0.620m)], "PCT"));
+        yield return new("PDW", "Platelet distribution width (PDW)", Section, Blood, Edta, "32207-3",
+            Numeric("fL", 1, [Ages(adult, null, 8.3m, 25.0m)], "PDW"));
+        yield return new("P-LCR", "Platelet large cell ratio (P-LCR)", Section, Blood, Edta, "48386-7",
+            Numeric("%", 1, [Ages(adult, null, 11.9m, 66.9m)], "P-LCR"));
 
         // Coagulation (3.2 % citrate plasma).
         yield return new("PT", "Prothrombin time (PT)", Section, SpecimenType.Plasma, ContainerType.Citrate, "5902-2",
@@ -84,7 +127,9 @@ internal static partial class LabCatalog
     {
         const LabSection Section = LabSection.Hematology;
         const string Dlc = "Differential leucocyte count";
+        const string Absolute = "Absolute leucocyte counts";
 
+        // Every parameter the Yumizen H500 reports for a CBC or DIF (see the analytes above).
         yield return new OrderableSeed(
             "LAB-CBC", "Complete blood count (CBC)", "CBC", 350m, Section, SpecimenType.WholeBlood, ContainerType.Edta, 4,
             "Automated 5-part haematology analyser (impedance and flow cytometry)", "58410-2",
@@ -92,8 +137,11 @@ internal static partial class LabCatalog
         {
             Components =
             [
-                ("HB", null), ("TLC", null), ("NEUT", Dlc), ("LYMPH", Dlc), ("MONO", Dlc), ("EOS", Dlc), ("BASO", Dlc),
-                ("RBC", null), ("PCV", null), ("MCV", null), ("MCH", null), ("MCHC", null), ("PLT", null),
+                ("HB", null), ("TLC", null), ("NEUT", Dlc), ("LYMPH", Dlc), ("MONO", Dlc), ("EOS", Dlc), ("BASO", Dlc), ("IG", Dlc),
+                ("NEUT-ABS", Absolute), ("LYMPH-ABS", Absolute), ("MONO-ABS", Absolute), ("EOS-ABS", Absolute), ("BASO-ABS", Absolute),
+                ("IG-ABS", Absolute),
+                ("RBC", null), ("PCV", null), ("MCV", null), ("MCH", null), ("MCHC", null), ("RDW-CV", null), ("RDW-SD", null),
+                ("PLT", null), ("MPV", null), ("PCT", null), ("PDW", null), ("P-LCR", null),
             ],
         };
 

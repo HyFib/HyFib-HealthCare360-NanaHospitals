@@ -26,10 +26,12 @@ public sealed record TallyCounterLedgers
 }
 
 /// <summary>
-/// The pharmacy's and the canteen's days in the day book (INT-TALLY). Each counter day gives up to three summary vouchers,
-/// numbered by counter, facility and date so a re-post alters them: a Sales voucher (money by mode and what went on
-/// account, against income by GST rate, output CGST/SGST and round-off), a Credit Note for returns and cancellations
-/// (the reverse), and a Receipt for balances paid later. The invoices themselves stay in their modules' registers.
+/// The pharmacy's and the canteen's days in the day book (INT-TALLY), as summaries. Each counter day gives up to three
+/// summary vouchers, numbered by counter, facility and date so a re-post alters them: a sales voucher (the pharmacy's
+/// under its own voucher type, the canteen's under Sales: money by mode and what went on account, against income and
+/// output GST by GST rate, and round-off), a Credit Note for returns and cancellations (the reverse), and a Receipt for
+/// balances paid later. The pharmacy's day goes invoice by invoice instead (<see cref="TallyCounterInvoices"/>) unless
+/// the facility keeps it summarised.
 /// </summary>
 public static class TallyCounters
 {
@@ -76,7 +78,7 @@ public static class TallyCounters
         foreach (var counter in day.Counters.Where(c => !c.IsEmpty).OrderBy(c => c.Counter, StringComparer.Ordinal))
         {
             var ledgers = Ledgers(map, counter.Counter);
-            if (!ledgers.Include)
+            if (!ledgers.Include || TallyCounterInvoices.PerInvoice(day, map, counter.Counter))
             {
                 continue;
             }
@@ -87,7 +89,7 @@ public static class TallyCounters
             {
                 var number = Number(counter.Counter, day.FacilityCode, day.Date);
                 yield return Documents(counter.Sales, ledgers, map, reverse: false)
-                    .ToVoucher(TallyVoucherBuilder.SalesType, day.Date, number, $"{name} sales of {date}: {Count(counter.Sales.Count, "invoice")}", number);
+                    .ToVoucher(SalesTypeOf(counter.Counter, map), day.Date, number, $"{name} sales of {date}: {Count(counter.Sales.Count, "invoice")}", number);
             }
 
             if (counter.Returns.Count > 0)
@@ -108,6 +110,13 @@ public static class TallyCounters
             yield return entries.ToVoucher(TallyVoucherBuilder.ReceiptType, day.Date, collected, $"{name} balances collected on {date}", collected);
         }
     }
+
+    /// <summary>
+    /// The voucher type of a counter's summary of sales: the pharmacy's own (<see cref="TallyVoucherTypes.Pharmacy"/>, N12),
+    /// summarised or not; Sales for the canteen.
+    /// </summary>
+    private static string SalesTypeOf(string counter, TallyLedgerMap map) =>
+        string.Equals(counter, Pharmacy, StringComparison.OrdinalIgnoreCase) ? map.VoucherTypes.Pharmacy : TallyVoucherBuilder.SalesType;
 
     /// <summary>A part of the code safe in a voucher number: letters, digits and hyphens, at most 20; null when nothing is left.</summary>
     public static string? CodeOf(string? value)
@@ -131,18 +140,20 @@ public static class TallyCounters
         entries.Debit(ledgers.OnAccount!, part.OnAccount);
         foreach (var rate in part.Tax.GroupBy(t => t.GstRate).OrderBy(g => g.Key))
         {
-            entries.Credit(map.SalesLedgerPerGstRate ? $"{ledgers.Sales} @ {rate.Key.ToString("0.##", CultureInfo.InvariantCulture)}%" : ledgers.Sales!,
-                rate.Sum(t => t.Taxable));
+            entries.Credit(SalesLedger(ledgers, map, rate.Key), rate.Sum(t => t.Taxable));
         }
 
-        entries.Credit(map.OutputCgst, part.Tax.Sum(t => t.Cgst));
-        entries.Credit(map.OutputSgst, part.Tax.Sum(t => t.Sgst));
-        entries.Credit(map.OutputIgst, part.Tax.Sum(t => t.Igst));
+        TallyGst.Output(entries, map, part.Tax.Select(t => new TallyGstLine(t.GstRate, t.Cgst, t.Sgst, t.Igst)));
         entries.Credit(map.RoundOff, part.RoundOff);
         return reverse ? entries.Reversed() : entries;
     }
 
-    private static string ModeLedger(TallyCounterLedgers ledgers, TallyLedgerMap map, CounterPaymentMode mode) =>
+    /// <summary>The counter's income ledger for sales at <paramref name="rate"/>: one per rate when the setting asks ("Pharmacy Sales @ 12%").</summary>
+    internal static string SalesLedger(TallyCounterLedgers ledgers, TallyLedgerMap map, decimal rate) =>
+        map.SalesLedgerPerGstRate ? $"{ledgers.Sales} @ {rate.ToString("0.##", CultureInfo.InvariantCulture)}%" : ledgers.Sales!;
+
+    /// <summary>The counter's own cash or bank ledger for <paramref name="mode"/>, else the hospital's.</summary>
+    internal static string ModeLedger(TallyCounterLedgers ledgers, TallyLedgerMap map, CounterPaymentMode mode) =>
         ledgers.ModeLedgers.FirstOrDefault(kv => string.Equals(kv.Key, mode.ToString(), StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(kv.Value)).Value?.Trim()
         ?? map.ModeLedger(mode switch
         {
@@ -154,7 +165,7 @@ public static class TallyCounters
     private static string Count(int count, string noun) => count.ToString(CultureInfo.InvariantCulture) + " " + noun + (count == 1 ? string.Empty : "s");
 }
 
-/// <summary>Tidies a ledger map before it is saved: names trimmed, blank department and mode entries dropped.</summary>
+/// <summary>Tidies a ledger map before it is saved: names and voucher types trimmed, blank department and mode entries dropped.</summary>
 public static class TallyLedgerMaps
 {
     public static TallyLedgerMap Normalize(TallyLedgerMap map) => map with
@@ -185,10 +196,24 @@ public static class TallyLedgerMaps
         InputIgst = map.InputIgst.Trim(),
         VendorAdjustments = map.VendorAdjustments.Trim(),
         SundryCreditors = map.SundryCreditors.Trim(),
+        Purchases = map.Purchases.Trim(),
         IncomeByDepartment = Clean(map.IncomeByDepartment, key => key.ToUpperInvariant()),
         ModeLedgers = Clean(map.ModeLedgers, key => key),
         Pharmacy = Counter(map.Pharmacy),
         Canteen = Counter(map.Canteen),
+        BankLedgers = map.BankLedgers?
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList(),
+        VoucherTypes = map.VoucherTypes with
+        {
+            InPatient = map.VoucherTypes.InPatient.Trim(),
+            OutPatient = map.VoucherTypes.OutPatient.Trim(),
+            Laboratory = map.VoucherTypes.Laboratory.Trim(),
+            Pharmacy = map.VoucherTypes.Pharmacy.Trim(),
+            Purchase = map.VoucherTypes.Purchase.Trim(),
+        },
     };
 
     private static TallyCounterLedgers Counter(TallyCounterLedgers counter) => counter with

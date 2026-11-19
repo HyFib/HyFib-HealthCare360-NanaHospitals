@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { classifyScan, isSampleBarcode, KeystrokeTimer, normalizeScan, splitScans } from './scan';
+import {
+  classifyScan,
+  isMistypedTubeNumber,
+  isSampleBarcode,
+  KeystrokeTimer,
+  MISTYPED_TUBE_NUMBER,
+  normalizeScan,
+  splitScans,
+} from './scan';
 
 describe('normalizeScan', () => {
   it('removes what scanners add around the code', () => {
@@ -33,6 +41,11 @@ describe('splitScans', () => {
 
 describe('classifyScan', () => {
   it('recognises sample barcodes and accession numbers', () => {
+    expect(classifyScan('1000012342')).toBe('sample');
+    expect(isSampleBarcode('1000012342')).toBe(true);
+    expect(classifyScan(' 1000012350 ')).toBe('sample');
+    // A tube numbered before the check digit still opens; so does a number typed wrong, which the server refuses.
+    expect(classifyScan('1000000123')).toBe('sample');
     expect(classifyScan('000123456')).toBe('sample');
     expect(isSampleBarcode('000123456')).toBe(true);
     expect(classifyScan('NHLB260000123')).toBe('labAccession');
@@ -41,6 +54,27 @@ describe('classifyScan', () => {
     expect(classifyScan('NH26000123')).toBe('text');
     expect(classifyScan('12345')).toBe('text');
     expect(isSampleBarcode('Asha')).toBe(false);
+  });
+});
+
+// The server's TubeLookupTests: tube numbers end in a check digit, so one digit typed wrong or two swapped never checks.
+describe('isMistypedTubeNumber', () => {
+  it('knows a tube number typed with a digit wrong or two neighbouring digits swapped', () => {
+    expect(isMistypedTubeNumber('1000012342')).toBe(false);
+    expect(isMistypedTubeNumber('1000012352')).toBe(true);
+    expect(isMistypedTubeNumber('1000012324')).toBe(true);
+    expect(isMistypedTubeNumber(' 1000012346 ')).toBe(true);
+  });
+
+  it('says nothing of what is not 10 digits', () => {
+    expect(isMistypedTubeNumber('100001234')).toBe(false);
+    expect(isMistypedTubeNumber('000123456')).toBe(false);
+    expect(isMistypedTubeNumber('NHLB260000123')).toBe(false);
+    expect(isMistypedTubeNumber('')).toBe(false);
+  });
+
+  it('says what to do', () => {
+    expect(MISTYPED_TUBE_NUMBER).toBe('The last digit does not match the others: check the tube number.');
   });
 });
 

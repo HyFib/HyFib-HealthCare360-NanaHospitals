@@ -42,6 +42,7 @@ export const sectionShort: Record<LabSection, string> = {
 
 export const specimenLabel: Record<SpecimenType, string> = {
   WholeBlood: 'Whole blood',
+  ArterialBlood: 'Arterial blood',
   Serum: 'Serum',
   Plasma: 'Plasma',
   Urine: 'Urine',
@@ -150,6 +151,7 @@ export const unmatchedReasonLabel: Record<UnmatchedResultReason, string> = {
   RepeatedInMessage: 'Sent twice, differently',
   Withdrawn: 'Withdrawn by the analyser',
   PatientMismatch: "Not this sample's patient",
+  MistypedTubeNumber: 'Tube number typed wrong',
 };
 
 export const unmatchedStatusLabel: Record<UnmatchedResultStatus, string> = {

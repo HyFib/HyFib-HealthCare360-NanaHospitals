@@ -121,8 +121,8 @@ doctor covering for them.
   tightens them alone. The pharmacy's dispensing queue now shows a prescriber's safety override (the clinical report's
   item 25): the line waits until a pharmacist acknowledges it from their own sign-in (`pharmacy.dispense`), never the
   account that signed the prescription, audited with the alert and the reason (`pharmacy.override_unacknowledged`,
-  `pharmacy.override_own_prescription`). An issue against a ward indent is not tied to a prescription line and carries
-  no override; the ward's order, and its witnessed doses, do.
+  `pharmacy.override_own_prescription`). An indent raised for an e-prescription supplies its lines and waits for the
+  same acknowledgement; an indent for no prescription carries no override: the ward's order, and its witnessed doses, do.
 
 - **Slice 13 leaves these as they are.** A GST rate changed waits whichever way it goes: a lower rate under-
   declares tax and a higher one overstates the GST share of a fixed MRP, so neither is the stricter direction. A save

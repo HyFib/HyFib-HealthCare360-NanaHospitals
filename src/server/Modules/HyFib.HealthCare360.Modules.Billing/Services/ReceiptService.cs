@@ -1,6 +1,7 @@
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Billing.Domain;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
+using HyFib.HealthCare360.Modules.Billing.Services.EventHandlers;
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -42,7 +43,8 @@ public sealed class ReceiptService(
     CashLimit cashLimit,
     ICurrentUser currentUser,
     TimeProvider time,
-    DowntimeNumberService downtimeNumbers)
+    DowntimeNumberService downtimeNumbers,
+    LateEntryQueue lateEntries)
 {
     public async Task<Result<Guid>> CollectForBillAsync(CollectPaymentRequest request, CancellationToken ct)
     {
@@ -117,6 +119,12 @@ public sealed class ReceiptService(
         }
 
         db.Add(receipt);
+        if (request.Paper is { } written)
+        {
+            // The receipt is in the day book of the day on the paper, which may have gone to Tally already.
+            lateEntries.Dated(bill.FacilityId, written.At, "billing.receipt", receipt.ReceiptNumber);
+        }
+
         await QueueReceiptMessageAsync(receipt, bill.BillNumber, bill, ct);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);

@@ -106,6 +106,9 @@ public sealed class GoodsReceiptNote : AuditableEntity, IFacilityScoped
         Status = GoodsReceiptStatus.Posted;
         PostedAt = now;
         PostedByUserId = userId;
+
+        // The purchase is in the day book of the day the goods came, which may have gone to Tally already (Billing).
+        Raise(new GoodsReceiptPosted(Id, Number, FacilityId, ReceivedOn, now));
         return Result.Success();
     }
 

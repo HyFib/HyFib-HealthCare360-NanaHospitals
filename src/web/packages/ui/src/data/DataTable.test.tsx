@@ -185,7 +185,8 @@ describe('DataTable width', () => {
     const box = getComputedStyle(container.querySelector('table')!.parentElement!);
     expect(box.overflowX).toBe('auto');
     expect(box.display).toBe('grid');
-    expect(box.gridTemplateColumns).toBe('minmax(0, 1fr)');
+    // jsdom 31 writes the zero with its unit, as browsers do: minmax(0px, 1fr).
+    expect(box.gridTemplateColumns).toMatch(/^minmax\(0(px)?, 1fr\)$/);
   });
 
   const renderColumns = (columns: Column<Row>[], buttons: number[] = []) =>

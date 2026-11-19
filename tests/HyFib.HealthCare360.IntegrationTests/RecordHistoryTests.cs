@@ -79,7 +79,7 @@ public sealed class RecordHistoryTests(HospitalServer server)
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
         var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
         var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
-        var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" });
+        var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101", ["HCO3"] = "24" });
         await pathologist.PostAsync<VerificationOutcome>("/api/v1/lab/results/verify", new VerifyResultsRequest([.. lines.Select(l => l.ResultId)], null, null, Release: true));
         var order = await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{(await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results")).LabOrderId}");
         var reportId = order.ReportId.ShouldNotBeNull();
@@ -147,7 +147,7 @@ public sealed class RecordHistoryTests(HospitalServer server)
         var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
         var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
         var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
-        var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" });
+        var lines = await LabVerificationTests.EnterAsync(lab, tube, new Dictionary<string, string> { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101", ["HCO3"] = "24" });
 
         // Sodium verified and released alone: potassium and chloride stay unverified.
         var sodium = lines.Single(l => l.TestCode == "NA");

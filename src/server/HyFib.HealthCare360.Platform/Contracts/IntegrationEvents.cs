@@ -318,3 +318,25 @@ public sealed record WhatsAppOptOutChanged(
 /// moves the retention date of the charts already completed by the difference, so every chart follows the schedule.
 /// </summary>
 public sealed record RecordRetentionChanged(bool Inpatient, int PreviousYears, int Years) : DomainEvent;
+
+/// <summary>
+/// A goods receipt was posted into stock (raised by Supply chain, in the posting's transaction). The Tally day book dates
+/// a purchase by the day its goods were received (<see cref="IPurchaseAccountsSource"/>), so a receipt posted after that
+/// day joins a day book that may have gone to Tally already: Billing then puts that day back in the Tally queue, as it
+/// does for an online payment recorded late.
+/// </summary>
+/// <param name="Number">The goods receipt's number, which its purchase voucher carries.</param>
+/// <param name="ReceivedOn">The day the goods were received: the day book the purchase is in.</param>
+public sealed record GoodsReceiptPosted(Guid GoodsReceiptId, string Number, Guid FacilityId, DateOnly ReceivedOn, DateTimeOffset PostedAt) : DomainEvent;
+
+/// <summary>
+/// A record that belongs to the day book of an earlier day was saved: a sale entered from paper after a downtime is dated
+/// at the time on the paper (<see cref="Source"/> names the module's record, <see cref="Reference"/> its number). That day
+/// may have gone to Tally already, so Billing puts it back in the Tally queue when it did, as it does for a goods receipt
+/// posted late. Raised in the transaction that saves the record, by a module whose entries Billing does not write itself;
+/// nothing is raised for a record of today, which tonight's post sends.
+/// </summary>
+/// <param name="Date">The hospital's (IST) day the record is dated, which is the day book it is in.</param>
+/// <param name="Source">The record's kind, for the log: "pharmacy.sale".</param>
+/// <param name="Reference">The record's number, which its voucher carries.</param>
+public sealed record DayBookEntryBackdated(Guid FacilityId, DateOnly Date, string Source, string Reference) : DomainEvent;
