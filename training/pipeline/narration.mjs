@@ -34,6 +34,7 @@ export function ending(story) {
   const endLines = story.endLines ?? [
     ...(next ? [['Next video', next]] : []),
     ['Practise', story.practise ?? 'On the training server, with your own account. Your trainer has the day script.'],
+    ...(story.role === '*' ? [] : [['Before go-live', 'Finish your department’s day script without help.']]),
   ];
   return { next, text, endLines };
 }
