@@ -21,7 +21,7 @@ export default {
     'Issue sterile packs to a department.',
   ],
   modules: ['cssd'],
-  covers: ['/cssd', '/cssd/receipts', '/cssd/loads', '/cssd/packs', '/cssd/issue'],
+  covers: ['/cssd/receipts', '/cssd/washes', '/cssd/loads', '/cssd/issue'],
   setup: async ({ api }) => {
     // The trays were washed earlier this morning: a passed wash cycle of two minor surgical trays.
     const cssd = await api('cssd');

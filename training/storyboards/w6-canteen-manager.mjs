@@ -19,7 +19,7 @@ export default {
     'Read the day report and the staff credit.',
   ],
   modules: ['canteen'],
-  covers: ['/canteen', '/canteen/sales', '/canteen/menu', '/canteen/report', '/canteen/credit'],
+  covers: ['/canteen', '/canteen/menu', '/canteen/report', '/canteen/credit'],
   scenes: [
     {
       title: 'Bill at the counter',
