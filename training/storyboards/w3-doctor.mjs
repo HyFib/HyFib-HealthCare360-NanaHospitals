@@ -253,5 +253,4 @@ export default {
       a: 'Medical records, reports and billing need a coded diagnosis. The first primary diagnosis also prints on the prescription.',
     },
   ],
-  next: 'Nurse: observations, medicines and handover on the ward',
 };

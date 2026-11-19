@@ -218,7 +218,7 @@ export default {
     },
     {
       q: 'When does HC360 raise a NEWS2 escalation?',
-      a: 'HC360 raises an escalation to the ward’s doctor and the nurses in charge. It stays on the station until someone responds. One parameter that scores 3 raises it too, even when the total is lower.',
+      a: 'When the total is 5 or more, or when any one parameter scores 3, even if the total is lower. The escalation goes to the ward’s doctor and the nurses in charge, and stays on the station until someone responds.',
     },
   ],
 };
