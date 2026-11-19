@@ -294,5 +294,23 @@
   "lufs": -16.0,
   "seconds": 428.2,
   "madeBy": "render worker 1"
+ },
+ "w4-cardiology-technician": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 13,
+  "wer": 4.93,
+  "wpm": 132.0,
+  "maxCps": 16.0,
+  "lufs": -16.0,
+  "seconds": 251.5,
+  "madeBy": "render worker 3"
  }
 }
