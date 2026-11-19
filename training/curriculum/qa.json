@@ -213,12 +213,13 @@
    "format": true
   },
   "steps": 22,
-  "wer": 1.9,
-  "wpm": 138.8,
+  "wer": 2.08,
+  "wpm": 139.6,
   "maxCps": 15.6,
   "lufs": -16.0,
-  "seconds": 295.5,
-  "madeBy": "render worker 3"
+  "seconds": 295.8,
+  "megabytes": 14.2,
+  "madeBy": "render worker 3 (re-told)"
  },
  "w2-front-office": {
   "passed": true,
@@ -306,12 +307,13 @@
    "format": true
   },
   "steps": 13,
-  "wer": 4.93,
-  "wpm": 132.0,
+  "wer": 4.87,
+  "wpm": 132.7,
   "maxCps": 16.0,
   "lufs": -16.0,
-  "seconds": 251.5,
-  "madeBy": "render worker 3"
+  "seconds": 251.3,
+  "megabytes": 10.2,
+  "madeBy": "render worker 3 (re-told)"
  },
  "w5-insurance-desk": {
   "passed": true,
@@ -324,12 +326,13 @@
    "format": true
   },
   "steps": 30,
-  "wer": 2.99,
-  "wpm": 127.1,
+  "wer": 2.79,
+  "wpm": 127.8,
   "maxCps": 15.2,
   "lufs": -16.0,
-  "seconds": 366.6,
-  "madeBy": "render worker 3"
+  "seconds": 367.7,
+  "megabytes": 16.2,
+  "madeBy": "render worker 3 (re-told)"
  },
  "w5-physiotherapist": {
   "passed": true,
@@ -361,13 +364,13 @@
    "format": true
   },
   "steps": 17,
-  "wer": 2.06,
-  "wpm": 133.4,
+  "wer": 2.05,
+  "wpm": 133.8,
   "maxCps": 15.8,
   "lufs": -16.0,
-  "seconds": 275.5,
-  "megabytes": 11.6,
-  "madeBy": "render worker 3"
+  "seconds": 275.2,
+  "megabytes": 11.5,
+  "madeBy": "render worker 3 (re-told)"
  },
  "w7-hospital-admin": {
   "passed": true,
@@ -380,13 +383,13 @@
    "format": true
   },
   "steps": 18,
-  "wer": 3.83,
-  "wpm": 120.6,
-  "maxCps": 14.5,
+  "wer": 3.5,
+  "wpm": 123.1,
+  "maxCps": 14.6,
   "lufs": -16.0,
-  "seconds": 295.4,
-  "megabytes": 14.0,
-  "madeBy": "render worker 3"
+  "seconds": 297.7,
+  "megabytes": 14.2,
+  "madeBy": "render worker 3 (re-told)"
  },
  "w7-system-admin": {
   "passed": true,
