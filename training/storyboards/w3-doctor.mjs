@@ -169,6 +169,12 @@ export default {
           zoom: 1.3,
         },
         {
+          click: { role: 'button', name: 'Save draft' },
+          say: 'Save the prescription as a draft first. It is not sent to the pharmacy until you sign it.',
+          wait: { text: /Draft NHRX\d+ · saved/ },
+          zoom: 1.3,
+        },
+        {
           click: { role: 'button', name: 'Check safety' },
           say: 'Click Check safety. HC360 checks the allergies, the current medicines, interactions, duplicates and the maximum dose.',
           after:

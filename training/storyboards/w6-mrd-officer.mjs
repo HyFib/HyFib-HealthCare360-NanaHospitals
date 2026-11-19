@@ -146,12 +146,8 @@ export default {
           wait: { role: 'heading', name: 'MLC register' },
         },
         {
-          click: { within: nav, role: 'button', name: 'Medical records' },
-          say: 'Back in Medical records, the birth and death registers are kept the same way.',
-        },
-        {
           nav: 'Births',
-          say: 'Open Births.',
+          say: 'The birth and death registers are kept the same way. Open Births.',
           after: 'Every birth in the month is listed. Each must be reported to the Registrar within 21 days.',
           wait: { role: 'heading', name: 'Birth register' },
         },
