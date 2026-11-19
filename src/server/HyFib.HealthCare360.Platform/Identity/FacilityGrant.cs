@@ -8,6 +8,8 @@ namespace HyFib.HealthCare360.Platform.Identity;
 /// What narrows applies at once to the sessions open in a facility too (<see cref="KeepsSession"/>): a session is signed
 /// in to one facility, and its tokens carry it, so a facility taken away ends the user's sessions there, and a session in
 /// a facility the user no longer works in, or one taken out of use, is not renewed (<see cref="AuthService.RefreshAsync"/>).
+/// A staff session signed in to no facility, which reads every facility's records, lasts only while its user is a Super
+/// Administrator: signing in gives one to nobody else.
 /// </summary>
 internal static class FacilityGrant
 {
@@ -19,14 +21,19 @@ internal static class FacilityGrant
     /// <summary>Why a session ended: its facility was taken out of use.</summary>
     public const string FacilityInactiveReason = "facility_inactive";
 
+    /// <summary>Why a session ended: it was signed in to no facility, and its user is no longer a Super Administrator.</summary>
+    public const string FacilityRequiredReason = "facility_required";
+
     /// <summary>
-    /// Whether a session signed in to <paramref name="sessionFacility"/> may go on, for a user who works in every facility
-    /// (<paramref name="everyFacility"/>: given all of them, or a Super Administrator) or in <paramref name="facilities"/>.
-    /// A session with no facility (a patient's, or a Super Administrator's before the hospital has a facility) is not
-    /// limited to one, and is not ended for one.
+    /// Whether a staff session signed in to <paramref name="sessionFacility"/> may go on, for a user who works in every
+    /// facility (<paramref name="everyFacility"/>: given all of them, or a Super Administrator) or in
+    /// <paramref name="facilities"/>. A session signed in to no facility goes on only while its user is a Super
+    /// Administrator (<paramref name="superAdministrator"/>): signing in gives one only to a Super Administrator of a
+    /// hospital with no facility in use, and refuses anyone else with none (all facilities included). A patient's session,
+    /// which is in no facility, is not for this rule: callers leave it alone.
     /// </summary>
-    public static bool KeepsSession(Guid? sessionFacility, bool everyFacility, IReadOnlyCollection<Guid> facilities) =>
-        sessionFacility is not { } facility || everyFacility || facilities.Contains(facility);
+    public static bool KeepsSession(Guid? sessionFacility, bool everyFacility, IReadOnlyCollection<Guid> facilities, bool superAdministrator) =>
+        sessionFacility is { } facility ? everyFacility || facilities.Contains(facility) : superAdministrator;
 
     /// <summary>
     /// Splits a save into what applies at once and what is asked for.

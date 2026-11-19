@@ -532,14 +532,14 @@ internal static class AccessAdminEndpoints
             user.IsActive = user.IsActive || activate;
         }
 
-        // Deactivated, the user's sessions end. A facility taken away ends their sessions in it, at once too: a session's tokens
-        // carry the facility it is signed in to, and would otherwise go on working there until the session ends.
+        // Deactivated, the user's sessions end. A facility taken away ends their sessions in it, at once too, and the Super
+        // Administrator role taken away a session in no facility: a session's tokens carry the facility it is signed in to, or
+        // none, which reads every facility's records, and would otherwise go on so until the session ends.
         var rolesNow = user.Roles.Select(r => r.RoleId).ToList();
         var facilitiesNow = user.Facilities.Select(f => f.FacilityId).ToList();
         var ended = wasActive && !user.IsActive
             ? await AccountApprovals.RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
-            : await AccountApprovals.RevokeSessionsOutsideAsync(
-                db, user.Id, user.AllFacilities || await HoldsSuperAdministratorAsync(db, rolesNow, ct), facilitiesNow, time.GetUtcNow(), ct);
+            : await AccountApprovals.RevokeSessionsOutsideAsync(db, user, await HoldsSuperAdministratorAsync(db, rolesNow, ct), time.GetUtcNow(), ct);
 
         // Which roles and facilities the change gave, asked for and took away, by name, in the transaction that makes it.
         var names = await GrantNamesAsync(db, rolesBefore.Concat(roleIds), facilitiesBefore.Concat(facilityIds), ct);

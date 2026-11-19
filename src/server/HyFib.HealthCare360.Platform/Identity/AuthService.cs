@@ -833,14 +833,14 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        // A session is renewed only in a facility its user may sign in to now: one taken away from them, or taken out of use,
-        // ends it (FacilityGrant.KeepsSession), as signing in or switching facility would refuse it. Saving the user or the
-        // facility ends such sessions at once; this ends any that were left open, whatever changed.
+        // A staff session is renewed only where its user may sign in now (FacilityGrant.KeepsSession): in a facility still theirs
+        // and in use, or, signed in to no facility, while they are a Super Administrator. Signing in or switching facility would
+        // refuse the rest. Saving the user or the facility ends such sessions at once; this ends any that were left open,
+        // whatever changed. A patient's session is in no facility, and is left alone.
         var roles = RoleNames(user);
-        if (session.FacilityId is { } facilityId
-            && !FacilityGrant.KeepsSession(facilityId, everyFacility: false, [.. (await AllowedFacilitiesAsync(user, roles, ct)).Select(f => f.Id)]))
+        if (user.Type != UserType.Patient && !await MayRenewWhereSignedInAsync(user, roles, session, ct))
         {
-            await EndOutsideFacilityAsync(session, user, facilityId, now, ct);
+            await EndOutsideFacilityAsync(session, user, now, ct);
             sessionValidator.Invalidate(session.Id);
             ClearRefreshCookie(http);
             return SessionEnded;
@@ -1690,22 +1690,45 @@ public sealed class AuthService(
     }
 
     /// <summary>
-    /// Ends, and saves, a session signed in to a facility its user may no longer sign in to: taken away from them
-    /// (<see cref="FacilityGrant.FacilityRemovedReason"/>), or out of use (<see cref="FacilityGrant.FacilityInactiveReason"/>).
-    /// Invalidate it next.
+    /// Whether the session may be renewed where it is signed in (<see cref="FacilityGrant.KeepsSession"/>): in a facility its
+    /// user may sign in to now, or in none while its user is a Super Administrator.
     /// </summary>
-    private async Task EndOutsideFacilityAsync(UserSession session, User user, Guid facilityId, DateTimeOffset now, CancellationToken ct)
+    private async Task<bool> MayRenewWhereSignedInAsync(User user, IReadOnlyList<string> roles, UserSession session, CancellationToken ct)
     {
-        var inUse = await db.Set<Facility>().AnyAsync(f => f.Id == facilityId && f.IsActive, ct);
+        var allowed = session.FacilityId is null ? [] : (await AllowedFacilitiesAsync(user, roles, ct)).Select(f => f.Id).ToList();
+        return FacilityGrant.KeepsSession(session.FacilityId, everyFacility: false, allowed, superAdministrator: roles.Contains(SystemRoles.SuperAdmin));
+    }
+
+    /// <summary>
+    /// Ends, and saves, a session its user may no longer renew where it is signed in: in a facility taken away from them
+    /// (<see cref="FacilityGrant.FacilityRemovedReason"/>) or out of use (<see cref="FacilityGrant.FacilityInactiveReason"/>),
+    /// or in no facility now they are not a Super Administrator (<see cref="FacilityGrant.FacilityRequiredReason"/>: they
+    /// must sign in to a facility). Invalidate it next.
+    /// </summary>
+    private async Task EndOutsideFacilityAsync(UserSession session, User user, DateTimeOffset now, CancellationToken ct)
+    {
+        string reason, summary;
+        if (session.FacilityId is not { } facilityId)
+        {
+            (reason, summary) = (FacilityGrant.FacilityRequiredReason, "Session ended: it was signed in to no facility, which only a Super Administrator's may be");
+        }
+        else if (await db.Set<Facility>().AnyAsync(f => f.Id == facilityId && f.IsActive, ct))
+        {
+            (reason, summary) = (FacilityGrant.FacilityRemovedReason, "Session ended: its facility was taken away from the user");
+        }
+        else
+        {
+            (reason, summary) = (FacilityGrant.FacilityInactiveReason, "Session ended: its facility was taken out of use");
+        }
+
         session.RevokedAt = now;
-        session.RevokedReason = inUse ? FacilityGrant.FacilityRemovedReason : FacilityGrant.FacilityInactiveReason;
-        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_facility_ended",
-            inUse ? "Session ended: its facility was taken away from the user" : "Session ended: its facility was taken out of use")
+        session.RevokedReason = reason;
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_facility_ended", summary)
         {
             UserId = user.Id,
             UserName = user.UserName,
-            EntityType = nameof(Facility),
-            EntityId = facilityId.ToString(),
+            EntityType = session.FacilityId is null ? null : nameof(Facility),
+            EntityId = session.FacilityId?.ToString(),
         });
         await db.SaveChangesAsync(ct);
     }

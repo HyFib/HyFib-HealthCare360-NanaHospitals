@@ -370,7 +370,9 @@ and grants nothing.
     Taking a facility out of use ends the sessions in it (`facility_inactive`, audited as `facility.sessions_ended`). A
     session is renewed only in a facility its user may sign in to now, so one left open, whatever changed, ends at its
     next refresh (`auth.session_facility_ended`). Before, such a session went on working in the facility for up to 12
-    hours, or until 2 hours unused.
+    hours, or until 2 hours unused. A session signed in to no facility reads every facility's records, and signing in
+    gives one only to a Super Administrator of a hospital with no facility in use: it ends when its user loses the role,
+    at once or at its next refresh (`facility_required`), whatever facilities they keep, all of them included.
   - A role turned off gives nothing, wherever a role becomes access: no permission for any endpoint or hub, no notification
     or work sent to its holders (`PermissionHolders`), no part in approving grants. It stays assigned, and what it
     requires of its holders (two-step verification, an enrolled workstation, its idle lock, the protection of accounts

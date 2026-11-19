@@ -70,24 +70,39 @@ public sealed class FacilityGrantTests
     [Fact]
     public void A_session_in_a_facility_taken_away_ends()
     {
-        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main]).ShouldBeFalse();
-        FacilityGrant.KeepsSession(Annexe, everyFacility: false, []).ShouldBeFalse("a user left with no facility keeps no session in one");
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main], superAdministrator: false).ShouldBeFalse();
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [], superAdministrator: false).ShouldBeFalse("a user left with no facility keeps no session in one");
     }
 
     [Fact]
     public void A_session_in_a_facility_still_given_goes_on()
     {
-        FacilityGrant.KeepsSession(Main, everyFacility: false, [Main]).ShouldBeTrue();
-        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main, Annexe]).ShouldBeTrue();
+        FacilityGrant.KeepsSession(Main, everyFacility: false, [Main], superAdministrator: false).ShouldBeTrue();
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main, Annexe], superAdministrator: false).ShouldBeTrue();
     }
 
     [Fact]
     public void Every_facility_keeps_a_session_in_any_of_them() =>
-        FacilityGrant.KeepsSession(Annexe, everyFacility: true, []).ShouldBeTrue("all facilities, or a Super Administrator, covers facilities not listed");
+        FacilityGrant.KeepsSession(Annexe, everyFacility: true, [], superAdministrator: false).ShouldBeTrue("all facilities, or a Super Administrator, covers facilities not listed");
 
     [Fact]
-    public void A_session_without_a_facility_is_not_ended_for_one() =>
-        FacilityGrant.KeepsSession(null, everyFacility: false, []).ShouldBeTrue("a patient's session, or a Super Administrator's before the hospital has a facility");
+    public void A_super_administrators_session_in_a_facility_follows_the_facilities_as_anyone_elses_does() =>
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main], superAdministrator: true)
+            .ShouldBeFalse("a facility out of use is not among the facilities a Super Administrator signs in to either");
+
+    [Fact]
+    public void A_session_in_no_facility_goes_on_for_a_super_administrator() =>
+        FacilityGrant.KeepsSession(null, everyFacility: true, [], superAdministrator: true)
+            .ShouldBeTrue("signing in gives a Super Administrator no facility while the hospital has none in use");
+
+    [Fact]
+    public void A_session_in_no_facility_ends_for_a_user_given_all_facilities_who_is_not_a_super_administrator() =>
+        FacilityGrant.KeepsSession(null, everyFacility: true, [], superAdministrator: false)
+            .ShouldBeFalse("signing in refuses them with no facility in use, and otherwise gives them one: never none");
+
+    [Fact]
+    public void A_session_in_no_facility_ends_for_a_user_given_some_facilities() =>
+        FacilityGrant.KeepsSession(null, everyFacility: false, [Main], superAdministrator: false).ShouldBeFalse();
 
     private static PendingUserGrant Pending(bool all, params Guid[] facilities) =>
         new(Guid.NewGuid(), [], facilities, Activate: false, "Hospital Admin", DateTimeOffset.UnixEpoch, all);

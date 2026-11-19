@@ -20,7 +20,9 @@ namespace HyFib.HealthCare360.IntegrationTests;
 /// at once, with no second administrator. Now that leaves her none, and every facility waits for a second administrator
 /// like any other access given; taking it back to one facility applies at once.
 /// A facility taken away, or taken out of use, applies at once to the sessions open in it as well: before, they went on
-/// working there, and were renewed, for the rest of their 12 hours.
+/// working there, and were renewed, for the rest of their 12 hours. A session signed in to no facility, which only a Super
+/// Administrator of a hospital with no facility in use is given, lasts only while its user is one: with no facility, the
+/// facility filter is off, so it would otherwise reach every facility's records.
 /// </summary>
 public sealed class UserFacilityTests(HospitalServer server)
 {
@@ -204,6 +206,88 @@ public sealed class UserFacilityTests(HospitalServer server)
         }
     }
 
+    [Fact]
+    public async Task A_session_in_no_facility_ends_once_its_user_is_no_longer_a_super_administrator()
+    {
+        var superAdmin = await server.SignInAsync(HospitalServer.Users.Admin);
+        var nurse = (await superAdmin.GetAsync<List<RoleListItem>>("/api/v1/admin/roles")).Single(r => r.Name == SystemRoles.Nurse).Id;
+        var name = "it-nofacility-" + Guid.NewGuid().ToString("N")[..8];
+        await server.CreateStaffAccountAsync(name, SystemRoles.Nurse);
+        var path = await UserPathAsync(superAdmin, name);
+        var (atMain, _) = await server.SignInNewSessionAsync(name);
+        var (inNone, inNoneCookie) = await server.SignInNewSessionAsync(name);
+        try
+        {
+            // She is a Super Administrator too, with a session signed in to no facility, as a Super Administrator of a hospital
+            // with no facility in use is given (both straight in the database: the role is given only by a Super
+            // Administrator, alone, as a break-glass).
+            await SuperAdministratorAsync(name, true);
+            await SignedInToNoFacilityAsync(inNone);
+
+            // The role taken away from Administration › Users: a narrowing, at once. Her facilities stay as they were.
+            var user = await superAdmin.GetAsync<UserDetail>(path);
+            user.RoleIds.Count.ShouldBe(2);
+            using (var narrowed = await superAdmin.SendRawAsync(HttpMethod.Put, path, new UpdateUserRequest(
+                       user.DisplayName, user.Email, user.Phone, [nurse], user.FacilityIds, user.DefaultFacilityId, user.PractitionerId, user.IsActive,
+                       user.Version, Reason: "No longer administers the hospital.", AllFacilities: user.AllFacilities)))
+            {
+                narrowed.StatusCode.ShouldBe(HttpStatusCode.NoContent, await narrowed.Content.ReadAsStringAsync(Ct));
+            }
+
+            // The session in no facility stops on its next request, and is not renewed; her session at the main hospital goes on.
+            (await StatusOfAsync(inNone)).ShouldBe(HttpStatusCode.Unauthorized);
+            using (var refused = await server.RefreshAsync(inNoneCookie))
+            {
+                refused.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            }
+
+            (await RevokedReasonAsync(inNone)).ShouldBe("facility_required");
+            (await StatusOfAsync(atMain)).ShouldBe(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await SuperAdministratorAsync(name, false);
+        }
+    }
+
+    [Fact]
+    public async Task A_super_administrators_session_in_no_facility_is_renewed_until_the_role_is_taken_away()
+    {
+        var name = "it-nofacility-" + Guid.NewGuid().ToString("N")[..8];
+        await server.CreateStaffAccountAsync(name, SystemRoles.Nurse);
+        var (inNone, cookie) = await server.SignInNewSessionAsync(name);
+        try
+        {
+            await SuperAdministratorAsync(name, true);
+            await SignedInToNoFacilityAsync(inNone);
+
+            // A Super Administrator's session in no facility is renewed, in no facility.
+            using (var renewed = await server.RefreshAsync(cookie))
+            {
+                renewed.StatusCode.ShouldBe(HttpStatusCode.OK, await renewed.Content.ReadAsStringAsync(Ct));
+                (await renewed.Content.ReadFromJsonAsync<AuthResult>(ApiClient.Json, Ct)).ShouldNotBeNull().User.ShouldNotBeNull().FacilityId.ShouldBeNull();
+                cookie = HospitalServer.RefreshCookieOf(renewed).ShouldNotBeNull();
+            }
+
+            (await RevokedReasonAsync(inNone)).ShouldBeNull();
+
+            // The role taken away where no save of the account ends the session (straight in the database): its next refresh
+            // ends it.
+            await SuperAdministratorAsync(name, false);
+            using (var refused = await server.RefreshAsync(cookie))
+            {
+                refused.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+            }
+
+            (await RevokedReasonAsync(inNone)).ShouldBe("facility_required");
+            (await StatusOfAsync(inNone)).ShouldBe(HttpStatusCode.Unauthorized);
+        }
+        finally
+        {
+            await SuperAdministratorAsync(name, false);
+        }
+    }
+
     /// <summary>
     /// A new facility of the hospital, in use, so staff can sign in to it. The test takes it out of use when it ends: a
     /// facility in use is every facility's user's to work in.
@@ -233,10 +317,44 @@ public sealed class UserFacilityTests(HospitalServer server)
     {
         var name = "it-annexe-" + Guid.NewGuid().ToString("N")[..8];
         await server.CreateStaffAccountAsync(name, SystemRoles.Nurse);
-        var path = $"/api/v1/admin/users/{(await admin.GetAsync<PagedResult<UserListItem>>($"/api/v1/admin/users?search={name}")).Items.Single().Id}";
+        var path = await UserPathAsync(admin, name);
         await server.UpdateAndApproveAsync(admin, path, Update(await admin.GetAsync<UserDetail>(path), [main, annexe], all: false));
         (await admin.GetAsync<UserDetail>(path)).FacilityIds.ShouldBe([main, annexe], ignoreOrder: true);
         return (name, path);
+    }
+
+    /// <summary>The account's page in Administration › Users.</summary>
+    private static async Task<string> UserPathAsync(ApiClient admin, string name) =>
+        $"/api/v1/admin/users/{(await admin.GetAsync<PagedResult<UserListItem>>($"/api/v1/admin/users?search={name}")).Items.Single().Id}";
+
+    /// <summary>
+    /// The account given the Super Administrator role, or that role taken away, straight in the database, where no save of
+    /// the account ends a session. A test that gives it takes it away when it ends: another Super Administrator would change
+    /// who may approve what in other tests.
+    /// </summary>
+    private async Task SuperAdministratorAsync(string name, bool holds)
+    {
+        await using var scope = server.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var userId = await db.Set<User>().Where(u => u.UserName == name).Select(u => u.Id).SingleAsync(Ct);
+        var roleId = await db.Set<Role>().Where(r => r.Name == SystemRoles.SuperAdmin).Select(r => r.Id).SingleAsync(Ct);
+        await db.Set<UserRole>().Where(r => r.UserId == userId && r.RoleId == roleId).ExecuteDeleteAsync(Ct);
+        if (holds)
+        {
+            db.Add(new UserRole { UserId = userId, RoleId = roleId });
+            await db.SaveChangesAsync(Ct);
+        }
+
+        scope.ServiceProvider.GetRequiredService<IPermissionService>().Invalidate(userId);
+    }
+
+    /// <summary>The client's session made one signed in to no facility, straight in the database.</summary>
+    private async Task SignedInToNoFacilityAsync(ApiClient client)
+    {
+        var sessionId = SessionIdOf(client);
+        await using var scope = server.Services.CreateAsyncScope();
+        (await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserSession>().Where(s => s.Id == sessionId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.FacilityId, (Guid?)null), Ct)).ShouldBe(1);
     }
 
     /// <summary>A new session of the account, signed in at its default facility and switched to <paramref name="facilityId"/>.</summary>
@@ -274,11 +392,16 @@ public sealed class UserFacilityTests(HospitalServer server)
         return response.StatusCode;
     }
 
-    private async Task<string?> RevokedReasonAsync(ApiClient client)
+    private static Guid SessionIdOf(ApiClient client)
     {
         var jwt = client.Http.DefaultRequestHeaders.Authorization?.Parameter ?? throw new InvalidOperationException("The client has no token.");
         using var payload = JsonDocument.Parse(Base64UrlEncoder.Decode(jwt.Split('.')[1]));
-        var sessionId = Guid.Parse(payload.RootElement.GetProperty("sid").GetString()!);
+        return Guid.Parse(payload.RootElement.GetProperty("sid").GetString()!);
+    }
+
+    private async Task<string?> RevokedReasonAsync(ApiClient client)
+    {
+        var sessionId = SessionIdOf(client);
         await using var scope = server.Services.CreateAsyncScope();
         return await scope.ServiceProvider.GetRequiredService<HospitalDbContext>().Set<UserSession>()
             .Where(s => s.Id == sessionId)
