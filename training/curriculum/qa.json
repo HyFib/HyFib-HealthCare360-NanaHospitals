@@ -644,5 +644,24 @@
   "seconds": 366.9,
   "megabytes": 17.9,
   "madeBy": "render worker 2"
+ },
+ "w3-doctor": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 32,
+  "wer": 4.03,
+  "wpm": 128.8,
+  "maxCps": 15.5,
+  "lufs": -16.0,
+  "seconds": 427.9,
+  "megabytes": 22.2,
+  "madeBy": "render worker 1"
  }
 }
