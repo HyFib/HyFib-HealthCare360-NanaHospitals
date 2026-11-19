@@ -65,6 +65,20 @@ def words(text: str) -> list[str]:
     return out
 
 
+def join_compounds(a: list[str], b: list[str]) -> list[str]:
+    """Two words of `a` that the other side wrote as one ("out patient" and "outpatient", "store keeper") become one."""
+    other = set(b)
+    out, i = [], 0
+    while i < len(a):
+        if i + 1 < len(a) and a[i] + a[i + 1] in other:
+            out.append(a[i] + a[i + 1])
+            i += 2
+        else:
+            out.append(a[i])
+            i += 1
+    return out
+
+
 def wer(ref: list[str], hyp: list[str]) -> tuple[int, list]:
     """Edit distance on words, with the edits."""
     n, m = len(ref), len(hyp)
@@ -164,6 +178,7 @@ def main():
                 pieces.append(transcribe(rec, x[sa:sb]))
         heard = " ".join(pieces)
         ref, hyp = words(nar[sid]["text"]), words(heard)
+        ref, hyp = join_compounds(ref, hyp), join_compounds(hyp, ref)
         errors, edits = wer(ref, hyp)
         total_ref += len(ref)
         total_err += errors
