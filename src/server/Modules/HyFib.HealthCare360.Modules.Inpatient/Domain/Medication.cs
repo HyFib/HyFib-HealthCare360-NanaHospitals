@@ -156,10 +156,13 @@ public sealed class MedicationOrder : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// The order's doses from <paramref name="from"/> for the next <see cref="MarRules.ChartAhead"/>, on its rounds and within
-    /// its start and end, that are not on the chart yet (<paramref name="charted"/>: the times already charted).
+    /// its start and end, that are not on the chart yet (<paramref name="charted"/>: the times already charted). A STAT order
+    /// is a single dose: none once a dose of it is on the chart (<paramref name="hasDoses"/>), whatever the time.
     /// </summary>
-    public IReadOnlyList<DateTimeOffset> DosesToChart(DateTimeOffset from, IReadOnlyCollection<DateTimeOffset> charted) =>
-        [.. DoseSchedule.Between(Frequency, from, from + MarRules.ChartAhead, StartAt, EndAt).Where(at => !charted.Contains(at))];
+    public IReadOnlyList<DateTimeOffset> DosesToChart(DateTimeOffset from, IReadOnlyCollection<DateTimeOffset> charted, bool hasDoses = false) =>
+        DoseSchedule.IsImmediate(Frequency) && hasDoses
+            ? []
+            : [.. DoseSchedule.Between(Frequency, from, from + MarRules.ChartAhead, StartAt, EndAt).Where(at => !charted.Contains(at))];
 
     public bool CountersignOverdue(DateTimeOffset now) => AwaitingCountersignature && CountersignDueAt is { } due && now > due;
 
@@ -381,6 +384,22 @@ public static class MarRules
 
     public static bool IsOverdue(MarStatus status, DateTimeOffset scheduledAt, DateTimeOffset now, TimeSpan grace) =>
         status == MarStatus.Due && now > scheduledAt + grace;
+
+    /// <summary>
+    /// The chart line an issued medicine supplies: the line its prescription line became; else, for a medicine issued with
+    /// no prescription line on the chart (a ward indent, a direct issue: a replacement ampoule, a ward order's supply), an
+    /// active line of the same drug of the master, one with a dose and frequency before one the pharmacy made, the latest
+    /// first. Null when the chart has no line of the drug.
+    /// </summary>
+    public static MedicationOrder? OrderSupplied(Guid? prescriptionLineId, Guid itemId, IEnumerable<MedicationOrder> orders)
+    {
+        var chart = orders as IReadOnlyCollection<MedicationOrder> ?? [.. orders];
+        return (prescriptionLineId is { } lineId ? chart.FirstOrDefault(o => o.PrescriptionLineId == lineId) : null)
+               ?? chart.Where(o => o.Status == MedicationOrderStatus.Active && o.DrugItemId == itemId)
+                   .OrderBy(o => o.Source == MedicationOrderSource.Pharmacy)
+                   .ThenByDescending(o => o.StartAt)
+                   .FirstOrDefault();
+    }
 
     /// <summary>
     /// Whether a dose given is witnessed by a second nurse: always for a dose with no order behind it (nobody prescribed it,

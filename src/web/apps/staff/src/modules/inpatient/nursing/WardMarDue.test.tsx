@@ -9,7 +9,7 @@ import type { WardMarItem } from '../nursingApi';
 import { WardMarDue } from './WardMarDue';
 
 // The ward's medication round. A dose of a medicine the doctor has stopped is never given: the stop cancels it, and one
-// still listed says why and offers no "Given", as a held dose does.
+// still listed says why and offers no "Given", as a held dose does. A dose shows its own notes and its order's instructions.
 
 const WARD_ID = '0192a000-0000-7000-8000-00000000f401';
 
@@ -90,5 +90,20 @@ describe("the ward's medication round", SCREEN_TESTS, () => {
     // Only the paracetamol, whose order goes on, is given; either may be recorded as not given.
     expect(screen.getAllByRole('button', { name: 'Given' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'Not given' })).toHaveLength(2);
+  });
+
+  it("shows a dose's notes and its order's instructions, such as what to confirm with the doctor first", async () => {
+    fakeServer({
+      [`GET /api/v1/nursing/wards/${WARD_ID}/mar/due`]: [
+        dose({
+          notes: 'Confirm the dose with Dr. Iyer before giving',
+          instructions: 'After food',
+        }),
+      ],
+    });
+    openRound();
+
+    expect(await screen.findByText('Confirm the dose with Dr. Iyer before giving', {}, SLOW)).toBeInTheDocument();
+    expect(screen.getByText('After food')).toBeInTheDocument();
   });
 });

@@ -201,12 +201,13 @@ public sealed class MarWitnessTests(HospitalServer server)
         var (insulinOrder, morphineOrder) = (orders.Single(o => o.DrugItemId == insulin), orders.Single(o => o.DrugItemId == morphine));
         (insulinOrder.IsHighAlert, insulinOrder.IsControlledDrug, morphineOrder.IsControlledDrug).ShouldBe((true, false, true));
 
-        // Their doses, to be confirmed with the doctor, are not recorded as given without a witness.
-        var chart = await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar");
+        // No dose of them is charted until a doctor orders it; one given all the same is witnessed, as the master says.
+        (await nurse.GetAsync<List<MarEntryDto>>($"/api/v1/nursing/admissions/{admission.Id}/mar"))
+            .ShouldNotContain(e => e.MedicationOrderId == insulinOrder.Id || e.MedicationOrderId == morphineOrder.Id);
         foreach (var order in new[] { insulinOrder, morphineOrder })
         {
-            var dose = chart.Single(e => e.MedicationOrderId == order.Id && e.Status == MarStatus.Due);
-            (await RefusalAsync(nurse, $"/api/v1/nursing/mar/{dose.Id}/record", Given(dose, null))).ShouldBe("mar.witness_required");
+            order.Instructions.ShouldNotBeNull().ShouldContain("Confirm the dose and frequency with the doctor");
+            (await RefusalAsync(nurse, $"/api/v1/nursing/admissions/{admission.Id}/mar", Extra(order.Id, null))).ShouldBe("mar.witness_required");
         }
     }
 

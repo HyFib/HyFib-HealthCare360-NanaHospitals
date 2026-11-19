@@ -102,13 +102,9 @@ public sealed class MarService(
             .Select(e => e.Entity.ScheduledAt)
             .ToList();
 
-        // A STAT order is a single dose: never chart it twice, whatever the dispense time.
-        if (DoseSchedule.IsImmediate(order.Frequency)
-            && (staged.Count > 0 || await db.Set<MedicationAdministration>().AnyAsync(m => m.MedicationOrderId == order.Id, ct)))
-        {
-            return 0;
-        }
-
+        // A STAT order is a single dose: never charted twice, whatever the dispense time (MedicationOrder.DosesToChart).
+        var hasDoses = DoseSchedule.IsImmediate(order.Frequency)
+                       && (staged.Count > 0 || await db.Set<MedicationAdministration>().AnyAsync(m => m.MedicationOrderId == order.Id, ct));
         var existing = (await db.Set<MedicationAdministration>().AsNoTracking()
                 .Where(m => m.MedicationOrderId == order.Id && m.ScheduledAt >= from && m.ScheduledAt < until)
                 .Select(m => m.ScheduledAt)
@@ -116,7 +112,7 @@ public sealed class MarService(
             .Concat(staged)
             .ToHashSet();
 
-        var doses = order.DosesToChart(from, existing);
+        var doses = order.DosesToChart(from, existing, hasDoses);
         foreach (var at in doses)
         {
             db.Add(NewDose(order, at, isAdHoc: false, batchNumber, dispenseId));
@@ -793,10 +789,13 @@ public sealed class MarService(
     }
 
     /// <summary>
-    /// Schedules the next 24 hours of doses for each dispensed line. Lines without a charted prescription line are
-    /// charted as a single dose to confirm with the doctor (never a guessed schedule), on an order that takes the drug's
-    /// class from the master as one typed on the ward does; for patients already in discharge such lines are treated as
-    /// take-home medicines and not put on the ward MAR.
+    /// Charts what the pharmacy issued, line by line (<see cref="MarRules.OrderSupplied"/>). The chart line a prescription line
+    /// became gets the next 24 hours of its doses (kept a day ahead from then, <see cref="MarChartAheadJob"/>). So does an active
+    /// line of the same drug, for a medicine issued with no prescription line on the chart: a ward indent or a direct issue
+    /// supplies the order already there (a replacement ampoule of a STAT order charts nothing more), and makes no second line.
+    /// Only when the chart has no line of the drug is one made for it, "as directed" and with no dose: the doctor orders the
+    /// dose and frequency before any is given. That line takes the drug's class from the master, as one typed on the ward
+    /// does. For patients already in discharge, a medicine with no line is a take-home medicine and not put on the ward MAR.
     /// </summary>
     public async Task ChartDispenseAsync(MedicationDispensed dispensed, CancellationToken ct)
     {
@@ -812,16 +811,18 @@ public sealed class MarService(
         }
 
         var lineIds = dispensed.Lines.Where(l => l.PrescriptionLineId != null).Select(l => l.PrescriptionLineId!.Value).ToList();
+        var itemIds = dispensed.Lines.Select(l => l.ItemId).Distinct().ToList();
         var orders = await db.Set<MedicationOrder>()
-            .Where(o => o.AdmissionId == admissionId && o.PrescriptionLineId != null && lineIds.Contains(o.PrescriptionLineId.Value))
+            .Where(o => o.AdmissionId == admissionId
+                        && ((o.PrescriptionLineId != null && lineIds.Contains(o.PrescriptionLineId.Value))
+                            || (o.Status == MedicationOrderStatus.Active && o.DrugItemId != null && itemIds.Contains(o.DrugItemId.Value))))
             .ToListAsync(ct);
         var drugs = await DrugClassesAsync(
-            [.. dispensed.Lines.Where(l => orders.TrueForAll(o => o.PrescriptionLineId != l.PrescriptionLineId)).Select(l => l.ItemId).Distinct()], ct);
+            [.. dispensed.Lines.Where(l => MarRules.OrderSupplied(l.PrescriptionLineId, l.ItemId, orders) is null).Select(l => l.ItemId).Distinct()], ct);
 
         foreach (var line in dispensed.Lines)
         {
-            var order = line.PrescriptionLineId is { } lineId ? orders.FirstOrDefault(o => o.PrescriptionLineId == lineId) : null;
-            if (order is not null)
+            if (MarRules.OrderSupplied(line.PrescriptionLineId, line.ItemId, orders) is { } order)
             {
                 order.LastDispensedAt = dispensed.DispensedAt;
                 await ScheduleAsync(order, dispensed.DispensedAt, Fit(line.BatchNumber, 64), dispensed.DispenseId, ct);
@@ -847,17 +848,21 @@ public sealed class MarService(
                 Dose = AsDirected,
                 Frequency = AsDirected,
                 StartAt = dispensed.DispensedAt,
-                Instructions = "Issued by pharmacy without a linked prescription line: confirm dose and frequency with the doctor.",
+                Instructions = PharmacyIssueWaits,
                 Source = MedicationOrderSource.Pharmacy,
                 Status = MedicationOrderStatus.Active,
                 LastDispensedAt = dispensed.DispensedAt,
             };
             db.Add(pharmacyOrder);
-            var dose = NewDose(pharmacyOrder, dispensed.DispensedAt, isAdHoc: true, Fit(line.BatchNumber, 64), dispensed.DispenseId);
-            dose.Notes = "Confirm dose and frequency with the prescribing doctor before giving.";
-            db.Add(dose);
+
+            // Another batch of the same drug in this issue supplies the line just made.
+            orders.Add(pharmacyOrder);
         }
     }
+
+    /// <summary>What a line made for a medicine the pharmacy issued with no order says on the chart.</summary>
+    internal const string PharmacyIssueWaits =
+        "Issued by the pharmacy with no prescription line and no order on the chart: no dose is charted. Confirm the dose and frequency with the doctor, who orders it.";
 
     public async Task<IReadOnlyList<WardMarItem>> WardDueAsync(Guid wardId, int withinMinutes, CancellationToken ct)
     {
@@ -887,6 +892,7 @@ public sealed class MarService(
                     m.Route,
                     m.ScheduledAt,
                     m.Version,
+                    m.Notes,
                     Order = o,
                 })
             .Take(500)
@@ -894,7 +900,7 @@ public sealed class MarService(
         var grace = await GraceAsync(currentUser.FacilityId, ct);
         return rows.Select(r => new WardMarItem(r.Id, r.AdmissionId, r.PatientId, r.Uhid, r.FullName, r.BedLabel, r.DrugName, r.Dose, r.Route, r.ScheduledAt,
                 MarRules.IsOverdue(MarStatus.Due, r.ScheduledAt, now, grace), (int)Math.Max(0, (now - r.ScheduledAt).TotalMinutes), r.Version,
-                MarRules.RequiresWitness(r.Order), HeldBecause(r.Order)))
+                MarRules.RequiresWitness(r.Order), HeldBecause(r.Order), r.Notes, r.Order?.Instructions))
             .ToList();
     }
 

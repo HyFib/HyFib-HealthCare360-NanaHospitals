@@ -202,7 +202,11 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
                 {o.roundTimes.length > 0 && (
                   <Caption1 block>At {o.roundTimes.map(formatTimeOfDay).join(', ')}</Caption1>
                 )}
-                {o.isAsNeeded && <Caption1 block>Only when needed (not scheduled)</Caption1>}
+                {o.source === 'Pharmacy' && o.status === 'Active' ? (
+                  <Caption1 block>Issued by the pharmacy: no dose until the doctor orders it</Caption1>
+                ) : (
+                  o.isAsNeeded && <Caption1 block>Only when needed (not scheduled)</Caption1>
+                )}
               </span>
             ),
           },

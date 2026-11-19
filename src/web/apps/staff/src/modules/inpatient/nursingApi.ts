@@ -398,6 +398,10 @@ export interface WardMarItem {
   needsWitness: boolean;
   /** Why the dose is held, while it is; null when it may be given. */
   heldBecause?: DoseHold | null;
+  /** The dose's own notes: an extra dose's reason, what to confirm before giving it. */
+  notes?: string | null;
+  /** Its order's instructions ("after food", "confirm the dose with the doctor"). */
+  instructions?: string | null;
 }
 
 // ------------------------------------------------------------------ queries

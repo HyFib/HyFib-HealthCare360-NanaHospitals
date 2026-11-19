@@ -331,12 +331,12 @@ view's *Restrained patients* list ([Restraints.tsx](../../src/web/apps/staff/src
 | GET | `/admissions/{admissionId}/mar?date` | `nursing.mar` or `nursing.chart` | → `MarEntryDto[]` (day + older undocumented doses, `isOverdue`) |
 | POST | `/admissions/{admissionId}/mar` | `nursing.mar` | `AddAdHocDoseRequest` (SOS/STAT; `givenNow`; `witnessConfirmationId` as below) → 201 `MarEntryDto`; after the discharge (late entries, 24 h) only a dose given before it, with its time, else 422 `medication.discharged`; none of an order that has stopped (422 `medication.not_active`) or whose doses are held |
 | POST | `/mar/{id}/record` | `nursing.mar` | `RecordAdministrationRequest` (outcome Given/Held/Refused/Missed, administeredAt, reason — required unless given, batch, `witnessConfirmationId` — required for a controlled drug or high-alert medicine given, or a dose with no order, notes, `version`) → `MarEntryDto` (`witnessName`, `needsWitness`, `heldBecause`); a held dose is not given (422 `medication.awaiting_countersignature`, `medication.stop_pending`), nor a dose of a stopped order (422 `medication.not_active`, `heldBecause` says so), nor a cancelled dose recorded at all (422 `mar.cancelled`) |
-| GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist) |
+| GET | `/wards/{wardId}/mar/due?withinMinutes` | `nursing.mar` | → `WardMarItem[]` (ward due/overdue worklist, with each dose's `notes` and its order's `instructions`) |
 
 A controlled drug given (an order marked controlled: Schedule H1 or X, or NDPS) or a high-alert medicine given is
 witnessed by a second nurse, who proves who they are at the recording nurse's screen (ADR-014). An order that names an
 item of the drug master takes both flags from it when it is made, whatever the order form or the prescription line
-sent; so does the order made for a medicine the pharmacy issues without a prescription line. A ward order typed in
+sent; so does the line made for a medicine the pharmacy issues that no line of the chart carries. A ward order typed in
 without an item of the master is always high-alert (its flags cannot be cleared by typing a name), and a dose with no
 order behind it is always witnessed. The witnesses type their own user name and password there, and
 their authenticator code when their account has one (`POST /api/v1/auth/witness`, purpose `mar.dose`, with the
@@ -396,6 +396,18 @@ line, a line of a patient no longer admitted, an e-prescription line the pharmac
 directed" and STAT lines. It charts from the time it runs, never a dose already past. Doses it charts carry no batch: the
 nurse records the one given.
 
+**What the pharmacy issues.** An issue (`MedicationDispensed`) charts the line each medicine supplies, so a medicine is
+on the chart once (`MarRules.OrderSupplied`). A medicine issued for a prescription line supplies the chart line that
+prescription line became. One issued with no prescription line (a ward indent, a direct issue) supplies the active line
+of the same drug of the master already on the chart: the ward's own order before a line the pharmacy made, the latest
+first. So furosemide 40 mg BD ordered on the ward and issued on an indent stays one line, with its own doses, and a
+replacement ampoule of a STAT order charts nothing more. Only a medicine on no line of the chart gets a line of its own
+(source Pharmacy): "as directed", with no dose charted, and instructions to confirm the dose and frequency with the
+doctor, who orders it on the ward's chart. From then on the doctor's order is the line later issues supply. The ward's
+round shows each dose's notes and its order's instructions. An indent the ward raises for an e-prescribed medicine
+carries its prescription, so the pharmacy issues it for the prescription's own line (`docs/modules/pharmacy.md`,
+*In-patient pharmacy*).
+
 Frequencies understood: OD/QD/Daily, BD/BID, TDS/TID, QID/QDS, HS/Nocte, `1-0-1`-style patterns (3 or 4 parts,
 fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" (never auto-scheduled).
 
@@ -411,7 +423,7 @@ fractions allowed), `Q4H`/`6 hourly`…, STAT (one dose), SOS/PRN/"As directed" 
 | `VisitCreated` / `VisitCompleted` / `VisitCancelled` (Patients) | raised | the in-patient visit is created with Patients' numbering (`visit`, `{FAC}V{YY}{SEQ:7}`), completed on discharge, cancelled with the admission; the OPD visit the patient was admitted from is completed at admission |
 | `PrescriptionSigned` | handled | in-patient lines become medication-chart lines (no doses until dispensed) |
 | `PrescriptionCancelled` | handled | chart lines stopped, every dose still due cancelled, an overdue one too |
-| `MedicationDispensed` | handled | next 24 h of doses scheduled (then kept a day ahead, *The chart a day ahead*); unlinked lines charted as one dose to confirm |
+| `MedicationDispensed` | handled | the line each medicine supplies gets its next 24 h of doses (then kept a day ahead, *The chart a day ahead*); a medicine on no line of the chart gets a line with no dose, for the doctor to order (*What the pharmacy issues*) |
 | `PatientsMerged` (Patients) | handled | re-points patient ids across facilities |
 | `VitalSignsRecorded` (Clinical) | handled | an early-warning escalation for a patient in a bed when NEWS2 calls for a doctor (*NEWS2 escalation*) |
 

@@ -62,8 +62,9 @@ Dispensing rules. OP entries only; IP prescriptions are issued to the ward. The 
   until a pharmacist (`pharmacy.dispense`) acknowledges it from their own sign-in, with what they did if they wish ("spoke
   to the doctor"). The account that signed the prescription never acknowledges it (403). The acknowledgement is audited
   at Warning (`pharmacy.safety_override_acknowledged`) with the patient, the alert, the doctor's reason, the note and the
-  pharmacist. A refill is acknowledged again by whoever dispenses it. A ward indent is not tied to a prescription line, so
-  an issue against an indent does not carry the override (the ward's own order did, and the MAR witnesses its doses).
+  pharmacist. A refill is acknowledged again by whoever dispenses it. An indent raised for an e-prescription supplies its
+  lines (*In-patient pharmacy*), so such a line goes out on the indent only once it is acknowledged too. An indent for no
+  prescription carries no override: the ward's own order did, and the MAR witnesses its doses.
 * **Partial supply**: each line dispenses up to its remaining quantity (`queue.over_dispense`). The entry stays
   *PartiallyDispensed* until every line is done.
 * **FEFO** or a scanned batch, with a minimum shelf life of min(course days, 30), so medicine never expires mid-course.
@@ -259,11 +260,23 @@ Money out of the pharmacy, and stock written off, are made only when a second pe
 | Method | Path | Permission | Request → response |
 |---|---|---|---|
 | GET | `/ward-indents?page&status&admissionId&includeClosed` · `/ward-indents/{id}?storeId` | `pharmacy.ip.issue` or `pharmacy.ip.indent` | → paged `WardIndentListItem` (STAT first, then oldest) · `WardIndentDetail` (lines with availability) |
-| POST | `/ward-indents` | `pharmacy.ip.indent` | `RaiseWardIndentRequest` (patientId, admissionId, visitId, wardName, bedLabel, urgency Routine/Stat, prescriptionId?, remarks, lines[itemId, quantity, remarks]) → 201 `PharmacyDocumentCreated` |
+| POST | `/ward-indents` | `pharmacy.ip.indent` | `RaiseWardIndentRequest` (patientId, admissionId, visitId, wardName, bedLabel, urgency Routine/Stat, prescriptionId? (the in-patient e-prescription it supplies), remarks, lines[itemId, quantity, remarks]) → 201 `PharmacyDocumentCreated`; 400 on `prescriptionId` (not one of the admission's in-patient prescriptions) |
 | POST | `/ward-indents/{id}/cancel` | `pharmacy.ip.issue` or `pharmacy.ip.indent` | `PharmacyReasonRequest` → 204 (what was already issued stays issued) |
 | GET | `/ip-issues?page&admissionId&patientId` · `/ip-issues/{id}` | same | → paged `IpIssueListItem` · `IpIssueDetail` (lines with charge ids, returns, `pending`: a ward return waiting for a second pharmacist) |
-| POST | `/ip-issues` | `pharmacy.ip.issue` | `IpIssueRequest` (storeId, wardIndentId? or queueEntryId?, patientId, admissionId, visitId, lines[itemId, quantity, batchId?, wardIndentLineId?, queueLineId?, substitutionReason, prescriberConsent], confirmControlledDrugs) → 201 `IpIssueCreated` (id, number, totalAmount) |
+| POST | `/ip-issues` | `pharmacy.ip.issue` | `IpIssueRequest` (storeId, wardIndentId? or queueEntryId?, patientId, admissionId, visitId, lines[itemId, quantity, batchId?, wardIndentLineId?, queueLineId?, substitutionReason, prescriberConsent], confirmControlledDrugs) → 201 `IpIssueCreated` (id, number, totalAmount); an indent's line of a drug its prescription carries is issued for that prescription line (below) |
 | POST | `/ip-issues/{id}/returns` | `pharmacy.ip.issue` | `WardReturnRequest` (lines[ipIssueLineId, quantity, restock], reason; each line once) → 201 `WardReturnCreated` (id, number, creditAmount) when every line is restocked; otherwise 202 `ApprovalRequestDto` (kind `pharmacy.ward_return`) for a second pharmacist |
+
+**An indent for an e-prescription.** The ward raises an indent for an e-prescribed medicine with its prescription
+(`prescriptionId`): the staff app's indent form sets it when an active e-prescription line of the patient's chart names
+the drug (for staff who can read the chart), one prescription per indent, and says which medicines are on another one,
+to indent on their own. A medicine on the indent that the prescription's IP queue entry has a line for, with a quantity
+left to supply, is issued for that line. The line is held as the queue holds it: not before a pharmacist acknowledges a
+prescriber's override (422 `pharmacy.override_unacknowledged`), and a restricted antibiotic only as stewardship allows.
+The issue line carries the prescription line, so the MAR charts the prescription's own line and makes no second one.
+What is issued, up to what is left on the line, is counted on the queue entry, which then does not offer, issue or
+charge it again; more than is left (a replacement ampoule) is the indent's own. A statutory register entry names the
+prescription and its doctor. A medicine the prescription does not carry is issued on the indent alone, and the MAR
+charts it on the chart's line of that drug, if any (`docs/modules/inpatient.md`, *What the pharmacy issues*).
 
 **Charges** go through `IChargePoster`, which is implemented by Billing and idempotent on SourceModule + SourceReference:
 * Each issue line is posted at its price (`UnitPriceOverride` = the line's `unitPrice`) with

@@ -146,6 +146,10 @@ public sealed record RecordAdministrationRequest(
     string? Notes,
     uint Version);
 
+/// <summary>
+/// A dose on the ward's round. <paramref name="Notes"/> are the dose's own (an extra dose's reason, what to confirm first);
+/// <paramref name="Instructions"/> are its order's ("after food", "confirm the dose with the doctor").
+/// </summary>
 public sealed record WardMarItem(
     Guid EntryId,
     Guid AdmissionId,
@@ -161,7 +165,9 @@ public sealed record WardMarItem(
     int MinutesLate,
     uint Version,
     bool NeedsWitness = false,
-    string? HeldBecause = null);
+    string? HeldBecause = null,
+    string? Notes = null,
+    string? Instructions = null);
 
 public sealed record ScheduleResult(Guid MedicationOrderId, int DosesAdded);
 
