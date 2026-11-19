@@ -395,13 +395,49 @@ internal sealed class AccountApprovals(
     internal static async Task<List<UserSession>> RevokeAllSessionsAsync(HospitalDbContext db, Guid userId, string reason, DateTimeOffset now, CancellationToken ct)
     {
         var active = await db.Set<UserSession>().Where(s => s.UserId == userId && s.RevokedAt == null).ToListAsync(ct);
-        foreach (var session in active)
+        End(active, reason, now);
+        return active;
+    }
+
+    /// <summary>
+    /// Ends the user's live sessions in a facility they no longer work in (<see cref="FacilityGrant.KeepsSession"/>), in
+    /// <paramref name="db"/>, unsaved, and returns them: the caller saves, then tells every server with <see cref="Invalidate"/>.
+    /// </summary>
+    /// <param name="everyFacility">The user works in every facility: given all of them, or a Super Administrator.</param>
+    /// <param name="facilities">The facilities the user works in otherwise.</param>
+    internal static async Task<List<UserSession>> RevokeSessionsOutsideAsync(
+        HospitalDbContext db, Guid userId, bool everyFacility, IReadOnlyCollection<Guid> facilities, DateTimeOffset now, CancellationToken ct)
+    {
+        if (everyFacility)
+        {
+            return [];
+        }
+
+        var outside = (await db.Set<UserSession>().Where(s => s.UserId == userId && s.RevokedAt == null && s.ExpiresAt > now && s.FacilityId != null).ToListAsync(ct))
+            .Where(s => !FacilityGrant.KeepsSession(s.FacilityId, everyFacility, facilities))
+            .ToList();
+        End(outside, FacilityGrant.FacilityRemovedReason, now);
+        return outside;
+    }
+
+    /// <summary>
+    /// Ends the live sessions signed in to a facility taken out of use, in <paramref name="db"/>, unsaved, and returns them:
+    /// the caller saves, then tells every server with <see cref="Invalidate"/>.
+    /// </summary>
+    internal static async Task<List<UserSession>> RevokeSessionsInAsync(HospitalDbContext db, Guid facilityId, DateTimeOffset now, CancellationToken ct)
+    {
+        var inside = await db.Set<UserSession>().Where(s => s.FacilityId == facilityId && s.RevokedAt == null && s.ExpiresAt > now).ToListAsync(ct);
+        End(inside, FacilityGrant.FacilityInactiveReason, now);
+        return inside;
+    }
+
+    private static void End(IEnumerable<UserSession> sessions, string reason, DateTimeOffset now)
+    {
+        foreach (var session in sessions)
         {
             session.RevokedAt = now;
             session.RevokedReason = reason;
         }
-
-        return active;
     }
 
     /// <summary>

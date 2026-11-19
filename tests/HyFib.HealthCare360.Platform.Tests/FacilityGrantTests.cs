@@ -67,6 +67,28 @@ public sealed class FacilityGrantTests
         FacilityGrant.Split(allBefore: false, [Main], all: false, [Main, Annexe], Pending(all: false, Annexe)).Add.ShouldBeEmpty();
     }
 
+    [Fact]
+    public void A_session_in_a_facility_taken_away_ends()
+    {
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main]).ShouldBeFalse();
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, []).ShouldBeFalse("a user left with no facility keeps no session in one");
+    }
+
+    [Fact]
+    public void A_session_in_a_facility_still_given_goes_on()
+    {
+        FacilityGrant.KeepsSession(Main, everyFacility: false, [Main]).ShouldBeTrue();
+        FacilityGrant.KeepsSession(Annexe, everyFacility: false, [Main, Annexe]).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Every_facility_keeps_a_session_in_any_of_them() =>
+        FacilityGrant.KeepsSession(Annexe, everyFacility: true, []).ShouldBeTrue("all facilities, or a Super Administrator, covers facilities not listed");
+
+    [Fact]
+    public void A_session_without_a_facility_is_not_ended_for_one() =>
+        FacilityGrant.KeepsSession(null, everyFacility: false, []).ShouldBeTrue("a patient's session, or a Super Administrator's before the hospital has a facility");
+
     private static PendingUserGrant Pending(bool all, params Guid[] facilities) =>
         new(Guid.NewGuid(), [], facilities, Activate: false, "Hospital Admin", DateTimeOffset.UnixEpoch, all);
 }

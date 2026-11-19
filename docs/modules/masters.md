@@ -114,7 +114,9 @@ A save replaces every field, so screens send the whole record.
   number changed meanwhile does not stand in the way), audited with both names (`practitioner.fee_changed`). The form
   shows the fee that waits, with its request.
 - **Facilities in use.** Staff sign in only to a facility in use, so the facility the user is signed in to (422
-  `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use.
+  `facility.current`) and the last facility in use (422 `facility.last_active`) can't be taken out of use. Taken out of
+  use, a facility's open sessions end at once (`facility_inactive`, audited as `facility.sessions_ended`): their staff
+  sign in again, to a facility in use (SECURITY.md, "Access is given by two people").
 - **Out of use, not deleted.** A department out of use takes no new visits; a doctor out of use can't be booked or chosen
   for new visits (appointments already booked stay); a service out of use can't be added to new bills or orders.
 - **A service charged by itself stays in use while it is** (`IServiceChargeSource`, each module's own): a ward's beds,

@@ -364,6 +364,13 @@ and grants nothing.
 
   What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted, a role
   turned off (`role.deactivated`, by a holder of `admin.roles.manage`).
+  - **A facility taken away applies to the sessions open in it.** A session is signed in to one facility, and its tokens
+    carry it. Taking a facility from a user, or all facilities back to some, ends at once their sessions in a facility
+    they no longer work in (`facility_removed`), as deactivating a user ends them all; their sessions elsewhere go on.
+    Taking a facility out of use ends the sessions in it (`facility_inactive`, audited as `facility.sessions_ended`). A
+    session is renewed only in a facility its user may sign in to now, so one left open, whatever changed, ends at its
+    next refresh (`auth.session_facility_ended`). Before, such a session went on working in the facility for up to 12
+    hours, or until 2 hours unused.
   - A role turned off gives nothing, wherever a role becomes access: no permission for any endpoint or hub, no notification
     or work sent to its holders (`PermissionHolders`), no part in approving grants. It stays assigned, and what it
     requires of its holders (two-step verification, an enrolled workstation, its idle lock, the protection of accounts

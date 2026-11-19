@@ -5,10 +5,28 @@ namespace HyFib.HealthCare360.Platform.Identity;
 /// (<see cref="User.AllFacilities"/>) and an empty list is no facility, so taking a user's facilities away can only narrow
 /// what they reach. What narrows applies at once; what widens (a facility added, all facilities) waits for a second person
 /// who may approve grants (<see cref="GrantApprovals"/>), and the user keeps what they have meanwhile.
+/// What narrows applies at once to the sessions open in a facility too (<see cref="KeepsSession"/>): a session is signed
+/// in to one facility, and its tokens carry it, so a facility taken away ends the user's sessions there, and a session in
+/// a facility the user no longer works in, or one taken out of use, is not renewed (<see cref="AuthService.RefreshAsync"/>).
 /// </summary>
 internal static class FacilityGrant
 {
     public const string AllOrSomeMessage = "Give all facilities, or choose some: not both.";
+
+    /// <summary>Why a session ended: its facility was taken away from the user.</summary>
+    public const string FacilityRemovedReason = "facility_removed";
+
+    /// <summary>Why a session ended: its facility was taken out of use.</summary>
+    public const string FacilityInactiveReason = "facility_inactive";
+
+    /// <summary>
+    /// Whether a session signed in to <paramref name="sessionFacility"/> may go on, for a user who works in every facility
+    /// (<paramref name="everyFacility"/>: given all of them, or a Super Administrator) or in <paramref name="facilities"/>.
+    /// A session with no facility (a patient's, or a Super Administrator's before the hospital has a facility) is not
+    /// limited to one, and is not ended for one.
+    /// </summary>
+    public static bool KeepsSession(Guid? sessionFacility, bool everyFacility, IReadOnlyCollection<Guid> facilities) =>
+        sessionFacility is not { } facility || everyFacility || facilities.Contains(facility);
 
     /// <summary>
     /// Splits a save into what applies at once and what is asked for.

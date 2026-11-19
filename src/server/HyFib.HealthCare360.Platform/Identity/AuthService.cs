@@ -833,6 +833,19 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
+        // A session is renewed only in a facility its user may sign in to now: one taken away from them, or taken out of use,
+        // ends it (FacilityGrant.KeepsSession), as signing in or switching facility would refuse it. Saving the user or the
+        // facility ends such sessions at once; this ends any that were left open, whatever changed.
+        var roles = RoleNames(user);
+        if (session.FacilityId is { } facilityId
+            && !FacilityGrant.KeepsSession(facilityId, everyFacility: false, [.. (await AllowedFacilitiesAsync(user, roles, ct)).Select(f => f.Id)]))
+        {
+            await EndOutsideFacilityAsync(session, user, facilityId, now, ct);
+            sessionValidator.Invalidate(session.Id);
+            ClearRefreshCookie(http);
+            return SessionEnded;
+        }
+
         // Nobody has used the app for too long: the session ends (ASVS V7.3.1). Use is what the app reports, since the
         // refresh itself happens in the background; a locked screen's reports are not use, as nobody has unlocked it.
         if (session.LockedAt is null)
@@ -849,7 +862,6 @@ public sealed class AuthService(
             return SessionEnded;
         }
 
-        var roles = RoleNames(user);
         var locks = session.LockedAt is null && await IdleLockMinutesAsync(user, roles, session, ct) is > 0 and var lockMinutes
             && now - session.LastActiveAt >= TimeSpan.FromMinutes(lockMinutes);
         if (locks)
@@ -1675,6 +1687,27 @@ public sealed class AuthService(
         {
             session.LastActiveAt = activeAt;
         }
+    }
+
+    /// <summary>
+    /// Ends, and saves, a session signed in to a facility its user may no longer sign in to: taken away from them
+    /// (<see cref="FacilityGrant.FacilityRemovedReason"/>), or out of use (<see cref="FacilityGrant.FacilityInactiveReason"/>).
+    /// Invalidate it next.
+    /// </summary>
+    private async Task EndOutsideFacilityAsync(UserSession session, User user, Guid facilityId, DateTimeOffset now, CancellationToken ct)
+    {
+        var inUse = await db.Set<Facility>().AnyAsync(f => f.Id == facilityId && f.IsActive, ct);
+        session.RevokedAt = now;
+        session.RevokedReason = inUse ? FacilityGrant.FacilityRemovedReason : FacilityGrant.FacilityInactiveReason;
+        audit.Add(new AuditEntry(AuditCategories.Auth, "auth.session_facility_ended",
+            inUse ? "Session ended: its facility was taken away from the user" : "Session ended: its facility was taken out of use")
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            EntityType = nameof(Facility),
+            EntityId = facilityId.ToString(),
+        });
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>Ends a session nobody has used for its idle limit (ASVS V7.3.1); save, then invalidate it.</summary>
