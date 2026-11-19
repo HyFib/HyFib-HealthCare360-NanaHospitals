@@ -7,6 +7,7 @@ using HyFib.HealthCare360.Modules.Billing.Features.Charges;
 using HyFib.HealthCare360.Modules.Billing.Features.Inpatient;
 using HyFib.HealthCare360.Modules.Billing.Features.Insurance;
 using HyFib.HealthCare360.Modules.Billing.Features.Payments;
+using HyFib.HealthCare360.Modules.Billing.Features.Shifts;
 using HyFib.HealthCare360.Modules.Inpatient.Domain;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Admissions;
 using HyFib.HealthCare360.Modules.Inpatient.Features.Masters;
@@ -144,6 +145,7 @@ public sealed class WardReturnAfterFinalBillTests(HospitalServer server)
         await PharmacyPostsAsync(admission, account, injection, 1m, "pharmacy.ip", Guid.NewGuid().ToString());
         var final = await FinalBillAsync(billing, account);
         var value = final.Lines.Single(l => l.Description == injection).NetAmount;
+        await OpenShiftAsync(billing);
         await billing.PostAsync<ReceiptDto>("/api/v1/billing/receipts", new CollectPaymentRequest(
             final.Id, [new PaymentLineInput(PaymentMode.Upi, final.DueAmount, "UTR" + Digits(9), null, null, null, null, null)], null));
 
@@ -238,6 +240,16 @@ public sealed class WardReturnAfterFinalBillTests(HospitalServer server)
     }
 
     private static Task<BillDetail> BillOfAsync(ApiClient client, BillDetail bill) => client.GetAsync<BillDetail>($"/api/v1/billing/bills/{bill.Id}");
+
+    /// <summary>The billing desk's counter shift, opened if no test has opened it yet: money is collected on a shift.</summary>
+    private static async Task OpenShiftAsync(ApiClient billing)
+    {
+        using var current = await billing.SendRawAsync(HttpMethod.Get, "/api/v1/billing/shifts/current");
+        if (current.StatusCode == HttpStatusCode.NoContent)
+        {
+            await billing.PostAsync<ShiftDto>("/api/v1/billing/shifts/open", new OpenShiftRequest("OP counter 1", OpeningFloat: 0m));
+        }
+    }
 
     private static async Task<IReadOnlyList<BillListItem>> BillsAsync(ApiClient billing, Guid admissionId) =>
         (await billing.GetAsync<PagedResult<BillListItem>>($"/api/v1/billing/bills?admissionId={admissionId}")).Items;
