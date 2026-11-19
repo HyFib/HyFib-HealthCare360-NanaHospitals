@@ -587,5 +587,24 @@
   "seconds": 309.0,
   "megabytes": 16.7,
   "madeBy": "this session"
+ },
+ "w6-quality-manager": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 20,
+  "wer": 2.33,
+  "wpm": 128.1,
+  "maxCps": 15.1,
+  "lufs": -16.0,
+  "seconds": 301.0,
+  "megabytes": 14.6,
+  "madeBy": "render worker 1"
  }
 }
