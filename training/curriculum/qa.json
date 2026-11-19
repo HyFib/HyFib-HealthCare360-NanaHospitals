@@ -181,12 +181,13 @@
    "format": true
   },
   "steps": 22,
-  "wer": 3.93,
-  "wpm": 129.6,
+  "wer": 3.89,
+  "wpm": 130.7,
   "maxCps": 15.4,
   "lufs": -16.0,
-  "seconds": 356.8,
-  "madeBy": "render worker 1"
+  "seconds": 356.6,
+  "megabytes": 17.3,
+  "madeBy": "render worker 1 (re-made)"
  },
  "w4-lab-technician": {
   "passed": true,
@@ -294,12 +295,13 @@
    "format": true
   },
   "steps": 35,
-  "wer": 3.12,
-  "wpm": 124.3,
+  "wer": 3.11,
+  "wpm": 124.4,
   "maxCps": 14.9,
   "lufs": -16.0,
-  "seconds": 428.2,
-  "madeBy": "render worker 1"
+  "seconds": 429.4,
+  "megabytes": 21.1,
+  "madeBy": "render worker 1 (re-made)"
  },
  "w4-cardiology-technician": {
   "passed": true,
@@ -350,13 +352,13 @@
    "format": true
   },
   "steps": 26,
-  "wer": 3.73,
-  "wpm": 127.8,
+  "wer": 3.69,
+  "wpm": 128.7,
   "maxCps": 15.5,
   "lufs": -16.0,
-  "seconds": 318.7,
-  "megabytes": 14.5,
-  "madeBy": "render worker 1"
+  "seconds": 319.3,
+  "megabytes": 14.6,
+  "madeBy": "render worker 1 (re-made)"
  },
  "w1-purchase-officer": {
   "passed": true,
