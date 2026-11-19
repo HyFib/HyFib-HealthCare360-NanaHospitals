@@ -54,7 +54,7 @@ SAME = [(r"\buser name", "username"), (r"\bhome page", "homepage"), (r"\bctrl\b"
         # British and American spellings of the same spoken word.
         (r"anaesth", "anesth"), (r"\btheatres?\b", "theater"), (r"\bcatalogue", "catalog"), (r"\bhaem", "hem"),
         (r"\bpaed", "ped"), (r"orthopaed", "orthoped"), (r"gynaec", "gynec"), (r"\boesoph", "esoph"),
-        (r"\bprogramme", "program"), (r"\bcolour", "color"), (r"\blitres?\b", "liter"), (r"\bmetres?\b", "meter"),
+        (r"\bprogramme", "program"), (r"\benquir", "inquir"), (r"\bcolour", "color"), (r"\blitres?\b", "liter"), (r"\bmetres?\b", "meter"),
         (r"\bfo?etus", "fetus"), (r"\bcentres?\b", "center"), (r"\bcentre\b", "center")]
 
 
