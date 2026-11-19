@@ -20,7 +20,7 @@ export default {
     'Schedule a report to be e-mailed to managers at a fixed time.',
   ],
   modules: ['analytics'],
-  covers: ['/analytics', '/analytics/reports', '/analytics/dashboards', '/analytics/schedules'],
+  covers: ['/analytics', '/analytics/reports', '/analytics/schedules'],
   scenes: [
     {
       title: 'The executive dashboard',
