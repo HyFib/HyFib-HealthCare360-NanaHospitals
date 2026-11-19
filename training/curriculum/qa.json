@@ -257,5 +257,24 @@
   "seconds": 288.3,
   "megabytes": 12.6,
   "madeBy": "render worker 2"
+ },
+ "w6-crm-executive": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 21,
+  "wer": 3.64,
+  "wpm": 127.0,
+  "maxCps": 15.1,
+  "lufs": -16.0,
+  "seconds": 297.9,
+  "megabytes": 12.8,
+  "madeBy": "render worker 2"
  }
 }
