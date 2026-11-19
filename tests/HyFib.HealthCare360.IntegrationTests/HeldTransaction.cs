@@ -51,6 +51,38 @@ internal sealed class HeldTransaction(AsyncServiceScope scope, IDbContextTransac
         throw new ShouldAssertException($"Nothing took the lock of {encounterId} within 10 seconds.");
     }
 
+    /// <summary>
+    /// Waits until <paramref name="count"/> transactions wait on this one, directly or behind another that does, as
+    /// pg_blocking_pids shows it: the requests it stopped are then caught between their reads and their writes. The probe
+    /// runs each query in a transaction of its own, as PostgreSQL reads pg_stat_activity once per transaction.
+    /// </summary>
+    public async Task WaitUntilBlockingAsync(HospitalServer server, int count)
+    {
+        var held = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        var holder = await held.Database.SqlQuery<int>($"""SELECT pg_backend_pid() AS "Value" """).SingleAsync(Ct);
+        await using var probe = server.Services.CreateAsyncScope();
+        var db = probe.ServiceProvider.GetRequiredService<HospitalDbContext>();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var waiting = await db.Database.SqlQuery<int>($"""
+                WITH RECURSIVE waiting AS (
+                    SELECT pid FROM pg_stat_activity WHERE {holder} = ANY(pg_blocking_pids(pid))
+                    UNION
+                    SELECT a.pid FROM pg_stat_activity a JOIN waiting w ON w.pid = ANY(pg_blocking_pids(a.pid))
+                )
+                SELECT count(*)::int AS "Value" FROM waiting
+                """).SingleAsync(Ct);
+            if (waiting >= count)
+            {
+                return;
+            }
+
+            await Task.Delay(100, Ct);
+        }
+
+        throw new ShouldAssertException($"{count} transactions did not come to wait on the test's within 10 seconds.");
+    }
+
     public async Task ReleaseAsync()
     {
         done = true;
