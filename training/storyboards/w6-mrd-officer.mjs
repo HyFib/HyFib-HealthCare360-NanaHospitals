@@ -56,18 +56,12 @@ export default {
         {
           click: { role: 'button', name: 'Add A09.9' },
           say: 'Click the plus sign to add A09.9, gastroenteritis.',
-          after: 'The code is in the list, marked as the principal diagnosis. An episode has exactly one principal diagnosis.',
-          wait: { role: 'table', name: 'Codes' },
-        },
-        {
-          click: { role: 'button', name: /^Save codes/ },
-          say: 'Click Save codes, or press Control and S.',
-          after: 'The coding is saved. A second coder now verifies it.',
-          wait: { text: 'Coding saved' },
+          after: 'The code is in the list, marked as the principal diagnosis, and the episode is now Coded. An episode has exactly one principal diagnosis.',
+          wait: { text: 'A different coder must verify your coding.' },
         },
         {
           show: { role: 'button', name: 'Verify' },
-          say: 'The same person cannot verify their own coding. Verified coding is used for insurance claims and statistics, so a second coder checks it.',
+          say: 'HC360 says a different coder must verify your coding. Verified coding is used for insurance claims and statistics, so a second coder checks it.',
           zoom: 1.5,
         },
       ],

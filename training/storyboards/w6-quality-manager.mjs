@@ -96,13 +96,13 @@ export default {
           zoom: 1.3,
         },
         {
-          fill: [{ label: 'Owner' }, 'Deepa'],
-          say: 'Every action has an owner. Choose the nurse in charge.',
-          wait: { role: 'option', name: /Deepa Raman/ },
+          fill: [{ label: 'Owner' }, 'Meera'],
+          say: 'Every action has an owner. You can choose yourself. Choosing other staff needs access to the staff list.',
+          wait: { role: 'option', name: /Meera Krishnan/ },
         },
         {
-          click: { role: 'option', name: /Deepa Raman/ },
-          say: 'Deepa Raman owns it.',
+          click: { role: 'option', name: /Meera Krishnan/ },
+          say: 'Choose yourself as the owner.',
         },
         {
           show: { label: 'Due by' },
