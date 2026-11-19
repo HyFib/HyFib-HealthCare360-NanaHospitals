@@ -31,6 +31,9 @@ mkdirSync(join(OUT, 'shots'), { recursive: true });
 
 // The training server's database, for what a real patient would read on their phone: the portal's sign-in code.
 const { ask, sentCodes } = await import(pathToFileURL(join(ROOT, 'src/web/demo/lib/db.mjs')).href);
+const { Api } = await import(pathToFileURL(join(ROOT, 'src/web/demo/lib/api.mjs')).href);
+/** The API as one of the training accounts, for a storyboard's setup (what other roles did before the video starts). */
+const api = (userName) => Api.as(userName);
 /** What steps share: a phone number found in one step and typed in the next. */
 const state = {};
 
@@ -41,6 +44,25 @@ function commit() {
     return 'unknown';
   }
 }
+
+// ----------------------------------------------------------------------------------------------------- the desk
+
+/**
+ * What a workstation keeps in local storage, set as the hospital's staff would on their first day (the same as the
+ * demo's, src/web/demo/capture.mjs): the queue desk at General Medicine for room OPD-01, the nurses' station on the
+ * female general ward, the first OP billing counter.
+ */
+async function deskSettings() {
+  const admin = await Api.as('admin');
+  const gm = (await admin.get('/api/v1/masters/lookups/departments')).find((d) => d.code === 'GM');
+  const ward = (await admin.get('/api/v1/inpatient/wards')).find((w) => w.code === 'GWF');
+  return {
+    'hc360:queue-desk': JSON.stringify({ departmentId: gm.id, practitionerId: '', room: 'OPD-01' }),
+    'hc360:nursing:ward': ward.id,
+    'hc360:billing:counter': JSON.stringify({ counter: 'OP counter 1', terminalId: '', receiptFormat: 'Receipt80', autoPrint: false }),
+  };
+}
+const desk = story.desk ? await deskSettings() : {};
 
 // ----------------------------------------------------------------------------------------------------- the browser
 
@@ -60,7 +82,7 @@ await context.addInitScript((settings) => {
   for (const [key, value] of Object.entries(settings)) {
     if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
   }
-}, story.localStorage ?? {});
+}, { ...desk, ...(story.localStorage ?? {}) });
 // A screenshot shows no blinking caret or half-drawn scrollbar.
 await context.addInitScript(() => {
   const style = () => {
@@ -206,7 +228,7 @@ async function runStep(step, id) {
     await go(step.go);
     beat.action = 'go';
   }
-  const tools = { page, find, go, quiet, ask, sentCodes, state };
+  const tools = { page, find, go, quiet, ask, sentCodes, state, api };
   if (step.before) await step.before(tools);
   let target = null;
   for (const kind of ['click', 'nav', 'fill', 'select', 'check', 'show']) {
@@ -250,6 +272,11 @@ async function runStep(step, id) {
       break;
     }
     case 'select': {
+      if (step.native) {
+        // A native <select>: its list is drawn by the system, so the option is chosen by its label.
+        await target.selectOption({ label: step.select[1] });
+        break;
+      }
       await target.click();
       await quiet(3000);
       const option = page.getByRole('option', { name: step.select[1], exact: step.exact ?? true }).first();
@@ -296,7 +323,8 @@ try {
   } else {
     await signInStaff(story.user);
   }
-  if (story.setup) await story.setup({ page, find, go, quiet, ask, sentCodes, state });
+  // Before the filmed steps: data other roles would have made earlier in the day, through the API as those roles.
+  if (story.setup) await story.setup({ page, find, go, quiet, ask, sentCodes, state, api });
   let n = 0;
   for (const [ci, scene] of story.scenes.entries()) {
     const cid = `c${ci + 1}`;
@@ -324,9 +352,13 @@ try {
 await browser.close();
 
 // The cards' narration.
-const list = (items) => items.map((t, i) => `${['One', 'Two', 'Three', 'Four', 'Five', 'Six'][i]}. ${t}`).join(' ');
+// Lists are read as "First, ... Second, ...": a bare "One." opening a sentence is easily misheard.
+const ORDINALS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth'];
+const COUNTS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
+const lower = (t) => (/^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t);
+const list = (items) => items.map((t, i) => `${ORDINALS[i]}, ${lower(t)}`).join(' ');
 narrate('title', story.intro ?? `Welcome. This video is for ${story.audience}. ${story.title}.`);
-narrate('objectives', `In this video, you will learn ${story.objectives.length === 1 ? 'one thing' : `${story.objectives.length} things`}. ${list(story.objectives)}`);
+narrate('objectives', `In this video, you will learn ${COUNTS[story.objectives.length]} ${story.objectives.length === 1 ? 'thing' : 'things'}. ${list(story.objectives)}`);
 narrate('recap', `Let us recap. ${list(story.recap)}`);
 (story.check ?? []).forEach((c, i) => {
   narrate(`check${i + 1}.q`, `Check yourself. ${c.q} Pause the video and answer.`);
