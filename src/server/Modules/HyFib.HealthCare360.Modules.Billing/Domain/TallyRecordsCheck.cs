@@ -21,7 +21,7 @@ public sealed record TallyCashVariance(string Counter, string Cashier, decimal V
 
 /// <summary>
 /// A day's figures read from HC360's records, independently of the day book: bills, the cashier day-end by payment
-/// mode, settlements, credit notes and write-offs, claim deductions and doctor fees.
+/// mode, settlements, credit notes and write-offs, debit notes, claim deductions and doctor fees.
 /// </summary>
 public sealed record TallyRecordFigures
 {
@@ -42,6 +42,8 @@ public sealed record TallyRecordFigures
     public decimal CreditNotesAmount { get; init; }
     public int WriteOffs { get; init; }
     public decimal WriteOffsAmount { get; init; }
+    public int DebitNotes { get; init; }
+    public decimal DebitNotesAmount { get; init; }
     public decimal ClaimDeductions { get; init; }
     public decimal DoctorFeesAccrued { get; init; }
     public int Payouts { get; init; }
@@ -85,6 +87,7 @@ public static class TallyRecordsCheck
     private const string Advances = "Advances";
     private const string Insurance = "Insurance";
     private const string Credits = "Credit notes";
+    private const string Debits = "Debit notes";
     private const string DoctorFees = "Doctor fees";
 
     public static TallyRecordsComparison Compare(TallyRecordFigures records, TallyDayBook day, TallyLedgerMap map)
@@ -152,6 +155,7 @@ public static class TallyRecordsCheck
         var writeOffs = day.CreditNotes.Where(c => c.Kind == CreditNoteKind.WriteOff).ToList();
         lines.Add(new(Credits, "Credit notes", records.CreditNotesAmount, notes.Sum(c => c.Amount), records.CreditNotes, notes.Count));
         lines.Add(new(Credits, "Write-offs", records.WriteOffsAmount, writeOffs.Sum(c => c.Amount), records.WriteOffs, writeOffs.Count));
+        lines.Add(new(Debits, "Debit notes", records.DebitNotesAmount, day.DebitNotes.Sum(n => n.Amount), records.DebitNotes, day.DebitNotes.Count));
         lines.Add(new(DoctorFees, "Accrued", records.DoctorFeesAccrued, day.DoctorFees.Sum(f => f.Amount)));
         lines.Add(new(DoctorFees, "Paid out (net of TDS)", records.PayoutsNet, day.Payouts.Sum(p => p.Net), records.Payouts, day.Payouts.Count));
 

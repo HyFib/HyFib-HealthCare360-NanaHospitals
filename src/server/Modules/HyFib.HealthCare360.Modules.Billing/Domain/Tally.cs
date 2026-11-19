@@ -484,6 +484,20 @@ public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKin
     public IReadOnlyList<TallyGstLine> Gst { get; init; } = [];
 }
 
+/// <summary>
+/// A debit note of the day (a supplementary invoice, CGST Act s.34(3)) on bill <paramref name="BillNumber"/>: what it adds,
+/// GST included, to what the patient or the payer owes. <see cref="Lines"/> are the taxable value it raises by the
+/// department of the services it raises, with their output GST.
+/// </summary>
+public sealed record TallyDebitNote(string Number, DateOnly Date, string BillNumber, DebitNoteParty Party, string? PayerName, decimal Amount)
+{
+    /// <summary>The bill's patient, for the narration.</summary>
+    public TallyPatient? Patient { get; init; }
+
+    /// <summary>The services it raises, each with its department, its taxable value (as income, with no discount) and its GST.</summary>
+    public IReadOnlyList<TallySaleLine> Lines { get; init; } = [];
+}
+
 /// <param name="PractitionerCode">The doctor's master code; it makes the accrual journal's number stable across re-posts.</param>
 /// <param name="PractitionerId">Tells apart two doctors who share a code (or, without codes, a name).</param>
 public sealed record TallyDoctorFee(
@@ -547,6 +561,9 @@ public sealed record TallyDayBook(
     /// <summary>The card and UPI acquirer's payouts of the day, from the settlement reports imported (INT-POS).</summary>
     public IReadOnlyList<TallyPosSettlement> PosSettlements { get; init; } = [];
 
+    /// <summary>The debit notes issued on the day, to patients and to payers.</summary>
+    public IReadOnlyList<TallyDebitNote> DebitNotes { get; init; } = [];
+
     /// <summary>Money receipts recorded that never arrived, reversed on the day.</summary>
     public IReadOnlyList<TallyReceiptReversal> ReceiptReversals { get; init; } = [];
 
@@ -562,8 +579,8 @@ public sealed record TallyDayBook(
     /// <summary>The facility's GST state code (its GSTIN's, else its address's): the place of supply of what it buys.</summary>
     public string? FacilityStateCode { get; init; }
 
-    public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DoctorFees.Count + Payouts.Count
-                           + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count
+    public bool IsEmpty => Sales.Count + Receipts.Count + Disallowances.Count + Refunds.Count + CreditNotes.Count + DebitNotes.Count + DoctorFees.Count
+                           + Payouts.Count + (GatewaySettlements?.Count ?? 0) + PosSettlements.Count + ReceiptReversals.Count + RefundReversals.Count
                            + Vendors.DebitNotes.Count + Vendors.Adjustments.Count + Purchases.Count == 0
                            && Counters.All(c => c.IsEmpty) && CounterInvoices.All(c => c.IsEmpty);
 }
@@ -571,9 +588,10 @@ public sealed record TallyDayBook(
 /// <summary>
 /// Builds balanced Tally vouchers from a day book (INT-TALLY): a sales voucher per bill, under the IP, OP or laboratory
 /// sales voucher type (income by department ledger, discount, CGST/SGST, round-off, patient and payer receivables),
-/// Credit Notes for cancellations, credit notes and write-offs, Receipts by payment mode, Payments for refunds and doctor
-/// payouts (with TDS) and Journals for advance adjustments, insurance disallowances, doctor-fee accruals and reversals of
-/// money that did not move (each the entries of its receipt or refund turned round, on the day of the reversal).
+/// Credit Notes for cancellations, credit notes and write-offs, Debit Notes for debit notes, Receipts by payment mode,
+/// Payments for refunds and doctor payouts (with TDS) and Journals for advance adjustments, insurance disallowances,
+/// doctor-fee accruals and reversals of money that did not move (each the entries of its receipt or refund turned round,
+/// on the day of the reversal).
 /// Narrations carry document numbers; a patient's voucher names the patient first (<see cref="Narrate"/>).
 /// </summary>
 public static class TallyVoucherBuilder
@@ -596,6 +614,7 @@ public static class TallyVoucherBuilder
         vouchers.AddRange(day.ReceiptReversals.Select(r => ReceiptReversal(r, map)));
         vouchers.AddRange(day.RefundReversals.Select(r => RefundReversal(r, map)));
         vouchers.AddRange(day.CreditNotes.Select(c => CreditNote(c, map)));
+        vouchers.AddRange(day.DebitNotes.Select(n => DebitNote(n, map)));
         vouchers.AddRange(DoctorFees(day, map));
         vouchers.AddRange(day.Payouts.Select(p => Payout(p, map)));
         vouchers.AddRange(TallyCounters.Vouchers(day, map));
@@ -928,6 +947,32 @@ public static class TallyVoucherBuilder
             _ => "Credit note",
         };
         return entries.ToVoucher(CreditNoteType, note.Date, note.Number, Narrate(note.Patient, map, $"{words} {note.Number}"), note.Number);
+    }
+
+    /// <summary>
+    /// A debit note raises what its bill charged: the patient's ledger, or the payer's against the bill (so the payer's
+    /// settlement of the bill clears both), is debited with the note, and income by department and output GST by rate are
+    /// credited, as the bill's own sale credited them.
+    /// </summary>
+    private static AccountingVoucher? DebitNote(TallyDebitNote note, TallyLedgerMap map)
+    {
+        var entries = new EntryList();
+        if (note.Party == DebitNoteParty.Payer)
+        {
+            entries.Debit(map.PayerLedger(note.PayerName), note.Amount, bill: TallyBillRef.Against(note.BillNumber));
+        }
+        else
+        {
+            entries.Debit(map.PatientDebtors, note.Amount);
+        }
+
+        foreach (var department in note.Lines.GroupBy(l => (l.DepartmentCode, l.DepartmentName)))
+        {
+            entries.Credit(map.IncomeFor(department.Key.DepartmentCode), department.Sum(l => l.Income), department.Key.DepartmentName);
+        }
+
+        TallyGst.Output(entries, map, note.Lines.Select(l => new TallyGstLine(l.GstRate, l.Cgst, l.Sgst, l.Igst)));
+        return entries.ToVoucher(DebitNoteType, note.Date, note.Number, Narrate(note.Patient, map, $"Debit note {note.Number} on bill {note.BillNumber}"), note.Number);
     }
 
     /// <summary>

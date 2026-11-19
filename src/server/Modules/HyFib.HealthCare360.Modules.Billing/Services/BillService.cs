@@ -421,7 +421,10 @@ public sealed class BillService(
     /// <summary>
     /// Cancels a finalized bill (holders of <c>billing.bills.cancel</c> only): charges return to the unbilled pool,
     /// advance adjustments go back to the IP deposit or the patient advance they came from, and any cash/card collected
-    /// becomes a refund request that a second person must approve.
+    /// becomes a refund request that a second person must approve. Not while a claim is open on it or it has a live IRN,
+    /// nor once anything was recorded against it (a credit note or write-off, a debit note, an insurer's settlement or
+    /// deduction, a rejected claim's included: <see cref="Bill.AdjustedSinceFinalized"/>), as the cancellation reverses
+    /// the whole bill in the books and the GST returns while those stay.
     /// </summary>
     public async Task<Result> CancelAsync(Guid billId, CancelBillRequest request, CancellationToken ct)
     {
@@ -433,7 +436,8 @@ public sealed class BillService(
 
         if (await db.Set<InsuranceClaim>().AnyAsync(c => c.BillId == billId && c.Status != ClaimStatus.Rejected, ct))
         {
-            return Error.Rule("billing.bill_has_claim", "An insurance claim is open on this bill. Settle or reject the claim first.");
+            return Error.Rule("billing.bill_has_claim",
+                "An insurance claim is open on this bill, so it is not cancelled. Once the insurer settles or rejects the claim, correct the bill with a credit note.");
         }
 
         if (await db.Set<EInvoice>().AnyAsync(e => e.Source == "bill" && e.SourceId == billId && e.Status == EInvoiceStatus.Registered, ct))

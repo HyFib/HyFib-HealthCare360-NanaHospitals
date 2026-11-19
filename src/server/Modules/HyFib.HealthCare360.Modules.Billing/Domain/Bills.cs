@@ -579,6 +579,13 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     /// <summary>
     /// Cancels a finalized bill; whatever the patient paid becomes refundable (BillCancelled is raised). Someone other
     /// than whoever finalized it cancels it, as with refunds and discounts: one person cannot bill, collect and undo.
+    /// <para>
+    /// A cancelled bill is reversed in full: Tally takes back its whole sale and GSTR-1 leaves it out. What was recorded
+    /// against the bill since (a credit note or write-off, a debit note, an insurer's settlement or deduction) stays in
+    /// the books and the returns, so such a bill is not cancelled (<see cref="AdjustedSinceFinalized"/>): it would be
+    /// undone twice. A credit note takes back what remains instead, and what the payer would not pay is charged to the
+    /// patient by a patient debit note.
+    /// </para>
     /// </summary>
     public Result Cancel(string reason, Guid? userId, DateTimeOffset now)
     {
@@ -597,6 +604,11 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
             return Error.Rule("billing.cancel_own_bill", "You finalized this bill, so someone else must cancel it.");
         }
 
+        if (AdjustedSinceFinalized() is { } adjusted)
+        {
+            return adjusted;
+        }
+
         Status = BillStatus.Cancelled;
         CancelReason = reason;
         CancelledAt = now;
@@ -604,6 +616,48 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
         UpdateBalances();
         Raise(new BillCancelled(Id, BillNumber ?? string.Empty, FacilityId, PatientId, NetAmount, reason, now));
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Why the bill can no longer be cancelled: what was recorded against it since it was finalized (a credit note or
+    /// write-off, a debit note, an insurer's settlement or deduction; a rejected claim's unpaid balance is a deduction);
+    /// <c>null</c> when nothing was. Payments are not among them: a cancellation makes them refundable.
+    /// </summary>
+    public Error? AdjustedSinceFinalized()
+    {
+        var recorded = new List<string>();
+        if (CreditAmount > 0)
+        {
+            recorded.Add($"credit notes or write-offs of ₹{Money.FormatInr(CreditAmount)}");
+        }
+
+        if (DebitAmount + PayerDebitAmount > 0)
+        {
+            recorded.Add($"debit notes of ₹{Money.FormatInr(DebitAmount + PayerDebitAmount)}");
+        }
+
+        if (PayerSettledAmount > 0)
+        {
+            recorded.Add($"the payer's settlement of ₹{Money.FormatInr(PayerSettledAmount)}");
+        }
+
+        if (PayerDisallowedAmount > 0)
+        {
+            recorded.Add($"the payer's deductions of ₹{Money.FormatInr(PayerDisallowedAmount)}");
+        }
+
+        if (recorded.Count == 0)
+        {
+            return null;
+        }
+
+        var what = recorded.Count == 1 ? recorded[0] : string.Join(", ", recorded[..^1]) + " and " + recorded[^1];
+        var recover = PayerDisallowedAmount > 0
+            ? " To recover from the patient what the payer would not pay, take it off the payer's invoice with a payer credit note and charge it to the patient with a patient debit note."
+            : string.Empty;
+        return Error.Rule("billing.bill_adjusted",
+            $"Bill {BillNumber} has {what} recorded against it, and cancelling it would reverse the whole bill again in the books and the GST returns. " +
+            $"Issue a credit note for what remains instead.{recover}");
     }
 
     /// <summary>Insurer/TPA/corporate settlement against the payer share (disallowed = deductions written off).</summary>
