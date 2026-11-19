@@ -50,6 +50,7 @@ export function toChange(
     currentFormat: series.format,
     currentResetPolicy: series.resetPolicy,
     lastNumber: series.lastNumber,
+    firstNumber: series.firstNumber ?? 1,
     facilityCount: context.facilityCount,
     longestFacilityCode: context.longestFacilityCode,
     otherFormats: context.otherFormats,

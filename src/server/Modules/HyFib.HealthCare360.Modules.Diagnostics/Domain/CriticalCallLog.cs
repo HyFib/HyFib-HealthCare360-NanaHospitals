@@ -27,6 +27,9 @@ public sealed record CriticalFindingRef(
 /// </summary>
 public sealed class CriticalCallLog : AuditableEntity, IFacilityScoped
 {
+    /// <summary>The longest finding kept; a longer one is cut.</summary>
+    public const int FindingLength = 300;
+
     /// <summary>Clock skew tolerated between a workstation and the server when the call time is typed in.</summary>
     private static readonly TimeSpan FutureTolerance = TimeSpan.FromMinutes(5);
 
@@ -37,7 +40,10 @@ public sealed class CriticalCallLog : AuditableEntity, IFacilityScoped
     public Guid? ImagingStudyId { get; set; }
     public Guid? CardiologyStudyId { get; set; }
 
-    /// <summary>Human-readable finding, for example "Potassium 6.9 mmol/L (critical high)".</summary>
+    /// <summary>
+    /// Human-readable finding, for example "Potassium 6.9 mmol/L (CriticalHigh)": for a lab result, the value it was made
+    /// for, which is the only value it counts for (<see cref="Laboratory.Rules.CriticalCalls"/>).
+    /// </summary>
     public string Finding { get; set; } = string.Empty;
 
     public string InformedPersonName { get; set; } = string.Empty;
@@ -77,7 +83,7 @@ public sealed class CriticalCallLog : AuditableEntity, IFacilityScoped
             LabResultId = finding.LabResultId,
             ImagingStudyId = finding.ImagingStudyId,
             CardiologyStudyId = finding.CardiologyStudyId,
-            Finding = finding.Finding.Length > 300 ? finding.Finding[..300] : finding.Finding,
+            Finding = finding.Finding.Length > FindingLength ? finding.Finding[..FindingLength] : finding.Finding,
             InformedPersonName = call.InformedPersonName.Trim(),
             InformedPersonRole = call.InformedPersonRole?.Trim(),
             InformedPractitionerId = call.InformedPractitionerId,

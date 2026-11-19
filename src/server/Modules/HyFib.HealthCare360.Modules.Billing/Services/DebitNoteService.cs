@@ -249,9 +249,10 @@ internal sealed class DebitNoteEInvoiceSource(HospitalDbContext db) : IEInvoiceS
                 l.Description, IsService: true, l.SacCode, 1m, l.TaxableAmount, l.TaxableAmount, 0m, l.TaxableAmount, l.GstRate, l.IgstAmount,
                 l.CgstAmount, l.SgstAmount, l.Amount))
             .ToList();
+        var placeOfSupply = bill.PlaceOfSupply ?? await BillPlaceOfSupply.FacilityStateAsync(db, bill.FacilityId, cancellationToken) ?? string.Empty;
         return new EInvoiceDocument(
             Source, note.Id, note.FacilityId, note.Number, BillingTime.LocalDate(note.IssuedAt),
-            new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), bill.PlaceOfSupply ?? Gstin.StateCode(gstin) ?? string.Empty,
+            new EInvoiceBuyer(gstin, payer.Name, payer.Address, payer.Phone, payer.Email), placeOfSupply,
             items, 0m, note.Amount, IsCancelled: false, Type: EInvoiceDocumentTypes.DebitNote,
             Preceding: new EInvoicePreceding(BillEInvoiceSource.Key, bill.Id, bill.BillNumber ?? string.Empty, BillingTime.LocalDate(invoiced)));
     }

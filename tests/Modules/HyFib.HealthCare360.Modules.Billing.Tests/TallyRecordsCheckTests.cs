@@ -73,6 +73,17 @@ public sealed class TallyRecordsCheckTests
     }
 
     [Fact]
+    public void Debit_notes_are_compared_with_the_records_too()
+    {
+        var day = Book with { DebitNotes = [new TallyDebitNote("NHDB26000001", Day, "NHOB260000001", DebitNoteParty.Patient, null, 500m)] };
+
+        Line(TallyRecordsCheck.Compare(Records with { DebitNotes = 1, DebitNotesAmount = 500m }, day, new TallyLedgerMap()), "Debit notes", "Debit notes")
+            .ShouldSatisfyAllConditions(l => l.DayBook.ShouldBe(500m), l => l.DayBookCount.ShouldBe(1), l => l.Matches.ShouldBeTrue());
+        Line(TallyRecordsCheck.Compare(Records with { DebitNotes = 1, DebitNotesAmount = 500m }, Book, new TallyLedgerMap()), "Debit notes", "Debit notes")
+            .Matches.ShouldBeFalse("a debit note issued and missing from the day book");
+    }
+
+    [Fact]
     public void A_bill_missing_from_the_day_book_shows_in_the_count()
     {
         var comparison = TallyRecordsCheck.Compare(Records with { BillsFinalised = 3, BillsFinalisedAmount = 2_180m }, Book, new TallyLedgerMap());

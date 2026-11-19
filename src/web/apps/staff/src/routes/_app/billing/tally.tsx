@@ -138,7 +138,7 @@ function TallyPage() {
     <Page>
       <PageHeader
         title="Tally export"
-        subtitle="The day book of bills, receipts, refunds, credit notes, doctor fees, pharmacy and canteen, posted to Tally every night and checked against it"
+        subtitle="The day book of bills, receipts, refunds, credit notes, doctor fees, pharmacy, canteen and purchases, posted to Tally every night and checked against it"
         icon={<BookRegular />}
       />
       <Section flush>
@@ -153,7 +153,7 @@ function TallyPage() {
           >
             {canExport && <Tab value="exports">Posting log</Tab>}
             {canExport && <Tab value="daybook">Day book preview</Tab>}
-            <Tab value="ledgers">Ledger names</Tab>
+            <Tab value="ledgers">Ledgers and voucher types</Tab>
           </TabList>
         </div>
         {!canExport || view === 'ledgers' ? (

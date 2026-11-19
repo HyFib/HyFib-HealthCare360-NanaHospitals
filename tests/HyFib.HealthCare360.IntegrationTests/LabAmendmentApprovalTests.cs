@@ -13,6 +13,7 @@ using HyFib.HealthCare360.Platform.Approvals;
 using HyFib.HealthCare360.Platform.Documents;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Messaging;
+using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
@@ -32,7 +33,7 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static readonly Dictionary<string, string> Normal = new() { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101" };
+    private static readonly Dictionary<string, string> Normal = new() { ["NA"] = "138", ["K"] = "4.2", ["CL"] = "101", ["HCO3"] = "24" };
 
     [Fact]
     public async Task Where_the_lab_requires_a_second_pathologist_a_correction_waits_for_one_and_names_both()
@@ -47,6 +48,8 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
         {
             // The pathologist asks for the correction: it waits for approval, and the report is as it was.
             var asked = await AskAsync(pathologist, report.Id, Correction(potassium, "5.8"));
+            (await MessagesAsync(report.PatientId, ReportDelivery.ReportAmendedTemplate)).ShouldBeEmpty("nothing is corrected yet");
+            (await LabAlertsAsync(report.Id)).ShouldBeEmpty();
             (asked.Kind, asked.Status, asked.CanDecide, asked.CanWithdraw).ShouldBe((LabAmendmentApproval.Key, ApprovalStatus.Pending, false, true));
             asked.Summary.ShouldBe($"Correction of lab report {report.Number}");
             asked.Details.ShouldContain(new ApprovalDetail(potassium.TestName, "4.2 mmol/L -> 5.8 mmol/L"));
@@ -86,7 +89,39 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
             amended.Signatories.Select(s => s.UserId).ShouldContain(await IdAsync(second));
             (await doctor.GetAsync<PrintableDocumentDto>($"/api/v1/lab/reports/{report.Id}/document")).Html
                 .ShouldContain($"Asked for by {await NameAsync(pathologist)}");
+
+            // Made on approval, the correction goes to the patient, and, as no doctor is linked to the walk-in, to the lab.
+            (await MessagesAsync(report.PatientId, ReportDelivery.ReportAmendedTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+            (await LabAlertsAsync(report.Id)).ShouldHaveSingleItem();
         }
+    }
+
+    /// <summary>
+    /// L3: a corrected report goes to the patient as the first one did, so they do not keep the wrong one. An order no
+    /// doctor in HC360 is linked to (a walk-in, or an outside referral whose doctor is named in words) leaves nobody to
+    /// alert in the app, so the laboratory is alerted: whoever verifies, releases and amends reports, told whom to phone.
+    /// </summary>
+    [Fact]
+    public async Task A_corrected_report_goes_to_the_patient_and_the_lab_is_told_to_phone_the_referring_doctor()
+    {
+        var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
+        var report = await ReleasedAsync(referringDoctor: "Dr. S. Murugan, Bodinayakanur");
+        (await MessagesAsync(report.PatientId, ReportDelivery.ReportReadyTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+        (await MessagesAsync(report.PatientId, ReportDelivery.ReportAmendedTemplate)).ShouldBeEmpty();
+
+        using (var corrected = await pathologist.SendRawAsync(HttpMethod.Post, $"/api/v1/lab/reports/{report.Id}/amend", Correction(report.Line("K"), "4.8")))
+        {
+            corrected.StatusCode.ShouldBe(HttpStatusCode.NoContent, await corrected.Content.ReadAsStringAsync(Ct));
+        }
+
+        // On the channels the "report ready" notice took: the patient has a mobile number and no e-mail address.
+        (await MessagesAsync(report.PatientId, ReportDelivery.ReportAmendedTemplate)).ShouldBe([NotificationChannel.Sms, NotificationChannel.WhatsApp], ignoreOrder: true);
+
+        var alert = (await LabAlertsAsync(report.Id)).ShouldHaveSingleItem();
+        (alert.Permission, alert.Severity).ShouldBe((DiagnosticsPermissions.LabResultsVerify, "warning"));
+        alert.Title.ShouldBe($"Lab report amended: {report.Number}: tell the doctor");
+        alert.Body.ShouldBe($"Revision 1 of report {report.Number} corrects released results, and no doctor in HC360 is alerted of it. " +
+                            "Phone Dr. S. Murugan, Bodinayakanur, the doctor named on the order, and tell them the changes.");
     }
 
     [Fact]
@@ -153,12 +188,15 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
         }
     }
 
-    /// <summary>A new patient's electrolytes, entered by the technician, verified and released by the pathologist.</summary>
-    private async Task<ReleasedReport> ReleasedAsync()
+    /// <summary>
+    /// A new patient's electrolytes, a walk-in or an outside referral from <paramref name="referringDoctor"/>, entered by the
+    /// technician, verified and released by the pathologist.
+    /// </summary>
+    private async Task<ReleasedReport> ReleasedAsync(string? referringDoctor = null)
     {
         var lab = await server.SignInAsync(HospitalServer.Users.Lab);
         var pathologist = await server.SignInAsync(HospitalServer.Users.Pathologist);
-        var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ELECTROLYTES");
+        var tube = await LabVerificationTests.ReceivedSampleAsync(server, "LAB-ELECTROLYTES", referringDoctor: referringDoctor);
         var lines = await LabVerificationTests.EnterAsync(lab, tube, Normal);
         var released = await pathologist.PostAsync<VerificationOutcome>(
             "/api/v1/lab/results/verify", new VerifyResultsRequest([.. lines.Select(l => l.ResultId)], null, null, Release: true));
@@ -166,7 +204,7 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
         var sheet = await lab.GetAsync<ResultSheet>($"/api/v1/lab/samples/{tube.Id}/results");
         var order = await lab.GetAsync<LabOrderDetail>($"/api/v1/lab/orders/{sheet.LabOrderId}");
         var report = await ReportAsync(pathologist, order.ReportId.ShouldNotBeNull());
-        return new ReleasedReport(report.ReportId, report.ReportNumber, sheet.LabOrderId, lines);
+        return new ReleasedReport(report.ReportId, report.ReportNumber, sheet.LabOrderId, sheet.PatientId, lines);
     }
 
     /// <summary>Turns on the facility's rule that whoever enters a value does not verify it; disposing turns it off again.</summary>
@@ -232,7 +270,22 @@ public sealed class LabAmendmentApprovalTests(HospitalServer server)
         return (await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct)).GetProperty("code").GetString();
     }
 
-    private sealed record ReleasedReport(Guid Id, string Number, Guid OrderId, IReadOnlyList<ResultSheetLine> Lines)
+    /// <summary>The channel of each message of a template queued for the patient.</summary>
+    private async Task<List<NotificationChannel>> MessagesAsync(Guid patientId, string template) =>
+        await QueryAsync(db => db.Set<NotificationLog>().AsNoTracking()
+            .Where(l => l.PatientId == patientId && l.TemplateKey == template)
+            .Select(l => l.Channel)
+            .ToListAsync(Ct));
+
+    /// <summary>The in-app alerts to the laboratory queued about this report (sent once committed).</summary>
+    private async Task<List<DeferredStaffAlert>> LabAlertsAsync(Guid reportId)
+    {
+        var queued = await QueryAsync(db => db.Set<OutboxMessage>().AsNoTracking()
+            .Where(m => m.Type == DiagnosticsOutboxTypes.StaffAlert).ToListAsync(Ct));
+        return [.. queued.Select(m => m.Read<DeferredStaffAlert>()).Where(a => a.Link == $"/lab/reports/{reportId}")];
+    }
+
+    private sealed record ReleasedReport(Guid Id, string Number, Guid OrderId, Guid PatientId, IReadOnlyList<ResultSheetLine> Lines)
     {
         public ResultSheetLine Line(string testCode) => Lines.Single(l => l.TestCode == testCode);
     }

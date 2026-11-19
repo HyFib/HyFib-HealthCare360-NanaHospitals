@@ -35,7 +35,7 @@ import { beep, scanSoundEnabled, setScanSoundEnabled } from '@/modules/lab/beep'
 import { errorMessage } from '@/modules/lab/common/errors';
 import { sectionLabel } from '@/modules/lab/labels';
 import { RejectSampleDialog, type RejectTarget } from '@/modules/lab/RejectSampleDialog';
-import { splitScans } from '@/modules/lab/scan';
+import { isMistypedTubeNumber, MISTYPED_TUBE_NUMBER, splitScans } from '@/modules/lab/scan';
 
 export const Route = createFileRoute('/_app/lab/receive')({
   component: ReceivePage,
@@ -303,6 +303,8 @@ function ReceivePage() {
           <Field
             label={mode === 'receive' && canReceive ? 'Scan to receive' : 'Scan to check (not received)'}
             className={styles.input}
+            validationState={isMistypedTubeNumber(value) ? 'warning' : 'none'}
+            validationMessage={isMistypedTubeNumber(value) ? MISTYPED_TUBE_NUMBER : undefined}
           >
             <Input
               ref={inputRef}

@@ -198,14 +198,26 @@ inventory search for a tag's barcode finds the item by its exact code. See
 A debit note is posted only when someone who holds `purchase.grn.approve`, and did not raise it, approves it (over the
 note as raised, `approval.stale`): the stock then leaves each batch as `PurchaseReturn` (audited
 `purchase.debit_note_posted` with both names), and the note reaches Billing's Tally day book on the day it was posted as
-a **Debit Note** voucher: the supplier's ledger debited with the whole note, Purchase Returns credited at cost and the
-input CGST/SGST/IGST taken back. A payable adjustment is posted only when someone who holds `purchase.approve`, and did
-not raise it, approves it; it reaches the day book as a **Journal** between the supplier's ledger and Purchase Rate
+a **Debit Note** voucher: the supplier's ledger debited with the whole note, against the supplier's invoice of the goods
+receipt the note names (On Account when it names none), Purchase Returns credited at cost and the input CGST/SGST/IGST
+taken back by rate. A payable adjustment is posted only when someone who holds `purchase.approve`, and did not raise it,
+approves it; it reaches the day book as a **Journal** between the supplier's ledger (On Account) and Purchase Rate
 Differences, whichever way it goes. Supply chain hands both to Billing through the Platform contract
-`IVendorAccountsSource`; the ledger names are in `billing.tally.ledgers` (`purchaseReturns`, `inputCgst`, `inputSgst`,
-`inputIgst`, `vendorAdjustments`, `ledgerPerVendor`, `sundryCreditors`). Goods receipts themselves are not sent to Tally:
-the accounts book the supplier's invoice, and a debit note is set against it there. In the NDPS annual return a
-purchase return counts as written off, with every movement other than a receipt, dispensing or a patient's return.
+`IVendorAccountsSource`, with each note's GST by rate and its goods receipt's invoice number; the ledger names are in
+`billing.tally.ledgers` (`purchaseReturns`, `inputCgst`, `inputSgst`, `inputIgst`, `vendorAdjustments`,
+`ledgerPerVendor`, `sundryCreditors`). In the NDPS annual return a purchase return counts as written off, with every
+movement other than a receipt, dispensing or a patient's return.
+
+**Goods receipts in Tally** (N11: pharmacy purchases party ledger wise). Supply chain gives Billing a day's goods receipts
+through the Platform contract `IPurchaseAccountsSource` (`PurchaseAccountsDayBookSource`): those posted into stock and
+received on the day, the state GSTR-3B takes their input credit in (`GoodsReceiptGstSource`), each with the supplier's
+invoice number and date, GSTIN and state (the GSTIN's, else the address's), whether its store is a pharmacy
+(`StoreType.Pharmacy`), and its taxable value and input GST by rate with the round-off, which add up to the receipt's
+`NetAmount`. Billing posts each as a Purchase voucher from the supplier's ledger, against a new bill of the supplier's
+invoice, for the stores `billing.tally.ledgers` `purchasesFrom` names (the pharmacy stores by default); see
+[billing.md, The Tally day book](billing.md#the-tally-day-book). A receipt posted after the day it was received joins
+that day's day book: posting it raises the Platform event `GoodsReceiptPosted`, and Billing queues that day for Tally
+again when it went already.
 
 ### Assets — `/api/v1/assets` (AST-01/02/06, tag Assets)
 | Method | Path | Permission | Request → response |
@@ -376,6 +388,7 @@ and `ExpiringAsync(db, storeIds, today, days, includeExpired)` (`ExpiringBatch` 
 | Event | Direction | When / use |
 |---|---|---|
 | `ControlledStockMoved` (domain event, same transaction) | raised | Every ledger row of a register item (Schedule H1/X or `IsControlled`), with ledger id, batch, signed quantity, balance after and reference. Handled by Pharmacy, which writes the controlled-drug register line for movements made outside pharmacy screens (GRN, transfers, adjustments, write-offs, OT consumption) |
+| `GoodsReceiptPosted` (Platform contract, same transaction) | raised | A goods receipt posted into stock, with its number and the day its goods were received. Handled by Billing, which sends that day to Tally again when it went already (the purchase is dated by that day) |
 
 The module handles no events from other modules, and publishes no real-time events. Cold-chain alerts go through the
 outbox (`supplychain.cold-chain-alert`), so they are sent only once the reading is saved.

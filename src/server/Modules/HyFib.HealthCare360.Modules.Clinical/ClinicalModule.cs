@@ -49,6 +49,7 @@ public sealed class ClinicalModule : IModule
         services.AddScoped<EncounterService>();
         services.AddScoped<ClinicalOrderService>();
         services.AddScoped<PrescriptionSafetyService>();
+        services.AddScoped<IMedicationSafetyCheck, WardMedicationSafety>();
         services.AddScoped<PrescriptionService>();
         services.AddScoped<DrugSafetyApprovals>();
         services.AddScoped<PrescriptionPrintBuilder>();

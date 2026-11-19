@@ -620,8 +620,10 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    - WhatsApp templates seeded **Not in use** in Administration › Notification templates wait for Meta: the queue token
      (`visit_token`), the payment receipt (`bill_receipt`), the admission (`admission_admitted`), the discharge
      (`discharge_completed`, without a document header), the discharge summary (`discharge_summary`, with a document
-     header: see below), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`) and the
-     complaint acknowledgement (`complaint_acknowledged`). Register each in WhatsApp Manager as a utility template (the feedback
+     header: see below), the feedback request (`feedback_request`), the follow-up reminder (`followup_reminder`), the
+     complaint acknowledgement (`complaint_acknowledged`) and the corrected lab report (`lab_report_amended`, in English,
+     Hindi and Tamil; with a document header, as `lab_report_ready`, to send the corrected PDF, ticking "Document header"
+     on it too). Register each in WhatsApp Manager as a utility template (the feedback
      request and the follow-up reminder go only to numbers that opted in), then switch it on; until then those messages
      go by SMS only. Any template can be switched off the same way: when no version of a message is in use, it is not
      sent on that channel (sign-in codes always go).
@@ -1534,7 +1536,9 @@ once a week HC360 restores the newest backup into a scratch database on the hosp
   is named.
 - **Cleaned up.** The scratch database (`hc360_restore_test_…`) holds a full copy of every patient's record. It is
   dropped as soon as the test ends, whether it passed or failed. One left by a power cut or a restart during a test
-  is dropped by the next test. The plain database dump in the temporary folder is deleted too.
+  is dropped by the next test. Its name carries a code of the hospital database it copies, so where two HC360
+  databases share one PostgreSQL server (a live one and a training one), neither's test restore drops the other's.
+  The plain database dump in the temporary folder is deleted too.
 - **Shown.** The Backups screen's **Checked** column says "Test restore passed" or "Test restore failed", with the
   time, and on a failure, why. A failure is told to the administrators in the app ("Backup test restore failed"), once
   until a test passes again. System health warns (`backup.restore_test`) once no test restore has passed for 14 days

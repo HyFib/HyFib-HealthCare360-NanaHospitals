@@ -363,7 +363,8 @@ public sealed class PatientPipelineTests(HospitalServer server)
 
     /// <summary>
     /// Front office: checks the patient in to see the doctor, in the doctor's department, with a queue token. The visit is
-    /// read back as stored, to the microsecond the database keeps, which the journey's times are.
+    /// read back as stored, to the microsecond the database keeps, which the journey's times are: by the hospital
+    /// administrator, who may open a restricted patient's visit, which the front office may not.
     /// </summary>
     private async Task<VisitDetail> CheckInAsync(ApiClient frontOffice, Guid patientId)
     {
@@ -373,7 +374,8 @@ public sealed class PatientPipelineTests(HospitalServer server)
         var created = await frontOffice.PostAsync<VisitDetail>("/api/v1/visits", new CreateVisitRequest(
             patientId, VisitType.OutPatient, departmentId, practitionerId, null, PayerType.Self, null, ReferralSource.Self, null, "Fever",
             false, null, null, TokenPriority.Normal, IssueToken: true, NotifyPatient: false));
-        return await frontOffice.GetAsync<VisitDetail>($"/api/v1/visits/{created.Id}");
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        return await admin.GetAsync<VisitDetail>($"/api/v1/visits/{created.Id}");
     }
 
     /// <summary>The lab's tube for the patient's CRP, waiting on the collection list.</summary>

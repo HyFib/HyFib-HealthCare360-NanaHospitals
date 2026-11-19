@@ -205,7 +205,7 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
     {
         var server = Server();
         var restorer = As(On(server, "postgres"), Restorer);
-        var leftover = PostgresTools.ScratchPrefix + "0123456789ab";
+        var leftover = PostgresTools.ScratchPrefixFor(Database) + "0123456789ab";
         await ExecuteAsync(restorer, $"CREATE DATABASE {leftover}");
         var tools = Tools(As(On(server, Database), App), restorer, checkRoom: false);
 
@@ -214,6 +214,74 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
 
         (await DatabaseExistsAsync(server, leftover)).ShouldBeFalse();
         await Should.ThrowAsync<ArgumentException>(() => tools.DropAsync(Database, CancellationToken.None), "only a scratch database is ever dropped");
+    }
+
+    /// <summary>
+    /// Two HC360 databases on one PostgreSQL server (the live one and a training one, say) share the account test restores
+    /// sign in as, as Install-HC360Server.ps1 makes it (hc360_restore), and both test their backups at the same hour. A test
+    /// restore of one never takes the other's scratch database, which may be filling at that moment, for one an earlier
+    /// test left, nor drops it by name.
+    /// </summary>
+    [Fact]
+    public async Task A_test_restore_of_another_hospital_database_on_the_server_is_left_alone()
+    {
+        var server = Server();
+        var restorer = As(On(server, "postgres"), Restorer);
+        var tools = Tools(As(On(server, Database), App), restorer, checkRoom: false);
+        // The other hospital database's name is all its test restore takes from it before the restore itself.
+        var training = Tools(As(On(server, Database + "_training"), App), restorer, checkRoom: false);
+
+        var theirs = await training.CreateAsync(1L << 20, Ct);
+        try
+        {
+            var ours = await tools.CreateAsync(1L << 20, Ct);
+            await tools.DropAsync(ours, CancellationToken.None);
+
+            (await DatabaseExistsAsync(server, theirs)).ShouldBeTrue("the other database's test restore is not taken for a leftover");
+            await Should.ThrowAsync<ArgumentException>(() => tools.DropAsync(theirs, CancellationToken.None), "nor dropped by name");
+        }
+        finally
+        {
+            await training.DropAsync(theirs, CancellationToken.None);
+        }
+
+        (await DatabaseExistsAsync(server, theirs)).ShouldBeFalse("its own test restore drops it");
+    }
+
+    /// <summary>
+    /// A database just restored is where autovacuum goes to work, and while one of its workers is in the scratch database
+    /// PostgreSQL refuses a forced drop by the test-restore account outright: only a superuser, or a member of
+    /// pg_signal_backend, may end an autovacuum worker. The test restore passed and its copy, every patient's record,
+    /// stayed on the server until the next week's test. It is dropped all the same.
+    /// </summary>
+    [Fact]
+    public async Task A_scratch_database_autovacuum_is_working_in_is_dropped_all_the_same()
+    {
+        var server = Server();
+        var tools = Tools(As(On(server, Database), App), As(On(server, "postgres"), Restorer), checkRoom: false);
+        var database = await tools.CreateAsync(1L << 20, Ct);
+        try
+        {
+            // Enough rows for autovacuum to come to the table at once, and a table it works through slowly, so that it is
+            // still there when the drop comes.
+            await ExecuteAsync(As(On(server, database), Restorer),
+                "CREATE TABLE filled WITH (autovacuum_vacuum_insert_threshold = 1, autovacuum_vacuum_insert_scale_factor = 0, " +
+                "autovacuum_analyze_threshold = 1, autovacuum_analyze_scale_factor = 0, autovacuum_vacuum_cost_delay = 100, autovacuum_vacuum_cost_limit = 1) " +
+                "AS SELECT g AS id, md5(g::text) AS v FROM generate_series(1, 500000) g");
+            if (!await AutovacuumArrivesAsync(server, database, TimeSpan.FromMinutes(3)))
+            {
+                Assert.Skip("Autovacuum did not come to the scratch database within 3 minutes on this server.");
+            }
+
+            await tools.DropAsync(database, CancellationToken.None);
+
+            (await DatabaseExistsAsync(server, database)).ShouldBeFalse("the copy is gone, though autovacuum was working in it");
+        }
+        finally
+        {
+            // As the server's superuser, whatever happened above.
+            await ExecuteAsync(server, $"DROP DATABASE IF EXISTS \"{database}\" WITH (FORCE)");
+        }
     }
 
     /// <summary>
@@ -284,6 +352,29 @@ public sealed class PostgresRestoreTests : IAsyncLifetime
         await connection.OpenAsync(Ct);
         await using var command = new NpgsqlCommand($"SELECT count(*) FROM {table}", connection);
         return (long)(await command.ExecuteScalarAsync(Ct))!;
+    }
+
+    /// <summary>Whether an autovacuum worker is at work in <paramref name="database"/> within <paramref name="wait"/>.</summary>
+    private static async Task<bool> AutovacuumArrivesAsync(string server, string database, TimeSpan wait)
+    {
+        var until = DateTime.UtcNow + wait;
+        do
+        {
+            await using var connection = new NpgsqlConnection(server);
+            await connection.OpenAsync(Ct);
+            await using var command = new NpgsqlCommand(
+                "SELECT count(*) FROM pg_stat_activity WHERE datname = @name AND backend_type = 'autovacuum worker'", connection);
+            command.Parameters.AddWithValue("name", database);
+            if ((long)(await command.ExecuteScalarAsync(Ct))! > 0)
+            {
+                return true;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), Ct);
+        }
+        while (DateTime.UtcNow < until);
+
+        return false;
     }
 
     private static async Task<bool> DatabaseExistsAsync(string server, string name)

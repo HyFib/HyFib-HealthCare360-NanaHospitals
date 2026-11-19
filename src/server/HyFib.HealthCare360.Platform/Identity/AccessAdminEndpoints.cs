@@ -532,13 +532,16 @@ internal static class AccessAdminEndpoints
             user.IsActive = user.IsActive || activate;
         }
 
-        var ended = wasActive && !user.IsActive
-            ? await AccountApprovals.RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
-            : [];
-
-        // Which roles and facilities the change gave, asked for and took away, by name, in the transaction that makes it.
+        // Deactivated, the user's sessions end. A facility taken away ends their sessions in it, at once too, and the Super
+        // Administrator role taken away a session in no facility: a session's tokens carry the facility it is signed in to, or
+        // none, which reads every facility's records, and would otherwise go on so until the session ends.
         var rolesNow = user.Roles.Select(r => r.RoleId).ToList();
         var facilitiesNow = user.Facilities.Select(f => f.FacilityId).ToList();
+        var ended = wasActive && !user.IsActive
+            ? await AccountApprovals.RevokeAllSessionsAsync(db, user.Id, "user_deactivated", time.GetUtcNow(), ct)
+            : await AccountApprovals.RevokeSessionsOutsideAsync(db, user, await HoldsSuperAdministratorAsync(db, rolesNow, ct), time.GetUtcNow(), ct);
+
+        // Which roles and facilities the change gave, asked for and took away, by name, in the transaction that makes it.
         var names = await GrantNamesAsync(db, rolesBefore.Concat(roleIds), facilitiesBefore.Concat(facilityIds), ct);
         var asking = widens && !giveNow;
         audit.Add(new AuditEntry(AuditCategories.Admin, "user.updated", $"Updated user {user.UserName}")
@@ -551,6 +554,7 @@ internal static class AccessAdminEndpoints
                 facilities = new { granted = names.Facilities(facilitiesNow.Except(facilitiesBefore)), withdrawn = names.Facilities(facilitiesBefore.Except(facilitiesNow)) },
                 allFacilities = new { before = allBefore, now = user.AllFacilities },
                 asked = asking ? new { roles = names.Roles(addRoles), facilities = names.Facilities(addFacilities), allFacilities = addAll, reactivate = activate } : null,
+                sessionsEnded = ended.Count,
             },
         });
         if (giveNow)
@@ -1205,6 +1209,10 @@ internal static class AccessAdminEndpoints
 
     private static async Task<IReadOnlySet<string>> CallerPermissionsAsync(ICurrentUser current, IPermissionService permissions, CancellationToken ct) =>
         current.UserId is { } callerId ? await permissions.GetPermissionsAsync(callerId, ct) : new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>Whether these roles hold the Super Administrator's, which works in every facility, as signing in has it.</summary>
+    private static Task<bool> HoldsSuperAdministratorAsync(HospitalDbContext db, IReadOnlyCollection<Guid> roleIds, CancellationToken ct) =>
+        db.Set<Role>().AnyAsync(r => roleIds.Contains(r.Id) && r.Name == SystemRoles.SuperAdmin, ct);
 
     /// <summary>The names of these roles and facilities, deleted ones included, for an audit entry to name what it gave or took.</summary>
     private static async Task<GrantNames> GrantNamesAsync(HospitalDbContext db, IEnumerable<Guid> roleIds, IEnumerable<Guid> facilityIds, CancellationToken ct)

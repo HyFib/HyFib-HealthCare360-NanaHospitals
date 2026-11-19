@@ -211,6 +211,22 @@ public sealed class KeyRotationTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_key_id_not_in_the_ring_is_refused_before_it_is_logged()
+    {
+        // Retiring a key logs its id, which comes from the request's path. Only an id that has matched a key in the ring,
+        // 16 hexadecimal digits, gets that far: any other is refused as not found first, one carrying a forged log line
+        // among them (SECURITY.md, CodeQL's "Log entries created from user input").
+        var (admin, _) = await server.SignInNewSessionAsync(HospitalServer.Users.Admin);
+        var forged = Uri.EscapeDataString("0123456789ABCDEF\r\nwarn: Data encryption key 0123456789ABCDEF retired");
+
+        foreach (var keyId in new[] { "0123456789ABCDEF", forged })
+        {
+            using var response = await admin.SendRawAsync(HttpMethod.Post, $"/api/v1/admin/system/keys/data/{keyId}/retire", new ReauthenticateRequest(server.Password));
+            response.StatusCode.ShouldBe(HttpStatusCode.NotFound, keyId);
+        }
+    }
+
+    [Fact]
     public async Task After_the_sign_in_key_is_rotated_tokens_already_issued_keep_working()
     {
         var admin = await server.SignInAsync(HospitalServer.Users.Admin);

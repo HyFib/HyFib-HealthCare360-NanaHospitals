@@ -233,7 +233,7 @@ public sealed class DispensingService(
             return numbered.Error!;
         }
 
-        var reference = new StockReference(PharmacyStockReferences.Dispense, sale.Id, sale.InvoiceNumber);
+        var reference = new StockReference(PharmacyStockReferences.Dispense, sale.Id, sale.InvoiceNumber, sale.RegisterRemark);
         var issued = await stock.IssueAsync(
             new StockIssueRequest(store.Value.Id, StockMovementType.Dispense, reference,
                 planned.Select(p => new StockDemand(p.Item.Id, p.Request.Quantity, p.Request.BatchId, p.Key, Math.Min(p.Line.DurationDays, MaxShelfLifeDays))).ToList()),
@@ -284,8 +284,10 @@ public sealed class DispensingService(
 
         sale.MarkDispensed(null);
         db.Add(sale);
+        // The register is dated when the line is written, with the balance after the movement made now: a sale entered from
+        // paper keeps the paper's time in its remark, not in the line's date, or the running balance would be out of order.
         register.Record(sale.FacilityId, issued.Value.Movements, StockMovementType.Dispense, inward: false, reference,
-            PharmacyLookups.Party(patient, null, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, sale.SoldAt);
+            PharmacyLookups.Party(patient, null, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, now);
 
         var saved = await stock.SaveAsync(ct);
         if (saved.IsFailure)
@@ -400,7 +402,7 @@ public sealed class DispensingService(
                 string.IsNullOrWhiteSpace(buyer.Address) ? null : buyer.Address.Trim());
         }
 
-        var reference = new StockReference(PharmacyStockReferences.CounterSale, sale.Id, sale.InvoiceNumber);
+        var reference = new StockReference(PharmacyStockReferences.CounterSale, sale.Id, sale.InvoiceNumber, sale.RegisterRemark);
         var issued = await stock.IssueAsync(
             new StockIssueRequest(store.Value.Id, StockMovementType.Sale, reference,
                 request.Lines.Select(l => new StockDemand(l.ItemId, l.Quantity, l.BatchId)).ToList()),
@@ -440,8 +442,10 @@ public sealed class DispensingService(
             await einvoices.QueueAsync(PharmacyEInvoiceSource.Key, sale.Id, sale.FacilityId, HospitalClock.ToLocalDate(sale.SoldAt), ct);
         }
 
+        // The register is dated when the line is written, with the balance after the movement made now: a sale entered from
+        // paper keeps the paper's time in its remark, not in the line's date, or the running balance would be out of order.
         register.Record(sale.FacilityId, issued.Value.Movements, StockMovementType.Sale, inward: false, reference,
-            PharmacyLookups.Party(patient, customerName, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, sale.SoldAt);
+            PharmacyLookups.Party(patient, customerName, sale.PrescriberName, sale.PrescriberRegistrationNumber, sale.PrescriptionNumber), items, now);
 
         // A paper sale against an e-prescription that is waiting in the queue is that prescription's dispensing: it is closed
         // here, so it is not offered, and dispensed, a second time.
@@ -483,8 +487,7 @@ public sealed class DispensingService(
         }
 
         sale.InvoiceNumber = claimed.Value.Number;
-        sale.SoldAt = paper.At;
-        sale.EnteredFromPaperAt = now;
+        sale.EnterFromPaper(paper.At, now);
         return Result.Success();
     }
 

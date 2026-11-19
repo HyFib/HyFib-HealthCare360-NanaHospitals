@@ -43,6 +43,12 @@ public sealed record NumberSeriesRaise(NumberSeriesMark? Before, NumberSeriesMar
 /// (<see cref="NumberFormat.CounterAfterChange"/>). A mark of a reset the database no longer has counts where their periods
 /// overlap ("2026" and "202611" do), so a reset changed after the backup never hides numbers issued under the other.
 /// </para>
+/// <para>
+/// A counter and a mark of which only one has a check digit ({CHK}) are compared in the counter's terms
+/// (<see cref="NumberFormat.CounterIn"/>): a series brought to a check digit counts in tens of its former numbers (tube
+/// numbers went from {SEQ:10} at 1000012346 to {SEQ:9}{CHK} at 100001234), which is no restore, and a database restored
+/// to before that is still raised past the numbers issued after it.
+/// </para>
 /// </summary>
 public static class NumberSeriesHighWater
 {
@@ -63,19 +69,25 @@ public static class NumberSeriesHighWater
             : 0;
     }
 
-    /// <summary>Whether <paramref name="counter"/>, as the database has it, is behind <paramref name="mark"/> at <paramref name="localNow"/> (hospital time).</summary>
+    /// <summary>
+    /// Whether <paramref name="counter"/>, as the database has it, is behind <paramref name="mark"/> at
+    /// <paramref name="localNow"/> (hospital time), the mark counted in the counter's terms where only one of them has a
+    /// check digit.
+    /// </summary>
     public static bool IsBehind(NumberSeriesMark counter, NumberSeriesMark mark, DateTimeOffset localNow)
     {
         ArgumentNullException.ThrowIfNull(counter);
+        ArgumentNullException.ThrowIfNull(mark);
         return NumberFormat.LastIssued(counter.Value, counter.Period, counter.ResetPolicy, localNow)
-            < LastIssuedIn(mark, NumberFormat.PeriodFor(counter.ResetPolicy, localNow));
+            < NumberFormat.CounterIn(LastIssuedIn(mark, NumberFormat.PeriodFor(counter.ResetPolicy, localNow)), mark.Format, counter.Format);
     }
 
     /// <summary>
     /// The series the database (<paramref name="counters"/>) has behind <paramref name="marks"/>, each raised past the last
-    /// number the mark records in the period it counts in now, by <paramref name="margin"/>; and the series the database
-    /// lacks that issued numbers in their current period, made again likewise. A series the mark does not know is left as
-    /// it is, as is one whose numbers the mark has only in an earlier period (the series starts again from 1 anyway).
+    /// number the mark records in the period it counts in now, by <paramref name="margin"/> (counted in the counter's terms
+    /// where only one of them has a check digit, the margin in the mark's); and the series the database lacks that issued
+    /// numbers in their current period, made again likewise. A series the mark does not know is left as it is, as is one
+    /// whose numbers the mark has only in an earlier period (the series starts again from 1 anyway).
     /// </summary>
     public static IReadOnlyList<NumberSeriesRaise> Raises(
         IReadOnlyList<NumberSeriesMark> counters, IReadOnlyList<NumberSeriesMark> marks, DateTimeOffset localNow, long margin = Margin)
@@ -91,7 +103,8 @@ public static class NumberSeriesHighWater
                 if (IsBehind(counter, mark, localNow))
                 {
                     var period = NumberFormat.PeriodFor(counter.ResetPolicy, localNow);
-                    raises.Add(new NumberSeriesRaise(counter, mark, period, LastIssuedIn(mark, period) + margin));
+                    var value = NumberFormat.CounterIn(LastIssuedIn(mark, period) + margin, mark.Format, counter.Format);
+                    raises.Add(new NumberSeriesRaise(counter, mark, period, value));
                 }
 
                 continue;

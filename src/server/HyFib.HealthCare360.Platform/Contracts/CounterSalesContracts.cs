@@ -44,6 +44,75 @@ public sealed record CounterSalesDay(string Counter, DateOnly Date, CounterDocum
     public bool IsEmpty => Sales.Count == 0 && Returns.Count == 0 && Collected.All(c => c.Amount == 0);
 }
 
+/// <summary>A registered buyer (B2B) a counter's invoice is made out to.</summary>
+/// <param name="PlaceOfSupply">Where the goods were supplied, as its GST state code ("33"); null when not recorded.</param>
+public sealed record CounterBuyer(string Gstin, string? LegalName, string? PlaceOfSupply);
+
+/// <summary>Money taken for an invoice, or paid back on a return, in one mode, with the terminal's RRN or the UPI reference.</summary>
+public sealed record CounterPayment(CounterPaymentMode Mode, decimal Amount, string? Reference = null);
+
+/// <summary>One invoice of a counter, for a voucher of its own in the accounts.</summary>
+/// <param name="At">When it was sold.</param>
+/// <param name="PatientId">The registered patient it was sold to; null for a walk-in customer.</param>
+/// <param name="CustomerName">The name given at the counter (a walk-in customer's).</param>
+/// <param name="Buyer">The registered buyer of a B2B invoice; null otherwise.</param>
+/// <param name="Tax">Taxable value and GST by rate.</param>
+/// <param name="RoundOff">The invoice's rounding to the rupee.</param>
+/// <param name="Payments">Money taken with the invoice, by mode; the rest went on the customer's account.</param>
+public sealed record CounterInvoice(
+    string Number, DateTimeOffset At, Guid? PatientId, string? CustomerName, CounterBuyer? Buyer,
+    IReadOnlyList<CounterTaxLine> Tax, decimal RoundOff, IReadOnlyList<CounterPayment> Payments)
+{
+    public decimal Total => Tax.Sum(t => t.Total) + RoundOff;
+
+    /// <summary>What was not taken in money: put on the customer's account. Derived, so the figures always add up.</summary>
+    public decimal OnAccount => Total - Payments.Sum(p => p.Amount);
+}
+
+/// <summary>A return of a counter's invoice booked on the day: a credit note of its own.</summary>
+/// <param name="Number">The return's number.</param>
+/// <param name="InvoiceNumber">The invoice the goods were sold on.</param>
+/// <param name="Tax">Taxable value and GST the return takes back, by rate.</param>
+/// <param name="PaidBack">Money paid back, by mode; the rest was set against the invoice's balance due.</param>
+public sealed record CounterReturn(
+    string Number, DateTimeOffset At, string InvoiceNumber, Guid? PatientId, string? CustomerName, CounterBuyer? Buyer,
+    IReadOnlyList<CounterTaxLine> Tax, IReadOnlyList<CounterPayment> PaidBack)
+{
+    public decimal Total => Tax.Sum(t => t.Total);
+
+    /// <summary>What was set against the invoice's balance due. Derived, so the figures always add up.</summary>
+    public decimal AgainstDue => Total - PaidBack.Sum(p => p.Amount);
+}
+
+/// <summary>An invoice's balance on account paid on the day, after the day it was sold or later that day.</summary>
+public sealed record CounterCollection(string InvoiceNumber, Guid? PatientId, string? CustomerName, IReadOnlyList<CounterPayment> Payments)
+{
+    public decimal Amount => Payments.Sum(p => p.Amount);
+}
+
+/// <summary>A counter's day invoice by invoice: the invoices sold, the returns booked and the balances paid.</summary>
+/// <param name="Counter">The source's <see cref="ICounterInvoiceSource.Counter"/>.</param>
+public sealed record CounterInvoicesDay(
+    string Counter, DateOnly Date, IReadOnlyList<CounterInvoice> Invoices, IReadOnlyList<CounterReturn> Returns, IReadOnlyList<CounterCollection> Collections)
+{
+    public bool IsEmpty => Invoices.Count == 0 && Returns.Count == 0 && Collections.All(c => c.Amount == 0);
+}
+
+/// <summary>
+/// A counter that bills its own customers and can report its day invoice by invoice for the Tally day book (INT-TALLY,
+/// T17: one voucher per invoice), beside the summary of <see cref="ICounterSalesSource"/>. The pharmacy implements it; the
+/// canteen, which has no invoices to post one by one, does not. Read in the background, where no facility filter applies:
+/// implementations filter by the facility given and use the hospital's (IST) calendar day, and leave out what their
+/// <see cref="ICounterSalesSource"/> day leaves out, so both describe the same day.
+/// </summary>
+public interface ICounterInvoiceSource
+{
+    /// <summary>The counter's key, the same as its <see cref="ICounterSalesSource.Counter"/>.</summary>
+    string Counter { get; }
+
+    Task<CounterInvoicesDay> GetInvoicesAsync(Guid facilityId, DateOnly date, CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// A card or UPI payment taken at a counter that bills its own sales, or (<paramref name="IsRefund"/>) money it paid back by
 /// card or UPI, as the card and UPI settlement match reads it: a settled transaction names the reference the cashier typed

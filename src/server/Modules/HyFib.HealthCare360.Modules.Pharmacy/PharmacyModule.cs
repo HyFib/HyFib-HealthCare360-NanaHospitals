@@ -91,8 +91,10 @@ public sealed class PharmacyModule : IModule
         services.AddScoped<AdrAccess>();
         services.AddScoped<PharmacyRealtime>();
 
-        // The pharmacy counter's day for Billing's Tally day book (Billing reads it without referencing this module).
+        // The pharmacy counter's day for Billing's Tally day book, summed and invoice by invoice (Billing reads them without
+        // referencing this module).
         services.AddScoped<ICounterSalesSource, PharmacyDayBookSource>();
+        services.AddScoped<ICounterInvoiceSource, PharmacyDayBookSource>();
         services.AddScoped<IEInvoiceSource, PharmacyEInvoiceSource>();
         services.AddScoped<IEInvoiceSource, PharmacyReturnEInvoiceSource>();
         services.AddScoped<IGstReturnSource, PharmacyGstReturnSource>();

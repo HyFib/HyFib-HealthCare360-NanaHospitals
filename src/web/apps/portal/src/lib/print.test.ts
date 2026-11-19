@@ -118,10 +118,16 @@ describe('printing in the page', () => {
 
   it('leaves no timer and no listener behind once the dialog has closed', () => {
     const listening = vi.spyOn(window, 'addEventListener');
+    // jsdom 31 starts a timer of its own for the <style> in the print copy, so the timers counted are the ones this
+    // code starts: each must be cleared.
+    const started = vi.spyOn(globalThis, 'setTimeout');
+    const cleared = vi.spyOn(globalThis, 'clearTimeout');
     printPortalDocument(doc);
     window.dispatchEvent(new Event('afterprint'));
 
-    expect(vi.getTimerCount()).toBe(0);
+    expect(started).toHaveBeenCalled();
+    const ids = started.mock.results.map((result) => result.value as unknown);
+    expect(cleared.mock.calls.map(([id]) => id as unknown)).toEqual(expect.arrayContaining(ids));
     vi.advanceTimersByTime(1000);
     expect(listening.mock.calls.map(([type]) => type)).not.toContain('focus');
   });

@@ -95,6 +95,8 @@ public sealed class InpatientModule : IModule
         services.Replace(ServiceDescriptor.Scoped<IRoomClassDirectory, RoomClassDirectory>());
         services.Replace(ServiceDescriptor.Scoped<IAdmissionDirectory, AdmissionDirectory>());
         services.AddScoped<MarService>();
+        services.AddScoped<IMarChartAhead>(sp => sp.GetRequiredService<MarService>());
+        services.AddScoped<IWardMedicines, WardMedicines>();
         services.AddScoped<HyFib.HealthCare360.Modules.Patients.Domain.IDowntimePackSource, Features.DowntimePack.DowntimePackInpatient>();
         services.AddWitnessPurpose(MarService.DoseWitness);
         services.AddWitnessPurpose(DischargeService.AgainstAdviceWitness);
@@ -106,6 +108,7 @@ public sealed class InpatientModule : IModule
         services.AddHostedService<BedDayChargeJob>();
         services.AddHostedService<CountersignOverdueJob>();
         services.AddHostedService<EarlyWarningReminderJob>();
+        services.AddHostedService<MarChartAheadJob>();
     }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)

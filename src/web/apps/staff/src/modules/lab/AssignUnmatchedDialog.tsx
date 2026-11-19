@@ -26,7 +26,7 @@ import { useState } from 'react';
 import { errorMessage } from './common/errors';
 import { labApi, labKeys, labQueries, type ResultSheetLine, type UnmatchedResultDto } from './api';
 import { unmatchedReasonLabel } from './labels';
-import { normalizeScan } from './scan';
+import { isMistypedTubeNumber, MISTYPED_TUBE_NUMBER, normalizeScan } from './scan';
 import { analyserReading } from './unmatched';
 
 const useStyles = makeStyles({
@@ -141,7 +141,14 @@ export function AssignUnmatchedDialog({ result, onClose }: { result: UnmatchedRe
                   label="Sample barcode"
                   hint="Scan the tube the analyser measured, then Enter"
                   className={styles.grow}
-                  validationMessage={notFound ? `No sample has barcode ${lookedUp}. Check the label.` : undefined}
+                  validationState={notFound ? 'error' : isMistypedTubeNumber(barcode) ? 'warning' : 'none'}
+                  validationMessage={
+                    notFound
+                      ? `No sample has barcode ${lookedUp}. Check the label.`
+                      : isMistypedTubeNumber(barcode)
+                        ? MISTYPED_TUBE_NUMBER
+                        : undefined
+                  }
                 >
                   <Input
                     value={barcode}

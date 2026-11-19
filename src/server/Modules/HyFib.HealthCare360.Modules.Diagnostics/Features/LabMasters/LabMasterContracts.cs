@@ -192,10 +192,15 @@ internal static class MasterRules
     public static bool IsCode(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.All(c => char.IsAsciiLetterUpper(c) || char.IsAsciiDigit(c) || c is '-' or '_');
 
-    /// <summary>Channel mapping: "HGB" or "XN550:HGB".</summary>
+    /// <summary>
+    /// Channel mapping: "HGB", "XN550:HGB", or a code with single spaces inside as some analysers name their tests
+    /// ("VIT D-25"), never at either end or beside the ':'.
+    /// </summary>
     public static bool IsChannelMapping(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= 64 && value.Count(c => c == ':') <= 1 && !value.StartsWith(':') && !value.EndsWith(':')
-        && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or '%' or '#' or ':' or '^');
+        && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.' or '%' or '#' or ':' or '^' or ' ')
+        && value.Trim() == value && !value.Contains("  ", StringComparison.Ordinal)
+        && !value.Contains(" :", StringComparison.Ordinal) && !value.Contains(": ", StringComparison.Ordinal);
 }
 
 public sealed class SaveLabTestRequestValidator : AbstractValidator<SaveLabTestRequest>

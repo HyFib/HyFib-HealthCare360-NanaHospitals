@@ -364,6 +364,15 @@ and grants nothing.
 
   What narrows it applies at once: roles, facilities or permissions taken away, a user deactivated, a role deleted, a role
   turned off (`role.deactivated`, by a holder of `admin.roles.manage`).
+  - **A facility taken away applies to the sessions open in it.** A session is signed in to one facility, and its tokens
+    carry it. Taking a facility from a user, or all facilities back to some, ends at once their sessions in a facility
+    they no longer work in (`facility_removed`), as deactivating a user ends them all; their sessions elsewhere go on.
+    Taking a facility out of use ends the sessions in it (`facility_inactive`, audited as `facility.sessions_ended`). A
+    session is renewed only in a facility its user may sign in to now, so one left open, whatever changed, ends at its
+    next refresh (`auth.session_facility_ended`). Before, such a session went on working in the facility for up to 12
+    hours, or until 2 hours unused. A session signed in to no facility reads every facility's records, and signing in
+    gives one only to a Super Administrator of a hospital with no facility in use: it ends when its user loses the role,
+    at once or at its next refresh (`facility_required`), whatever facilities they keep, all of them included.
   - A role turned off gives nothing, wherever a role becomes access: no permission for any endpoint or hub, no notification
     or work sent to its holders (`PermissionHolders`), no part in approving grants. It stays assigned, and what it
     requires of its holders (two-step verification, an enrolled workstation, its idle lock, the protection of accounts
@@ -419,12 +428,21 @@ and grants nothing.
   - Break-the-glass requires a written reason, expires, and is flagged for review. The grant is a row in the database
     (`patients.break_glass_grants`), so it holds, and expires, on every server alike.
   - Lists don't name them unless the user may open restricted records, or has break-the-glass access to that one. Patient
-    search and the board of patients in the hospital show the initials, "R. K. S. (restricted)", so the desk can tell two
-    results apart. The bed board, the doctor's worklist and the ward round show "Restricted patient". The worklist also
-    leaves out the complaint, booking reason, note title, result name and deficiency, and the round leaves out the
-    diagnosis and vital-sign details. The token, bed, UHID and safety flags stay, so the patient is still seen to.
+    search, the visit list and its search, the OPD queue and the board of patients in the hospital show the initials,
+    "R. K. S. (restricted)", so the desk can tell two results apart; the waiting-area display shows the initials alone.
+    The bed board, the doctor's worklist and the ward round show "Restricted patient". The worklist and the OPD queue
+    also leave out the complaint (the worklist the booking reason, note title, result name and deficiency too), and the
+    round leaves out the diagnosis and vital-sign details. The token, bed, UHID and safety flags stay, so the patient is
+    still seen to.
   - Their stored files (documents, photos, reports) follow the same rules: opening a file, or its details, by its id
     is refused (403 `patient.restricted`) until the user may open the record, so knowing a file's id is not a way in.
+    So do a visit opened by its id, and the patient's visit history and payer: each opening is also recorded as access
+    to the record.
+  - A merge keeps the restriction. A restricted duplicate merged into another record leaves the record kept restricted,
+    audited as `patient.restriction_carried`: a merge needs only `patients.merge`, and lifting a restriction waits for
+    someone who may open restricted records. A merge with a restricted record is asked for, and approved, only by
+    someone who may open it (403 `patient.restricted`); an approver who may not leaves the request waiting for one who
+    may.
 - **Sensitive categories** (HIV, mental health, termination of pregnancy, sexual violence; HIV/AIDS Act 2017, Mental
   Healthcare Act 2017, MTP Act s.5A, Bharatiya Nyaya Sanhita 2023 s.72 and POCSO Act 2012 s.23):
   - An HIV (B20–B24, Z21), mental-illness (F20–F69), medical-abortion (O04) or sexual-abuse (T74.2, T76.2, Y05, Z04.4)
@@ -441,6 +459,9 @@ and grants nothing.
   - The patient's details, bills, pharmacy, lab and radiology orders, appointments, allergies and alerts are not closed,
     so the desk and the departments keep serving the patient; the categories themselves show only to doctors. The
     patient's journey (where they are in their visit, stay and lab orders) stays open too, without their operations.
+  - The OPD queue and a visit's details still name the patient. For staff who do not hold the category they leave out
+    the complaint, and a visit's notes and MLC number, as the doctor's worklist leaves out the clinical text. Nothing
+    says why, so the desk is not told the category.
   - The FHIR API does not list these patients to clients that may not open restricted records.
   - **A shared number.** Families often share one mobile number, and whoever holds it signs in to the patient portal
     and reads what is sent to it. So a record in a category is reached through a number only when the number is the
@@ -473,7 +494,8 @@ and grants nothing.
     the card and UPI payouts (`billing.gateway.reconcile`) asks with the reason, and another who holds
     `billing.refunds.approve` approves, shown what the report brought and matched. Its transactions are reversed in the
     books of the day it is approved, never removed (billing.md, Card and UPI reconciliation);
-  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves;
+  - merging a duplicate patient record into another: one holder of `patients.merge` asks, another approves; when either
+    record is restricted, only someone who may open it does either (see "Restricted records" above);
   - a third party paying for a visit or a stay (an insurer, a company, a government scheme): the desk names it, and it
     is accepted only on the patient's policy or membership, in date and verified with the payer by someone other than
     whoever recorded its terms or last changed them (`PayerChoice`; `insurance.policy_self_verify`). Changing what a
@@ -509,6 +531,9 @@ and grants nothing.
     it from their own sign-in (`pharmacy.override_unacknowledged`), never the account that signed it
     (`pharmacy.override_own_prescription`); the acknowledgement is audited at Warning with the alert and the doctor's
     reason (`pharmacy.safety_override_acknowledged`).
+  - a ward medication order gets the same prescribing safety check: a blocking alert refuses it
+    (`medication.safety_block`) unless it carries the clinical reason, at least 10 characters, audited at Critical with
+    every alert found (`medication.safety_override`).
   - the store (MAKER-CHECKER slice 13): an indent is approved and issued by someone other than whoever raised it
     (`indent.approve_own`, `indent.issue_own`); a transfer is received by someone other than whoever dispatched it
     (`transfer.receive_own`), and a line counted short books nothing until someone who holds
@@ -679,9 +704,11 @@ and grants nothing.
   - stopping a ward medication order (slice 5): a prescriber (`clinical.prescriptions.sign`) stops it at once. Anyone
     else's stop is recorded as asked for, the order stays on the chart with every dose held (no dose given:
     `medication.stop_pending`), and the doctor named on the order (the patient's consultant for one that names none)
-    confirms it (`POST …/medication-orders/{id}/stop/countersign`), when the doses held since are cancelled, or declines
+    confirms it (`POST …/medication-orders/{id}/stop/countersign`), when every dose still due is cancelled, or declines
     it (`…/stop/decline`, with the reason, told to the nurse), when the doses are given again. Holding the doses is the
-    safe direction while it waits; the same time and overdue notice apply.
+    safe direction while it waits; the same time and overdue notice apply. A stop, and a cancelled prescription, cancel
+    every dose of the line still due, an overdue one too, and no dose of a stopped line is given or added
+    (`medication.not_active`; a cancelled dose is not recorded, `mar.cancelled`).
   - a refill (`POST /api/v1/clinical/prescriptions/{id}/refill`, slice 5): it carries the original doctor's name and
     registration as before, and records who refilled it (`refilledByName`, `signedByUserId`; audited
     `prescription.refilled`), so a pharmacist's refill never reads as the doctor's signature. A prescription with a
@@ -1123,8 +1150,9 @@ and grants nothing.
     unchanged: a report still goes with its PDF to the patient's own address.
   - After the upgrade, only numbers given with a code (a number change) count as verified.
 - Every access to a patient record is audited, and so is every way staff see one: a patient search (what was searched
-  for, how many matched and which patients were shown, `patient.searched`), the summary the banner shows and a lookup
-  by UHID (`PatientAccessAuditTests`).
+  for, how many matched and which patients were shown, `patient.searched`), the visit list and its search, alike
+  (`visit.searched`), the summary the banner shows, a lookup by UHID, a visit's details and the patient's visit history
+  and payer (`PatientAccessAuditTests`, `VisitAndQueuePrivacyTests`).
 - **Radiology images** from PACS reach the browser only through the server, as JPEG or PNG within a size limit, for
   people with `radiology.images.view` (doctors, radiographers, radiologists). PACS credentials stay on the server. A
   study's images are found by the study UID in HC360's database, and only series and objects PACS lists for that study
@@ -1988,7 +2016,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
     a false positive or an accepted risk is marked where it is: a `// codeql[<query id>]` comment on the line just
     before it, with the reason beside it. While Code Security is off, that comment is what keeps it from failing the
     check. With Code Security on, also dismiss the alert on GitHub with the same reason. Medium and low findings do
-    not fail the check. The first run's alerts and how each was handled are in the table below.
+    not fail the check. The first run's alerts and how each was handled are in the table below, with four medium ones
+    ruled on later.
 
 | CodeQL alert | Where | How it was handled |
 |---|---|---|
@@ -1999,6 +2028,9 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | Missing XML validation (medium) | `RdService.Load` (WindowsInterop, HC360 Desktop's fingerprint reader) | False positive: UIDAI publishes no schema for an RD service's answers, so there is none to validate against. The parser refuses DTDs and external entities, caps the size, and checks the root element. Numbers are parsed and range-checked, the paths the service names must be plain local paths, and the rest is carried as text. With Code Security on, dismiss as "false positive" |
 | Exposure of private information (medium) | `IntegrationSettingsReader`, `IntegrationLog`, `ReportDeliveryService` | False positive: the "private data" is the constant name of the e-mail integration (`email`), not an address. With Code Security on, dismiss as "false positive" |
 | Log entries created from user input (medium) | `ErrorHandling` (request path, correlation id), `FhirEndpoints`, `MealPlanService`, `GatewayWebhookLog` | False positive: each value is cleaned or checked before it is logged (masked path, correlation id and event id checked against a pattern, route template and printable resource type, internal error codes). With Code Security on, dismiss as "false positive" |
+| Log entries created from user input (medium) | `KeyRotationService.RetireDataKeyAsync` (Platform, retiring a data key), twice | False positive: the key's id comes from the request's path, but is logged only once it has matched a key in the ring, whose ids are 16 hexadecimal digits. Any other id, one carrying a forged log line among them, is refused as not found before anything is logged (`KeyRotationTests.A_key_id_not_in_the_ring_is_refused_before_it_is_logged`). Only an administrator allowed to manage the system, who has given their password again, gets that far. With Code Security on, dismiss as "false positive" |
+| Network data written to file (medium) | `src/web/demo/capture.mjs`, the demo's recording tool | False positive: writing the server's answers to files is what the tool is for. It records what HyFib's demo server answers each demo role, one file per role, in a folder the developer names. A developer runs it by hand (`src/web/demo/README.md`); no workflow runs it, and nothing in `src/web/demo` reaches a hospital (`Publish-HC360.ps1` builds only `src/web/apps`). With Code Security on, dismiss as "false positive" |
+| Missing origin verification in `postMessage` handler (medium) | Portal `lib/proofOfWork/solver.worker.ts` | False positive: the handler is a dedicated Web Worker's, not a window's. A dedicated worker receives messages only from the page that started it, through its `Worker` object (`lib/proofOfWork/index.ts`; MDN, *DedicatedWorkerGlobalScope: message event*), so there is no other origin to check. It solves the proof-of-work challenge it is given and posts back the answer. With Code Security on, dismiss as "false positive" |
 
 | Rule | Where | Why it is accepted |
 |---|---|---|
@@ -2008,8 +2040,8 @@ CI runs these checks on every pull request and on main. A pull request cannot me
 | CA5351, MD5 | `S3Client.Md5` (Platform, the off-site backup copies) | S3's `Content-MD5` header and its ETags are MD5 by the protocol, and Object Lock requires the header: a check against damage on the way, beside the SHA-256 every request is signed with. Nothing secret depends on it |
 | CA2100, SQL from text | `MigrationBaseline` (Platform) | Constant catalogue queries with parameters, and the DDL EF Core generates |
 | CA2100, SQL from text | `BackupRowCounts.CountAsync` (Platform, the key tables' rows a backup records and a test restore checks) | A table name cannot be a parameter. The names are HC360's fixed list, or a backup's manifest that recorded them; each must be `schema.table` in lower-case letters, digits and underscores, and is quoted. Nothing comes from a request |
-| CA2100, SQL from text | `PostgresTools.CreateAsync` (Platform, the test restores' scratch database) | `CREATE DATABASE` takes no parameters. The name is HC360's own (`hc360_restore_test_` and 12 random hex digits); the encoding and locale are the hospital database's, read from `pg_database` and quoted as literals |
-| CA2100, SQL from text | `PostgresTools.DropAsync` (Platform, the same) | `DROP DATABASE` takes no parameters. It drops only a name that matches the scratch databases' pattern (`hc360_restore_test_` and 12 hex digits), checked first, and never the hospital's database |
+| CA2100, SQL from text | `PostgresTools.CreateAsync` (Platform, the test restores' scratch database) | `CREATE DATABASE` takes no parameters. The name is HC360's own (`hc360_restore_test_`, 8 hex digits of the SHA-256 of the hospital database's name, `_` and 12 random hex digits); the encoding and locale are the hospital database's, read from `pg_database` and quoted as literals |
+| CA2100, SQL from text | `PostgresTools.DropAsync` (Platform, the same) | `DROP DATABASE` takes no parameters. It drops only a name that matches the pattern of this hospital database's scratch databases (`hc360_restore_test_`, its 8-digit code, `_` and 12 hex digits), checked first: never the hospital's database, nor the scratch database of another HC360 database on the same server |
 | CA5398, fixed TLS versions | `Program.cs` (server), `OutboundHttp` (calls to providers) | TLS 1.2 is the floor on purpose, because older Windows versions still allow TLS 1.0 and 1.1 |
 
 ## 3. What the hospital must do

@@ -57,6 +57,15 @@ import { z } from 'zod';
 import { searchPractitioners } from '@/lib/lookups';
 import { usePermission } from '@/lib/permissions';
 import {
+  emptyDecision,
+  groupAlerts,
+  signBlockers,
+  signRequirements,
+  type SafetyAlert,
+  type SignDecision,
+} from '@/modules/emr/safety';
+import { SafetyReview } from '@/modules/emr/SafetyReview';
+import {
   COMMON_FREQUENCIES,
   COMMON_ROUTES,
   nursingApi,
@@ -65,12 +74,14 @@ import {
   ORDER_MODE_LABEL,
   ORDER_SOURCE_LABEL,
   searchWardDrugs,
+  type AddMedicationOrderRequest,
   type MedicationOrderDto,
   type WardDrugDto,
 } from '../nursingApi';
 import { ReasonDialog } from '../ReasonDialog';
 import { formatTimeOfDay, fromIstInput, toIstInput } from '../time';
 import { countersignState, writesVerbalOrder } from '../verbalOrders';
+import { asSafetyAlerts, medicineKey, WARD_SAFETY_BLOCK, wardAlertsFromProblem } from '../wardOrderSafety';
 
 /**
  * The medication chart (what the doctor ordered). E-prescriptions arrive on their own; ward orders are written here. A
@@ -191,7 +202,11 @@ export function MedicationOrders({ admissionId }: { admissionId: string }) {
                 {o.roundTimes.length > 0 && (
                   <Caption1 block>At {o.roundTimes.map(formatTimeOfDay).join(', ')}</Caption1>
                 )}
-                {o.isAsNeeded && <Caption1 block>Only when needed (not scheduled)</Caption1>}
+                {o.source === 'Pharmacy' && o.status === 'Active' ? (
+                  <Caption1 block>Issued by the pharmacy: no dose until the doctor orders it</Caption1>
+                ) : (
+                  o.isAsNeeded && <Caption1 block>Only when needed (not scheduled)</Caption1>
+                )}
               </span>
             ),
           },
@@ -484,7 +499,9 @@ type OrderValues = z.infer<typeof orderSchema>;
  * A ward order. A prescriber writing in their own name signs it at once. Anyone else writes the doctor's verbal or
  * telephone order: the doctor, how they gave it and the read-back are required, and the doctor countersigns it. A
  * medicine picked from the drug master takes its controlled and high-alert flags from it; one typed in is handled as
- * high-alert.
+ * high-alert. Sent the first time, the order gets the prescribing safety check an e-prescription line gets: what it finds
+ * is shown here, with the prescription's safety review, and a blocking alert needs the clinical reason for ordering it
+ * anyway, audited by the server; warnings are reviewed. Changing the medicine checks it again.
  */
 function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose: () => void }) {
   const notify = useNotify();
@@ -523,6 +540,15 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
   const drug = drugItemId ? (found[drugItemId] ?? null) : null;
   const highRisk = drug ? drug.isControlled || drug.isHighAlert || isControlledDrug : true;
 
+  // The safety check of the medicine as it was when the order was sent, and what the user decided about what it found.
+  const [safety, setSafety] = useState<{ key: string; alerts: SafetyAlert[] } | null>(null);
+  const [decision, setDecision] = useState<SignDecision>(emptyDecision);
+  const watched = useWatch({ control: form.control });
+  const liveSafety = safety && safety.key === medicineKey(watched) ? safety : null;
+  const grouped = liveSafety ? groupAlerts(liveSafety.alerts) : null;
+  const requirements = grouped ? signRequirements(grouped, false) : null;
+  const blockers = requirements ? signBlockers(requirements, decision) : [];
+
   // A drug picked from the master names the medicine as the master does.
   useEffect(() => {
     if (drug) {
@@ -538,25 +564,33 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
     return drugs.map((d) => ({ id: d.id, code: d.code, name: d.strength ? `${d.name} ${d.strength}` : d.name }));
   };
 
+  const toRequest = (v: OrderValues, overrideReason: string | null = null): AddMedicationOrderRequest => ({
+    drugItemId: v.drugItemId,
+    drugName: v.drugName,
+    genericName: v.genericName || null,
+    strength: v.strength || null,
+    dose: v.dose,
+    route: v.route || null,
+    frequency: v.frequency,
+    durationDays: v.durationDays,
+    startAt: v.later ? fromIstInput(v.startAt) : null,
+    instructions: v.instructions || null,
+    isControlledDrug: v.isControlledDrug,
+    orderedByPractitionerId: v.orderedByPractitionerId,
+    mode: verbal ? v.mode : null,
+    readBack: verbal && v.readBack,
+    emergency: verbal && v.emergency,
+    overrideReason,
+  });
+
+  const check = useMutation({
+    mutationFn: (v: OrderValues) => nursingApi.checkOrder(admissionId, toRequest(v)),
+    onError: (error) => applyServerErrors(error, form.setError),
+  });
+
   const add = useMutation({
-    mutationFn: (v: OrderValues) =>
-      nursingApi.addOrder(admissionId, {
-        drugItemId: v.drugItemId,
-        drugName: v.drugName,
-        genericName: v.genericName || null,
-        strength: v.strength || null,
-        dose: v.dose,
-        route: v.route || null,
-        frequency: v.frequency,
-        durationDays: v.durationDays,
-        startAt: v.later ? fromIstInput(v.startAt) : null,
-        instructions: v.instructions || null,
-        isControlledDrug: v.isControlledDrug,
-        orderedByPractitionerId: v.orderedByPractitionerId,
-        mode: verbal ? v.mode : null,
-        readBack: verbal && v.readBack,
-        emergency: verbal && v.emergency,
-      }),
+    mutationFn: ({ values, overrideReason }: { values: OrderValues; overrideReason: string | null }) =>
+      nursingApi.addOrder(admissionId, toRequest(values, overrideReason)),
     onSuccess: (order) => {
       notify.success(
         `${order.drugName} added to the chart`,
@@ -571,7 +605,16 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
       void queryClient.invalidateQueries({ queryKey: nursingKeys.all });
       onClose();
     },
-    onError: (error) => applyServerErrors(error, form.setError),
+    onError: (error, { values }) => {
+      // The safety check found something now that it did not when the form checked: shown below, to decide again.
+      const alerts = isApiError(error) ? wardAlertsFromProblem(error.code, error.data) : null;
+      if (alerts) {
+        setSafety({ key: medicineKey(values), alerts });
+        setDecision(emptyDecision);
+        return;
+      }
+      applyServerErrors(error, form.setError);
+    },
   });
 
   const submit = (v: OrderValues) => {
@@ -587,10 +630,29 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
       form.setError('readBack', { message: 'Read the order back to the doctor before charting it.' });
       return;
     }
-    add.mutate(v);
+    const key = medicineKey(v);
+    if (safety?.key !== key) {
+      check.mutate(v, {
+        onSuccess: (result) => {
+          const alerts = asSafetyAlerts(result.alerts);
+          setSafety({ key, alerts });
+          setDecision(emptyDecision);
+          // Nothing found: the order is written now. Anything found waits for the user's decision, shown below.
+          if (alerts.length === 0) {
+            add.mutate({ values: v, overrideReason: null });
+          }
+        },
+      });
+      return;
+    }
+    if (blockers.length > 0) {
+      return;
+    }
+    add.mutate({ values: v, overrideReason: requirements?.needsOverride ? decision.overrideReason.trim() : null });
   };
 
-  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy: add.isPending, onClose });
+  const busy = add.isPending || check.isPending;
+  const guard = useUnsavedChanges({ dirty: form.formState.isDirty, busy, onClose });
 
   return (
     <Dialog open onOpenChange={guard.onOpenChange}>
@@ -791,23 +853,43 @@ function AddOrderDialog({ admissionId, onClose }: { admissionId: string; onClose
                   )}
                 />
               )}
-              {add.error && !(isApiError(add.error) && add.error.isValidation) && (
+              {grouped && requirements && liveSafety && liveSafety.alerts.length > 0 && (
+                <SafetyReview
+                  subject="order"
+                  grouped={grouped}
+                  requirements={requirements}
+                  decision={decision}
+                  onDecisionChange={setDecision}
+                  items={[]}
+                  controlledItems={[]}
+                  disabled={busy}
+                />
+              )}
+              {check.error && !(isApiError(check.error) && check.error.isValidation) && (
                 <MessageBar intent="error">
                   <MessageBarBody>
-                    {isApiError(add.error) ? add.error.userMessage : 'The order could not be added.'}
+                    {isApiError(check.error) ? check.error.userMessage : 'The safety check could not run.'}
                   </MessageBarBody>
                 </MessageBar>
               )}
+              {add.error &&
+                !(isApiError(add.error) && (add.error.isValidation || add.error.code === WARD_SAFETY_BLOCK)) && (
+                  <MessageBar intent="error">
+                    <MessageBarBody>
+                      {isApiError(add.error) ? add.error.userMessage : 'The order could not be added.'}
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={guard.requestClose} disabled={add.isPending}>
+              <Button onClick={guard.requestClose} disabled={busy}>
                 Cancel
               </Button>
               <Button
                 type="submit"
                 appearance="primary"
-                disabled={add.isPending}
-                icon={add.isPending ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
+                disabled={busy || blockers.length > 0}
+                icon={busy ? <Spinner size="tiny" aria-hidden /> : <AddRegular />}
               >
                 {verbal ? 'Add verbal order' : 'Add to chart'}
               </Button>

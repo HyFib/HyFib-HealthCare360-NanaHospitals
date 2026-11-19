@@ -151,11 +151,11 @@ public sealed class AbdmInvoiceRecordTests
     }
 
     [Fact]
-    public void Gst_on_a_supply_to_another_state_is_integrated_at_the_full_rate()
+    public void A_bill_that_charged_igst_says_so_at_the_full_rate()
     {
-        var draft = AbdmTestData.DraftBill();
-        draft.SetPlaceOfSupply("27", "29");
-        var bill = AbdmTestData.Finalized(draft);
+        // A bill is supplied in the hospital's state whoever pays it (IGST Act s.12(3) and s.12(4)), so only one finalized
+        // as a supply to another state before that rule carries IGST; its record says so, at the full rate.
+        var bill = ChargedAsIntegrated(AbdmTestData.OpBill());
         var invoice = Single<R4.Invoice>(Build(bill));
         var components = invoice.LineItem[2].PriceComponent;
 
@@ -165,6 +165,18 @@ public sealed class AbdmInvoiceRecordTests
         Component(components, "SGST").ShouldBeNull();
         Component(invoice.TotalPriceComponent, "IGST")!.Amount.Value.ShouldBe(bill.IgstAmount);
         Sum(invoice.TotalPriceComponent).ShouldBe(bill.NetAmount);
+    }
+
+    /// <summary>The bill as one finalized as a supply to another state holds it: the same tax, all of it IGST.</summary>
+    private static Bill ChargedAsIntegrated(Bill bill)
+    {
+        foreach (var line in bill.Lines)
+        {
+            (line.IgstAmount, line.CgstAmount, line.SgstAmount) = (line.CgstAmount + line.SgstAmount, 0m, 0m);
+        }
+
+        (bill.IgstAmount, bill.CgstAmount, bill.SgstAmount) = (bill.CgstAmount + bill.SgstAmount, 0m, 0m);
+        return bill;
     }
 
     [Fact]

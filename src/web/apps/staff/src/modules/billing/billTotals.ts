@@ -456,8 +456,8 @@ export function creditableAmount(bill: { patientAmount: number; creditAmount: nu
 }
 
 /**
- * What a payer credit note can still credit (`RefundService.PayerCreditableAsync`): what the payer's settlements
- * disallowed, less earlier payer credit notes.
+ * What a payer credit note can still credit (`RefundService.PayerCreditableAsync`): what the payer will not pay (its
+ * settlements' deductions, and its share of returns credited on the bill), less earlier payer credit notes of either kind.
  */
 export function payerCreditableAmount(bill: {
   payerDisallowedAmount?: number | null;
@@ -467,7 +467,7 @@ export function payerCreditableAmount(bill: {
     return 0;
   }
   const credited = bill.creditNotes
-    .filter((n) => n.kind === 'PayerShare')
+    .filter((n) => n.kind === 'PayerShare' || n.kind === 'PayerReturn')
     .reduce((sum, n) => sum + toPaise(n.amount), 0n);
   return fromPaise(maxBig(toPaise(bill.payerDisallowedAmount) - credited, 0n));
 }

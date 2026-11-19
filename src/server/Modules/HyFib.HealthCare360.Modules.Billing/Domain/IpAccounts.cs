@@ -278,6 +278,11 @@ public sealed class IpAccount : AuditableEntity, IFacilityScoped
 }
 
 /// <summary>Billing position of one admission, as needed for discharge clearance.</summary>
+/// <param name="ReturnsToCreditCount">
+/// Returns that came back after a final bill a payer or a package shared: they are credited on it, not billed, so they
+/// are not among the unbilled services and hold nothing up.
+/// </param>
+/// <param name="ReturnsToCreditAmount">What those returns came to as charged, GST included (a positive amount).</param>
 public sealed record AdmissionBillingPosition(
     int UnbilledCount,
     decimal UnbilledAmount,
@@ -285,7 +290,9 @@ public sealed record AdmissionBillingPosition(
     bool HasFinalBill,
     decimal PatientDue,
     decimal DepositBalance,
-    bool DischargeWithDuesApproved)
+    bool DischargeWithDuesApproved,
+    int ReturnsToCreditCount = 0,
+    decimal ReturnsToCreditAmount = 0m)
 {
     /// <summary>
     /// Every service is on a finalized bill, and none of them is the final bill: a self-paying stay billed in parts whose
@@ -327,6 +334,11 @@ public static class DischargeClearanceRules
             return new DischargeClearance(false, outstanding, $"₹{Money.FormatInr(position.PatientDue)} is due from the patient.{advance}");
         }
 
-        return new DischargeClearance(true, 0m, null);
+        // Returns waiting to be credited on the final bill owe the patient nothing more: billing credits them there.
+        return new DischargeClearance(true, 0m, position.ReturnsToCreditCount > 0
+            ? position.ReturnsToCreditCount == 1
+                ? $"A return worth ₹{Money.FormatInr(position.ReturnsToCreditAmount)} waits to be credited on the final bill."
+                : $"{position.ReturnsToCreditCount} returns worth ₹{Money.FormatInr(position.ReturnsToCreditAmount)} wait to be credited on the final bill."
+            : null);
     }
 }

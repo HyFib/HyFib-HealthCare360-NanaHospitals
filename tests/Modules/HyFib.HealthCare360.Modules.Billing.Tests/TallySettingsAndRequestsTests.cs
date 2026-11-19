@@ -59,12 +59,37 @@ public sealed class TallySettingsAndRequestsTests
             Discount = "  Discount Allowed ",
             IncomeByDepartment = new Dictionary<string, string> { ["lab"] = " Laboratory Income ", ["RAD"] = " " },
             Pharmacy = new TallyCounterLedgers { Sales = " ", OnAccount = " Pharmacy Debtors " },
+            VoucherTypes = new TallyVoucherTypes { InPatient = " IP Sales ", Laboratory = "Lab Sales  " },
         });
 
         map.Discount.ShouldBe("Discount Allowed");
         map.IncomeByDepartment.ShouldBe(new Dictionary<string, string> { ["LAB"] = "Laboratory Income" });
         map.Pharmacy.Sales.ShouldBeNull();
         map.Pharmacy.OnAccount.ShouldBe("Pharmacy Debtors");
+        map.VoucherTypes.ShouldBe(new TallyVoucherTypes());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("  ")]
+    [InlineData("IP\nSales")]
+    [InlineData("A voucher type name that is too long")]
+    public void Each_sales_voucher_type_is_named_on_one_line_of_at_most_32_characters(string name)
+    {
+        var result = Ledgers.Validate(new TallyLedgerMap { VoucherTypes = new TallyVoucherTypes { Laboratory = name } });
+
+        result.Errors.ShouldHaveSingleItem().PropertyName.ShouldBe("VoucherTypes.Laboratory");
+        result.Errors[0].ErrorMessage.ShouldBe("Enter the voucher type as it is named in Tally, on one line and at most 32 characters.");
+    }
+
+    [Fact]
+    public void Voucher_types_of_up_to_32_characters_are_valid_and_the_types_must_be_there()
+    {
+        var longest = new string('S', 32);
+
+        Ledgers.Validate(new TallyLedgerMap { VoucherTypes = new TallyVoucherTypes { InPatient = longest, OutPatient = longest, Pharmacy = longest } })
+            .IsValid.ShouldBeTrue();
+        Ledgers.Validate(new TallyLedgerMap { VoucherTypes = null! }).Errors.ShouldHaveSingleItem().PropertyName.ShouldBe(nameof(TallyLedgerMap.VoucherTypes));
     }
 
     [Fact]

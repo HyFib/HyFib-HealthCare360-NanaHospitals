@@ -77,6 +77,43 @@ public sealed class PaperSaleTests
     }
 
     [Fact]
+    public void A_sale_entered_from_paper_carries_the_papers_time_and_invoice_as_the_remark_of_its_register_lines()
+    {
+        // Paper time 22:30 IST on 10 Nov 2026 is 17:00 UTC.
+        var paperAt = new DateTimeOffset(2026, 11, 10, 17, 0, 0, TimeSpan.Zero);
+        var entered = new DateTimeOffset(2026, 11, 11, 3, 30, 0, TimeSpan.Zero);
+        var sale = new PharmacySale { InvoiceNumber = "NHPH260000021", SoldAt = paperAt, EnteredFromPaperAt = entered };
+
+        sale.RegisterRemark.ShouldBe("Entered from the paper sale of 10 Nov 2026 22:30 IST, invoice NHPH260000021");
+
+        var live = new PharmacySale { InvoiceNumber = "NHPH260000022", SoldAt = Now };
+        live.RegisterRemark.ShouldBeNull();
+    }
+
+    [Fact]
+    public void A_sale_entered_from_paper_for_an_earlier_day_says_so_for_the_day_book_and_one_for_today_does_not()
+    {
+        var facility = Guid.CreateVersion7();
+        // Now is 15:30 in India on 14 November 2026: 22:30 the evening before is an earlier day, 09:00 today is not.
+        var lastNight = new DateTimeOffset(2026, 11, 13, 17, 0, 0, TimeSpan.Zero);
+        var thisMorning = new DateTimeOffset(2026, 11, 14, 3, 30, 0, TimeSpan.Zero);
+
+        var late = new PharmacySale { FacilityId = facility, InvoiceNumber = "NHPH260000031" };
+        late.EnterFromPaper(lastNight, Now);
+
+        late.SoldAt.ShouldBe(lastNight);
+        late.EnteredFromPaperAt.ShouldBe(Now);
+        var backdated = late.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<DayBookEntryBackdated>();
+        (backdated.FacilityId, backdated.Date, backdated.Source, backdated.Reference).ShouldBe((facility, new DateOnly(2026, 11, 13), "pharmacy.sale", "NHPH260000031"));
+
+        var today = new PharmacySale { FacilityId = facility, InvoiceNumber = "NHPH260000032" };
+        today.EnterFromPaper(thisMorning, Now);
+
+        today.SoldAt.ShouldBe(thisMorning);
+        today.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void A_prescription_dispensed_on_paper_is_closed_as_dispensed_and_leaves_the_open_queue()
     {
         var entry = PharmacyQueueEntry.FromPrescription(QueueEntryTests.Prescription(), Now.AddHours(-1));

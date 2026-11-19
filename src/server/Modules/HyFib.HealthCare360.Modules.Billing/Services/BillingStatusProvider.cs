@@ -91,15 +91,23 @@ internal sealed class BillingStatusProvider(HospitalDbContext db, ChargeRefusals
 
     /// <summary>
     /// Unbilled services, final bill and patient dues of an admission. A charge reserved by a draft bill still counts as
-    /// unbilled: only a finalized bill clears a service.
+    /// unbilled: only a finalized bill clears a service. Returns of what a final bill a payer or a package shared charged,
+    /// come back after it, are not unbilled services: they wait to be credited on that bill (<see cref="ReturnCredits"/>).
     /// </summary>
     internal static async Task<AdmissionBillingPosition> PositionAsync(HospitalDbContext db, Guid admissionId, CancellationToken ct)
     {
         var charges = db.Set<Charge>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(c => c.AdmissionId == admissionId && c.Status != ChargeStatus.Cancelled);
         var hasCharges = await charges.AnyAsync(ct);
-        var unbilledCount = await charges.CountAsync(c => c.Status == ChargeStatus.Unbilled, ct);
-        var unbilledAmount = await charges.Where(c => c.Status == ChargeStatus.Unbilled).SumAsync(c => c.NetAmount, ct);
+        var unbilled = charges.Where(c => c.Status == ChargeStatus.Unbilled);
+        var finalBill = await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(b => b.Lines)
+            .FirstOrDefaultAsync(b => b.AdmissionId == admissionId && b.IsFinalBill && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled
+                                      && b.Status != BillStatus.Refunded, ct);
+        var returns = finalBill is not null ? await ReturnCreditService.PendingAsync(db, finalBill, ct) : [];
+        var returnIds = returns.Select(c => c.Id).ToList();
+        unbilled = unbilled.Where(c => !returnIds.Contains(c.Id));
+        var unbilledCount = await unbilled.CountAsync(ct);
+        var unbilledAmount = await unbilled.SumAsync(c => c.NetAmount, ct);
 
         var bills = await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(b => b.AdmissionId == admissionId && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled && b.Status != BillStatus.Refunded)
@@ -113,7 +121,7 @@ internal sealed class BillingStatusProvider(HospitalDbContext db, ChargeRefusals
 
         return new AdmissionBillingPosition(
             unbilledCount, unbilledAmount, hasCharges, bills.Any(b => b.IsFinalBill), bills.Sum(b => b.DueAmount),
-            account?.Balance ?? 0m, account?.DischargeWithDuesApproved ?? false);
+            account?.Balance ?? 0m, account?.DischargeWithDuesApproved ?? false, returns.Count, -returns.Sum(c => c.NetAmount));
     }
 
     internal static ChargeBillingState ToState(ChargeStatus status, BillStatus? billStatus) => status switch

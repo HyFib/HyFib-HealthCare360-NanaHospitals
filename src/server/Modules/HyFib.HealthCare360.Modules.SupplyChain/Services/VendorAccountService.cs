@@ -393,13 +393,28 @@ internal sealed class VendorAccountsDayBookSource(HospitalDbContext db) : IVendo
     {
         var (start, end) = HospitalClock.Range(date, date);
         var vendors = db.Set<Vendor>().AsNoTracking();
-        var notes = await db.Set<VendorDebitNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+        var posted = await db.Set<VendorDebitNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+            .Include(n => n.Lines)
             .Where(n => n.FacilityId == facilityId && n.Status == VendorDocumentStatus.Posted && n.PostedAt >= start && n.PostedAt < end)
             .OrderBy(n => n.PostedAt)
-            .Select(n => new VendorDebitNoteEntry(
-                n.Number, vendors.Where(v => v.Id == n.VendorId).Select(v => v.Name).FirstOrDefault() ?? string.Empty, n.VendorReference,
-                n.TaxableAmount, n.CgstAmount, n.SgstAmount, n.IgstAmount))
             .ToListAsync(cancellationToken);
+        var vendorIds = posted.Select(n => n.VendorId).Distinct().ToList();
+        var names = await vendors.Where(v => vendorIds.Contains(v.Id)).Select(v => new { v.Id, v.Name }).ToDictionaryAsync(v => v.Id, v => v.Name, cancellationToken);
+
+        // The supplier's invoice of each note's goods receipt: the return is set against that bill in Tally.
+        var receiptIds = posted.Select(n => n.GoodsReceiptId).OfType<Guid>().Distinct().ToList();
+        var invoices = receiptIds.Count == 0
+            ? []
+            : await db.Set<GoodsReceiptNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(g => receiptIds.Contains(g.Id))
+                .Select(g => new { g.Id, g.VendorInvoiceNumber })
+                .ToDictionaryAsync(g => g.Id, g => g.VendorInvoiceNumber, cancellationToken);
+        var notes = posted.Select(n => new VendorDebitNoteEntry(
+                n.Number, names.GetValueOrDefault(n.VendorId) ?? string.Empty, n.VendorReference,
+                n.TaxableAmount, n.CgstAmount, n.SgstAmount, n.IgstAmount,
+                n.GoodsReceiptId is { } receipt ? invoices.GetValueOrDefault(receipt) : null,
+                SupplierTax.ByRate(n.Lines.Select(l => (l.GstRate, l.TaxableAmount, l.CgstAmount, l.SgstAmount, l.IgstAmount)))))
+            .ToList();
         var adjustments = await db.Set<VendorPayableAdjustment>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
             .Where(a => a.FacilityId == facilityId && a.Status == VendorDocumentStatus.Posted && a.PostedAt >= start && a.PostedAt < end)
             .OrderBy(a => a.PostedAt)
