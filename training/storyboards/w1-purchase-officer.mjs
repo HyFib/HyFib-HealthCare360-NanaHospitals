@@ -83,7 +83,8 @@ const story = {
       title: 'Approve',
       steps: [
         { nav: 'Approvals', say: 'Open Approvals.', wait: { role: 'heading', name: 'Approvals' } },
-        { click: { role: 'button', name: 'Approve' }, say: 'approve' },
+        { click: { role: 'button', name: 'Approve' }, say: 'approve', wait: { text: /^Approve: / } },
+        { click: { role: 'button', name: 'Approve', last: true }, say: 'approve2', wait: { text: /Nothing is waiting/ } },
         { nav: 'Goods receipts', say: 'Open Goods receipts.', wait: { role: 'row', name: /Coromandel Surgicals/ } },
         { nav: 'Stock and batches', say: 'Open Stock and batches.', wait: { role: 'heading', name: 'Stock and batches' } },
         { fill: [{ label: 'Search' }, 'Gloves'], say: 'search', wait: { role: 'row', name: /Examination Gloves/ } },

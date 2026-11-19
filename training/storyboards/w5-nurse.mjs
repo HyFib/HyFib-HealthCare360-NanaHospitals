@@ -123,9 +123,12 @@ export default {
         {
           click: { role: 'button', name: 'Save observations' },
           say: 'Click Save observations. HC360 scores them, and raises an escalation if the score is 5 or more.',
-          after: 'The new entry is in the chart, with its NEWS2 score.',
           wait: { role: 'table', name: 'Observations with NEWS2' },
-          result: { role: 'table', name: 'Observations with NEWS2' },
+        },
+        {
+          show: { role: 'table', name: 'Observations with NEWS2' },
+          say: 'The new entry is in the chart, with its NEWS2 score.',
+          zoom: 1.2,
         },
       ],
     },
@@ -141,12 +144,17 @@ export default {
         },
         {
           click: { within: { role: 'row', name: /Ceftriaxone/ }, role: 'button', name: 'Given' },
-          say: 'The ceftriaxone dose is due. Check the five rights: the right patient, medicine, dose, route and time. Then click Given.',
+          say: 'Open the ceftriaxone dose, charted for 9:00 pm. Before any dose, check the five rights: the right patient, medicine, dose, route and time. Then click Given.',
           wait: dose,
         },
         {
-          show: dose,
-          say: 'The window shows the medicine, the dose, the route, the patient and the bed. Read them against the vial and her wristband.',
+          show: { role: 'heading', name: /^Ceftriaxone 1 g Injection/ },
+          say: 'The window shows the medicine, the dose, the route, the patient and the due time. Read them against the vial and her wristband. The batch number comes from the pharmacy’s issue.',
+          zoom: 1.3,
+        },
+        {
+          show: { text: 'Witness (a second nurse, at this screen)' },
+          say: 'Ceftriaxone is a controlled drug, so a second nurse must witness the dose. She types her own user name and password here. Record given stays locked until she confirms.',
           zoom: 1.3,
         },
       ],
@@ -186,8 +194,8 @@ export default {
         {
           click: { role: 'button', name: /^Give handover/ },
           say: 'Click Give handover.',
-          after: 'The handover waits for the receiving nurse to acknowledge it.',
-          wait: { text: 'Waiting for the receiving nurse' },
+          after: 'The handover is saved on her chart. The receiving nurse acknowledges it, and takes over responsibility for her.',
+          wait: { text: /day 1 of IV antibiotics/ },
         },
       ],
     },

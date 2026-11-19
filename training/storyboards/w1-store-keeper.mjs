@@ -188,7 +188,7 @@ const story = {
           click: { role: 'button', name: 'Issue and print slip' },
           say: 'Click Issue and print slip.',
           after:
-            'The indent is issued. The issue slip is listed with its number, who collected the goods, and its value, ₹2,320.00. The stock moves to the ICU Store.',
+            'The indent is Issued. The issue slip is listed with its number, who collected the goods, and its value, ₹2,320.00.',
           wait: { role: 'table', name: 'Issue slips' },
           result: { role: 'table', name: 'Issue slips' },
         },

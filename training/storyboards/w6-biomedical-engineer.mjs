@@ -81,6 +81,14 @@ export default {
         {
           click: { text: 'Start work' },
           say: 'When you begin the repair, click Start work.',
+          wait: { text: 'Start work on this breakdown?' },
+        },
+        {
+          click: { role: 'button', name: 'Start work', last: true },
+          say: 'Confirm. The ticket then shows as being repaired.',
+          after_do: async ({ page }) => {
+            await page.getByText('Start work on this breakdown?').waitFor({ state: 'hidden', timeout: 15000 });
+          },
           wait: { text: 'Mark resolved' },
         },
         {
@@ -101,8 +109,8 @@ export default {
         {
           click: { within: { role: 'dialog', name: 'Resolve NHMT26000001' }, role: 'button', name: 'Mark resolved' },
           say: 'Click Mark resolved. The ward then confirms that it works, and you close the ticket.',
-          after: 'The ticket is resolved, and the downtime has stopped.',
-          wait: { text: 'Marked resolved' },
+          after: 'The ticket is Resolved, with what was done and the root cause. The downtime stops, and Close ticket is now offered.',
+          wait: { text: 'Close ticket' },
         },
       ],
     },
@@ -192,7 +200,20 @@ export default {
       ],
     },
   ],
-  recap: ['a', 'b', 'c'],
-  check: [{ q: 'q', a: 'a' }, { q: 'q', a: 'a' }],
-  next: 'x',
+  recap: [
+    'Assign a breakdown ticket, start work, and mark it resolved with what you did and the root cause.',
+    'Record each calibration and each maintenance visit, so that nothing stays overdue.',
+    'The asset register lists every piece of equipment with its tag and its due dates.',
+  ],
+  check: [
+    {
+      q: 'Why do you write the root cause when you resolve a ticket?',
+      a: 'It helps to find equipment that fails again and again.',
+    },
+    {
+      q: 'Where do you record that the autoclave was calibrated?',
+      a: 'On Maintenance and calibration, on the Calibration tab, with Record calibration.',
+    },
+  ],
+  next: 'CSSD technician: receive trays, run a sterilizer load, issue sterile packs',
 };

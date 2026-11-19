@@ -3,9 +3,6 @@
 // the treatment plan, books the sessions and records the first one from the worklist. Recorded as the physiotherapist
 // at 11:10 am.
 
-import { writeFileSync } from 'node:fs';
-const dump = (name) => async ({ page }) => writeFileSync(`/tmp/claude-0/-home-user-HyFib-HealthCare360-NanaHospitals/4cf56889-54f3-5e4e-8287-5c222ea81477/scratchpad/${name}.txt`, await page.locator('body').ariaSnapshot());
-
 const nav = { role: 'navigation', name: 'Main navigation' };
 
 export default {
@@ -151,8 +148,13 @@ export default {
           zoom: 1.3,
         },
         {
+          fill: [{ label: 'Number of sessions' }, '6'],
+          say: 'The plan allows six sessions. Book all six.',
+          zoom: 1.3,
+        },
+        {
           click: { role: 'button', name: 'Book sessions', last: true },
-          say: 'The plan allows six sessions. Click Book sessions.',
+          say: 'Click Book sessions.',
           after: 'Six sessions are booked. The first one is today.',
           wait: { role: 'heading', name: 'Sessions (6)' },
         },
@@ -172,7 +174,6 @@ export default {
           click: { within: { role: 'row', name: /Lakshmi Narayanan/ }, role: 'button', name: /Record/ },
           say: 'When she has had the treatment, click Record.',
           wait: { role: 'dialog', name: /Record session/ },
-          after_do: dump('py-a'),
         },
         {
           fill: [{ label: 'Pain before (0–10)' }, '6'],
@@ -193,8 +194,8 @@ export default {
           click: { role: 'button', name: 'Record session' },
           say: 'Click Record session.',
           after: 'The session is recorded. HC360 bills the modalities given.',
-          wait: { text: /Attended/ },
-          after_do: dump('py-b'),
+          wait: { role: 'row', name: /Lakshmi Narayanan.*Attended/ },
+          result: { role: 'row', name: /Lakshmi Narayanan.*Attended/ },
         },
       ],
     },

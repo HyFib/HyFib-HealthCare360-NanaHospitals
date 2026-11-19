@@ -131,13 +131,18 @@ export default {
         {
           click: { role: 'button', name: /^Save draft/ },
           say: 'Click Save draft.',
-          after: 'The draft is saved.',
-          wait: { text: 'Campaign saved' },
+          after: 'The campaign opens as a Draft. Nothing is sent yet.',
+          wait: { role: 'heading', name: /^Diabetes camp, December/ },
         },
         {
           show: { role: 'heading', name: 'Audience' },
-          say: 'Only patients who agreed to marketing messages are ever counted. This is the law, and HC360 checks consent again when each message is sent.',
+          say: 'The audience is 0, because no patient has agreed to marketing messages yet. Only patients who agreed are ever counted, and HC360 checks consent again when each message is sent.',
           zoom: 1.3,
+        },
+        {
+          show: { role: 'button', name: /^Schedule/ },
+          say: 'To send a campaign, click Schedule. This only asks for approval. Someone other than the author must approve it, and nothing is sent until then.',
+          zoom: 1.5,
         },
       ],
     },

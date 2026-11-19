@@ -173,12 +173,12 @@ export default {
         {
           click: { role: 'button', name: 'Release packs' },
           say: 'Click Release packs.',
-          wait: { role: 'dialog', name: /^Release load/ },
+          wait: { text: /^Release load /, exact: false },
         },
         {
-          click: { within: { role: 'dialog', name: /^Release load/ }, role: 'button', name: 'Release packs' },
+          click: { role: 'button', name: 'Release packs', last: true },
           say: 'Confirm. The packs go on the shelf, with the use-by date.',
-          wait: { text: 'Released' },
+          wait: { text: 'On shelf' },
         },
         {
           click: { role: 'button', name: 'Biological indicator' },
@@ -193,8 +193,8 @@ export default {
         {
           click: { within: { role: 'dialog', name: /^Biological indicator for/ }, role: 'button', name: 'Record result' },
           say: 'Click Record result. If it failed, HC360 would recall every pack of this load and alert the departments that hold them.',
-          after: 'The result is saved with the load.',
-          wait: { text: /^Biological/ },
+          after: 'The load now shows Biological passed.',
+          wait: { text: 'Biological passed' },
         },
       ],
     },
@@ -232,7 +232,20 @@ export default {
       ],
     },
   ],
-  recap: ['a', 'b', 'c'],
-  check: [{ q: 'q', a: 'a' }, { q: 'q', a: 'a' }],
-  next: 'x',
+  recap: [
+    'Receive used trays against the count sheet. A missing or damaged instrument raises an alert.',
+    'Record the cycle from the printout and the chemical indicator, then release the packs. Record the biological indicator when it is read.',
+    'Issue packs to a department, so that a failed load can be traced to where its packs went.',
+  ],
+  check: [
+    {
+      q: 'What happens to a load when its chemical indicator fails?',
+      a: 'The load fails at once, and its packs go back for reprocessing.',
+    },
+    {
+      q: 'Why does HC360 record which department received each pack?',
+      a: 'If a load is recalled, HC360 can find every pack of that load, and where it went.',
+    },
+  ],
+  next: 'Biomedical engineer: breakdown tickets, calibration and maintenance',
 };

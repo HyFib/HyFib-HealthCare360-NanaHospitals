@@ -85,7 +85,7 @@ export default {
         {
           click: { role: 'button', name: 'Plan an action' },
           say: 'A near miss is a warning. Click Plan an action, so that it does not happen again.',
-          wait: { role: 'dialog', name: 'Plan a corrective / preventive action' },
+          wait: { role: 'dialog', name: /^Plan a corrective/ },
         },
         {
           fill: [

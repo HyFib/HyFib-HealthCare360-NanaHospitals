@@ -29,26 +29,20 @@ export default {
       title: 'Open the next patient',
       steps: [
         {
-          click: { within: nav, role: 'button', name: 'Doctor’s desk' },
+          click: { within: nav, role: 'button', name: "Doctor's desk" },
           say: 'Open Doctor’s desk from the menu.',
         },
         {
           nav: 'My worklist',
           say: 'Then choose My worklist.',
           after: 'Vimala Raghavan is with you now: her note is open. Anand Joseph and Farah Sheikh are waiting, with their tokens.',
-          wait: { role: 'table', name: 'Today’s queue' },
-          result: { role: 'table', name: 'Today’s queue' },
-        },
-        {
-          click: { within: row('GM-010'), role: 'button', name: 'Call to the room' },
-          say: 'Anand Joseph is next. Click Call, to ask him to come in.',
-          after: 'His token, GM-010, is called, and the waiting-area screen shows it.',
-          wait: { within: row('GM-010'), text: 'Called' },
-          result: row('GM-010'),
+          wait: { role: 'table', name: "Today's queue" },
+          result: { role: 'table', name: "Today's queue" },
         },
         {
           click: { within: row('GM-010'), role: 'button', name: 'Start' },
-          say: 'Click Start to open his consultation note.',
+          say: 'Anand Joseph is next. Click Start to open his consultation note. HC360 marks him as in service, and his token shows it on the waiting-area screen.',
+          after: 'His consultation note opens.',
           wait: { role: 'heading', name: 'Complaint and history' },
         },
         {
@@ -197,7 +191,7 @@ export default {
         {
           nav: 'My worklist',
           say: 'Go back to the worklist.',
-          wait: { role: 'table', name: 'Today’s queue' },
+          wait: { role: 'table', name: "Today's queue" },
         },
         {
           click: { within: row('GM-010'), role: 'button', name: 'Finish' },
