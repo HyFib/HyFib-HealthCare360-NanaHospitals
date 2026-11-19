@@ -568,5 +568,24 @@
   "seconds": 341.9,
   "megabytes": 13.9,
   "madeBy": "render worker 3"
+ },
+ "w6-canteen-manager": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 23,
+  "wer": 3.49,
+  "wpm": 136.9,
+  "maxCps": 14.6,
+  "lufs": -16.0,
+  "seconds": 309.0,
+  "megabytes": 16.7,
+  "madeBy": "this session"
  }
 }
