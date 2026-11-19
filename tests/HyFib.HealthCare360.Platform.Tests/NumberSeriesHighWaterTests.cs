@@ -164,7 +164,39 @@ public sealed class NumberSeriesHighWaterTests
         NumberSeriesHighWater.LastIssuedIn(Uhid(77), "2026").ShouldBe(77);
     }
 
+    /// <summary>
+    /// Tube numbers went from {SEQ:10} to {SEQ:9}{CHK}: the Diagnostics seeder counts the counter in tens (1000012346 is
+    /// 100001234 now), which lowers it but is no restore. The mark follows it, and start-up does not raise it.
+    /// </summary>
+    [Fact]
+    public void A_counter_brought_to_a_check_digit_is_followed_by_the_mark_and_not_raised()
+    {
+        NumberSeriesHighWater.Merge([OldTubes(1_000_012_346)], [Tubes(100_001_234)], November14).ShouldBe([Tubes(100_001_234)]);
+        NumberSeriesHighWater.Raises([Tubes(100_001_234)], [OldTubes(1_000_012_346)], November14)
+            .ShouldBeEmpty("the next tube, 1000012350, is above the last one the mark knows");
+        NumberSeriesHighWater.Raises([Tubes(100_001_233)], [OldTubes(1_000_012_346)], November14)
+            .ShouldHaveSingleItem("1000012339 and its neighbours were issued already").Value
+            .ShouldBe((1_000_012_346 + NumberSeriesHighWater.Margin) / 10);
+    }
+
+    [Fact]
+    public void A_database_restored_to_before_the_check_digit_is_raised_past_the_tubes_numbered_after_it()
+    {
+        // Tubes up to 100001240 (and its check digit) were numbered after the upgrade; the backup has the old counter.
+        var raise = NumberSeriesHighWater.Raises([OldTubes(1_000_012_000)], [Tubes(100_001_240)], November14).ShouldHaveSingleItem();
+
+        raise.Value.ShouldBe(1_000_013_409, "100001340 with the margin, in tens of the old numbers, as the restored database still counts");
+        NumberFormat.CounterIn(raise.Value, "{SEQ:10}", "{SEQ:9}{CHK}").ShouldBe(100_001_240 + NumberSeriesHighWater.Margin,
+            "the seeder brings it to the check digit again, the margin whole");
+        NumberSeriesHighWater.Raises([Tubes(100_001_200)], [Tubes(100_001_240)], November14).ShouldHaveSingleItem().Value
+            .ShouldBe(100_001_240 + NumberSeriesHighWater.Margin, "restored to after the upgrade, as any series");
+    }
+
     private static NumberSeriesMark Uhid(long value) => new(null, "uhid", null, value, NumberResetPolicy.Never, "{FAC}{YY}{SEQ:6}");
+
+    private static NumberSeriesMark Tubes(long value) => new(null, "lab.sample", null, value, NumberResetPolicy.Never, "{SEQ:9}{CHK}");
+
+    private static NumberSeriesMark OldTubes(long value) => new(null, "lab.sample", null, value, NumberResetPolicy.Never, "{SEQ:10}");
 
     private static NumberSeriesMark OpBill(Guid facility, string period, long value) =>
         new(facility, "billing.bill.op", period, value, NumberResetPolicy.Yearly, "{FAC}OB{YY}{SEQ:6}");

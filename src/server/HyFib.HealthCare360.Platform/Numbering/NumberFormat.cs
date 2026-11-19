@@ -27,6 +27,13 @@ public enum NumberFormatPartKind
     /// <summary>{SEQ} or {SEQ:n}: the running number, padded with zeros to n digits.</summary>
     Sequence,
 
+    /// <summary>
+    /// {CHK}: a check digit, the Damm digit of every digit written before it (<see cref="DammCheckDigit"/>). It ends the
+    /// format, after the running number, so a number copied with one digit wrong or two neighbouring digits swapped no
+    /// longer checks.
+    /// </summary>
+    CheckDigit,
+
     /// <summary>Something in braces that is none of the parts above.</summary>
     Unknown,
 
@@ -43,8 +50,8 @@ public readonly record struct NumberCounter(long Value, string? Period);
 public readonly record struct NumberFormatPart(NumberFormatPartKind Kind, string Text, int? Width = null);
 
 /// <summary>
-/// Number formats as pure functions: the parts of <c>{FAC}OB{YY}{SEQ:7}</c>, the number it makes, and the period a
-/// counter belongs to. Dates are the hospital's (India Standard Time).
+/// Number formats as pure functions: the parts of <c>{FAC}OB{YY}{SEQ:7}</c> (or <c>{SEQ:9}{CHK}</c>, ending in a check
+/// digit), the number it makes, and the period a counter belongs to. Dates are the hospital's (India Standard Time).
 /// </summary>
 public static class NumberFormat
 {
@@ -98,13 +105,20 @@ public static class NumberFormat
     /// The number <paramref name="format"/> makes for running number <paramref name="value"/>. Anything the format may
     /// not contain is written as it is, and the running number is padded to at most
     /// <see cref="NumberFormatRules.MaxSequenceWidth"/> digits: a stored format the rules now refuse, such as
-    /// {SEQ:999999999} saved before they existed, still makes a number instead of exhausting the server's memory.
+    /// {SEQ:999999999} saved before they existed, still makes a number instead of exhausting the server's memory. A
+    /// check digit ({CHK}) is worked out from the digits written before it.
     /// </summary>
     public static string Render(string format, long value, string? facilityCode, DateTimeOffset localNow)
     {
         var number = new StringBuilder();
         foreach (var part in Parse(format))
         {
+            if (part.Kind == NumberFormatPartKind.CheckDigit)
+            {
+                number.Append(DammCheckDigit.Of(number.ToString()));
+                continue;
+            }
+
             number.Append(part.Kind switch
             {
                 NumberFormatPartKind.FacilityCode => facilityCode ?? string.Empty,
@@ -120,6 +134,29 @@ public static class NumberFormat
 
         return number.ToString();
     }
+
+    /// <summary>
+    /// <paramref name="value"/>, a counter of <paramref name="fromFormat"/>, as a counter of <paramref name="toFormat"/>:
+    /// itself, unless one of the two ends in a check digit ({CHK}) and the other does not. A check digit is one more digit
+    /// after the running number, so each running number stands for ten numbers of the format without it: 1000012346 of
+    /// {SEQ:10} is 100001234 of {SEQ:9}{CHK}, whose next number (1000012350) is above it, and 100001234 of {SEQ:9}{CHK} is
+    /// 1000012349 of {SEQ:10}, above every number it can have made. A series brought to a check digit has its counter
+    /// counted so (the Diagnostics seeder does it for tube numbers), and the high-water mark compares counters so
+    /// (<see cref="NumberSeriesHighWater"/>).
+    /// </summary>
+    public static long CounterIn(long value, string fromFormat, string toFormat)
+    {
+        var from = HasCheckDigit(fromFormat);
+        if (value <= 0 || from == HasCheckDigit(toFormat))
+        {
+            return Math.Max(value, 0);
+        }
+
+        return from ? (value * 10) + 9 : value / 10;
+    }
+
+    /// <summary>Whether <paramref name="format"/> has a check digit ({CHK}).</summary>
+    public static bool HasCheckDigit(string format) => Parse(format).Any(p => p.Kind == NumberFormatPartKind.CheckDigit);
 
     /// <summary>The period a counter with this reset counts in at <paramref name="localNow"/>; null when it never restarts.</summary>
     public static string? PeriodFor(NumberResetPolicy policy, DateTimeOffset localNow) => policy switch
@@ -172,6 +209,7 @@ public static class NumberFormat
             "MM" => NumberFormatPartKind.Month,
             "DD" => NumberFormatPartKind.Day,
             "SEQ" => NumberFormatPartKind.Sequence,
+            "CHK" => NumberFormatPartKind.CheckDigit,
             _ => NumberFormatPartKind.Unknown,
         };
         if (kind != NumberFormatPartKind.Unknown)

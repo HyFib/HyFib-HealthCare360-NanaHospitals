@@ -44,10 +44,10 @@ public sealed record NumberFormatChange
 /// </summary>
 public sealed record OtherNumberFormat(string Name, string Format, bool IsDefault, string? FacilityCode = null, bool SameSeries = false);
 
-/// <summary>How long the numbers of a format can get, part by part.</summary>
-public sealed record NumberFormatLength(int FacilityCode, int Date, int RunningNumber, int FixedText)
+/// <summary>How long the numbers of a format can get, part by part (<paramref name="CheckDigit"/>: 1 for {CHK}).</summary>
+public sealed record NumberFormatLength(int FacilityCode, int Date, int RunningNumber, int FixedText, int CheckDigit = 0)
 {
-    public int Total => FacilityCode + Date + RunningNumber + FixedText;
+    public int Total => FacilityCode + Date + RunningNumber + FixedText + CheckDigit;
 }
 
 /// <summary>
@@ -104,7 +104,7 @@ public static class NumberFormatRules
         if (unknown.Count > 0)
         {
             problems.Add($"{JoinWords(unknown, "and")} {(unknown.Count == 1 ? "is not a part" : "are not parts")} a number can have. " +
-                         "Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.");
+                         "Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.");
         }
 
         var notAllowed = parts.Where(p => p.Kind == NumberFormatPartKind.Text).SelectMany(p => p.Text).Where(c => !IsFixedTextCharacter(c)).ToList();
@@ -128,17 +128,28 @@ public static class NumberFormatRules
             problems.Add($"In {{SEQ:n}}, n is the number of digits and must be from 1 to {MaxSequenceWidth}.");
         }
 
+        // The check digit is worked out from the digits before it: once, and last, so the running number comes before it.
+        var checks = parts.Count(p => p.Kind == NumberFormatPartKind.CheckDigit);
+        if (checks > 1)
+        {
+            problems.Add("Use the check digit {CHK} only once.");
+        }
+        else if (checks == 1 && parts[^1].Kind != NumberFormatPartKind.CheckDigit)
+        {
+            problems.Add("Put the check digit {CHK} at the end, after the running number: it checks every digit before it.");
+        }
+
         return problems;
     }
 
     /// <summary>
     /// The longest number <paramref name="format"/> can make: the facility code at <paramref name="facilityCodeLength"/>
     /// letters, the date parts, the running number at its padding or <see cref="AssumedSequenceDigits"/> digits, whichever
-    /// is more, and the fixed text.
+    /// is more, its check digit, and the fixed text.
     /// </summary>
     public static NumberFormatLength LongestNumber(string format, int facilityCodeLength)
     {
-        int facility = 0, date = 0, sequence = 0, text = 0;
+        int facility = 0, date = 0, sequence = 0, text = 0, check = 0;
         foreach (var part in NumberFormat.Parse(format))
         {
             switch (part.Kind)
@@ -155,13 +166,16 @@ public static class NumberFormatRules
                 case NumberFormatPartKind.Sequence:
                     sequence += Math.Max(part.Width ?? 0, AssumedSequenceDigits);
                     break;
+                case NumberFormatPartKind.CheckDigit:
+                    check++;
+                    break;
                 default:
                     text += part.Text.Length;
                     break;
             }
         }
 
-        return new NumberFormatLength(facility, date, sequence, text);
+        return new NumberFormatLength(facility, date, sequence, text, check);
     }
 
     /// <summary>
@@ -201,6 +215,11 @@ public static class NumberFormatRules
             pieces.Add(policy == NumberResetPolicy.Never
                 ? $"running number {length.RunningNumber}, since it never starts again"
                 : $"running number {length.RunningNumber}");
+            if (length.CheckDigit > 0)
+            {
+                pieces.Add($"check digit {length.CheckDigit}");
+            }
+
             if (length.FixedText > 0)
             {
                 pieces.Add($"fixed text {length.FixedText}");
@@ -244,12 +263,12 @@ public static class NumberFormatRules
     }
 
     /// <summary>
-    /// How the numbers of <paramref name="format"/> read with every run of digits (the date parts, the running number and
-    /// digits in the fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and {FAC}OB26{SEQ} all read
-    /// "{FAC}OB#". Two formats that read alike can make the same number: once a running number outgrows its padding
-    /// ({SEQ:6} reaching 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ} and {SEQ:1}. With
-    /// <paramref name="facilityCode"/>, {FAC} reads as that code, so {FAC}AB{SEQ} and AB{FAC}{SEQ} both read "ABAB#" at
-    /// facility AB; without it, {FAC} stays as written.
+    /// How the numbers of <paramref name="format"/> read with every run of digits (the date parts, the running number, its
+    /// check digit and digits in the fixed text) taken as one place, "#": {FAC}OB{YY}{SEQ:7}, {FAC}OB{SEQ:9} and
+    /// {FAC}OB26{SEQ} all read "{FAC}OB#". Two formats that read alike can make the same number: once a running number
+    /// outgrows its padding ({SEQ:6} reaching 1000000 matches {SEQ:7}), in the year written into one of them, or as {SEQ}
+    /// and {SEQ:1}. With <paramref name="facilityCode"/>, {FAC} reads as that code, so {FAC}AB{SEQ} and AB{FAC}{SEQ} both
+    /// read "ABAB#" at facility AB; without it, {FAC} stays as written.
     /// </summary>
     public static string Outline(string format, string? facilityCode = null)
     {
@@ -282,7 +301,7 @@ public static class NumberFormatRules
             switch (part.Kind)
             {
                 case NumberFormatPartKind.Year or NumberFormatPartKind.ShortYear or NumberFormatPartKind.Month
-                    or NumberFormatPartKind.Day or NumberFormatPartKind.Sequence:
+                    or NumberFormatPartKind.Day or NumberFormatPartKind.Sequence or NumberFormatPartKind.CheckDigit:
                     Digits();
                     break;
                 case NumberFormatPartKind.Text:
@@ -486,6 +505,9 @@ public static class NumberFormatRules
                     // A running number is at least its padding long (and at least one digit), and grows past it.
                     run.Add((null, Math.Max(Math.Min(part.Width ?? 0, MaxSequenceWidth), 1), true));
                     break;
+                case NumberFormatPartKind.CheckDigit:
+                    run.Add((null, 1, false));
+                    break;
                 case NumberFormatPartKind.FacilityCode when facilityCode is not null:
                     Characters(facilityCode);
                     break;
@@ -567,6 +589,11 @@ public static class NumberFormatRules
         }
 
         pieces.Add($"running number {length.RunningNumber}");
+        if (length.CheckDigit > 0)
+        {
+            pieces.Add($"check digit {length.CheckDigit}");
+        }
+
         if (length.FixedText > 0)
         {
             pieces.Add($"fixed text {length.FixedText}");

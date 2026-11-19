@@ -40,9 +40,9 @@ public sealed class NumberFormatRulesTests
     [InlineData("{SEQ:4}-{SEQ:4}", "Use the running number {SEQ} only once.")]
     [InlineData("{FAC}{SEQ:0}", "In {SEQ:n}, n is the number of digits and must be from 1 to 12.")]
     [InlineData("{FAC}{SEQ:13}", "In {SEQ:n}, n is the number of digits and must be from 1 to 12.")]
-    [InlineData("{FAC}{YEAR}{SEQ}", "{YEAR} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.")]
-    [InlineData("{FY}{YR}{SEQ}", "{FY} and {YR} are not parts a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.")]
-    [InlineData("{FAC}OB{YY{SEQ}", "{YY{SEQ} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.")]
+    [InlineData("{FAC}{YEAR}{SEQ}", "{YEAR} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.")]
+    [InlineData("{FY}{YR}{SEQ}", "{FY} and {YR} are not parts a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.")]
+    [InlineData("{FAC}OB{YY{SEQ}", "{YY{SEQ} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.")]
     [InlineData("OB{SEQ", "A { has no closing }. Parts in braces look like {YY} or {SEQ:6}.")]
     [InlineData("op {SEQ}", "Outside the braces use only capital letters A to Z, digits, - and /. Not allowed: small letters and spaces.")]
     [InlineData("OP.{SEQ}_", "Outside the braces use only capital letters A to Z, digits, - and /. Not allowed: \".\" and \"_\".")]
@@ -379,10 +379,10 @@ public sealed class NumberFormatRulesTests
     }
 
     private static readonly NumberSeriesDefinition Tubes =
-        new("lab.sample", "Sample tube number", "Laboratory", "{SEQ:10}", NumberResetPolicy.Never, MaxLength: 20)
+        new("lab.sample", "Sample tube number", "Laboratory", "{SEQ:9}{CHK}", NumberResetPolicy.Never, MaxLength: 20)
         {
             PerFacility = false,
-            FirstNumber = 1_000_000_000,
+            FirstNumber = 100_000_000,
             LockedReason = "Analysers read tube numbers.",
         };
 
@@ -398,17 +398,17 @@ public sealed class NumberFormatRulesTests
             CurrentFormat = Tubes.DefaultFormat,
             CurrentResetPolicy = NumberResetPolicy.Never,
 
-            // A database from before tube numbers had 10 digits.
-            LastNumber = 523,
+            // A database from before tube numbers had 10 digits: its counter of 523 (9-digit tubes), counted in tens.
+            LastNumber = 52,
         };
-        string[] tooLow = ["The next number must be 1000000000 or more, so that these numbers keep the shape other systems read."];
+        string[] tooLow = ["The next number must be 100000000 or more, so that these numbers keep the shape other systems read."];
 
         NumberFormatRules.Check(change)[NumberFormatRules.StartAtField].ShouldBe(tooLow);
         NumberFormatRules.Check(change with { StartAt = 0 })[NumberFormatRules.StartAtField].ShouldBe(tooLow);
-        NumberFormatRules.Check(change with { StartAt = 1_000_000_000 }).ShouldBeEmpty();
-        NumberFormatRules.Check(change with { StartAt = 9_999_999_999 }).ShouldBeEmpty();
-        NumberFormatRules.Check(change with { StartAt = 10_000_000_000 })[NumberFormatRules.StartAtField]
-            .ShouldBe(["The next number can be at most 9999999999, so that these numbers keep the shape other systems read."]);
+        NumberFormatRules.Check(change with { StartAt = 100_000_000 }).ShouldBeEmpty();
+        NumberFormatRules.Check(change with { StartAt = 999_999_999 }).ShouldBeEmpty();
+        NumberFormatRules.Check(change with { StartAt = 1_000_000_000 })[NumberFormatRules.StartAtField]
+            .ShouldBe(["The next number can be at most 999999999, so that these numbers keep the shape other systems read."]);
     }
 
     [Fact]

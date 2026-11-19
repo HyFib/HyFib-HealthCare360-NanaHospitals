@@ -124,12 +124,18 @@ describe('formatProblems', () => {
     ['{SEQ:4}-{SEQ:4}', 'Use the running number {SEQ} only once.'],
     ['{FAC}{SEQ:0}', 'In {SEQ:n}, n is the number of digits and must be from 1 to 12.'],
     ['{FAC}{SEQ:13}', 'In {SEQ:n}, n is the number of digits and must be from 1 to 12.'],
-    ['{FAC}{YEAR}{SEQ}', '{YEAR} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.'],
+    [
+      '{FAC}{YEAR}{SEQ}',
+      '{YEAR} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.',
+    ],
     [
       '{FY}{YR}{SEQ}',
-      '{FY} and {YR} are not parts a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.',
+      '{FY} and {YR} are not parts a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.',
     ],
-    ['{FAC}OB{YY{SEQ}', '{YY{SEQ} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD} and {SEQ:n}.'],
+    [
+      '{FAC}OB{YY{SEQ}',
+      '{YY{SEQ} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.',
+    ],
     ['OB{SEQ', 'A { has no closing }. Parts in braces look like {YY} or {SEQ:6}.'],
     [
       'op {SEQ}',
@@ -142,6 +148,70 @@ describe('formatProblems', () => {
 
   it('refuses a format longer than the database keeps', () => {
     expect(formatProblems('{SEQ}' + 'A'.repeat(60))).toContain('Use at most 64 characters.');
+  });
+});
+
+// The same cases as the server's NumberCheckDigitTests.
+describe('the check digit {CHK}', () => {
+  it.each([
+    ['{SEQ:9}{CHK}', 100_001_234, null, '1000012342'],
+    ['{SEQ:9}{CHK}', 100_000_000, null, '1000000005'],
+    ['{FAC}{YY}{SEQ:6}{CHK}', 124, 'NH', 'NH260001240'],
+    ['{FAC}/{SEQ:4}-{CHK}', 7, 'NH', 'NH/0007-6'],
+  ] as const)('ends %s at %d with the check digit of the digits before it', (format, value, facility, expected) => {
+    expect(renderNumber(format, value, facility, october2)).toBe(expected);
+  });
+
+  it('is a part of its own', () => {
+    expect(parseFormat('{SEQ:9}{CHK}').map((p) => p.kind)).toEqual(['sequence', 'checkDigit']);
+    expect(parseFormat('{chk}')[0]?.kind).toBe('unknown');
+  });
+
+  it.each(['{SEQ:9}{CHK}', '{FAC}{YY}{SEQ:6}{CHK}', '{SEQ}-{CHK}'])('is well placed at the end of %s', (format) => {
+    expect(formatProblems(format)).toEqual([]);
+  });
+
+  it.each([
+    ['{SEQ:9}{CHK}{CHK}', 'Use the check digit {CHK} only once.'],
+    [
+      '{CHK}{SEQ:9}',
+      'Put the check digit {CHK} at the end, after the running number: it checks every digit before it.',
+    ],
+    [
+      '{SEQ:6}{CHK}-A',
+      'Put the check digit {CHK} at the end, after the running number: it checks every digit before it.',
+    ],
+    ['{FAC}{CHK}', 'Add {SEQ} or {SEQ:n} for the running number.'],
+    [
+      '{FAC}{CHECK}{SEQ}',
+      '{CHECK} is not a part a number can have. Use {FAC}, {YYYY}, {YY}, {MM}, {DD}, {SEQ:n} and {CHK}.',
+    ],
+  ])('says what to fix in "%s"', (format, message) => {
+    expect(formatProblems(format)).toContain(message);
+  });
+
+  it('counts in the length of the numbers', () => {
+    expect(longestNumber('{SEQ:9}{CHK}', 6)).toEqual({
+      facilityCode: 0,
+      date: 0,
+      runningNumber: 9,
+      checkDigit: 1,
+      fixedText: 0,
+      total: 10,
+    });
+    expect(checkChange(employee({ format: '{FAC}EMPLOYEE{SEQ:5}{CHK}' }))).toEqual({
+      format: [
+        'Numbers in this format can be up to 23 characters long (facility code 6, running number 8, check digit 1, fixed text 8), and only 20 fit. ' +
+          'Shorten the fixed text.',
+      ],
+    });
+  });
+
+  it('is one more digit of the number when formats are compared', () => {
+    expect(outline('{SEQ:9}{CHK}')).toBe('#');
+    expect(canMakeSameNumbers('{SEQ:9}{CHK}', null, '{SEQ:10}', null)).toBe(true);
+    expect(canMakeSameNumbers('{FAC}A{SEQ:6}{CHK}', 'NH', '{FAC}B{SEQ:6}', 'NH')).toBe(false);
+    expect(canMakeSameNumbers('{FAC}{SEQ:4}-{CHK}', 'NH', '{FAC}{SEQ:4}-{YY}', 'NH')).toBe(false);
   });
 });
 
@@ -167,6 +237,7 @@ describe('longestNumber and largestStartAt', () => {
       facilityCode: 6,
       date: 4,
       runningNumber: 8,
+      checkDigit: 0,
       fixedText: 5,
       total: 23,
     });

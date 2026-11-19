@@ -23,9 +23,17 @@ A format is fixed text and parts in braces. Each number fills in the parts at th
 | `{DD}` | the day of the month, 2 digits | `02` |
 | `{SEQ}` | the running number | `124` |
 | `{SEQ:n}` | the running number padded with zeros to n digits (n from 1 to 12) | `{SEQ:7}` → `0000124` |
+| `{CHK}` | a check digit, worked out from every digit before it; it goes last | `{SEQ:9}{CHK}` → `0000001242` |
 
 So `{FAC}OB{YY}{SEQ:7}` makes `NHOB260000124`, and `{FAC}/OP/{YYYY}/{SEQ:6}` makes `NH/OP/2026/000124`. The running
 number is never cut short: once it outgrows its padding it simply has more digits.
+
+**The check digit.** `{CHK}` is the Damm check digit (H. Michael Damm, 2004) of every digit written before it: the
+date parts, the running number and any digits in the fixed text; letters, `-` and `/` are passed over. A number copied by
+hand with one digit wrong, or with two neighbouring digits swapped, no longer ends in its check digit, so it is never
+taken for another number the series issued. `{SEQ:9}{CHK}` makes `1000012342` for running number 100001234, and
+`{FAC}{YY}{SEQ:6}{CHK}` makes `NH260001240` for 124. A number with a check digit is one character longer. The rules
+(`Platform/Numbering/DammCheckDigit.cs`) and the staff app (`lib/damm.ts`) work it out alike.
 
 Dates are India Standard Time. A series shared by all facilities fills in `{FAC}` with the code of the first facility set
 up (the hospital's main one).
@@ -61,13 +69,15 @@ again from 1 only at the next boundary. For example, an OP bill series at bill 5
 The screen checks these as the administrator types, with the same words the server uses when it checks them again on
 saving.
 
-* Only the parts above, and one running number (`{SEQ}` or `{SEQ:n}`).
+* Only the parts above, one running number (`{SEQ}` or `{SEQ:n}`), and at most one check digit (`{CHK}`), at the end,
+  after the running number ("Put the check digit {CHK} at the end, after the running number: it checks every digit
+  before it.").
 * Fixed text uses capital letters A to Z, digits, `-` and `/`; no spaces.
 * The date parts of the period, when numbers start again (see above).
 * `{FAC}`, for numbers each facility counts on its own, once the hospital has more than one facility. Number columns
   are unique across all facilities, so without the facility code two facilities would issue the same numbers.
-* The numbers must fit where they are stored. The longest number is measured with the longest facility code in use and
-  a running number of at least 8 digits (it grows over the years). Most numbers have room for 24 characters; UHIDs, tube
+* The numbers must fit where they are stored. The longest number is measured with the longest facility code in use,
+  a running number of at least 8 digits (it grows over the years) and its check digit. Most numbers have room for 24 characters; UHIDs, tube
   barcodes, donor numbers and employee codes for 20. The message says which part to shorten.
 * A changed format must not be able to make the numbers of another series (OP and IP bills share one table, so that
   would issue a bill number twice), nor those this series makes at another facility (number columns are unique across
@@ -175,7 +185,12 @@ database, and moves each series past it as it starts.
   (`numbering.startup_check_failed`).
 
 Nothing else lowers a counter: the next number an administrator sets must be above the last one issued, and a change of
-reset keeps counting from it. So a series behind the mark has been put back by a restore.
+reset keeps counting from it. So a series behind the mark has been put back by a restore. The one exception is a
+series brought to a check digit by an upgrade: each running number then stands for ten of its former numbers, so its
+counter is counted in tens (1000012346 under `{SEQ:10}` is 100001234 under `{SEQ:9}{CHK}`, whose next number,
+1000012350, is above it). The mark compares a counter and a mark of which only one has a check digit in the counter's
+terms (`NumberFormat.CounterIn`), the margin counted in the mark's: the upgrade is followed, not raised, and a database
+restored to before it is still raised past the numbers issued after it.
 
 ## Who sees what
 
