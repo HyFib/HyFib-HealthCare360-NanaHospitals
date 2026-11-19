@@ -134,6 +134,18 @@
     "SCP-ECG": "S C P E C G",
     "DICOM": "dye com",
     "BPL": "B P L",
-    "ICICI": "I C I C I"
+    "ICICI": "I C I C I",
+    "Jan": "January",
+    "Feb": "February",
+    "Mar": "March",
+    "Apr": "April",
+    "Jun": "June",
+    "Jul": "July",
+    "Aug": "August",
+    "Sep": "September",
+    "Sept": "September",
+    "Oct": "October",
+    "Nov": "November",
+    "Dec": "December"
   }
 }

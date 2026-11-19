@@ -92,6 +92,8 @@ def year(n: int) -> str:
 
 def clock(h: int, m: int, ampm: str | None) -> str:
     """10:47 am is "ten forty-seven in the morning": clearer to a listener than letters, and never "uh em"."""
+    if not ampm and h >= 13:  # 21:00 is "nine in the evening", never "twenty-one o'clock"
+        ampm, h = "pm", h - 12
     said = ONES[h] if h < 20 else indian(h)
     if m:
         said += " " + (("oh " + ONES[m]) if m < 10 else below_thousand(m))
