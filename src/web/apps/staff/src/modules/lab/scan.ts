@@ -4,6 +4,8 @@
  * asterisks. These helpers turn whatever arrives into clean codes and tell scanned input apart from typing.
  */
 
+import { dammVerifies } from '@/lib/damm';
+
 // eslint-disable-next-line no-control-regex -- scanners really do send these control characters
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/g;
 /** AIM symbology identifier, e.g. "]C0" (Code 128), "]E0" (EAN-13), "]Q1" (QR). */
@@ -38,9 +40,9 @@ export function splitScans(raw: string | null | undefined): string[] {
 export type ScanKind = 'sample' | 'labAccession' | 'radiologyAccession' | 'cardiologyAccession' | 'text';
 
 /**
- * What a scanned (or typed) code probably is. Tube numbers are numeric: 10 digits from 1000000000 on (series lab.sample,
- * {SEQ:10}), and 6 to 20 digits are accepted so that tubes numbered before keep opening. Accession numbers follow
- * {FAC}LB{YY}{SEQ:7}, {FAC}RD… and {FAC}CD…; anything else (UHID, name) is searched as text.
+ * What a scanned (or typed) code probably is. Tube numbers are numeric: 10 digits ending in a check digit (series
+ * lab.sample, {SEQ:9}{CHK}), and 6 to 20 digits are accepted so that tubes numbered before keep opening. Accession
+ * numbers follow {FAC}LB{YY}{SEQ:7}, {FAC}RD… and {FAC}CD…; anything else (UHID, name) is searched as text.
  */
 export function classifyScan(code: string): ScanKind {
   const value = code.trim().toUpperCase();
@@ -62,6 +64,20 @@ export function classifyScan(code: string): ScanKind {
 export function isSampleBarcode(code: string): boolean {
   return classifyScan(code) === 'sample';
 }
+
+/**
+ * A tube number typed with a digit wrong or two neighbouring digits swapped: 10 digits whose last digit, the check
+ * digit, does not match the others (the server's TubeNumbers.IsMistyped). The server finds no tube by it, and says so; a
+ * tube numbered before tube numbers had a check digit is still found by its own number, so the screens warn as it is
+ * typed rather than refuse it.
+ */
+export function isMistypedTubeNumber(code: string): boolean {
+  const value = code.trim();
+  return /^\d{10}$/.test(value) && !dammVerifies(value);
+}
+
+/** What a scan box says while it holds a mistyped tube number (`isMistypedTubeNumber`). */
+export const MISTYPED_TUBE_NUMBER = 'The last digit does not match the others: check the tube number.';
 
 /**
  * Tells a scanner burst from human typing by the gaps between keystrokes (a scanner types a character every few

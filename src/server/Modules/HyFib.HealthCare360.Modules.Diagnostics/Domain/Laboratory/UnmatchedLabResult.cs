@@ -43,6 +43,13 @@ public enum UnmatchedResultReason
     /// patient's values on another's tube, so nothing of the message goes on the tube.
     /// </summary>
     PatientMismatch,
+
+    /// <summary>
+    /// The sample id is 10 digits whose last digit, the check digit, does not match the others: a tube number typed on the
+    /// analyser with a digit wrong or two neighbouring digits swapped. It is no tube's number, so no tube is changed, not
+    /// even the one whose number it is closest to.
+    /// </summary>
+    MistypedTubeNumber,
 }
 
 public enum UnmatchedResultStatus

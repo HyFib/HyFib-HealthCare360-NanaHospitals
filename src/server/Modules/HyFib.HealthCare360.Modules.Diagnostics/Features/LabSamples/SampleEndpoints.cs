@@ -36,6 +36,7 @@ internal static class SampleEndpoints
         HospitalDbContext db,
         DiagnosticsLookups lookups,
         IFieldProtector protector,
+        TubeNumbers tubeNumbers,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -58,9 +59,11 @@ internal static class SampleEndpoints
 
         if (page.SearchTerm is { } term)
         {
+            // A tube number whose check digit does not match finds no tube (TubeNumbers); a patient's name or number still does.
             var code = term.ToUpperInvariant();
             var matching = db.Set<Patient>().Search(term, protector).Select(p => p.Id);
-            tubes = tubes.Where(s => s.Barcode == term || matching.Contains(s.PatientId)
+            var byNumber = db.Set<LabSample>().Where(await tubeNumbers.MatchingAsync(term, ct)).Select(s => s.Id);
+            tubes = tubes.Where(s => byNumber.Contains(s.Id) || matching.Contains(s.PatientId)
                                      || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
         }
 
@@ -110,7 +113,5 @@ internal static class SampleEndpoints
         (await samples.RecollectAsync(id, ct)).ToOk();
 
     private static async Task<IResult> ByBarcode(string barcode, SampleService samples, CancellationToken ct) =>
-        await samples.FindByBarcodeAsync(barcode, ct) is { } sample
-            ? TypedResults.Ok(sample)
-            : Error.NotFound(nameof(LabSample), barcode).ToProblem();
+        (await samples.FindByBarcodeAsync(barcode, ct)).ToOk();
 }

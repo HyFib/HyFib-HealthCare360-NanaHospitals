@@ -503,31 +503,31 @@ describe('checkChange', () => {
     expect(checkChange({ ...uhid, startAt: 250_001 })).toEqual({});
   });
 
-  it('keeps every tube number at 10 digits: the next one is never below the first, 1000000000', () => {
+  it('keeps every tube number at 10 digits: the running number is never below the first, 100000000', () => {
     const tubes = change({
       name: 'Sample tube number',
       isLocked: true,
       perFacility: false,
       maxLength: 20,
-      defaultFormat: '{SEQ:10}',
-      format: '{SEQ:10}',
-      currentFormat: '{SEQ:10}',
+      defaultFormat: '{SEQ:9}{CHK}',
+      format: '{SEQ:9}{CHK}',
+      currentFormat: '{SEQ:9}{CHK}',
       resetPolicy: 'Never',
       currentResetPolicy: 'Never',
-      // A database from before the tubes had 10 digits.
-      lastNumber: 523,
-      firstNumber: 1_000_000_000,
+      // A database from before the tubes had 10 digits: its counter of 523, counted in tens.
+      lastNumber: 52,
+      firstNumber: 100_000_000,
     });
     const tooLow = [
-      'The next number must be 1000000000 or more, so that these numbers keep the shape other systems read.',
+      'The next number must be 100000000 or more, so that these numbers keep the shape other systems read.',
     ];
 
     expect(checkChange({ ...tubes, startAt: 524 })).toEqual({ startAt: tooLow });
     expect(checkChange({ ...tubes, startAt: 0 })).toEqual({ startAt: tooLow });
-    expect(checkChange({ ...tubes, startAt: 1_000_000_000 })).toEqual({});
-    expect(checkChange({ ...tubes, startAt: 9_999_999_999 })).toEqual({});
-    expect(checkChange({ ...tubes, startAt: 10_000_000_000 })).toEqual({
-      startAt: ['The next number can be at most 9999999999, so that these numbers keep the shape other systems read.'],
+    expect(checkChange({ ...tubes, startAt: 100_000_000 })).toEqual({});
+    expect(checkChange({ ...tubes, startAt: 999_999_999 })).toEqual({});
+    expect(checkChange({ ...tubes, startAt: 1_000_000_000 })).toEqual({
+      startAt: ['The next number can be at most 999999999, so that these numbers keep the shape other systems read.'],
     });
   });
 });
@@ -541,9 +541,9 @@ describe('nextNumber', () => {
     expect(nextNumber(1_000_000_041, 1_000_000_000)).toBe(1_000_000_042);
   });
 
-  it('makes 10-digit tube numbers with no leading zero', () => {
-    expect(renderNumber('{SEQ:10}', nextNumber(0, 1_000_000_000), null, october2)).toBe('1000000000');
-    expect(renderNumber('{SEQ:10}', nextNumber(1_000_000_041, 1_000_000_000), null, october2)).toBe('1000000042');
+  it('makes 10-digit tube numbers with no leading zero, ending in their check digit', () => {
+    expect(renderNumber('{SEQ:9}{CHK}', nextNumber(0, 100_000_000), null, october2)).toBe('1000000005');
+    expect(renderNumber('{SEQ:9}{CHK}', nextNumber(100_001_233, 100_000_000), null, october2)).toBe('1000012342');
   });
 });
 

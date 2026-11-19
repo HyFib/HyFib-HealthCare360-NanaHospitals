@@ -26,6 +26,7 @@ using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Messaging;
 using HyFib.HealthCare360.Platform.Notifications;
+using HyFib.HealthCare360.Platform.Numbering;
 using HyFib.HealthCare360.Platform.Persistence;
 using HyFib.HealthCare360.Platform.Settings;
 using HyFib.HealthCare360.SharedKernel;
@@ -431,7 +432,7 @@ public sealed class LabAnalyserTests(HospitalServer server)
         var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
 
         tube.Barcode.ShouldMatch(@"^[1-9][0-9]{9}$", "every tube number has 10 digits and no leading zero");
-        long.Parse(tube.Barcode, CultureInfo.InvariantCulture).ShouldBeGreaterThanOrEqualTo(1_000_000_000L);
+        DammCheckDigit.Verifies(tube.Barcode).ShouldBeTrue("the last digit is the check digit of the nine before it");
 
         // A digit dropped, or a zero put in front, as a technician might type it: no tube has that number.
         var dropped = tube.Barcode[..9];
@@ -445,6 +446,116 @@ public sealed class LabAnalyserTests(HospitalServer server)
         // Typed right, the result goes on the tube.
         (await AnalyserSendsAsync("EM360", $"O|1|{tube.Barcode}||^^^GLU|R", "R|1|^^^GLU|92|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
         (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("92");
+    }
+
+    /// <summary>
+    /// L1: tubes for patients A and B are drawn minutes apart and collected. A's tube is run, but its number is typed on
+    /// the analyser with one digit wrong, then with two neighbouring digits swapped. Neither is a tube number, because the
+    /// last digit is a check digit: the results are kept for the lab with the reason, the analyser is acknowledged, and
+    /// neither A's tube nor B's is changed or received. Asked for the order of that number, HC360 sends none, so the
+    /// analyser shows no patient; the lab screens refuse it with the same words. Typed right, the result goes on A's tube.
+    /// </summary>
+    [Fact]
+    public async Task A_tube_number_typed_on_the_analyser_with_one_digit_wrong_is_kept_and_the_neighbouring_tube_is_untouched()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var a = await SampleAsync(admin, lab, "LAB-FBS", receive: false);
+        var b = await SampleAsync(admin, lab, "LAB-FBS", receive: false);
+
+        // One wrong digit: the ninth, as typing B's running number with A's check digit would be when the two differ only there.
+        var ninth = a.Barcode[..8] == b.Barcode[..8] && a.Barcode[8] != b.Barcode[8] ? b.Barcode[8] : (char)('0' + ((a.Barcode[8] - '0' + 1) % 10));
+        var wrongDigit = a.Barcode[..8] + ninth + a.Barcode[9];
+        var place = Enumerable.Range(0, 9).Last(i => a.Barcode[i] != a.Barcode[i + 1]);
+        var swapped = a.Barcode[..place] + a.Barcode[place + 1] + a.Barcode[place] + a.Barcode[(place + 2)..];
+        foreach (var (typed, value) in new[] { (wrongDigit, "88"), (swapped, "89") })
+        {
+            typed.ShouldNotBe(b.Barcode);
+            TubeNumbers.IsMistyped(typed).ShouldBeTrue(typed);
+
+            (await AnalyserSendsAsync("EM360", $"O|1|{typed}||^^^GLU|R", $"R|1|^^^GLU|{value}|mg/dL||N||F")).ShouldNotBeNull().Accepted
+                .ShouldBeTrue("acknowledged, so the analyser moves on");
+            var kept = (await UnmatchedAsync(lab, typed)).ShouldHaveSingleItem();
+            (kept.Reason, kept.Value, kept.SampleId, kept.PatientId).ShouldBe((UnmatchedResultReason.MistypedTubeNumber, value, null, null));
+            kept.Detail.ShouldBe(TubeNumbers.MistypedByAnalyser("EM360", typed));
+        }
+
+        foreach (var tube in new[] { a, b })
+        {
+            var sheet = await SheetAsync(lab, tube);
+            sheet.SampleStatus.ShouldBe(SampleStatus.Collected, "no tube is received for results typed under another number");
+            sheet.Lines.ShouldAllBe(line => line.Value == null);
+        }
+
+        // The analyser asks for the order of the number typed: none, and no patient's name. B's own number still has B's.
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            var sink = scope.ServiceProvider.GetRequiredService<IInstrumentResultSink>();
+            (await sink.GetOrderForSampleAsync("EM360", wrongDigit, Ct)).ShouldBeNull();
+            (await sink.GetOrderForSampleAsync("EM360", b.Barcode, Ct)).ShouldNotBeNull().SampleBarcode.ShouldBe(b.Barcode);
+        }
+
+        // Typed at the lab counter or in a lab screen, the number is refused with why.
+        using (var lookedUp = await lab.SendRawAsync(HttpMethod.Get, $"/api/v1/lab/samples/by-barcode/{wrongDigit}"))
+        {
+            lookedUp.StatusCode.ShouldBe(HttpStatusCode.UnprocessableEntity);
+            var problem = JsonNode.Parse(await lookedUp.Content.ReadAsStringAsync(Ct)).ShouldNotBeNull();
+            problem["code"]!.GetValue<string>().ShouldBe(TubeNumbers.MistypedCode);
+            problem["detail"]!.GetValue<string>().ShouldBe(TubeNumbers.MistypedMessage(wrongDigit));
+        }
+
+        var refused = (await lab.PostAsync<List<ReceiveOutcome>>("/api/v1/lab/samples/receive", new ReceiveSamplesRequest([wrongDigit]))).ShouldHaveSingleItem();
+        (refused.Received, refused.SampleId, refused.Message).ShouldBe((false, null, TubeNumbers.MistypedMessage(wrongDigit)));
+        (await lab.GetAsync<PagedResult<WorklistItem>>($"/api/v1/lab/worklist?search={wrongDigit}&status=Collected")).Items.ShouldBeEmpty();
+
+        // Typed right, the result goes on A's tube, which is received; B's is still untouched.
+        (await AnalyserSendsAsync("EM360", $"O|1|{a.Barcode}||^^^GLU|R", "R|1|^^^GLU|88|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        var stored = await SheetAsync(lab, a);
+        stored.SampleStatus.ShouldNotBe(SampleStatus.Collected);
+        stored.Lines.ShouldHaveSingleItem().Value.ShouldBe("88");
+        (await SheetAsync(lab, b)).Lines.ShouldAllBe(line => line.Value == null);
+    }
+
+    /// <summary>
+    /// A database from before the check digit keeps the tubes it numbered without one, and finds them by their exact number:
+    /// only a tube made before tube numbers gained their check digit (the setting the seeder writes) is found by a number
+    /// that does not check.
+    /// </summary>
+    [Fact]
+    public async Task A_tube_numbered_before_the_check_digit_is_still_found_by_its_exact_number()
+    {
+        var admin = await server.SignInAsync(HospitalServer.Users.HospitalAdmin);
+        var lab = await server.SignInAsync(HospitalServer.Users.Lab);
+        var tube = await ReceivedFastingSugarSampleAsync(admin, lab);
+
+        // An old tube: a number of the old series (no check digit, and nowhere near the new tubes' numbers), made before then.
+        string old;
+        do
+        {
+            old = "95" + Digits(8);
+        }
+        while (DammCheckDigit.Verifies(old));
+
+        await using (var scope = server.Services.CreateAsyncScope())
+        {
+            // The moment the seeder recorded, or, on a database made with check digits (as the tests' is), one before the tests.
+            var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+            if (await settings.GetAsync<DateTimeOffset?>(TubeNumbers.CheckDigitSinceSetting, null, Ct) is not { } since)
+            {
+                since = new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero);
+                await settings.SetAsync<DateTimeOffset?>(TubeNumbers.CheckDigitSinceSetting, since, cancellationToken: Ct);
+            }
+
+            var db = scope.ServiceProvider.GetRequiredService<HospitalDbContext>();
+            (await db.Set<LabSample>().IgnoreQueryFilters().Where(s => s.Id == tube.Id)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.Barcode, old).SetProperty(x => x.CreatedAt, since.AddDays(-3)), Ct))
+                .ShouldBe(1);
+        }
+
+        (await AnalyserSendsAsync("EM360", $"O|1|{old}||^^^GLU|R", "R|1|^^^GLU|91|mg/dL||N||F")).ShouldNotBeNull().Accepted.ShouldBeTrue();
+        (await SheetAsync(lab, tube)).Lines.ShouldHaveSingleItem().Value.ShouldBe("91");
+        (await lab.GetAsync<SampleLookup>($"/api/v1/lab/samples/by-barcode/{old}")).Id.ShouldBe(tube.Id);
+        (await UnmatchedAsync(lab, old)).ShouldBeEmpty();
     }
 
     /// <summary>

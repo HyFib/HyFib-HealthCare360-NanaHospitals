@@ -15,16 +15,18 @@ public static class DiagnosticsNumberSeries
         };
 
     /// <summary>
-    /// Tube numbers: exactly 10 digits with no leading zero (1000000000 on), unique across facilities, because analysers
-    /// look samples up by this number only. A lab without barcodes writes it on the tube and types it on the analyser as
-    /// its sample id (the Yumizen H500 takes 16 characters).
+    /// Tube numbers: exactly 10 digits with no leading zero, unique across facilities, because analysers look samples up
+    /// by this number only. A lab without barcodes writes it on the tube and types it on the analyser as its sample id (the
+    /// Yumizen H500 takes 16 characters), so the last digit is a check digit ({CHK}): a number typed with one digit wrong,
+    /// or two neighbouring digits swapped, is no tube's number and finds no tube (<see cref="Services.TubeNumbers"/>). The
+    /// running number has 9 digits, from 100000000: the first tube is 1000000005.
     /// </summary>
     public static NumberSeriesDefinition LabSample { get; } =
-        new("lab.sample", "Sample tube number", "Laboratory", "{SEQ:10}", NumberResetPolicy.Never, MaxLength: 20)
+        new("lab.sample", "Sample tube number", "Laboratory", "{SEQ:9}{CHK}", NumberResetPolicy.Never, MaxLength: 20)
         {
             PerFacility = false,
-            FirstNumber = 1_000_000_000,
-            LockedReason = "Tube numbers are written on the tubes, typed on the analysers and scanned as plain 10-digit numbers, which the analysers send back with each result, so the format cannot change.",
+            FirstNumber = 100_000_000,
+            LockedReason = "Tube numbers are written on the tubes, typed on the analysers and scanned as plain 10-digit numbers ending in a check digit, which the analysers send back with each result, so the format cannot change.",
         };
 
     public static NumberSeriesDefinition RadiologyAccession { get; } =

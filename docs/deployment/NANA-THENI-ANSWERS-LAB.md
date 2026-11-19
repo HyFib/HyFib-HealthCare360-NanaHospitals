@@ -66,10 +66,30 @@ its own is not a UPS, and while the PC is off it relays nothing.
 ## Sample numbers
 
 **L5: "No Barcode use"; L6: "Sample ID used for 10 Digits".** Every tube number HC360 gives has exactly 10 digits and no
-leading zero: the series `lab.sample` is `{SEQ:10}` and starts at 1000000000 (an installation whose counter was lower
-jumps to 1000000000 on upgrade). The technician writes the number on the tube and types it on the analyser as its
-sample id (the H500 takes 16 characters; on the C150 it is the *Patient ID*), and each result comes back under it and
-is matched to the tube by the exact number. See [numbering.md](../modules/numbering.md).
+leading zero, and the last digit is a check digit: the series `lab.sample` is `{SEQ:9}{CHK}`, nine running digits from
+100000000 and the check digit worked out from them (1000000005, 1000000018, 1000000026 and on). The technician writes
+the number on the tube and types it on the analyser as its sample id (the H500 takes 16 characters; on the C150 it is
+the *Patient ID*), and each result comes back under it and is matched to the tube by the exact number. See
+[numbering.md](../modules/numbering.md).
+
+Numbers copied by hand go wrong. The check digit catches every number typed with one digit wrong and every one with two
+neighbouring digits swapped, so such a number never finds another patient's tube, such as the one drawn just before
+(tubes 1000012342 and 1000012350: typing 1000012352 for the first finds neither). What staff see when a number is
+mistyped:
+
+* **On the analyser.** HC360 answers its query for the number with no order, so the analyser shows no patient's name
+  for it. If it runs the sample anyway, its results wait under **Lab › Unmatched analyser results** as *Tube number
+  typed wrong*, and no tube changes. Find the tube that was run, check its number, and assign the results to its
+  tests (a pathologist then verifies them), or run the tube again under the right number and discard the kept ones.
+* **In HC360** (result entry, receipt at the lab counter, assigning an unmatched result). The box warns as the last digit
+  is typed: "The last digit does not match the others: check the tube number." Entered all the same, no tube is found,
+  and the screen says "… is not a tube number: its last digit, the check digit, does not match the others. A digit was
+  typed wrong, or two were swapped. Check the number written on the tube and type it again."
+
+A number with two or more digits wrong can still be another tube's (about one in ten such numbers is): the analyser's
+query answer and the result sheet show the patient's name, which the technician checks. A database that numbered tubes
+before November 2026 keeps those tubes' numbers, which have no check digit, and still finds them by them exactly; the
+next tube is above every one of them (diagnostics.md, *Tube numbers*).
 
 ## The report
 

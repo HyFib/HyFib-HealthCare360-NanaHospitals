@@ -33,6 +33,7 @@ internal static class LabResultEndpoints
         OrderPriority? priority,
         HospitalDbContext db,
         DiagnosticsLookups lookups,
+        TubeNumbers tubeNumbers,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -53,8 +54,10 @@ internal static class LabResultEndpoints
 
         if (page.SearchTerm is { } term)
         {
+            // A tube number whose check digit does not match finds no tube (TubeNumbers).
             var code = term.ToUpperInvariant();
-            tubes = tubes.Where(s => s.Barcode == term || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
+            var byNumber = db.Set<LabSample>().Where(await tubeNumbers.MatchingAsync(term, ct)).Select(s => s.Id);
+            tubes = tubes.Where(s => byNumber.Contains(s.Id) || db.Set<LabOrder>().Any(o => o.Id == s.LabOrderId && o.AccessionNumber == code));
         }
 
         var paged = await tubes

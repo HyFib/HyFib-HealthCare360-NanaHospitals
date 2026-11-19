@@ -124,6 +124,7 @@ public sealed class DiagnosticsModule : IModule
         services.AddScoped<CriticalValueNotifier>();
         services.AddScoped<ReportDelivery>();
         services.AddScoped<LabOrderService>();
+        services.AddScoped<TubeNumbers>();
         services.AddScoped<SampleService>();
         services.AddScoped<QualityControlService>();
         services.AddScoped<LabSafetyLimits>();

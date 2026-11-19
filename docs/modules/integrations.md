@@ -1124,7 +1124,7 @@ acknowledgements are never acknowledged in turn.
     sample by: it asks for orders by it and uploads results as H, P, R… L **without an O record**, so HC360 sends the
     tube's barcode in P.3 (not the UHID) and reads the sample from P.3 when no O record names one; the patient is then
     named by P.6 (and P.4/P.5 if sent), never by P.3. Lab staff therefore type or scan the tube's barcode as the
-    analyser's Patient ID: the 10-digit tube number (1000000000 on), which a lab without barcodes writes on the tube. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
+    analyser's Patient ID: the 10-digit tube number ending in its check digit, which a lab without barcodes writes on the tube. Its result records sit one field to the right of E1394 from R.7 on (flags R.8, status R.10,
     completion time R.14), as the result frames in the manual show (their checksums match their bytes); a record in
     the manual's table layout (status R.9) is still read. HC360 sends it a 14-digit date of birth (an 8-digit one shows
     "Invalid DateTime"), the name cut to 30 characters, O.16 always (`SERUM`, `PLASMA`, `URINE`, `CSF` or `BLOOD`;

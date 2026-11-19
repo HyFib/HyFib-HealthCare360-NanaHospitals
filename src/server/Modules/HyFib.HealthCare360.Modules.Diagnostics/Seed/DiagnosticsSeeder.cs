@@ -1,8 +1,11 @@
+using System.Globalization;
+using System.Text.Json;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Imaging;
 using HyFib.HealthCare360.Modules.Diagnostics.Domain.Laboratory;
 using HyFib.HealthCare360.Modules.Diagnostics.Services;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
+using HyFib.HealthCare360.Platform.Settings;
 
 namespace HyFib.HealthCare360.Modules.Diagnostics.Seed;
 
@@ -10,10 +13,16 @@ namespace HyFib.HealthCare360.Modules.Diagnostics.Seed;
 /// Diagnostics reference data: billable services (<c>LAB-*</c>, <c>RAD-*</c>, <c>CARD-*</c>), the laboratory test master with
 /// panels, reference intervals and critical limits, imaging procedures, radiology report templates, and the extra
 /// notification templates this module sends. It runs on every start and only inserts what is missing (by code).
-/// Rows the laboratory or radiology have edited are never overwritten.
+/// Rows the laboratory or radiology have edited are never overwritten. A database seeded before is brought up to date
+/// where the module changed since: the CBC's parameters, analyser channel codes, and tube numbers ending in a check digit.
 /// </summary>
-internal sealed class DiagnosticsSeeder : ISeeder
+internal sealed class DiagnosticsSeeder(IAuditLogger audit, TimeProvider time) : ISeeder
 {
+    /// <summary>The audit action of tube numbers brought to their check digit.</summary>
+    public const string TubeNumbersUpgradedAction = "numbering.tube_check_digit";
+
+    private static readonly JsonSerializerOptions SettingJson = new(JsonSerializerDefaults.Web);
+
     /// <summary>GST SAC 999316: medical laboratory and diagnostic-imaging services (exempt healthcare).</summary>
     public const string SacCode = "999316";
 
@@ -41,24 +50,88 @@ internal sealed class DiagnosticsSeeder : ISeeder
         await SeedImagingProceduresAsync(db, services, cancellationToken);
         await SeedReportTemplatesAsync(db, cancellationToken);
         await SeedNotificationTemplatesAsync(db, cancellationToken);
-        await UpgradeTubeNumberFormatAsync(db, cancellationToken);
+        await UpgradeTubeNumbersAsync(db, audit, time.GetUtcNow(), cancellationToken);
     }
 
     /// <summary>
-    /// Tube numbers have 10 digits (Nana Hospitals writes them on the tubes and types them on the analysers). The series is
-    /// locked, so the format stored for it is the one it was created with: a database made before keeps {SEQ:9} until it
-    /// is brought to the definition's here. Its counter needs nothing: the series never issues a number below its first
-    /// (<c>NumberSeriesDefinition.FirstNumber</c>), so the next tube after the upgrade is 1000000000.
+    /// Tube numbers have 10 digits ending in a check digit ({SEQ:9}{CHK}): Nana Hospitals writes them on the tubes and types
+    /// them on the analysers. The series is locked, so the format stored for it is the one it was created with: a database
+    /// made before keeps {SEQ:10} (or {SEQ:9}, before that) until it is brought to the definition's here, together with its
+    /// counter, counted in tens of the old numbers (<see cref="TubeCounterAfterUpgrade"/>): a counter at 1000012346 goes on
+    /// from 100001235, whose number, 1000012350, is above every tube numbered before, and a lower one from the series'
+    /// first number (1000000005). When it happened is written to <see cref="TubeNumbers.CheckDigitSinceSetting"/> in the
+    /// same transaction, so the tubes numbered before keep being found by their numbers, and it is audited. A database whose
+    /// tube numbers have their check digit already, or that never numbered a tube, is left as it is.
     /// </summary>
-    internal static async Task UpgradeTubeNumberFormatAsync(HospitalDbContext db, CancellationToken ct)
+    internal static async Task UpgradeTubeNumbersAsync(HospitalDbContext db, IAuditLogger audit, DateTimeOffset now, CancellationToken ct)
     {
         var series = DiagnosticsNumberSeries.LabSample;
-        var row = await db.Set<NumberSeries>().IgnoreQueryFilters().FirstOrDefaultAsync(s => s.Key == series.Key && s.FacilityId == null, ct);
-        if (row is not null && !string.Equals(row.Format, series.DefaultFormat, StringComparison.Ordinal))
+        for (var attempt = 0; attempt < 5; attempt++)
         {
-            row.Format = series.DefaultFormat;
+            var row = await db.Set<NumberSeries>().IgnoreQueryFilters().AsNoTracking()
+                .Where(s => s.Key == series.Key && s.FacilityId == null)
+                .Select(s => new { s.Format, s.CurrentValue })
+                .FirstOrDefaultAsync(ct);
+            if (row is null || string.Equals(row.Format, series.DefaultFormat, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // The counter as read, in one statement: a tube numbered meanwhile (by another server) is read again.
+            var counter = TubeCounterAfterUpgrade(row.CurrentValue, row.Format);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var changed = await db.Database.ExecuteSqlInterpolatedAsync($"""
+                UPDATE platform.number_series
+                   SET format = {series.DefaultFormat}, current_value = {counter}, updated_at = {now}
+                 WHERE key = {series.Key} AND facility_id IS NULL AND format = {row.Format} AND current_value = {row.CurrentValue}
+                """, ct);
+            if (changed == 0)
+            {
+                continue;
+            }
+
+            await RecordCheckDigitSinceAsync(db, now, ct);
+            var next = NumberFormat.Render(series.DefaultFormat, NumberFormat.NextNumber(counter, series.FirstNumber), null, NumberFormat.ToHospitalTime(now));
+            audit.Add(new AuditEntry(AuditCategories.Admin, TubeNumbersUpgradedAction, string.Create(CultureInfo.InvariantCulture,
+                $"{series.Name} numbers now end in a check digit: format {row.Format} → {series.DefaultFormat}, next tube {next}"))
+            {
+                EntityType = nameof(NumberSeries),
+                EntityId = series.Key,
+                Severity = AuditSeverity.Warning,
+                Details = new { series = series.Key, before = new { format = row.Format, value = row.CurrentValue }, after = new { format = series.DefaultFormat, value = counter } },
+            });
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return;
         }
+    }
+
+    /// <summary>
+    /// The tube counter once tube numbers end in a check digit: counted in tens of the old numbers
+    /// (<see cref="NumberFormat.CounterIn"/>), so the next running number, with its check digit, is above every number
+    /// issued under <paramref name="format"/>.
+    /// </summary>
+    internal static long TubeCounterAfterUpgrade(long value, string format) =>
+        NumberFormat.CounterIn(value, format, DiagnosticsNumberSeries.LabSample.DefaultFormat);
+
+    /// <summary>Records, for the caller's save, when tube numbers started ending in a check digit (<see cref="TubeNumbers.CheckDigitSinceSetting"/>).</summary>
+    private static async Task RecordCheckDigitSinceAsync(HospitalDbContext db, DateTimeOffset now, CancellationToken ct)
+    {
+        // The key is unique, deleted rows too.
+        var setting = await db.Set<SystemSetting>().IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.Key == TubeNumbers.CheckDigitSinceSetting && s.FacilityId == null, ct);
+        if (setting is null)
+        {
+            setting = new SystemSetting { Key = TubeNumbers.CheckDigitSinceSetting };
+            db.Add(setting);
+        }
+
+        setting.Value = JsonSerializer.Serialize<DateTimeOffset?>(now.ToUniversalTime(), SettingJson);
+        setting.IsSecret = false;
+        setting.IsDeleted = false;
+        setting.DeletedAt = null;
+        setting.DeletedBy = null;
+        setting.Description = "When tube numbers started ending in a check digit. Only a tube numbered before then is found by a number whose check digit does not match.";
     }
 
     private static async Task<Dictionary<string, Guid>> SeedServiceItemsAsync(
