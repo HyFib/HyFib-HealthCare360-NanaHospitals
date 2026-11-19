@@ -74,7 +74,7 @@
 
   <ItemGroup Label="Desktop">
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
-    <PackageVersion Include="System.IO.Ports" Version="10.0.15" />
+    <PackageVersion Include="System.IO.Ports" Version="11.0.0" />
     <PackageVersion Include="System.Speech" Version="10.0.15" />
   </ItemGroup>
 
