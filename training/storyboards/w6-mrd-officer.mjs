@@ -130,7 +130,7 @@ export default {
         {
           select: [{ label: 'Purpose' }, 'Insurance claim'],
           native: true,
-          say: 'Choose the purpose. The purpose decides how long the file may stay out.',
+          say: 'Choose the purpose of the request. Here it is an insurance claim.',
           zoom: 1.3,
         },
         {
