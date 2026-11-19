@@ -182,5 +182,24 @@
   "lufs": -16.0,
   "seconds": 356.8,
   "madeBy": "render worker 1"
+ },
+ "w4-lab-technician": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 19,
+  "wer": 3.72,
+  "wpm": 130.5,
+  "maxCps": 15.6,
+  "lufs": -16.0,
+  "seconds": 285.1,
+  "megabytes": 12.7,
+  "madeBy": "this session"
  }
 }
