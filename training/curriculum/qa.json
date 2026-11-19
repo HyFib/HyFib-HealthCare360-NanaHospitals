@@ -86,12 +86,13 @@
    "format": true
   },
   "steps": 10,
-  "wer": 4.19,
-  "wpm": 123.6,
-  "maxCps": 14.4,
+  "wer": 2.92,
+  "wpm": 129.7,
+  "maxCps": 14.6,
   "lufs": -16.0,
-  "seconds": 199.5,
-  "madeBy": "render worker 1"
+  "seconds": 199.7,
+  "megabytes": 7.6,
+  "madeBy": "render worker 1 (re-told)"
  },
  "w4-radiologist": {
   "passed": true,
@@ -104,12 +105,13 @@
    "format": true
   },
   "steps": 12,
-  "wer": 3.45,
-  "wpm": 127.3,
+  "wer": 1.9,
+  "wpm": 135.1,
   "maxCps": 15.5,
   "lufs": -16.0,
-  "seconds": 231.6,
-  "madeBy": "render worker 1"
+  "seconds": 233.5,
+  "megabytes": 9.0,
+  "madeBy": "render worker 1 (re-told)"
  },
  "w5-dietitian": {
   "passed": true,
@@ -122,12 +124,13 @@
    "format": true
   },
   "steps": 15,
-  "wer": 3.68,
-  "wpm": 128.4,
+  "wer": 2.26,
+  "wpm": 135.0,
   "maxCps": 16.2,
   "lufs": -16.0,
-  "seconds": 243.7,
-  "madeBy": "render worker 1"
+  "seconds": 244.2,
+  "megabytes": 10.4,
+  "madeBy": "render worker 1 (re-told)"
  },
  "w7-mis-analyst": {
   "passed": true,
@@ -140,12 +143,13 @@
    "format": true
   },
   "steps": 14,
-  "wer": 2.18,
-  "wpm": 126.3,
+  "wer": 2.16,
+  "wpm": 133.2,
   "maxCps": 14.6,
   "lufs": -16.0,
-  "seconds": 266.3,
-  "madeBy": "render worker 1"
+  "seconds": 265.8,
+  "megabytes": 12.4,
+  "madeBy": "render worker 1 (re-told)"
  },
  "w4-pathologist": {
   "passed": true,
@@ -158,12 +162,13 @@
    "format": true
   },
   "steps": 14,
-  "wer": 2.65,
-  "wpm": 130.7,
+  "wer": 3.82,
+  "wpm": 133.2,
   "maxCps": 14.8,
   "lufs": -16.0,
-  "seconds": 281.7,
-  "madeBy": "render worker 1"
+  "seconds": 283.9,
+  "megabytes": 12.6,
+  "madeBy": "render worker 1 (re-told)"
  },
  "w5-ot-coordinator": {
   "passed": true,
@@ -402,13 +407,13 @@
    "format": true
   },
   "steps": 25,
-  "wer": 2.89,
-  "wpm": 127.7,
+  "wer": 2.87,
+  "wpm": 128.4,
   "maxCps": 16.1,
   "lufs": -16.0,
-  "seconds": 394.8,
+  "seconds": 393.9,
   "megabytes": 19.6,
-  "madeBy": "render worker 1"
+  "madeBy": "render worker 1 (re-told)"
  },
  "w2-accountant": {
   "passed": true,
