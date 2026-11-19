@@ -129,7 +129,7 @@ export default {
         },
         {
           check: { role: 'checkbox', name: /I have checked the prescription/ },
-          say: 'Issue to ward stays locked until you confirm that you have checked the prescription, the patient and the quantity. Tick the box.',
+          say: 'The Issue to ward button stays locked until you confirm that you have checked the prescription, the patient and the quantity. Tick the box.',
           zoom: 1.5,
         },
         {
@@ -163,7 +163,7 @@ export default {
           nav: 'Drug registers',
           say: 'Drug registers holds the statutory registers.',
           after:
-            'HC360 writes them by itself, from every sale, issue, receipt and adjustment. Nobody can change them. Schedule H1, X and narcotic drugs are on the first tab, Schedule H on the second.',
+            'HC360 writes them by itself, from every sale, issue, receipt and adjustment. Nobody can change them. Schedule H1 drugs, Schedule X drugs and narcotic drugs are on the first tab. Schedule H drugs are on the second.',
           wait: { role: 'heading', name: 'Drug registers' },
         },
       ],
