@@ -67,13 +67,13 @@
    "format": true
   },
   "steps": 23,
-  "wer": 3.37,
-  "wpm": 121.3,
+  "wer": 2.87,
+  "wpm": 132.0,
   "maxCps": 15.6,
-  "lufs": -16,
-  "seconds": 402,
+  "lufs": -16.0,
+  "seconds": 401.6,
   "megabytes": 19.6,
-  "madeBy": "this session"
+  "madeBy": "this session (re-told)"
  },
  "w4-radiographer": {
   "passed": true,
@@ -194,13 +194,13 @@
    "format": true
   },
   "steps": 19,
-  "wer": 3.72,
-  "wpm": 130.5,
+  "wer": 3.67,
+  "wpm": 131.8,
   "maxCps": 15.6,
   "lufs": -16.0,
-  "seconds": 285.1,
+  "seconds": 285.5,
   "megabytes": 12.7,
-  "madeBy": "this session"
+  "madeBy": "this session (re-told)"
  },
  "w7-patient-portal": {
   "passed": true,
