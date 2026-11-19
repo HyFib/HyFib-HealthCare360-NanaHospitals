@@ -120,7 +120,7 @@ Each video is checked on the finished file, by tools other than those that made 
 |---|---|
 | Run | every step found its target and its expected result; the server answered no request with an error |
 | Speech | Whisper small.en, an independent recogniser, hears the narration with a word error rate of 5% or less |
-| Pace | 120 to 150 words a minute |
+| Pace | 120 to 150 spoken words a minute ("₹1,930" is five spoken words) |
 | Captions | 2 lines of 42 characters at most, 0.8 to 7 s on screen, 17 characters a second at most, word for word |
 | Loudness | -16 LUFS (EBU R128), true peak -1 dBTP or lower |
 | Format | H.264 1920x1080 at 30 fps, AAC 48 kHz, chapters |
