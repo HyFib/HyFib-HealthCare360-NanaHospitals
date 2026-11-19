@@ -482,6 +482,12 @@ public sealed record TallyCreditNote(string Number, DateOnly Date, CreditNoteKin
 
     /// <summary>The GST the note takes back, by the rate of the lines it corrects (adding up to its CGST, SGST and IGST); empty when the note names no lines.</summary>
     public IReadOnlyList<TallyGstLine> Gst { get; init; } = [];
+
+    /// <summary>For a payer's credit note for returns, the payer whose ledger it comes off.</summary>
+    public string? PayerName { get; init; }
+
+    /// <summary>For a payer's credit note for returns, the bill it is set against on the payer's ledger.</summary>
+    public string? BillNumber { get; init; }
 }
 
 /// <summary>
@@ -938,12 +944,26 @@ public static class TallyVoucherBuilder
         entries.Debit(note.Kind == CreditNoteKind.WriteOff ? map.WriteOffs : map.CreditNotes, note.Amount - gst);
         TallyGst.Output(entries, map, note.Gst.Count > 0 ? note.Gst : [new TallyGstLine(null, note.Cgst, note.Sgst, note.Igst)], debit: true);
         // A payer credit note turns the settlement's deduction (already debited to insurance disallowances, the payer
-        // credited) into a GST credit note: the disallowance comes back out, and sales returns and output GST take it.
-        entries.Credit(note.Kind == CreditNoteKind.PayerShare ? map.InsuranceDisallowances : map.PatientDebtors, note.Amount);
+        // credited) into a GST credit note: the disallowance comes back out, and sales returns and output GST take it. A
+        // payer's credit note for returns takes its share of what came back off what it owes, against the bill.
+        switch (note.Kind)
+        {
+            case CreditNoteKind.PayerShare:
+                entries.Credit(map.InsuranceDisallowances, note.Amount);
+                break;
+            case CreditNoteKind.PayerReturn:
+                entries.Credit(map.PayerLedger(note.PayerName), note.Amount, bill: TallyBillRef.Against(note.BillNumber));
+                break;
+            default:
+                entries.Credit(map.PatientDebtors, note.Amount);
+                break;
+        }
+
         var words = note.Kind switch
         {
             CreditNoteKind.WriteOff => "Write-off",
             CreditNoteKind.PayerShare => "Payer credit note",
+            CreditNoteKind.PayerReturn => "Payer credit note for returns",
             _ => "Credit note",
         };
         return entries.ToVoucher(CreditNoteType, note.Date, note.Number, Narrate(note.Patient, map, $"{words} {note.Number}"), note.Number);

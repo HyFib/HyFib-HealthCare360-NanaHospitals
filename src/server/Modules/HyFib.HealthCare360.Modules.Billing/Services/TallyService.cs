@@ -82,6 +82,14 @@ public sealed class TallyService(
             .Where(c => c.FacilityId == facilityId && c.IssuedAt >= start && c.IssuedAt < end)
             .OrderBy(c => c.IssuedAt)
             .ToListAsync(ct);
+
+        // A payer's credit note for returns comes off the payer's ledger, against its bill.
+        var returnBillIds = creditNotes.Where(c => c.Kind == CreditNoteKind.PayerReturn).Select(c => c.BillId).Distinct().ToList();
+        var returnBills = returnBillIds.Count == 0
+            ? []
+            : await db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking()
+                .Where(b => returnBillIds.Contains(b.Id))
+                .ToDictionaryAsync(b => b.Id, b => new { b.BillNumber, b.PayerId }, ct);
         var debitNotes = await (
                 from n in db.Set<DebitNote>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]).AsNoTracking().Include(n => n.Lines)
                 join b in db.Set<Bill>().IgnoreQueryFilters([HospitalDbContext.FacilityFilter]) on n.BillId equals b.Id
@@ -111,6 +119,7 @@ public sealed class TallyService(
             .Concat(receipts.Where(r => r.PayerId is not null).Select(r => r.PayerId!.Value))
             .Concat(disallowances.Select(d => d.PayerId))
             .Concat(debitNotes.Where(d => d.Note.Party == DebitNoteParty.Payer && d.PayerId is not null).Select(d => d.PayerId!.Value))
+            .Concat(returnBills.Values.Where(b => b.PayerId is not null).Select(b => b.PayerId!.Value))
             .Distinct()
             .ToList();
         var payers = await db.Set<Payer>().Where(p => payerIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
@@ -228,6 +237,8 @@ public sealed class TallyService(
             {
                 Patient = patients.GetValueOrDefault(c.PatientId),
                 Gst = c.Lines.Where(l => l.GstAmount != 0).Select(l => new TallyGstLine(l.GstRate, l.CgstAmount, l.SgstAmount, l.IgstAmount)).ToList(),
+                PayerName = returnBills.GetValueOrDefault(c.BillId)?.PayerId is { } payerId ? payers.GetValueOrDefault(payerId) : null,
+                BillNumber = returnBills.GetValueOrDefault(c.BillId)?.BillNumber,
             }).ToList(),
             fees.Where(f => f.Amount != 0).Select(f => new TallyDoctorFee(
                 doctors.GetValueOrDefault(f.PractitionerId)?.DisplayName ?? "Doctor",

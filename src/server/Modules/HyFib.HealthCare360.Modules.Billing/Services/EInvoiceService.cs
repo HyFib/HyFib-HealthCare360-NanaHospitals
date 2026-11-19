@@ -1006,7 +1006,7 @@ internal sealed class CreditNoteEInvoiceSource(HospitalDbContext db) : IEInvoice
                 from c in db.Set<CreditNote>().AsNoTracking()
                 join b in db.Set<Bill>() on c.BillId equals b.Id
                 join p in db.Set<Payer>() on b.PayerId equals p.Id
-                where c.FacilityId == facilityId && (c.Kind == CreditNoteKind.CreditNote || c.Kind == CreditNoteKind.PayerShare) && !c.GstTimeBarred && b.TaxAmount != 0 && p.Gstin != null
+                where c.FacilityId == facilityId && (c.Kind == CreditNoteKind.CreditNote || c.Kind == CreditNoteKind.PayerShare || c.Kind == CreditNoteKind.PayerReturn) && !c.GstTimeBarred && b.TaxAmount != 0 && p.Gstin != null
                       && c.IssuedAt >= start && c.IssuedAt < end && db.Set<CreditNoteLine>().Any(l => l.CreditNoteId == c.Id)
                 select new { c.Id, c.Number, c.IssuedAt, p.Gstin, p.Name, c.Amount, b.BillNumber })
             .ToListAsync(cancellationToken);
@@ -1019,7 +1019,7 @@ internal sealed class CreditNoteEInvoiceSource(HospitalDbContext db) : IEInvoice
     public async Task<EInvoiceDocument?> FindAsync(Guid id, CancellationToken cancellationToken)
     {
         var note = await db.Set<CreditNote>().AsNoTracking().Include(c => c.Lines).FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
-        if (note is not { Kind: CreditNoteKind.CreditNote or CreditNoteKind.PayerShare, GstTimeBarred: false } || note.Lines.Count == 0)
+        if (note is not { Kind: CreditNoteKind.CreditNote or CreditNoteKind.PayerShare or CreditNoteKind.PayerReturn, GstTimeBarred: false } || note.Lines.Count == 0)
         {
             return null;
         }

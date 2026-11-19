@@ -581,7 +581,22 @@ public sealed class BillService(
             query = query.Where(c => chargeIds.Contains(c.Id));
         }
 
-        return await query.OrderBy(c => c.ServiceDate).ToListAsync(ct);
+        // A return of what a finalized bill of the visit charged, when a payer or a package shared it, is credited on that
+        // bill (ReturnCredits): on a new bill the patient would be refunded what the payer or the package paid.
+        var available = await query.OrderBy(c => c.ServiceDate).ToListAsync(ct);
+        return visitId is { } visit && available.Any(c => c.IsCredit) && await SharedBillOfVisitAsync(visit, ct) is { } shared
+            ? [.. ReturnCredits.ForNewBill(shared, available, await ReturnCreditService.ChargedElsewhereAsync(db, shared, ct))]
+            : available;
+    }
+
+    /// <summary>A finalized OP bill of the visit (not cancelled) that a payer or a package shared, if there is one.</summary>
+    private async Task<Bill?> SharedBillOfVisitAsync(Guid visitId, CancellationToken ct)
+    {
+        var finalized = await db.Set<Bill>().AsNoTracking().Include(b => b.Lines)
+            .Where(b => b.VisitId == visitId && b.Type == BillType.OutPatient && b.Status != BillStatus.Draft && b.Status != BillStatus.Cancelled
+                        && b.Status != BillStatus.Refunded)
+            .ToListAsync(ct);
+        return finalized.FirstOrDefault(ReturnCredits.CreditedOnTheBill);
     }
 
     /// <summary>Advance (deposit) adjusted on this bill and not yet restored.</summary>

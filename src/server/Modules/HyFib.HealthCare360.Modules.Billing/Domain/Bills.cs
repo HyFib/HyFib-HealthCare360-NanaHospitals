@@ -136,6 +136,11 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
     public decimal DueAmount { get; set; }
     public decimal RefundableAmount { get; set; }
     public decimal PayerSettledAmount { get; set; }
+
+    /// <summary>
+    /// What the payer will not pay of its share: its settlements' deductions (a rejected claim's unpaid balance among them),
+    /// and its share of returns credited on the bill (<see cref="ApplyPayerCredit"/>).
+    /// </summary>
     public decimal PayerDisallowedAmount { get; set; }
 
     /// <summary>What debit notes (supplementary invoices, CGST Act s.34(3)) added to the patient's share, GST included.</summary>
@@ -656,7 +661,7 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
 
         if (PayerDisallowedAmount > 0)
         {
-            recorded.Add($"the payer's deductions of ₹{Money.FormatInr(PayerDisallowedAmount)}");
+            recorded.Add($"₹{Money.FormatInr(PayerDisallowedAmount)} the payer will not pay");
         }
 
         if (recorded.Count == 0)
@@ -666,11 +671,44 @@ public sealed class Bill : AuditableEntity, IFacilityScoped
 
         var what = recorded.Count == 1 ? recorded[0] : string.Join(", ", recorded[..^1]) + " and " + recorded[^1];
         var recover = PayerDisallowedAmount > 0
-            ? " To recover from the patient what the payer would not pay, take it off the payer's invoice with a payer credit note and charge it to the patient with a patient debit note."
+            ? " To recover from the patient a share the payer would not pay (a rejected claim's, say), take it off the payer's invoice with a payer credit note and charge it to the patient with a patient debit note."
             : string.Empty;
         return Error.Rule("billing.bill_adjusted",
             $"Bill {BillNumber} has {what} recorded against it, and cancelling it would reverse the whole bill again in the books and the GST returns. " +
             $"Issue a credit note for what remains instead.{recover}");
+    }
+
+    /// <summary>
+    /// Takes <paramref name="amount"/> off what the payer owes, for its share of a return credited on the bill
+    /// (<see cref="ReturnCredits"/>): the payer no longer pays for what came back. It counts with what the payer will not
+    /// pay (<see cref="PayerDisallowedAmount"/>), so the payer's outstanding, its claim and the receivables fall with it.
+    /// </summary>
+    public Result ApplyPayerCredit(decimal amount)
+    {
+        if (amount <= 0)
+        {
+            return Error.Rule("billing.amount_invalid", "Enter an amount greater than zero.");
+        }
+
+        if (Status is not (BillStatus.Finalized or BillStatus.PartiallyPaid or BillStatus.Paid))
+        {
+            return Error.Rule("billing.bill_not_creditable", "Credit notes apply to finalized bills only.");
+        }
+
+        if (!HasPayer)
+        {
+            return Error.Rule("billing.no_payer", "This bill has no payer to credit.");
+        }
+
+        if (amount > PayerOutstanding)
+        {
+            return Error.Rule("billing.payer_credit_exceeds_owed",
+                $"The payer owes ₹{Money.FormatInr(PayerOutstanding)} on bill {BillNumber}, less than its ₹{Money.FormatInr(amount)} share of what came back. " +
+                "Its claim was settled already: what it overpaid is taken up with it through the claim desk.");
+        }
+
+        PayerDisallowedAmount += amount;
+        return Result.Success();
     }
 
     /// <summary>Insurer/TPA/corporate settlement against the payer share (disallowed = deductions written off).</summary>

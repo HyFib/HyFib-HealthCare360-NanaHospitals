@@ -87,7 +87,9 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 * A **return** is a negative-quantity charge (credit line). It mirrors its sale — same tariff concession, same GST, amounts
   negated — takes a proportional (negative) share of any bill discount, never receives a staff line discount, gives a
   package back what the package absorbed (after first refunding what the patient paid beyond the package), and can
-  make a bill's patient share negative, in which case the difference is refundable.
+  make a bill's patient share negative, in which case the difference is refundable. A return that comes back after its
+  bill was finalized goes on a bill of its own only when that bill was self-paying; after a bill a payer or a package
+  shared it is credited on that bill instead ([Returns after the bill](#returns-after-the-bill)).
 
 ## Permissions
 
@@ -101,8 +103,8 @@ medical records verified for a stay or visit through `IVerifiedCodingSource`, wh
 | `billing.bills.cancel` | Cancel finalized bills | HospitalAdmin, Accountant |
 | `billing.discounts.approve` | Approve discounts above a user's limit (never one's own), approve charges cancelled at the desk, discharge with dues, set limits (raising one waits for another holder) | HospitalAdmin, Accountant |
 | `billing.payments.collect` | Collect payments, POS, payment links, advance adjustment, pay out approved refunds | Cashier, Billing, FrontOffice, HospitalAdmin |
-| `billing.refunds.request` | Request refunds, credit notes, write-offs and debit notes, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
-| `billing.refunds.approve` | Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included, see [pharmacy.md](pharmacy.md)), credit notes, write-offs, debit notes, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
+| `billing.refunds.request` | Request refunds, credit notes, write-offs, debit notes and the credit of returns on a bill, and ask to reverse money that did not move (a receipt not received, a refund not paid out) | Cashier, Billing, HospitalAdmin |
+| `billing.refunds.approve` | Approve refunds (the pharmacy's invoice cancellations and returns paying money out or writing stock off included, see [pharmacy.md](pharmacy.md)), credit notes, write-offs, debit notes, returns credited on a bill, reversals of money that did not move, and card and UPI settlement reports withdrawn as imported in error, someone else asked for | HospitalAdmin, Accountant |
 | `billing.deposits` | Collect IP advances | Cashier, Billing, HospitalAdmin |
 | `billing.shifts` | Cashier shifts, day-end report | Cashier, Billing, FrontOffice, Accountant, HospitalAdmin |
 | `billing.tariffs.manage` | Tariff plans, prices, packages | Billing, HospitalAdmin |
@@ -233,6 +235,7 @@ Readers = any of `billing.charges.read`, `billing.op.create`, `billing.ip.manage
 | DELETE | `/{id}?version` | `op.create` / `ip.manage` | → 204 (discard a draft) |
 | POST | `/{id}/send-whatsapp` | `op.create` / `ip.manage` / `payments.collect` | → 204: queues the bill's PDF to the patient's mobile number on WhatsApp ([Bills on WhatsApp](#bills-on-whatsapp-int-wa)); 422 `billing.bill_not_shareable` (draft or cancelled), `billing.no_mobile`, `billing.whatsapp_opted_out` (the number replied STOP), `billing.bill_number_unverified` (the number is not verified on the patient's record); guarded and audited ("Sent a bill to the patient on WhatsApp"). The staff app's bill page offers it as "Send on WhatsApp" in the More menu |
 | POST | `/{id}/credit-notes` | `refunds.request` / `refunds.approve` | `IssueCreditNoteRequest(kind, amount, reason, lines?)` → 202 `ApprovalRequestDto` (kind `billing.credit_note` or `billing.write_off`): asks for it; 422 `billing.credit_exceeds` / `billing.bill_not_creditable` as the bill is now, 409 `approval.already_requested` while one of the kind waits. A credit note names the services it corrects (`lines`: `billLineId` and `amount`, GST included; `amount` is their sum, 400 otherwise), and must on a bill with GST (400 `lines`); 422 `billing.credit_exceeds_line` past what is left of a service after earlier credit notes, or on a return; a write-off names none (400 `lines`). The approver sees the GST each service gives back ([Credit notes are GST credit notes](#credit-notes-are-gst-credit-notes)). An approver, never the person who asked, issues it at `POST /api/v1/approvals/{id}/approve` (`{FAC}CN{YY}{SEQ:6}`, both names on the note), only on the bill's version it was asked against: 422 `approval.stale` after a payment, refund or another credit |
+| POST | `/{id}/return-credit` | `refunds.request` / `refunds.approve` | `CreditReturnsRequest(reason)` → 202 `ApprovalRequestDto` (kind `billing.return_credit`): asks for the returns waiting on the bill (`BillDetail.returnsToCredit`) to be credited on it ([Returns after the bill](#returns-after-the-bill)). 422 `billing.no_returns_to_credit`, `billing.returns_not_credited_here` (a self-paying bill), `billing.return_claim_open`, `billing.payer_credit_exceeds_owed`, `billing.return_not_on_bill`; 409 `approval.already_requested` while one waits |
 | POST | `/{id}/debit-notes` | `refunds.request` / `refunds.approve` | `IssueDebitNoteRequest(party, reason, lines)` → 202 `ApprovalRequestDto` (kind `billing.debit_note`): asks for a debit note ([Debit notes](#debit-notes)); `lines` are `billLineId` and the `taxableAmount` each service is raised by (GST at its rate is added); `party` `Patient` or `Payer`. 422 `billing.bill_not_debitable` (not finalized, or cancelled), `billing.no_payer`, `billing.debit_on_return`, `billing.debit_not_payer_payable`. An approver, never the person who asked, issues it (`{FAC}DB{YY}{SEQ:6}`), on the bill's version it was asked against (422 `approval.stale`) |
 | GET | `/{id}/credit-notes/{noteId}/document` | readers | → `PrintableDocumentDto`: the printed credit note (or write-off note) with what CGST rule 53(1A) asks of it, and its IRN and QR code once the portal registered it (until then, for a note due one, a notice that it has none); guarded and audited ("Printed credit note …") |
 | GET | `/{id}/credit-notes/{noteId}/pdf` | readers | → `application/pdf` attachment `credit-note-<number>.pdf` (`write-off-<number>.pdf`), the same document; guarded and audited |
@@ -387,9 +390,9 @@ Readers = `billing.ip.manage` or `billing.charges.read`.
 | GET | `/{id}/package-status` | readers | → `PackageStatus` |
 | PUT | `/{id}/package` | `billing.ip.manage` | `AssignPackageRequest(packageId?)` → 204; 400 `packageId` for a package for out-patient visits only, or one priced for another tariff plan than the stay's |
 | POST | `/{id}/interim-bills` | `billing.ip.manage` | `CreateInterimBillRequest(upTo?)` → 201 `BillDetail`: the services not billed yet up to the end of `upTo` (today when empty). Self-pay, non-package stays only; 422 `billing.interim_insured`, `billing.interim_package`, `billing.ip_account_inactive`, `billing.nothing_to_bill` ([Interim bills](#interim-bills-ipb-05)) |
-| POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged |
+| POST | `/{id}/final-bill` | `billing.ip.manage` | → 201 `BillDetail`: draft final bill (or a supplementary bill for late services, which takes no return after a final bill a payer or a package shared); 422 `billing.billed_on_interim_bills` when interim bills took every service, `billing.nothing_to_bill` when none was charged, `billing.returns_to_credit` when only such returns came after the final bill ([Returns after the bill](#returns-after-the-bill)) |
 | POST | `/{id}/settle` | `billing.ip.manage` | → `SettlementResult` (advance adjusted oldest bill first; unused advance becomes a refund request). Once the discharge has been initiated (422 `billing.discharge_not_initiated` while the account is open, a revoked discharge included) and every draft interim bill is finalized (422 `billing.interim_bill_draft`: the advance pays finalized bills only); after the final bill, or with nothing for one (`finalBillId` null; `billing.final_bill_missing` while services wait for it) |
-| GET | `/{id}/clearance` | readers | → `ClearanceDto` (`billedOnInterimBills`: interim bills took every service, so no final bill is needed) |
+| GET | `/{id}/clearance` | readers | → `ClearanceDto` (`billedOnInterimBills`: interim bills took every service, so no final bill is needed; `returnsToCreditCount` and `returnsToCreditAmount`: returns waiting to be credited on the final bill `finalBillId`, which hold nothing up) |
 | POST | `/{id}/discharge-approval` | `billing.discounts.approve` | `ApproveDischargeWithDuesRequest(reason)` → 204 |
 
 IP account statuses: `Open`, `DischargeInitiated`, `Discharged`, `Closed`, `Cancelled` (admission cancelled; no new
@@ -982,6 +985,50 @@ gets and the payer's GSTR-2B keeps the full credit. A **payer credit note** (`ki
 A payer credit note is also the first step of recovering from the patient what the payer would not pay (a rejected
 claim's share, say): a patient debit note for the same services then charges it to the patient, on the same bill,
 which is never cancelled for it ([Cancelling a bill](#cancelling-a-bill)).
+
+### Returns after the bill
+A return can come back after the bill that charged it was finalized: the ward sends an unopened ₹3,000 injection back
+to the IP pharmacy after the stay's final bill, say. After a self-paying bill it goes, as before, on a bill of its own
+(a supplementary bill of the stay, the visit's next OP bill), and the patient is refunded. After a bill a payer or a
+package shared (`ReturnCredits.CreditedOnTheBill`) that would be wrong: on a bill of returns alone the payer's share is
+nothing (it is never negative), so the whole credit fell to the patient, who was refunded what the insurer or the
+package paid. So such a return goes on no other bill:
+
+* **Only a return of what that bill charged.** A return names what it returns (the IP pharmacy's names the item and its
+  batch). It is the bill's when one of its lines of the same service and GST rate bears that name. Failing that, it is
+  the bill's when the bill charged that service at that rate and no other charge of the stay or visit bears the name
+  (`ReturnCredits.IsCreditedOn`). The return of something issued after the bill goes with it, on a bill of its own
+  (the stay's supplementary bill, the visit's next OP bill), as after a self-paying bill: the payer paid nothing for it.
+* **It waits on the bill that charged it.** The supplementary bill takes the late services and leaves the returns
+  (422 `billing.returns_to_credit` when only returns came); an OP draft of the visit leaves them too. The bill lists
+  them (`BillDetail.returnsToCredit`), and the stay's discharge clearance counts them apart
+  (`ClearanceDto.returnsToCreditCount` and `returnsToCreditAmount`, with `finalBillId`): they are not unbilled services,
+  hold up no discharge (the clearance says they wait) and keep the account from closing. The staff app shows them on
+  the discharge panel and on the bill, with "Credit the returns".
+* **The billing desk asks, an approver credits** (`POST /bills/{id}/return-credit`, approval `billing.return_credit`,
+  permission `billing.refunds.approve`; the person who asked never approves). The bill works the credit out as it
+  worked out the sale (`ReturnCredits.Split`): each return's package gives back what it absorbed, the rest is credited
+  at the sale's tariff concession with a proportional share of the bill discount and its GST, and the payer's share is
+  worked out again with the returns, on the bill's co-pay and cap. An insurer that paid all of the injection gets
+  ₹3,000 off what it owes, and the patient nothing; with a 10% co-pay, ₹2,700 and ₹300; an insurer capped at its
+  approved amount still pays it, so the return is the patient's; a return the package absorbed gives the package its
+  allowance back and nobody money. The approver sees each return with its two shares.
+* **Two credit notes at most, through the credit-note flow.** The patient's share is a credit note to the patient (it
+  lowers what the patient owes, and what the patient paid beyond that becomes refundable). The payer's share is a
+  payer credit note for returns (`kind: PayerReturn`): it takes the share off what the payer owes, counted with what
+  the payer will not pay (`payerDisallowedAmount`, so its claim, its outstanding and the receivables fall with it), off
+  its invoice in GST terms (a `CRN` e-invoice to a payer registered for GST), and off its ledger in Tally against the
+  bill. Each note names the bill lines that charged what came back (the line it came from first) and takes back their
+  GST at their rate. The returns are then billed on the bill, with nothing left to bill.
+* **Not while the payer's claim is under way** (422 `billing.return_claim_open`): the claim was for the payer's share
+  before the return, and its settlement would no longer fit. Tell the insurer; once it settles or rejects the claim,
+  the return is credited. When the payer has paid in full already, its share cannot come off what it owes, which is
+  nothing (422 `billing.payer_credit_exceeds_owed`): the claim desk takes up the overpayment with the payer.
+
+The desk's own credit-note form does not issue a `PayerReturn` (422 `billing.credit_returns_on_the_bill`), and a
+payer credit note of deductions counts the payer's credit notes for returns, so nothing is credited twice.
+`WardReturnAfterFinalBillTests` (in `tests/HyFib.HealthCare360.IntegrationTests`) proves an insured stay's and a
+self-paying stay's late return end to end, and the return of something issued after an insured stay's final bill.
 
 ## Debit notes
 A **debit note** (supplementary invoice, CGST Act s.34(3), CGST rule 53) raises what a finalized bill charged for
@@ -1769,13 +1816,14 @@ so their outstandings show bill by bill in Tally (`BILLALLOCATIONS.LIST`):
 | Voucher | Line | Reference |
 |---|---|---|
 | Sales voucher of a bill | the payer's share | New Ref, the bill number |
-| Its cancellation, an insurer's settlement receipt, a claim deduction, a debit note to the payer | the payer | Agst Ref, the bill number |
+| Its cancellation, an insurer's settlement receipt, a claim deduction, a debit note to the payer, the payer's credit note for returns | the payer | Agst Ref, the bill number |
 | Purchase | the supplier | New Ref, the supplier's invoice number |
 | Purchase return (Debit Note) | the supplier | Agst Ref, the supplier's invoice of the goods receipt the note names; On Account when it names none |
 | Supplier payable adjustment | the supplier | On Account: HC360 ties an adjustment to no invoice |
 
-A payer credit note posts nothing to the payer's ledger: the claim deduction it converts already reduced the bill. The
-patients' ledgers carry no references. A line merged with a part that names no bill (two shares on one ledger) has that
+A payer credit note of deductions posts nothing to the payer's ledger: the claim deduction it converts already reduced
+the bill. A payer's credit note for returns does: its Credit Note debits sales returns and output GST, and credits the
+payer, against the bill. The patients' ledgers carry no references. A line merged with a part that names no bill (two shares on one ledger) has that
 part On Account, so a line's allocations always add up to it.
 
 **Bank details** (T15). A line on a ledger listed as a bank account in Tally (`bankLedgers`) carries the cheque or UTR

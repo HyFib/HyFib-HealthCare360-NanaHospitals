@@ -103,7 +103,7 @@ public sealed class BillCancellationTests(HospitalServer server)
         // Cancelling it to bill the patient again would reverse the whole ₹60,000 while the deduction's journal stays.
         var refused = await RefusedAsync(admin, bill);
         refused.Code.ShouldBe("billing.bill_adjusted");
-        refused.Detail.ShouldContain("the payer's deductions of ₹48,000.00");
+        refused.Detail.ShouldContain("₹48,000.00 the payer will not pay");
         refused.Detail.ShouldContain("take it off the payer's invoice with a payer credit note and charge it to the patient with a patient debit note");
 
         // The share comes off the company's invoice, and is charged to the patient by a debit note on the same bill.

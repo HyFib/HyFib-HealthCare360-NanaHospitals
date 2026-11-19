@@ -25,7 +25,8 @@ vi.mock('./ipApi', async (importOriginal) => {
 const notify = vi.hoisted(() => ({ success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() }));
 vi.mock('@hc360/ui', async (importOriginal) => ({ ...(await importOriginal<typeof Ui>()), useNotify: () => notify }));
 vi.mock('@/lib/permissions', () => ({ usePermission: (permission: string) => permission === 'billing.ip.manage' }));
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
+const navigate = vi.hoisted(() => vi.fn());
+vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
 
 function account(patch: Partial<IpAccountDetail> = {}): IpAccountDetail {
   return { id: 'account-1', status: 'DischargeInitiated', depositBalance: 10_000, ...patch } as IpAccountDetail;
@@ -139,6 +140,30 @@ describe('IpDischargePanel', () => {
 
     expect(await screen.findByText('Finalised')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /settle with the advance/i })).toBeDisabled();
+  });
+
+  it('shows the returns that wait to be credited on the final bill and takes the desk there', async () => {
+    readClearance.mockResolvedValue(
+      billedOnInterimBills({
+        cleared: true,
+        outstanding: 0,
+        reason: 'A return worth ₹3,000.00 waits to be credited on the final bill.',
+        patientDue: 0,
+        hasFinalBill: true,
+        billedOnInterimBills: false,
+        returnsToCreditCount: 1,
+        returnsToCreditAmount: 3_000,
+        finalBillId: 'bill-9',
+      }),
+    );
+    renderPanel(account());
+
+    // The return holds nothing up and goes on no supplementary bill: it is credited on the final bill, as it split it.
+    expect(await screen.findByText('Returns to credit on the final bill')).toBeInTheDocument();
+    expect(screen.getByText('Cleared for discharge')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /credit the returns on the final bill/i }));
+
+    expect(navigate).toHaveBeenCalledWith({ to: '/billing/bills/$billId', params: { billId: 'bill-9' } });
   });
 
   it('asks for the final bill while services wait for one', async () => {
