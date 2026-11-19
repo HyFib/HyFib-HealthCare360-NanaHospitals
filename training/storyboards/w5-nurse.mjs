@@ -121,13 +121,19 @@ export default {
           zoom: 1.4,
         },
         {
+          select: [{ label: 'Consciousness (ACVPU)' }, 'A — Alert'],
+          native: true,
+          say: 'Choose her level of consciousness. She is alert. She breathes air, so leave the oxygen switch off.',
+          zoom: 1.4,
+        },
+        {
           click: { role: 'button', name: 'Save observations' },
-          say: 'Click Save observations. HC360 scores them, and raises an escalation if the score is 5 or more.',
+          say: 'Click Save observations. HC360 scores the set. It raises an escalation when the total is 5 or more, or when any one parameter scores 3.',
           wait: { role: 'table', name: 'Observations with NEWS2' },
         },
         {
           show: { role: 'table', name: 'Observations with NEWS2' },
-          say: 'The new entry scores NEWS2 4. HC360 marks it incomplete, because her level of consciousness was not assessed. Record all seven parameters.',
+          say: 'The new entry scores NEWS2 4.',
           zoom: 1.2,
         },
       ],
@@ -144,17 +150,17 @@ export default {
         },
         {
           click: { within: { role: 'row', name: /Ceftriaxone/ }, role: 'button', name: 'Given' },
-          say: 'Open the ceftriaxone dose, charted for 9:00 pm. Before any dose, check the five rights: the right patient, medicine, dose, route and time. Then click Given.',
+          say: 'The ceftriaxone dose is charted for 9:00 pm, so it is not due yet. We open its window only to show the checks. Never give a dose before its time.',
           wait: dose,
         },
         {
           show: { role: 'heading', name: /^Ceftriaxone 1 g Injection/ },
-          say: 'The window shows the medicine, the dose, the route, the patient and the due time. Read them against the vial and her wristband. The batch number comes from the pharmacy’s issue.',
+          say: 'For a real dose, check the five rights: the right patient, medicine, dose, route and time. The window shows them all. Read them against the vial and her wristband. The batch number comes from the pharmacy’s issue.',
           zoom: 1.3,
         },
         {
           show: { text: 'Witness (a second nurse, at this screen)' },
-          say: 'Ceftriaxone is a controlled drug, so a second nurse must witness the dose. She types her own user name and password here. Record given stays locked until she confirms.',
+          say: 'Ceftriaxone is a Schedule H1 medicine. HC360 treats Schedule H1, Schedule X and NDPS drugs, and high-alert medicines, as needing a second nurse to witness the dose. The witness types their own user name and password here. Record given stays locked until the witness confirms.',
           zoom: 1.3,
         },
       ],
@@ -202,18 +208,17 @@ export default {
   ],
   recap: [
     'Check the name, the UHID and the allergies on the banner before you record or give anything.',
-    'Save observations to see the NEWS2 score. A score of 5 or more raises an escalation.',
-    'Give a dose from the MAR after checking the five rights. Hand over each patient at the end of the shift.',
+    'Save a full set of observations to see the NEWS2 score. A total of 5 or more, or 3 in any one parameter, raises an escalation.',
+    'Check the five rights before you give a dose, and never before its time. Hand over each patient at the end of the shift.',
   ],
   check: [
     {
       q: 'What do you check before you click Given on the MAR?',
-      a: 'The five rights: the right patient, medicine, dose, route and time. HC360 shows all of them in the window, and your name is recorded with the dose.',
+      a: 'The five rights: the right patient, medicine, dose, route and time. HC360 shows them in the window, and your name is recorded with the dose.',
     },
     {
-      q: 'What happens when the NEWS2 score of an observation is 5 or more?',
-      a: 'HC360 raises an escalation to the ward’s doctor and the nurses in charge. It stays on the station until someone responds.',
+      q: 'When does HC360 raise a NEWS2 escalation?',
+      a: 'HC360 raises an escalation to the ward’s doctor and the nurses in charge. It stays on the station until someone responds. One parameter that scores 3 raises it too, even when the total is lower.',
     },
   ],
-  next: 'Dietitian: diet orders for the ward',
 };
