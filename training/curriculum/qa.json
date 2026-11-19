@@ -237,13 +237,13 @@
    "format": true
   },
   "steps": 25,
-  "wer": 3.76,
-  "wpm": 126.6,
+  "wer": 3.73,
+  "wpm": 135.5,
   "maxCps": 15.7,
   "lufs": -16.0,
-  "seconds": 356.8,
-  "megabytes": 16.8,
-  "madeBy": "render worker 2"
+  "seconds": 357.8,
+  "megabytes": 16.9,
+  "madeBy": "render worker 2 (re-told)"
  },
  "w4-cardiologist": {
   "passed": true,
@@ -256,13 +256,13 @@
    "format": true
   },
   "steps": 20,
-  "wer": 3.62,
-  "wpm": 122.1,
+  "wer": 3.57,
+  "wpm": 129.2,
   "maxCps": 15.6,
   "lufs": -16.0,
-  "seconds": 288.3,
+  "seconds": 288.1,
   "megabytes": 12.6,
-  "madeBy": "render worker 2"
+  "madeBy": "render worker 2 (re-told)"
  },
  "w6-crm-executive": {
   "passed": true,
@@ -275,13 +275,13 @@
    "format": true
   },
   "steps": 21,
-  "wer": 3.64,
-  "wpm": 127.0,
+  "wer": 3.6,
+  "wpm": 128.5,
   "maxCps": 15.1,
   "lufs": -16.0,
-  "seconds": 297.9,
-  "megabytes": 12.8,
-  "madeBy": "render worker 2"
+  "seconds": 297.0,
+  "megabytes": 12.7,
+  "madeBy": "render worker 2 (re-told)"
  },
  "w5-dialysis-technician": {
   "passed": true,
@@ -433,5 +433,43 @@
   "seconds": 299.0,
   "megabytes": 12.7,
   "madeBy": "this session"
+ },
+ "w5-blood-bank-officer": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 22,
+  "wer": 4.62,
+  "wpm": 131.8,
+  "maxCps": 15.8,
+  "lufs": -16.0,
+  "seconds": 367.8,
+  "megabytes": 17.2,
+  "madeBy": "render worker 2 (re-made)"
+ },
+ "w2-billing": {
+  "passed": false,
+  "gates": {
+   "run": true,
+   "speech": false,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 24,
+  "wer": 5.1,
+  "wpm": 136.8,
+  "maxCps": 14.8,
+  "lufs": -16.0,
+  "seconds": 367.3,
+  "megabytes": 16.8,
+  "madeBy": "render worker 2 (to be re-told)"
  }
 }
