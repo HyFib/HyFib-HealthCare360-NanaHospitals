@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -719,7 +720,7 @@ def main():
            "-r", str(FPS), "-i", "-", "-i", str(root / "narration.wav"), "-i", str(root / "chapters.txt"),
            "-map", "0:v", "-map", "1:a", "-map_metadata", "2", "-map_chapters", "2",
            "-vf", f"ass='{ass_path}':fontsdir=/usr/share/fonts/opentype/inter",
-           "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-tune", "stillimage", "-pix_fmt", "yuv420p",
+           "-c:v", "libx264", "-preset", "medium", "-crf", os.environ.get("HC360_CRF", "22"), "-tune", "stillimage", "-pix_fmt", "yuv420p",
            "-g", "150", "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-movflags", "+faststart", "-shortest",
            str(base.with_suffix(".mp4"))]
     enc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
