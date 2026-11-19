@@ -185,6 +185,7 @@ const story = {
         {
           fill: [{ label: 'Search' }, 'Gloves'],
           say: 'Search for the gloves that were received.',
+          after: 'The Central Store has 4,000 gloves on hand, and the new batch is part of them.',
           wait: { role: 'row', name: /Examination Gloves/ },
         },
       ],
@@ -207,25 +208,5 @@ const story = {
   ],
   next: 'Cashier: open a shift, collect payments and close the day',
 };
-// DEVTAIL-BEGIN
-import { appendFileSync as __a, writeFileSync as __w } from 'node:fs';
-const __story = story;
-if (process.env.HC360_DUMP) {
-  __w(process.env.HC360_DUMP, '');
-  let n = 0;
-  __story.scenes = __story.scenes.map((sc) => ({
-    ...sc,
-    steps: sc.steps.map((st) => ({
-      ...st,
-      after_do: async (t) => {
-        if (st.after_do) await st.after_do(t);
-        await t.quiet(3000);
-        const dlg = t.page.locator('[role="dialog"]:visible');
-        const root = (await dlg.count()) ? dlg.first() : t.page.locator('#main, main').first();
-        __a(process.env.HC360_DUMP, `\n##### step ${++n} ${JSON.stringify(st.say ?? '').slice(0, 80)} ${t.page.url()}\n${await root.ariaSnapshot().catch((e) => String(e))}\n`);
-      },
-    })),
-  }));
-}
-export default __story;
-// DEVTAIL-END
+
+export default story;

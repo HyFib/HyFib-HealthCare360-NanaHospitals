@@ -130,13 +130,54 @@ export default {
         {
           click: { within: advance, role: 'button', name: 'Collect ₹5,000.00' },
           say: 'Click Collect.',
-          after: 'RESULT',
-          wait: { text: 'RESULT' },
+          after:
+            'The advance is received, with its receipt number. It is held on Fatima Begum’s account, and is set against her final bill when she goes home.',
+          wait: { role: 'heading', name: 'Advance received' },
+          result: { text: '₹5,000.00 advance received' },
+        },
+        {
+          click: { role: 'button', name: 'Done' },
+          say: 'Click Done.',
+          wait: { role: 'table', name: 'Running bill by category' },
+        },
+      ],
+    },
+    {
+      title: 'Read the day-end report',
+      steps: [
+        {
+          nav: 'Day-end report',
+          say: 'Now open the Day-end report.',
+          after: 'It shows what the counters collected today.',
+          wait: { role: 'heading', name: 'Day-end report' },
+        },
+        {
+          show: { role: 'table', name: 'Collections by payment mode' },
+          say: 'Collections are listed by payment mode: cash, card and UPI. Lakshmi Narayanan’s ₹2,400 is in the UPI line.',
+          zoom: 1.3,
+        },
+        {
+          show: { role: 'table', name: 'Collections by cashier' },
+          say: 'And by cashier. Your shift is still open, so the figures can still change. At the end of your shift, close it with Close shift.',
+          zoom: 1.3,
         },
       ],
     },
   ],
-  recap: ['a', 'b', 'c'],
-  check: [{ q: 'q', a: 'a' }, { q: 'q', a: 'a' }],
-  next: 'x',
+  recap: [
+    'Check the name and the UHID before you bill. Every payment goes into your shift, with a receipt.',
+    'For UPI, type the 12-digit UTR. An advance for an in-patient is held on her account until the final bill.',
+    'The day-end report shows the collections by payment mode and by cashier.',
+  ],
+  check: [
+    {
+      q: 'A patient pays by UPI. What must you type before you collect, and why?',
+      a: 'The 12-digit UTR from the payment screen. It lets the accounts team match the payment to the bank statement.',
+    },
+    {
+      q: 'Fatima Begum’s family brings ₹5,000 for her stay. Where do you record it?',
+      a: 'In In-patient accounts: open her account and click Collect advance. The advance is held on her account, and set against her final bill.',
+    },
+  ],
+  next: 'Cashier: open the shift, collect and close the day',
 };

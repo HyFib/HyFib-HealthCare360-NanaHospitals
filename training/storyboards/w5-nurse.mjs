@@ -127,7 +127,7 @@ export default {
         },
         {
           show: { role: 'table', name: 'Observations with NEWS2' },
-          say: 'The new entry is in the chart, with its NEWS2 score.',
+          say: 'The new entry scores NEWS2 4. HC360 marks it incomplete, because her level of consciousness was not assessed. Record all seven parameters.',
           zoom: 1.2,
         },
       ],
