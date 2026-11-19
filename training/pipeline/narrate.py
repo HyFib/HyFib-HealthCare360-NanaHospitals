@@ -111,6 +111,8 @@ def spoken(text: str) -> str:
     s = _LEX_RE.sub(lambda m: LEXICON[m.group(0)], text.replace("’", "'").replace("‘", "'"))
     # Codes: GWF-01, GM-001, OPD-01, NH-000123 (letters, then each digit).
     s = re.sub(r"\b([A-Z]{1,6})-(\d{1,8})\b", lambda m: " ".join(m.group(1)) + " " + digits(m.group(2)), s)
+    # Hospital numbers with no hyphen: UHID NH26000010, bill NHOB26000001, batch SY26077 (as staff read them aloud).
+    s = re.sub(r"\b([A-Z]{1,6})(\d{5,13})\b", lambda m: " ".join(m.group(1)) + " " + digits(m.group(2)), s)
     # Money: ₹1,930 / ₹ 1,50,000.50 (the lexicon already turned ₹ into "rupees ").
     s = re.sub(r"rupees\s*(\d{1,3}(?:,\d{2,3})*|\d+)(?:\.(\d\d))?",
                lambda m: indian(int(m.group(1).replace(",", ""))) + " rupees"
