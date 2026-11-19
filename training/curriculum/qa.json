@@ -606,5 +606,24 @@
   "seconds": 301.0,
   "megabytes": 14.6,
   "madeBy": "render worker 1"
+ },
+ "w6-hr-manager": {
+  "passed": true,
+  "gates": {
+   "run": true,
+   "speech": true,
+   "pace": true,
+   "captions": true,
+   "loudness": true,
+   "format": true
+  },
+  "steps": 19,
+  "wer": 3.56,
+  "wpm": 132.7,
+  "maxCps": 16.0,
+  "lufs": -16.0,
+  "seconds": 284.1,
+  "megabytes": 11.4,
+  "madeBy": "render worker 3"
  }
 }
