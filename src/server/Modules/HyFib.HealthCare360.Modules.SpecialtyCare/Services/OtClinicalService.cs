@@ -6,6 +6,7 @@ using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 using HyFib.HealthCare360.Modules.SupplyChain.Domain;
 using HyFib.HealthCare360.Modules.SupplyChain.Services;
 using HyFib.HealthCare360.Platform.Approvals;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Realtime;
 
@@ -43,41 +44,60 @@ public sealed class OtClinicalService(
 
     public async Task<Result> RecordPreOpAsync(Guid bookingId, RecordChecklistRequest request, CancellationToken ct)
     {
-        var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == bookingId, ct);
-        if (booking is null)
-        {
-            return Error.NotFound(nameof(SurgeryBooking), bookingId);
-        }
-
-        if (request.Version is { } version)
-        {
-            db.SetExpectedVersion(booking, version);
-        }
-
         // A surgeon records the site mark they made, so the record names who marked it.
         var canMarkSite = currentUser.UserId is { } user && await permissions.HasPermissionAsync(user, SpecialtyCarePermissions.OtSurgery, ct);
 
         // The "consent" item is confirmed only over the patient's consents as the front office recorded them (SurgicalConsent).
-        var consents = await SurgicalConsentRecords.ForBookingAsync(db, booking, ct);
-        var result = booking.RecordPreOp(request.Items, currentUser.Stamp(time.GetUtcNow()), consents, canMarkSite);
-        return await SaveAsync(booking, result, ct);
+        return await UnderConsentLockAsync(bookingId, request.Version,
+            (booking, consents) => booking.RecordPreOp(request.Items, currentUser.Stamp(time.GetUtcNow()), consents, canMarkSite), ct);
     }
 
     /// <summary>
     /// Confirms WHO checklist items. The Sign-in (which confirms consent with the patient) and the Time-out are recorded only
     /// while the patient's consent to the operation is on record, or was waived in an emergency (<see cref="SurgicalConsent"/>).
     /// </summary>
-    public async Task<Result> ConfirmSafetyAsync(Guid bookingId, SafetyPhase phase, RecordChecklistRequest request, CancellationToken ct)
+    public Task<Result> ConfirmSafetyAsync(Guid bookingId, SafetyPhase phase, RecordChecklistRequest request, CancellationToken ct) =>
+        UnderConsentLockAsync(bookingId, null,
+            (booking, consents) => booking.ConfirmSafety(phase, request.Items, currentUser.Stamp(time.GetUtcNow()), consents), ct);
+
+    /// <summary>
+    /// A checklist change that reads the patient's consents, made under the patient's surgical consent lock, held to the commit
+    /// (<see cref="SurgicalConsentLocks"/>): a refusal or a withdrawal recorded at the same moment is either read by it, which
+    /// then refuses, or recorded after it. The booking is read under the lock, so the version the client expects
+    /// (<paramref name="expectedVersion"/>) is compared with the row as it stands.
+    /// </summary>
+    private async Task<Result> UnderConsentLockAsync(
+        Guid bookingId, uint? expectedVersion, Func<SurgeryBooking, IReadOnlyCollection<ConsentOnRecord>, Result> change, CancellationToken ct)
     {
+        var patientId = await db.Set<SurgeryBooking>().AsNoTracking().Where(b => b.Id == bookingId).Select(b => (Guid?)b.PatientId).FirstOrDefaultAsync(ct);
+        if (patientId is null)
+        {
+            return Error.NotFound(nameof(SurgeryBooking), bookingId);
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await SurgicalConsentLocks.LockAsync(db, patientId.Value, ct);
         var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == bookingId, ct);
         if (booking is null)
         {
             return Error.NotFound(nameof(SurgeryBooking), bookingId);
         }
 
-        var consents = await SurgicalConsentRecords.ForBookingAsync(db, booking, ct);
-        var result = booking.ConfirmSafety(phase, request.Items, currentUser.Stamp(time.GetUtcNow()), consents);
-        return await SaveAsync(booking, result, ct);
+        if (expectedVersion is { } version)
+        {
+            db.SetExpectedVersion(booking, version);
+        }
+
+        var result = change(booking, await SurgicalConsentRecords.ForBookingAsync(db, booking, ct));
+        if (result.IsFailure)
+        {
+            return result;
+        }
+
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        await realtime.OtChangedAsync(booking.FacilityId, booking.Id, ct);
+        return Result.Success();
     }
 
     public async Task<Result<AnaesthesiaRecordDto>> SaveAnaesthesiaAsync(Guid bookingId, SaveAnaesthesiaRecordRequest request, CancellationToken ct)
