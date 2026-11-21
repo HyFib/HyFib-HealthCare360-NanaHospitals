@@ -1,3 +1,4 @@
+using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 
@@ -12,6 +13,9 @@ internal static class TestData
     public static readonly DateOnly Today = new(2026, 9, 25);
 
     public static StaffStamp Staff(DateTimeOffset? at = null, string name = "Sr. Anita Joseph") => new(Guid.CreateVersion7(), name, at ?? Now);
+
+    /// <summary>A patient sample drawn <paramref name="minutesAgo"/> minutes before <see cref="Now"/> by <paramref name="by"/>.</summary>
+    public static SampleDraw Drawn(int minutesAgo = 40, string by = "Sr. Kavya Menon") => new(Now.AddMinutes(-minutesAgo), by);
 
     public static IReadOnlyList<ChecklistInput> AllDone(IEnumerable<ChecklistItemDefinition> items) =>
         items.Select(i => new ChecklistInput(i.Key, ChecklistItemState.Done, null)).ToList();

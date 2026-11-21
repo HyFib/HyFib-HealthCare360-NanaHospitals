@@ -612,7 +612,8 @@ and grants nothing.
     answers 202, and 400 on `reason` without one), and another approves, shown the setting, what it controls, where it
     applies, the value in force and the one asked ("Second pathologist for lab corrections: on → off"). That is
     switching off the second pathologist (`lab.separateVerifier`), the second doctor on death certificates
-    (`mrd.deathCertificateConfirmation`), the second blood bank officer (`bloodbank.separateVerifier`), administration
+    (`mrd.deathCertificateConfirmation`), the second blood bank officer (`bloodbank.separateVerifier`), the second
+    sample of a patient's first blood group (`bloodbank.twoSampleRule`), administration
     only on enrolled desktops (`security.administrationRequiresDesktop`), payment before a lab sample
     (`lab.requirePaymentBeforeCollection`) or the cash counter shift (`billing.shift.required`); switching on Windows
     Hello unlock (`ui.biometricUnlock`) or AI (`ai.enabled`); raising an own-authority discount limit
@@ -670,7 +671,14 @@ and grants nothing.
     bank types (`bloodbank.doctor_required`, 403). The request keeps the doctor's account, practitioner record and the
     time; the authorisation and each unit issued on it are audited at Warning, naming the doctor and the issuing
     officer. The doctor's authorisation is the second person: no approval inbox stands in the way of blood in an
-    emergency.
+    emergency. A patient with no blood group on record has it confirmed on a second, separately drawn sample, grouped by
+    another officer, before group-specific red cells or plasma go (the two-sample rule, `bloodbank.twoSampleRule`);
+    group-specific blood on the one sample is the same doctor's emergency authorisation from their own sign-in, on an
+    emergency request only (`bloodbank.not_emergency`), with a clinical reason
+    (`POST …/requests/{id}/single-sample-override`), audited at Critical with each unit issued on it. Any other sample of
+    the patient that disagrees, on that request or another, ends it and holds every request of the patient resting on one
+    sample (`bloodbank.grouping_discrepancy`), and a unit already issued on it is not started at the bedside unless it
+    suits every group found.
   - the prescribing-safety tables loosened (MAKER-CHECKER.md, slice 5; `clinical.drug_interaction`,
     `clinical.dose_limit`): a drug interaction switched off, made less severe or moved to another pair of drugs, and a
     maximum daily dose switched off, raised, or moved to another drug or a narrower route, are asked for, with the

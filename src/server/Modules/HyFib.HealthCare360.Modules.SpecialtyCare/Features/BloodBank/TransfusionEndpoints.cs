@@ -30,6 +30,11 @@ internal static class TransfusionEndpoints
         group.MapPost("/requests/{id:guid}/emergency-release", async (Guid id, EmergencyReleaseRequest r, TransfusionService s, CancellationToken ct) =>
                 (await s.AuthoriseEmergencyReleaseAsync(id, r, ct)).ToNoContent())
             .RequirePermission(SpecialtyCarePermissions.BloodBankRequests).WithValidation<EmergencyReleaseRequest>();
+        // Group-specific blood on one sample, before a second sample confirms the group: the treating doctor again, from
+        // their own sign-in, with the clinical reason (the emergency override of the two-sample rule).
+        group.MapPost("/requests/{id:guid}/single-sample-override", async (Guid id, SingleSampleOverrideRequest r, TransfusionService s, CancellationToken ct) =>
+                (await s.AuthoriseSingleSampleOverrideAsync(id, r, ct)).ToNoContent())
+            .RequirePermission(SpecialtyCarePermissions.BloodBankRequests).WithValidation<SingleSampleOverrideRequest>();
         group.MapGet("/requests/{id:guid}/compatible-units", CompatibleUnits).RequirePermission(SpecialtyCarePermissions.BloodBankCrossmatch);
         group.MapPost("/requests/{id:guid}/crossmatches", async (Guid id, RecordCrossMatchRequest r, TransfusionService s, TimeProvider t, CancellationToken ct) =>
                 (await s.CrossMatchAsync(id, r, ct)).ToHttpResult(c => TypedResults.Ok(ToDto(c, t.GetUtcNow()))))
@@ -102,7 +107,10 @@ internal static class TransfusionEndpoints
                 orderby r.Urgency == BloodRequestUrgency.Emergency ? 0 : r.Urgency == BloodRequestUrgency.Urgent ? 1 : 2, r.CreatedAt
                 select new BloodRequestListItem(
                     r.Id, r.RequestNumber, r.PatientId, p.Uhid, p.FullName, r.ComponentType, r.UnitsRequested, r.UnitsReserved, r.UnitsIssued, r.Urgency,
-                    r.Status, r.PatientBloodGroup, r.CreatedAt, r.RequiredBy))
+                    r.Status, r.PatientBloodGroup, r.CreatedAt, r.RequiredBy)
+                {
+                    AwaitingSecondSample = r.SecondSampleRequired && r.RegroupedAt == null,
+                })
             .ToPagedResultAsync(page, ct);
         return TypedResults.Ok(result);
     }
@@ -132,13 +140,36 @@ internal static class TransfusionEndpoints
         var crossMatches = await db.Set<CrossMatch>().AsNoTracking().Where(c => c.RequestId == id).OrderByDescending(c => c.PerformedAt).ToListAsync(ct);
         var issues = await db.Set<BloodIssue>().AsNoTracking().Where(i => i.RequestId == id).OrderBy(i => i.IssuedAt).ToListAsync(ct);
         var r = row.r;
+
+        // A grouping resting on one sample is held while a sample grouped on another request of the patient disagrees with it,
+        // recorded or not: the screen shows that sample as the disagreeing one, as the server refuses on it.
+        var contrary = await PatientGroupings.ContraryAsync(db, r, ct);
+        var disagreeing = r.DisagreeingSampleGroup is null ? contrary : null;
         return TypedResults.Ok(new BloodRequestDetail(
             r.Id, r.RequestNumber, r.PatientId, row.Uhid, row.FullName, r.AdmissionId, r.VisitId, r.OrderItemId, r.ComponentType, r.UnitsRequested,
             r.UnitsReserved, r.UnitsIssued, r.Urgency, r.Indication, r.RequiredBy, r.RequestedByName, r.HaemoglobinGdl, r.PlateletCount,
-            r.PatientBloodGroup, r.GroupedAt, r.GroupedByUserId, r.GroupedByName, r.EarlierGroup, r.FirstSampleGroup, r.RegroupedAt, r.GroupingHeld,
+            r.PatientBloodGroup, r.GroupedAt, r.GroupedByUserId, r.GroupedByName, r.EarlierGroup, r.FirstSampleGroup, r.RegroupedAt, r.HeldGiven(contrary),
             r.EmergencyReleaseAuthorisedBy, r.EmergencyReleaseByUserId, r.EmergencyReleaseAt, r.EmergencyReleaseReason,
             await settings.SeparateVerifierAsync(r.FacilityId, ct), r.Status, r.CancelReason, crossMatches.Select(c => ToDto(c, now)).ToList(),
-            issues.Select(ToDto).ToList(), r.Version));
+            issues.Select(ToDto).ToList(), r.Version)
+        {
+            SampleDrawnAt = r.SampleDrawnAt,
+            SampleDrawnBy = r.SampleDrawnBy,
+            SampleReceivedAt = r.SampleReceivedAt,
+            FirstSampleDrawnAt = r.FirstSampleDrawnAt,
+            FirstSampleDrawnBy = r.FirstSampleDrawnBy,
+            SecondSampleRequired = r.SecondSampleRequired,
+            AwaitingSecondSample = r.AwaitingSecondSample,
+            DisagreeingSampleGroup = disagreeing?.Group ?? r.DisagreeingSampleGroup,
+            DisagreeingSampleAt = disagreeing is null ? r.DisagreeingSampleAt : null,
+            DisagreeingSampleDrawnAt = disagreeing is null ? r.DisagreeingSampleDrawnAt : disagreeing.DrawnAt,
+            DisagreeingSampleDrawnBy = disagreeing is null ? r.DisagreeingSampleDrawnBy : disagreeing.DrawnBy,
+            DisagreeingSampleRequestNumber = disagreeing is null ? r.DisagreeingSampleRequestNumber : disagreeing.RequestNumber,
+            SingleSampleOverrideBy = r.SingleSampleOverrideBy,
+            SingleSampleOverrideByUserId = r.SingleSampleOverrideByUserId,
+            SingleSampleOverrideAt = r.SingleSampleOverrideAt,
+            SingleSampleOverrideReason = r.SingleSampleOverrideReason,
+        });
     }
 
     /// <summary>Units the blood bank can offer: ABO/Rh compatible with the grouped patient, in date, first-expiry-first-out.</summary>
@@ -155,9 +186,10 @@ internal static class TransfusionEndpoints
             return Error.Rule("bloodbank.patient_not_grouped", "Group the patient's sample first.").ToProblem();
         }
 
-        if (request.GroupingHeld)
+        var contrary = await PatientGroupings.ContraryAsync(db, request, ct);
+        if (request.HeldGiven(contrary))
         {
-            return TransfusionService.GroupingHeldError(request).ToProblem();
+            return TransfusionService.GroupingHeldError(request, contrary).ToProblem();
         }
 
         var now = time.GetUtcNow();

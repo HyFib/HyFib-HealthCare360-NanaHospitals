@@ -28,7 +28,11 @@ public sealed record CreateBloodRequestRequest(
 public sealed record BloodRequestListItem(
     Guid Id, string RequestNumber, Guid PatientId, string Uhid, string PatientName, BloodComponentType ComponentType, int UnitsRequested,
     int UnitsReserved, int UnitsIssued, BloodRequestUrgency Urgency, BloodRequestStatus Status, BloodGroup PatientBloodGroup, DateTimeOffset CreatedAt,
-    DateTimeOffset? RequiredBy);
+    DateTimeOffset? RequiredBy)
+{
+    /// <summary>The patient's first grouping waits for a second, separately drawn sample to confirm it (the two-sample rule).</summary>
+    public bool AwaitingSecondSample { get; init; }
+}
 
 public sealed record CrossMatchDto(
     Guid Id, Guid ComponentId, string UnitNumber, CrossmatchMethod Method, CrossmatchResult Result, DateTimeOffset PerformedAt,
@@ -41,7 +45,12 @@ public sealed record BloodIssueDto(
     ChargeStatus ChargeStatus, string? ChargeError, bool IssuedOnOwnChecks);
 
 /// <param name="EarlierGroup">The group of the patient's earlier requests, when this request's sample grouped otherwise.</param>
-/// <param name="GroupingHeld">Nothing is cross-matched or issued on the grouping until another officer groups a new sample.</param>
+/// <param name="GroupingHeld">
+/// Nothing group-specific is cross-matched or issued on the grouping until another officer groups a new sample: it disagreed
+/// with the patient's earlier requests, it waits for a second sample (<see cref="AwaitingSecondSample"/>) and no doctor has
+/// authorised going ahead on the one, or a sample disagreed with the one it rests on, a later sample of its own or one
+/// grouped on another request of the patient (<see cref="DisagreeingSampleGroup"/>).
+/// </param>
 /// <param name="SeparateVerifier">The facility asks for a second officer (<c>bloodbank.separateVerifier</c>).</param>
 public sealed record BloodRequestDetail(
     Guid Id, string RequestNumber, Guid PatientId, string Uhid, string PatientName, Guid? AdmissionId, Guid? VisitId, Guid? OrderItemId,
@@ -50,16 +59,71 @@ public sealed record BloodRequestDetail(
     DateTimeOffset? GroupedAt, Guid? GroupedByUserId, string? GroupedByName, BloodGroup? EarlierGroup, BloodGroup? FirstSampleGroup,
     DateTimeOffset? RegroupedAt, bool GroupingHeld, string? EmergencyReleaseAuthorisedBy, Guid? EmergencyReleaseByUserId,
     DateTimeOffset? EmergencyReleaseAt, string? EmergencyReleaseReason, bool SeparateVerifier, BloodRequestStatus Status, string? CancelReason,
-    IReadOnlyList<CrossMatchDto> CrossMatches, IReadOnlyList<BloodIssueDto> Issues, uint Version);
+    IReadOnlyList<CrossMatchDto> CrossMatches, IReadOnlyList<BloodIssueDto> Issues, uint Version)
+{
+    /// <summary>When the sample the grouping uses was drawn and who drew it, and when the blood bank received it.</summary>
+    public DateTimeOffset? SampleDrawnAt { get; init; }
+
+    public string? SampleDrawnBy { get; init; }
+    public DateTimeOffset? SampleReceivedAt { get; init; }
+
+    /// <summary>When the first sample was drawn and who drew it, once a new sample's grouping replaced or confirmed it.</summary>
+    public DateTimeOffset? FirstSampleDrawnAt { get; init; }
+
+    public string? FirstSampleDrawnBy { get; init; }
+
+    /// <summary>
+    /// The patient had no group on record when the first sample was grouped (the two-sample rule): a second, separately drawn
+    /// sample confirms it, grouped by another officer as a new sample.
+    /// </summary>
+    public bool SecondSampleRequired { get; init; }
+
+    /// <summary>The second sample is not grouped yet.</summary>
+    public bool AwaitingSecondSample { get; init; }
+
+    /// <summary>
+    /// The group of a sample that disagreed with the one the request rests on while it waited for its second sample (possible
+    /// wrong blood in tube): a later sample of its own, or one grouped on another request of the patient
+    /// (<see cref="DisagreeingSampleRequestNumber"/>), recorded or found there now. With when it was grouped (when recorded),
+    /// when it was drawn and who drew it. The request is held, whatever a doctor authorised on one sample, until a sample
+    /// drawn separately agrees with the first.
+    /// </summary>
+    public BloodGroup? DisagreeingSampleGroup { get; init; }
+
+    public DateTimeOffset? DisagreeingSampleAt { get; init; }
+    public DateTimeOffset? DisagreeingSampleDrawnAt { get; init; }
+    public string? DisagreeingSampleDrawnBy { get; init; }
+
+    /// <summary>The patient's other request the disagreeing sample was grouped on; none for a sample of this request's own.</summary>
+    public string? DisagreeingSampleRequestNumber { get; init; }
+
+    /// <summary>The doctor who authorised group-specific blood on one sample's grouping from their own sign-in, when, and why.</summary>
+    public string? SingleSampleOverrideBy { get; init; }
+
+    public Guid? SingleSampleOverrideByUserId { get; init; }
+    public DateTimeOffset? SingleSampleOverrideAt { get; init; }
+    public string? SingleSampleOverrideReason { get; init; }
+}
 
 /// <summary>A unit the blood bank can offer for a request (ABO/Rh compatible, in date, first-expiry-first-out order).</summary>
 public sealed record CompatibleUnitDto(Guid Id, string UnitNumber, BloodGroup BloodGroup, int VolumeMl, DateTimeOffset ExpiresAt, bool ReservedForThisRequest);
 
-/// <param name="NewSample">A new sample, grouped by another officer, for a request held because its grouping disagreed with the patient's earlier ones.</param>
-public sealed record GroupPatientRequest(BloodGroup BloodGroup, bool NewSample = false);
+/// <param name="SampleDrawnAt">When the sample was drawn from the patient, as the tube and the form say: not when it reached the blood bank.</param>
+/// <param name="SampleDrawnBy">Who drew it: the collector named on the tube and the form.</param>
+/// <param name="NewSample">
+/// A new sample, drawn separately from the first and grouped by another officer, for a request held because its grouping
+/// disagreed with the patient's earlier ones, or the second sample that confirms the group of a patient with none on record.
+/// </param>
+public sealed record GroupPatientRequest(BloodGroup BloodGroup, DateTimeOffset? SampleDrawnAt, string? SampleDrawnBy, bool NewSample = false);
 
 /// <summary>The treating doctor authorises uncross-matched release from their own sign-in, with the clinical reason.</summary>
 public sealed record EmergencyReleaseRequest(string Reason);
+
+/// <summary>
+/// The treating doctor authorises group-specific blood on one sample's grouping, before a second sample confirms it, from
+/// their own sign-in, with the clinical reason (at least 10 characters): the emergency override, for emergency requests only.
+/// </summary>
+public sealed record SingleSampleOverrideRequest(string Reason);
 
 public sealed record BloodReasonRequest(string Reason);
 
@@ -118,13 +182,30 @@ public sealed class CreateBloodRequestRequestValidator : AbstractValidator<Creat
 
 public sealed class GroupPatientRequestValidator : AbstractValidator<GroupPatientRequest>
 {
-    public GroupPatientRequestValidator() =>
+    /// <summary>How long ago a sample grouped for transfusion may have been drawn: older ones are too old to cross-match on.</summary>
+    public static readonly TimeSpan OldestSample = TimeSpan.FromDays(7);
+
+    public GroupPatientRequestValidator(TimeProvider time)
+    {
         RuleFor(x => x.BloodGroup).NotEqual(BloodGroup.Unknown).WithMessage("Enter the patient's ABO and Rh(D) group.");
+        RuleFor(x => x.SampleDrawnAt).NotNull().WithMessage("Enter when the sample was drawn, as the tube or the form says.")
+            .Must(at => at is null || at <= time.GetUtcNow().AddMinutes(5)).WithMessage("The time cannot be in the future.")
+            .Must(at => at is null || at >= time.GetUtcNow() - OldestSample)
+            .WithMessage("A sample drawn more than 7 days ago is too old to group for transfusion: ask for a fresh one.");
+        RuleFor(x => x.SampleDrawnBy).NotEmpty().WithMessage("Enter who drew the sample, as the tube or the form names them.").SafeText(200);
+    }
 }
 
 public sealed class EmergencyReleaseRequestValidator : AbstractValidator<EmergencyReleaseRequest>
 {
     public EmergencyReleaseRequestValidator() => RuleFor(x => x.Reason).NotEmpty().MinimumLength(10).SafeText(500);
+}
+
+public sealed class SingleSampleOverrideRequestValidator : AbstractValidator<SingleSampleOverrideRequest>
+{
+    public SingleSampleOverrideRequestValidator() =>
+        RuleFor(x => x.Reason).Must(r => r is not null && r.Trim().Length >= BloodRequest.MinimumOverrideReason)
+            .WithMessage("Give the clinical reason for issuing blood on one sample (at least 10 characters).").SafeText(500);
 }
 
 public sealed class BloodReasonRequestValidator : AbstractValidator<BloodReasonRequest>

@@ -36839,6 +36839,29 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<DateTimeOffset?>("DisagreeingSampleAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disagreeing_sample_at");
+
+                    b.Property<DateTimeOffset?>("DisagreeingSampleDrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disagreeing_sample_drawn_at");
+
+                    b.Property<string>("DisagreeingSampleDrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("disagreeing_sample_drawn_by");
+
+                    b.Property<string>("DisagreeingSampleGroup")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("disagreeing_sample_group");
+
+                    b.Property<string>("DisagreeingSampleRequestNumber")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("disagreeing_sample_request_number");
+
                     b.Property<string>("EarlierGroup")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -36869,6 +36892,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
+
+                    b.Property<DateTimeOffset?>("FirstSampleDrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_sample_drawn_at");
+
+                    b.Property<string>("FirstSampleDrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("first_sample_drawn_by");
 
                     b.Property<string>("FirstSampleGroup")
                         .HasMaxLength(64)
@@ -36944,9 +36976,44 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("required_by");
 
+                    b.Property<DateTimeOffset?>("SampleDrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sample_drawn_at");
+
+                    b.Property<string>("SampleDrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("sample_drawn_by");
+
                     b.Property<DateTimeOffset?>("SampleReceivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("sample_received_at");
+
+                    b.Property<bool>("SecondSampleRequired")
+                        .HasColumnType("boolean")
+                        .HasColumnName("second_sample_required");
+
+                    b.Property<DateTimeOffset?>("SingleSampleOverrideAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("single_sample_override_at");
+
+                    b.Property<string>("SingleSampleOverrideBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("single_sample_override_by");
+
+                    b.Property<Guid?>("SingleSampleOverrideByPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("single_sample_override_by_practitioner_id");
+
+                    b.Property<Guid?>("SingleSampleOverrideByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("single_sample_override_by_user_id");
+
+                    b.Property<string>("SingleSampleOverrideReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("single_sample_override_reason");
 
                     b.Property<string>("Status")
                         .IsRequired()

@@ -39,6 +39,24 @@ public static class BedsideCheck
                 "This bag is not the unit issued for this patient. Stop, and check the unit with the blood bank.");
     }
 
+    /// <summary>
+    /// A unit issued on a grouping that samples of the patient now disagree on (<paramref name="disputedGroups"/>: every
+    /// group found, <see cref="BloodRequest.DisputedGroups"/>; possible wrong blood in a tube) is not started, unless it was
+    /// released in an emergency or it suits every one of those groups (O Rh(D)-negative red cells, AB plasma): it may have
+    /// been cross-matched on another patient's blood.
+    /// </summary>
+    public static Result Grouping(BloodComponentType component, BloodGroup unitGroup, bool emergencyRelease, IReadOnlyCollection<BloodGroup> disputedGroups)
+    {
+        ArgumentNullException.ThrowIfNull(disputedGroups);
+        if (emergencyRelease || disputedGroups.Count == 0 || disputedGroups.All(group => BloodCompatibility.IsCompatible(component, unitGroup, group)))
+        {
+            return Result.Success();
+        }
+
+        return Error.Rule("bloodbank.grouping_discrepancy",
+            $"Samples of this patient grouped {string.Join(" and ", disputedGroups)}: possible wrong blood in tube, and this {unitGroup} unit may be incompatible. Do not start it: return it to the blood bank and tell the doctor.");
+    }
+
     /// <summary>The unit is in date, its cross-match still stands (unless released in an emergency), and it has not been out too long.</summary>
     public static Result Usable(DateTimeOffset now, DateTimeOffset issuedAt, DateTimeOffset expiresAt, bool emergencyRelease, CrossMatch? crossMatch)
     {

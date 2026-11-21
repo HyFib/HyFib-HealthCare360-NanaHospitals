@@ -201,6 +201,7 @@ public sealed class SettingApprovalTests(HospitalServer server)
         Switch(LabResultService.SeparateVerifierSetting).DefaultOn.ShouldBeFalse();
         Switch(VitalRegistrationService.ConfirmationSetting).DefaultOn.ShouldBeTrue();
         Switch(BloodBankSettings.SeparateVerifier).DefaultOn.ShouldBeTrue();
+        Switch(BloodBankSettings.TwoSampleRule).DefaultOn.ShouldBeTrue();
         Switch(AdministrationOnDesktop.SettingKey).DefaultOn.ShouldBeTrue();
         Switch(SampleService.RequirePaymentSetting).DefaultOn.ShouldBeTrue();
         Switch(ShiftService.RequiredSetting).DefaultOn.ShouldBeTrue();

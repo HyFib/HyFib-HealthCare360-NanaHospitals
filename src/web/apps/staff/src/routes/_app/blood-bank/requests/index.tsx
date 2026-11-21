@@ -1,4 +1,5 @@
 import {
+  Badge,
   Button,
   Caption1,
   Field,
@@ -192,7 +193,20 @@ function BloodRequestsPage() {
                 ),
             },
             { key: 'created', header: 'Requested', priority: 'low', render: (r) => formatRelative(r.createdAt) },
-            { key: 'status', header: 'Status', render: (r) => <RequestStatusBadge status={r.status} /> },
+            {
+              key: 'status',
+              header: 'Status',
+              render: (r) => (
+                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <RequestStatusBadge status={r.status} />
+                  {r.awaitingSecondSample && (
+                    <Badge appearance="tint" color="warning">
+                      Second sample needed
+                    </Badge>
+                  )}
+                </span>
+              ),
+            },
           ]}
           emptyTitle={filters.search ? 'No request matches' : 'No open blood requests'}
           emptyDescription="Requests from doctors’ orders and the wards appear here."

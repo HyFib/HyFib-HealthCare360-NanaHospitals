@@ -98,6 +98,33 @@ public sealed class ValidatorTests
     }
 
     [Fact]
+    public void A_grouping_says_when_the_sample_was_drawn_and_who_drew_it()
+    {
+        var validator = new GroupPatientRequestValidator(Time);
+        var grouping = new GroupPatientRequest(BloodGroup.APositive, TestData.Now.AddMinutes(-40), "Sr. Kavya Menon");
+
+        validator.Validate(grouping).IsValid.ShouldBeTrue();
+        validator.Validate(grouping with { NewSample = true }).IsValid.ShouldBeTrue();
+        validator.Validate(grouping with { SampleDrawnAt = null }).IsValid.ShouldBeFalse();
+        validator.Validate(grouping with { SampleDrawnBy = " " }).IsValid.ShouldBeFalse();
+        validator.Validate(grouping with { SampleDrawnBy = new string('x', 201) }).IsValid.ShouldBeFalse();
+        validator.Validate(grouping with { SampleDrawnAt = TestData.Now.AddMinutes(30) }).IsValid.ShouldBeFalse("not drawn in the future");
+        validator.Validate(grouping with { SampleDrawnAt = TestData.Now.AddDays(-8) }).IsValid.ShouldBeFalse("too old to group for transfusion");
+        validator.Validate(grouping with { BloodGroup = BloodGroup.Unknown }).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Blood_on_one_sample_needs_the_doctors_clinical_reason()
+    {
+        var validator = new SingleSampleOverrideRequestValidator();
+
+        validator.Validate(new SingleSampleOverrideRequest("Ongoing PPH, no O-negative in stock")).IsValid.ShouldBeTrue();
+        validator.Validate(new SingleSampleOverrideRequest("Bleeding")).IsValid.ShouldBeFalse();
+        validator.Validate(new SingleSampleOverrideRequest("   Bleeding   ")).IsValid.ShouldBeFalse("spaces are not a reason");
+        validator.Validate(new SingleSampleOverrideRequest(new string('x', 501))).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
     public void Replacement_donation_names_the_patient()
     {
         var validator = new CollectDonationRequestValidator(Time);

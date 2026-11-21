@@ -78,11 +78,12 @@ public sealed class IssueCompatibilityTests
     {
         var request = new BloodRequest { UnitsRequested = 2, Status = BloodRequestStatus.Pending };
 
-        request.RecordGrouping(BloodGroup.BPositive, TestData.Staff(name: "Tech 1"), earlierGroup: null).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.BPositive, TestData.Staff(name: "Tech 1"), earlierGroup: null, TestData.Drawn(), needsSecondSample: false).IsSuccess.ShouldBeTrue();
         request.Status.ShouldBe(BloodRequestStatus.InProcess);
 
-        request.RecordGrouping(BloodGroup.BPositive, TestData.Staff(name: "Tech 2"), earlierGroup: null).IsSuccess.ShouldBeTrue();
-        request.RecordGrouping(BloodGroup.OPositive, TestData.Staff(name: "Tech 2"), earlierGroup: null).Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
+        request.RecordGrouping(BloodGroup.BPositive, TestData.Staff(name: "Tech 2"), earlierGroup: null, TestData.Drawn(), needsSecondSample: false).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.OPositive, TestData.Staff(name: "Tech 2"), earlierGroup: null, TestData.Drawn(), needsSecondSample: false)
+            .Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
         request.GroupedByName.ShouldBe("Tech 1", "the request goes on the first sample's grouping");
     }
 
@@ -90,7 +91,7 @@ public sealed class IssueCompatibilityTests
     public void Request_status_follows_reservations_and_issues()
     {
         var request = new BloodRequest { UnitsRequested = 2, Status = BloodRequestStatus.Pending };
-        request.RecordGrouping(BloodGroup.APositive, TestData.Staff(name: "Tech"), earlierGroup: null).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.APositive, TestData.Staff(name: "Tech"), earlierGroup: null, TestData.Drawn(), needsSecondSample: false).IsSuccess.ShouldBeTrue();
 
         request.OnUnitReserved();
         request.OnUnitReserved();

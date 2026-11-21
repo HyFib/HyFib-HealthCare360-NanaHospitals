@@ -75,6 +75,22 @@ public enum BloodRequestUrgency
     Emergency,
 }
 
+/// <summary>How far the bedside may rely on the patient's group a unit's request goes on (<see cref="BloodRequest.StandingGiven"/>).</summary>
+public enum PatientGroupStanding
+{
+    /// <summary>The blood bank has not grouped the request's sample (blood released in an emergency only).</summary>
+    NotGrouped = 0,
+
+    /// <summary>Confirmed on two samples, agreeing with the patient's group on record, or where the facility does not apply the two-sample rule.</summary>
+    Grouped,
+
+    /// <summary>No group on record and the second sample not grouped yet: the group rests on one sample (the doctor's override).</summary>
+    OneSample,
+
+    /// <summary>Samples of the patient disagree on it: possible wrong blood in a tube.</summary>
+    SamplesDisagree,
+}
+
 public enum BloodRequestStatus
 {
     /// <summary>Awaiting the patient's sample and blood-bank grouping.</summary>

@@ -178,8 +178,15 @@ export interface IssueCheckInput {
   unitExpired: boolean;
   ttiCleared: boolean;
   reservedForOtherRequest: boolean;
-  /** The request's grouping disagrees with the patient's earlier requests and no new sample is grouped yet. */
+  /**
+   * Nothing group-specific goes on the request's grouping: it disagrees with the patient's earlier requests, or it waits for
+   * a second sample (see `awaitingSecondSample`) and no doctor has overridden that.
+   */
   groupingHeld?: boolean;
+  /** The patient had no group on record, and the second, separately drawn sample is not grouped yet (the two-sample rule). */
+  awaitingSecondSample?: boolean;
+  /** While it waited for the second sample, a later sample grouped otherwise than the first (possible wrong blood in tube). */
+  samplesDisagree?: boolean;
 }
 
 export interface IssueCheck {
@@ -209,7 +216,11 @@ export function issueCheck(input: IssueCheckInput): IssueCheck {
   }
   if (input.groupingHeld && !input.emergencyReleaseAuthorised) {
     reasons.push(
-      'The patient’s group on this request differs from earlier requests: another officer groups a new sample before anything is issued.',
+      input.samplesDisagree
+        ? 'Two samples of this patient grouped differently (possible wrong blood in tube): nothing group-specific is issued until a fresh sample groups the same as the first.'
+        : input.awaitingSecondSample
+          ? 'The patient has no blood group on record: a second, separately drawn sample confirms the group before group-specific blood is issued.'
+          : 'The patient’s group on this request differs from earlier requests: another officer groups a new sample before anything is issued.',
     );
   }
   if (input.reservedForOtherRequest) {
@@ -246,6 +257,46 @@ export function issueCheck(input: IssueCheckInput): IssueCheck {
   }
 
   return { allowed: reasons.length === 0, emergency: reasons.length === 0 && emergency, reasons };
+}
+
+// ---------------------------------------------------------------- the sample's draw (the two-sample rule)
+
+/** How many days ago a sample grouped for transfusion may have been drawn (`GroupPatientRequestValidator.OldestSample`). */
+export const OLDEST_SAMPLE_DAYS = 7;
+
+const MINUTE = 60_000;
+
+/**
+ * Why a sample's draw time cannot be recorded, as the server checks it (`GroupPatientRequestValidator`,
+ * `BloodRequest.Regroup`), or null. It is required, not in the future (5 minutes of clock drift allowed), not more than 7
+ * days ago, and a new sample is not drawn in the same minute as the first (`firstDrawnAt`): the same draw confirms nothing;
+ * nor, after two samples disagreed, in the same minute as the one that disagreed (`disagreeingDrawnAt`): that tube decides
+ * nothing.
+ */
+export function sampleDrawProblem(
+  drawnAt: string | null,
+  now: number,
+  firstDrawnAt?: string | null,
+  disagreeingDrawnAt?: string | null,
+): string | null {
+  const at = drawnAt ? Date.parse(drawnAt) : Number.NaN;
+  if (Number.isNaN(at)) {
+    return 'Enter when the sample was drawn, as the tube or the form says.';
+  }
+  if (at > now + 5 * MINUTE) {
+    return 'The time cannot be in the future.';
+  }
+  if (at < now - OLDEST_SAMPLE_DAYS * 24 * 60 * MINUTE) {
+    return 'A sample drawn more than 7 days ago is too old to group for transfusion: ask for a fresh one.';
+  }
+  const sameMinute = (other: string) => Math.floor(at / MINUTE) === Math.floor(Date.parse(other) / MINUTE);
+  if (firstDrawnAt && sameMinute(firstDrawnAt)) {
+    return 'This is the first sample’s draw time: group a sample drawn separately, at another time.';
+  }
+  if (disagreeingDrawnAt && sameMinute(disagreeingDrawnAt)) {
+    return 'This is the draw time of the sample that disagreed: group a fresh sample, drawn separately, at another time.';
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------- the second officer

@@ -2005,6 +2005,7 @@
     "POST /api/v1/blood-bank/requests/{id:guid}/emergency-release bloodbank.requests.create",
     "POST /api/v1/blood-bank/requests/{id:guid}/grouping bloodbank.crossmatch.perform",
     "POST /api/v1/blood-bank/requests/{id:guid}/issues bloodbank.units.issue",
+    "POST /api/v1/blood-bank/requests/{id:guid}/single-sample-override bloodbank.requests.create",
     "POST /api/v1/blood-bank/transfusions/{id:guid}/end bloodbank.transfuse",
     "POST /api/v1/blood-bank/transfusions/{id:guid}/observations bloodbank.transfuse",
     "POST /api/v1/blood-bank/units/{id:guid}/discard bloodbank.inventory.manage",

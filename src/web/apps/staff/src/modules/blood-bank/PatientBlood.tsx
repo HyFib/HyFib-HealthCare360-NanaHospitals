@@ -35,6 +35,7 @@ import {
   type WardBloodUnit,
 } from './bedsideApi';
 import { componentLabel, groupLabel } from './labels';
+import { isCompatible } from './rules';
 
 const useStyles = makeStyles({
   stack: { display: 'flex', flexDirection: 'column', gap: '12px' },
@@ -177,6 +178,31 @@ function statusOf(unit: WardBloodUnit) {
 }
 
 /**
+ * The patient's group as the bedside may rely on it for this unit: the blood bank's grouping, one resting on one sample, or
+ * the groups samples of the patient disagree on (possible wrong blood in tube), never the first sample's group alone.
+ */
+function bedsideGroupText(unit: WardBloodUnit): string {
+  switch (unit.groupStanding) {
+    case 'SamplesDisagree':
+      return `Samples disagree: ${unit.disputedGroups.map((g) => groupLabel(g)).join(' and ')}`;
+    case 'OneSample':
+      return `${groupLabel(unit.patientBloodGroup)}, on one sample only: not confirmed`;
+    case 'NotGrouped':
+      return 'Not grouped yet';
+    default:
+      return groupLabel(unit.patientBloodGroup);
+  }
+}
+
+/** A unit suits every group samples of the patient were found to be (or went in an emergency): it may be started. */
+function suitsEveryGroup(unit: WardBloodUnit): boolean {
+  return (
+    unit.isEmergencyRelease ||
+    unit.disputedGroups.every((group) => isCompatible(unit.componentType, unit.unitBloodGroup, group))
+  );
+}
+
+/**
  * A patient's units of blood on the ward: each unit issued, the bedside check by two staff that starts it, the
  * observations while it runs, and its end.
  */
@@ -212,6 +238,10 @@ export function PatientBlood({ patientId, canTransfuse }: { patientId: string; c
               </Text>
               <StatusBadge status={status.label} tone={status.tone} />
               {unit.isEmergencyRelease && <StatusBadge status="Emergency release" tone="danger" />}
+              {unit.groupStanding === 'SamplesDisagree' && <StatusBadge status="Samples disagree" tone="danger" />}
+              {unit.groupStanding === 'OneSample' && !unit.isEmergencyRelease && (
+                <StatusBadge status="Group on one sample" tone="warning" />
+              )}
             </div>
             <Caption1 className={styles.muted}>
               Issued {formatDateTime(unit.issuedAt)} to {unit.issuedToName} · request {unit.requestNumber}
@@ -245,14 +275,7 @@ export function PatientBlood({ patientId, canTransfuse }: { patientId: string; c
           </div>
         );
       })}
-      {checking && (
-        <BedsideCheckDialog
-          unit={checking}
-          patientId={patientId}
-          patientBloodGroup={units.data.patientBloodGroup}
-          onClose={() => setChecking(null)}
-        />
-      )}
+      {checking && <BedsideCheckDialog unit={checking} patientId={patientId} onClose={() => setChecking(null)} />}
       {observing && (
         <ObservationsDialog
           patientId={patientId}
@@ -278,17 +301,17 @@ export function PatientBlood({ patientId, canTransfuse }: { patientId: string; c
 /**
  * The check at the bedside before a unit is started: the patient's wristband and the bag are read (scanned, or typed
  * from them), the unit's facts are compared with the slip, observations are taken, and the second member of staff
- * confirms at this screen with their own user name and password.
+ * confirms at this screen with their own user name and password. The patient's group is shown as far as it may be relied
+ * on: resting on one sample, or disputed by samples that disagree (possible wrong blood in tube), when a unit that does
+ * not suit every group found is not started.
  */
 export function BedsideCheckDialog({
   unit,
   patientId,
-  patientBloodGroup,
   onClose,
 }: {
   unit: WardBloodUnit;
   patientId: string;
-  patientBloodGroup: WardBloodUnit['unitBloodGroup'];
   onClose: () => void;
 }) {
   const styles = useStyles();
@@ -324,9 +347,12 @@ export function BedsideCheckDialog({
   });
 
   const tooLate = now > new Date(unit.startBy).getTime();
+  const disputed = unit.groupStanding === 'SamplesDisagree';
+  const groupBlocked = disputed && !suitsEveryGroup(unit);
   const consented = unit.consentCapturedAt !== null || (unit.isEmergencyRelease && deferredReason.trim().length > 0);
   const valid =
     !tooLate &&
+    !groupBlocked &&
     wristband.trim().length > 0 &&
     bag.trim().length > 0 &&
     complete(baseline) &&
@@ -364,7 +390,7 @@ export function BedsideCheckDialog({
                   {componentLabel[unit.componentType]}, {groupLabel(unit.unitBloodGroup)}, {unit.volumeMl} ml
                 </Text>
                 <Text className={styles.muted}>Patient&apos;s group</Text>
-                <Text>{groupLabel(patientBloodGroup)}</Text>
+                <Text weight={disputed ? 'semibold' : 'regular'}>{bedsideGroupText(unit)}</Text>
                 <Text className={styles.muted}>Expires</Text>
                 <Text>{formatDateTime(unit.expiresAt)}</Text>
                 <Text className={styles.muted}>Cross-match</Text>
@@ -380,6 +406,28 @@ export function BedsideCheckDialog({
                   {formatDateTime(unit.issuedAt)}; start by {formatTime(unit.startBy)}
                 </Text>
               </div>
+
+              {disputed && (
+                <MessageBar intent="error" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>Samples of this patient disagree: possible wrong blood in tube</MessageBarTitle>
+                    {groupBlocked
+                      ? `They grouped ${unit.disputedGroups.map((g) => groupLabel(g)).join(' and ')}, so this ${groupLabel(unit.unitBloodGroup)} unit may be incompatible. Do not start it: return it to the blood bank and tell the doctor.`
+                      : `They grouped ${unit.disputedGroups.map((g) => groupLabel(g)).join(' and ')}. This unit suits every one of them, and may be started.`}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+
+              {unit.groupStanding === 'OneSample' && !unit.isEmergencyRelease && (
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>The patient’s group rests on one sample</MessageBarTitle>
+                    The patient has no blood group on record, and the unit was issued on the doctor’s authorisation
+                    before a second sample confirmed the group. Watch the patient closely, above all in the first 15
+                    minutes.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
 
               {tooLate && (
                 <MessageBar intent="error" layout="multiline">

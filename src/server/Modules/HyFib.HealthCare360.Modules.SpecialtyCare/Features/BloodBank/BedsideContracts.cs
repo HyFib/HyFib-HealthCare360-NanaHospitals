@@ -38,9 +38,26 @@ public sealed record TransfusionDto(
 public sealed record WardBloodUnit(
     Guid IssueId, string RequestNumber, string UnitNumber, BloodComponentType ComponentType, BloodGroup UnitBloodGroup, int VolumeMl,
     DateTimeOffset ExpiresAt, bool IsEmergencyRelease, DateTimeOffset? CrossMatchValidUntil, DateTimeOffset IssuedAt, string IssuedToName,
-    DateTimeOffset StartBy, DateTimeOffset? ReturnedAt, DateTimeOffset? ConsentCapturedAt, TransfusionDto? Transfusion);
+    DateTimeOffset StartBy, DateTimeOffset? ReturnedAt, DateTimeOffset? ConsentCapturedAt, TransfusionDto? Transfusion)
+{
+    /// <summary>The patient's group as the blood bank found it on the unit's request (Unknown when it was not grouped).</summary>
+    public BloodGroup PatientBloodGroup { get; init; }
 
-/// <summary>The patient's units on the ward, newest first.</summary>
+    /// <summary>
+    /// How far the bedside may rely on that group: grouped, resting on one sample (no group on record, the second sample not
+    /// grouped yet), or disputed by samples that disagree (possible wrong blood in tube; <see cref="DisputedGroups"/>).
+    /// </summary>
+    public PatientGroupStanding GroupStanding { get; init; }
+
+    /// <summary>Every group the patient's samples were found to be when they disagree; empty otherwise. The unit is started only if it suits them all.</summary>
+    public IReadOnlyList<BloodGroup> DisputedGroups { get; init; } = [];
+}
+
+/// <summary>
+/// The patient's units on the ward, newest first. <paramref name="PatientBloodGroup"/>: the group of the newest unit's
+/// request when it is not in doubt; Unknown while it rests on one sample or samples disagree (each unit says how far its
+/// own request's group may be relied on).
+/// </summary>
 public sealed record PatientBloodUnits(Guid PatientId, string Uhid, string PatientName, BloodGroup PatientBloodGroup, IReadOnlyList<WardBloodUnit> Units);
 
 public sealed class TransfusionObservationValuesValidator : AbstractValidator<TransfusionObservationValues>

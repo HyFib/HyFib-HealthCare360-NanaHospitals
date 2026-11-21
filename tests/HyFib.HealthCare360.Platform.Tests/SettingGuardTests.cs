@@ -35,6 +35,12 @@ public sealed class SettingGuardTests
         Waits("bloodbank.separateVerifier", Off, On).ShouldBeFalse();
         SettingGuard.Judge("bloodbank.separateVerifier", null, Off, secret: false).Summary.ShouldBe("Second blood bank officer: not set (on) → off");
 
+        // The two-sample rule too: a transfusion committee's other policy is put in force only with a second administrator.
+        Waits("bloodbank.twoSampleRule", null, Off).ShouldBeTrue("blood would then go on one sample's grouping");
+        Waits("bloodbank.twoSampleRule", Off, On).ShouldBeFalse();
+        SettingGuard.Judge("bloodbank.twoSampleRule", null, Off, secret: false).Summary
+            .ShouldBe("Second sample for a patient's first blood group: not set (on) → off");
+
         // Slice 15's second persons, on unless set to false: each is switched off only with a second administrator.
         foreach (var key in new[] { "ambulance.waiverApproval", "bloodbank.reactionDowngradeApproval", "dialysis.infectionStatusApproval" })
         {
