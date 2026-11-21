@@ -472,6 +472,13 @@ public sealed class TransfusionService(
             return Error.NotFound(nameof(BloodRequest), requestId);
         }
 
+        // Under the patient's grouping lock, held to the commit (BloodGroupingLocks), with the request read again under it, as
+        // the issue does: a disagreeing sample grouped at the same moment either holds this cross-match or is grouped after the
+        // unit was reserved, and neither save undoes the other.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await BloodGroupingLocks.LockAsync(db, bloodRequest.PatientId, ct);
+        await db.Entry(bloodRequest).ReloadAsync(ct);
+
         var open = bloodRequest.EnsureOpen();
         var unit = await db.Set<BloodComponent>().FirstOrDefaultAsync(c => c.Id == request.ComponentId, ct);
         if (open.IsFailure)
@@ -541,6 +548,7 @@ public sealed class TransfusionService(
         ], ct);
         crossMatch.RecordCharges(outcome.Status, outcome.Error);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         await PublishAsync(bloodRequest.FacilityId, ct);
         return crossMatch;
     }
