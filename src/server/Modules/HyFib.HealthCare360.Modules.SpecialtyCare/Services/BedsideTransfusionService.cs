@@ -123,6 +123,10 @@ public sealed class BedsideTransfusionService(
             return Error.NotFound(nameof(BloodIssue), issueId);
         }
 
+        // The patient's grouping lock first (BloodGroupingLocks), held to the commit, and the request read under it: a
+        // disagreeing sample grouped at the same moment is either seen here, refusing the start, or recorded after it. Taken
+        // before the stay's lock; nothing that takes the stay's lock takes this one after it, so the two never wait on each other.
+        await BloodGroupingLocks.LockAsync(db, issue.PatientId, ct);
         var bloodRequest = await db.Set<BloodRequest>().AsNoTracking().FirstAsync(r => r.Id == issue.RequestId, ct);
         DateTimeOffset? admittedAt = null;
         if (bloodRequest.AdmissionId is { } stayId)
