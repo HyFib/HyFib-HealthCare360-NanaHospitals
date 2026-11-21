@@ -28,6 +28,7 @@ import { useState, type ReactNode } from 'react';
 import { usePermission } from '@/lib/permissions';
 import { otApi, otKeys, type SafetyPhase, type SurgeryDetail } from './api';
 import { PreOpChecklistPanel, SafetyPhasePanel } from './ChecklistPanels';
+import { SurgicalConsentPanel } from './ConsentPanel';
 import { completeGate, receiveGate, scheduleGate, startGate, surgerySteps, type StepId, type StepState } from './logic';
 import { formatDuration, minutesBetween } from './shared/datetime';
 import { ActionError, Detail, DetailGrid } from './shared/feedback';
@@ -120,6 +121,16 @@ export function SurgeryStepper({
   const canChecklist = usePermission('ot.checklists.record');
   const phase = PHASE_OF[selected];
 
+  // The consent is shown where it is ticked, and before the Sign-in, Time-out and incision while it holds them up (or
+  // was waived): what is missing, and the emergency path for the operating surgeon (server `SurgicalConsent`).
+  const consentBlocks =
+    booking.consent != null &&
+    (!booking.consent.satisfied || booking.consent.waiver != null) &&
+    booking.startedAt === null;
+  const showConsent =
+    selected === 'pre-op' ||
+    (consentBlocks && (selected === 'sign-in' || selected === 'time-out' || selected === 'start'));
+
   let content: ReactNode;
   if (selected === 'schedule') {
     content = <ScheduleStep booking={booking} onSchedule={onSchedule} />;
@@ -169,7 +180,10 @@ export function SurgeryStepper({
         </ol>
       </nav>
       <Section title={current?.title} description={current?.moment}>
-        <div className={styles.content}>{content}</div>
+        <div className={styles.content}>
+          {showConsent && <SurgicalConsentPanel booking={booking} />}
+          {content}
+        </div>
       </Section>
     </div>
   );
@@ -274,6 +288,12 @@ function StartStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () => 
   const gate = startGate(booking);
   const [confirming, setConfirming] = useState(false);
   const now = useNow(30_000);
+  // A waiver that no longer stands (no longer an emergency, or the patient said no since) is not what the incision goes ahead on.
+  const consentNote = !booking.consent?.satisfied
+    ? ''
+    : booking.consent.recorded
+      ? ', and the patient’s consent is recorded'
+      : ', and consent was waived in an emergency';
   const start = useMutation({
     mutationFn: () => otApi.start(booking.id),
     onSuccess: () => {
@@ -331,7 +351,8 @@ function StartStep({ booking, onDone }: { booking: SurgeryDetail; onDone: () => 
         onConfirm={() => start.mutate()}
         onCancel={() => setConfirming(false)}
       >
-        The WHO Sign-in and Time-out are complete. The incision time is recorded as now and cannot be changed.
+        The WHO Sign-in and Time-out are complete{consentNote}. The incision time is recorded as now and cannot be
+        changed.
       </ConfirmDialog>
     </>
   );

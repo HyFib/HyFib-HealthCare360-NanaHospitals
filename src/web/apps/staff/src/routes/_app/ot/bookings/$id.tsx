@@ -34,10 +34,12 @@ import { CountsPanel } from '@/modules/ot/CountsPanel';
 import { anaesthesiaLabel, destinationLabel, lateralityLabel } from '@/modules/ot/labels';
 import {
   cancelGate,
+  consentSummary,
   currentStepId,
   planGate,
   postponeGate,
   procedureWithSide,
+  saidNoConsent,
   scheduleGate,
   STEP_IDS,
   type StepId,
@@ -209,6 +211,22 @@ function BookingView({
       ? `prefers ${formatDateOnly(b.preferredDate)}`
       : 'no slot yet';
   const needsSlot = b.status === 'Requested' || b.status === 'Postponed';
+  // Before the incision, a consent not on record holds up the checklist and the incision: said on every tab, with the
+  // patient's "no" (a refusal or a withdrawal) where that is why.
+  const consentMissing = Boolean(b.consent && !b.consent.satisfied) && planGate(b).allowed;
+  const saidNo = b.consent ? saidNoConsent(b.consent) : null;
+  const alerts = [
+    ...(b.priority === 'Emergency' ? ['Emergency surgery'] : []),
+    ...(consentMissing
+      ? [
+          saidNo?.state === 'Refused'
+            ? 'Patient refused consent to the operation'
+            : saidNo
+              ? 'Patient withdrew consent to the operation'
+              : 'Consent to the operation not recorded',
+        ]
+      : []),
+  ];
 
   return (
     <Page>
@@ -216,7 +234,7 @@ function BookingView({
         summary={b.patient}
         patientId={b.patientId}
         fallback={{ uhid: '', fullName: 'Patient' }}
-        alerts={b.priority === 'Emergency' ? ['Emergency surgery'] : undefined}
+        alerts={alerts.length > 0 ? alerts : undefined}
       />
       <PageHeader
         title={b.procedureName}
@@ -423,6 +441,7 @@ function Details({
               ? 'In recovery'
               : null}
         </Detail>
+        <Detail label="Consent">{consentSummary(b)}</Detail>
         <Detail label="Origin">{b.orderItemId ? 'From a doctor’s order' : 'Booked at the OT desk'}</Detail>
         <Detail label="Encounter">
           {b.admissionId ? 'In-patient (charges go to the IP bill)' : b.visitId ? 'Out-patient / day care visit' : null}

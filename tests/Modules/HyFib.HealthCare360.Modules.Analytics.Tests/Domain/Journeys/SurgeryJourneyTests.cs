@@ -91,6 +91,21 @@ public sealed class SurgeryJourneyTests
     }
 
     [Fact]
+    public void A_consent_waived_in_an_emergency_is_said_as_waived_not_as_recorded()
+    {
+        // "Consent signed" is ticked over the waiver: the stage says the operation goes ahead without the patient's consent.
+        var ticked = PreOpChecklist.NewEntries()
+            .Select(e => e.Key == PreOpChecklist.ConsentItem ? e with { State = ChecklistItemState.Done, RecordedAt = At(9, 0) } : e)
+            .ToList();
+        Stage(SurgeryJourney.Progress(Booked with { PreOpChecks = ticked, ConsentWaived = true }, Now), "pre-op").Detail
+            .ShouldBe("1 of 10 checks done, consent waived in an emergency");
+
+        var done = SurgeryJourney.Progress(Booked with { PreOpChecks = PreOpDone(At(10, 15)), ConsentWaived = true }, Now);
+        Stage(done, "pre-op").ShouldSatisfyAllConditions(s => s.At.ShouldBe(At(10, 15)), s => s.Detail.ShouldBe("Consent waived in an emergency"));
+        Stage(SurgeryJourney.Progress(Booked with { PreOpChecks = PreOpDone(At(10, 15)) }, Now), "pre-op").Detail.ShouldBeNull();
+    }
+
+    [Fact]
     public void Receiving_the_patient_in_pre_op_is_skipped_when_the_sign_in_is_done_at_the_table()
     {
         var signedIn = Booked with { PreOpChecks = PreOpDone(At(10, 15)), SignInAt = At(10, 50) };

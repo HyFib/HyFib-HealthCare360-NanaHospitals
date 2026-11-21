@@ -884,6 +884,21 @@ and grants nothing.
       (`surgery.count_discrepancy_open`): found, an X-ray with its result, or a retained item, which raises a never event
       in the Quality incident register (sentinel, the harm graded, the quality team alerted) in the same transaction,
       audited at Critical (`surgery.count_discrepancy_settled`). "Counts are correct" is confirmed only from the counts;
+    - consent before surgery and anaesthesia: "consent signed" on the pre-op checklist, the WHO Sign-in and Time-out and
+      the incision read the patient's consents as the front office recorded them, never a tick
+      (`surgery.consent_required`). An emergency operation goes ahead without them only on the operating surgeon's word,
+      from their own sign-in, with the clinical reason, and a second doctor who agrees at the surgeon's screen with their
+      own user name and password (`POST /api/v1/auth/witness`, purpose `ot.consent_waiver`, `ot.surgery.perform`; never
+      the surgeon, used once, for that patient), audited at Critical (`surgery.consent_waived`), and never against the
+      patient's "no": a refusal (`surgery.consent_refused`) or a withdrawal (`surgery.consent_withdrawn`) recorded since
+      the booking blocks the waiver, and one recorded after it ends it, whichever of the two was entered first. A
+      withdrawal or refusal is the patient's latest word: an older consent still on record does not count after it, nor
+      does one another operation's incision relied on, and a withdrawal since the booking counts whenever the consent
+      withdrawn was given. The theatre shows who recorded each consent, and a signed form as attached only when the file
+      is in the document store for that patient; a consent another branch's operation relied on is not named by that
+      booking's number. After
+      the Sign-in, the anaesthesia technique and the priority, which bear on consent, are changed only by the operating
+      surgeon or the anaesthetist, with a reason, audited at Warning (`surgery.plan_changed_after_sign_in`);
     - an implant or consumable line once the operation has started: not removed (`surgery.material_locked`); a
       correction of its batch, serial, expiry or quantity (`POST …/materials/{id}/corrections` answers 202,
       `ot.material_correction`) is approved by the OT in-charge (the new `ot.materials.approve`: OT coordinators and the

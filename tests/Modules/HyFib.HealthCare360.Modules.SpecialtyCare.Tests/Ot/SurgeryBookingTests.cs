@@ -103,7 +103,7 @@ public sealed class SurgeryBookingTests
 
     [Fact]
     public void Consent_can_never_be_marked_not_applicable() =>
-        TestData.Scheduled().RecordPreOp([new ChecklistInput("consent", ChecklistItemState.NotApplicable, "Unconscious patient")], TestData.Staff())
+        TestData.Scheduled().RecordPreOp([new ChecklistInput("consent", ChecklistItemState.NotApplicable, "Unconscious patient")], TestData.Staff(), TestData.Consents)
             .Error!.Code.ShouldBe("checklist.not_applicable_refused");
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class SurgeryBookingTests
     {
         var booking = TestData.ReadyForSignIn();
 
-        booking.RecordPreOp([new ChecklistInput("npo", ChecklistItemState.Pending, null)], TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp([new ChecklistInput("npo", ChecklistItemState.Pending, null)], TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
         PreOpChecklist.IsComplete(booking.PreOpChecks).ShouldBeFalse();
         booking.PreOpChecks.Single(e => e.Key == "npo").RecordedAt.ShouldBeNull();

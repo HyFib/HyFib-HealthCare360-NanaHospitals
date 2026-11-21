@@ -292,6 +292,48 @@ const SURGERY: SurgeryDetail = {
   version: 4,
   nurseId: null,
   nurseName: null,
+  // The front office recorded her consents to the operation and to the anaesthesia after the booking.
+  consent: {
+    satisfied: true,
+    recorded: true,
+    since: minutesAgo(DAY),
+    checks: [
+      {
+        kind: 'Procedure',
+        state: 'Recorded',
+        consent: {
+          id: id('a7c8'),
+          kind: 'Procedure',
+          granted: true,
+          capturedAt: minutesAgo(DAY / 2),
+          revokedAt: null,
+          capturedByName: 'Priya R',
+          signedFormAttached: true,
+          reliedOnBy: null,
+        },
+      },
+      {
+        kind: 'Anaesthesia',
+        state: 'Recorded',
+        consent: {
+          id: id('a7c9'),
+          kind: 'Anaesthesia',
+          granted: true,
+          capturedAt: minutesAgo(DAY / 2),
+          revokedAt: null,
+          capturedByName: 'Priya R',
+          signedFormAttached: true,
+          reliedOnBy: null,
+        },
+      },
+    ],
+    waiver: null,
+    procedureConsentId: null,
+    anaesthesiaConsentId: null,
+    refused: false,
+    anaesthesiaConsentRequiredAtSignIn: false,
+    saidNo: false,
+  },
 };
 
 const MATERIALS: SurgeryMaterialDto[] = [

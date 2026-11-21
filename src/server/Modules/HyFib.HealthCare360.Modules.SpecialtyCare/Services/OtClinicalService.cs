@@ -56,10 +56,17 @@ public sealed class OtClinicalService(
 
         // A surgeon records the site mark they made, so the record names who marked it.
         var canMarkSite = currentUser.UserId is { } user && await permissions.HasPermissionAsync(user, SpecialtyCarePermissions.OtSurgery, ct);
-        var result = booking.RecordPreOp(request.Items, currentUser.Stamp(time.GetUtcNow()), canMarkSite);
+
+        // The "consent" item is confirmed only over the patient's consents as the front office recorded them (SurgicalConsent).
+        var consents = await SurgicalConsentRecords.ForBookingAsync(db, booking, ct);
+        var result = booking.RecordPreOp(request.Items, currentUser.Stamp(time.GetUtcNow()), consents, canMarkSite);
         return await SaveAsync(booking, result, ct);
     }
 
+    /// <summary>
+    /// Confirms WHO checklist items. The Sign-in (which confirms consent with the patient) and the Time-out are recorded only
+    /// while the patient's consent to the operation is on record, or was waived in an emergency (<see cref="SurgicalConsent"/>).
+    /// </summary>
     public async Task<Result> ConfirmSafetyAsync(Guid bookingId, SafetyPhase phase, RecordChecklistRequest request, CancellationToken ct)
     {
         var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == bookingId, ct);
@@ -68,7 +75,8 @@ public sealed class OtClinicalService(
             return Error.NotFound(nameof(SurgeryBooking), bookingId);
         }
 
-        var result = booking.ConfirmSafety(phase, request.Items, currentUser.Stamp(time.GetUtcNow()));
+        var consents = await SurgicalConsentRecords.ForBookingAsync(db, booking, ct);
+        var result = booking.ConfirmSafety(phase, request.Items, currentUser.Stamp(time.GetUtcNow()), consents);
         return await SaveAsync(booking, result, ct);
     }
 

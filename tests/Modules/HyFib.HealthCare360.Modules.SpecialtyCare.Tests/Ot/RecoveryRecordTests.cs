@@ -135,7 +135,7 @@ public sealed class RecoveryRecordTests
         var booking = TestData.CountsTallied(TestData.InProgress());
         booking.InRecovery.ShouldBeFalse();
 
-        booking.ConfirmSafety(SafetyPhase.SignOut, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]), TestData.Staff(Arrived.AddMinutes(140)))
+        booking.ConfirmSafety(SafetyPhase.SignOut, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]), TestData.Staff(Arrived.AddMinutes(140)), TestData.Consents)
             .IsSuccess.ShouldBeTrue();
         booking.InRecovery.ShouldBeTrue();
         booking.Complete(Arrived.AddMinutes(150)).IsSuccess.ShouldBeTrue();

@@ -66,13 +66,13 @@ all-access); the table shows the defaults.
 
 ### The 32 built-in roles
 
-289 permissions are declared. 1759 of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.
+289 permissions are declared. 1760 of the API's endpoints ask for one or more of them; the column *Endpoints* counts those the role's default permissions open.
 
 | Role | Responsibility | Default permissions | Endpoints | Two-step verification | Can be turned off |
 |---|---|---:|---:|---|---|
-| `SuperAdmin` | Full access to everything, including security settings | all (`*`) | 1759 | Required (role) | No, always in use |
+| `SuperAdmin` | Full access to everything, including security settings | all (`*`) | 1760 | Required (role) | No, always in use |
 | `HospitalAdmin` | Hospital administration, masters, users and reports | 204 | 1264 | Required (role) | Yes |
-| `Doctor` | Consultants and residents: EMR, orders, e-prescriptions | 87 | 523 | If the user sets it up | Yes |
+| `Doctor` | Consultants and residents: EMR, orders, e-prescriptions | 87 | 524 | If the user sets it up | Yes |
 | `Nurse` | Nursing care, vitals, ward operations | 84 | 551 | If the user sets it up | Yes |
 | `FrontOffice` | Registration, visits, queue and enquiries | 40 | 313 | If the user sets it up | Yes |
 | `Billing` | OP/IP billing and charge management | 25 | 226 | If the user sets it up | Yes |

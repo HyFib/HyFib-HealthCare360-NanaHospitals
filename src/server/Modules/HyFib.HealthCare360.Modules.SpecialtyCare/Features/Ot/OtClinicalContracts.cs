@@ -212,6 +212,7 @@ public sealed class RecordChecklistRequestValidator : AbstractValidator<RecordCh
         RuleForEach(x => x.Items).ChildRules(item =>
         {
             item.RuleFor(i => i.Key).NotEmpty().MaximumLength(64);
+            item.RuleFor(i => i.State).IsInEnum().WithMessage("Answer each item as done, not applicable or pending.");
             item.RuleFor(i => i.Remarks).SafeText(500);
         });
     }

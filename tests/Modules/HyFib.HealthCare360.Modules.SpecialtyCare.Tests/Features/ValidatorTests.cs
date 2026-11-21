@@ -26,6 +26,35 @@ public sealed class ValidatorTests
     }
 
     [Fact]
+    public void Operating_without_consent_needs_the_clinical_reason_and_the_second_doctor()
+    {
+        var validator = new WaiveSurgicalConsentRequestValidator();
+        var waiver = new WaiveSurgicalConsentRequest("Ruptured spleen, in shock; no relative reachable", Guid.CreateVersion7());
+
+        validator.Validate(waiver).IsValid.ShouldBeTrue();
+        validator.Validate(waiver with { Reason = " Emergency " }).Errors.ShouldContain(e => e.PropertyName == nameof(WaiveSurgicalConsentRequest.Reason));
+        validator.Validate(waiver with { Reason = "" }).IsValid.ShouldBeFalse();
+        validator.Validate(waiver with { ConcurringDoctorConfirmationId = Guid.Empty }).Errors
+            .ShouldContain(e => e.PropertyName == nameof(WaiveSurgicalConsentRequest.ConcurringDoctorConfirmationId));
+    }
+
+    [Fact]
+    public void A_checklist_item_is_answered_done_not_applicable_or_pending_and_nothing_else()
+    {
+        var validator = new RecordChecklistRequestValidator();
+        RecordChecklistRequest Answer(ChecklistItemState state) => new([new ChecklistInput(PreOpChecklist.ConsentItem, state, null)], 3);
+
+        foreach (var state in Enum.GetValues<ChecklistItemState>())
+        {
+            validator.Validate(Answer(state)).IsValid.ShouldBeTrue($"{state} is an answer");
+        }
+
+        validator.Validate(Answer((ChecklistItemState)7)).Errors
+            .ShouldContain(e => e.PropertyName.EndsWith(nameof(ChecklistInput.State), StringComparison.Ordinal),
+                "a number the JSON enum converter lets through is not an answer: \"consent signed\" would count as given");
+    }
+
+    [Fact]
     public void Implant_entry_requires_lot_or_serial()
     {
         var validator = new AddSurgeryMaterialRequestValidator();

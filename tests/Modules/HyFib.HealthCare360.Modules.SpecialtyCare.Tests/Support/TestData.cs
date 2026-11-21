@@ -16,8 +16,23 @@ internal static class TestData
     public static IReadOnlyList<ChecklistInput> AllDone(IEnumerable<ChecklistItemDefinition> items) =>
         items.Select(i => new ChecklistInput(i.Key, ChecklistItemState.Done, null)).ToList();
 
+    /// <summary>When <see cref="NewBooking"/> books the operation: the day before. A consent counts from the booking.</summary>
+    public static readonly DateTimeOffset BookedAt = Now.AddDays(-1);
+
+    /// <summary>The patient's consents to the procedure and to anaesthesia, recorded at the front office since the booking.</summary>
+    public static IReadOnlyCollection<ConsentOnRecord> Consents { get; } =
+        [Consent(SurgicalConsentKind.Procedure), Consent(SurgicalConsentKind.Anaesthesia)];
+
+    /// <summary>Nothing recorded under the patient's consents.</summary>
+    public static IReadOnlyCollection<ConsentOnRecord> NoConsents { get; } = [];
+
+    /// <summary>A consent as the front office records it: given (or refused), two hours ago unless said, perhaps withdrawn.</summary>
+    public static ConsentOnRecord Consent(SurgicalConsentKind kind, DateTimeOffset? capturedAt = null, bool granted = true, DateTimeOffset? revokedAt = null) =>
+        new(Guid.CreateVersion7(), kind, granted, capturedAt ?? Now.AddHours(-2), revokedAt);
+
     public static SurgeryBooking NewBooking(AnaesthesiaType anaesthesia = AnaesthesiaType.GA) => new()
     {
+        CreatedAt = BookedAt,
         PatientId = Guid.CreateVersion7(),
         SurgeonId = Guid.CreateVersion7(),
         AnaesthetistId = anaesthesia is AnaesthesiaType.Local or AnaesthesiaType.Topical ? null : Guid.CreateVersion7(),
@@ -38,7 +53,7 @@ internal static class TestData
     {
         var booking = Scheduled();
         booking.ReceiveInPreOp(Now).IsSuccess.ShouldBeTrue();
-        booking.RecordPreOp(AllDone(PreOpChecklist.Items), Staff()).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp(AllDone(PreOpChecklist.Items), Staff(), Consents).IsSuccess.ShouldBeTrue();
         return booking;
     }
 
@@ -58,9 +73,9 @@ internal static class TestData
     public static SurgeryBooking InProgress()
     {
         var booking = ReadyForSignIn();
-        booking.ConfirmSafety(SafetyPhase.SignIn, AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn]), Staff(Now.AddMinutes(60))).IsSuccess.ShouldBeTrue();
-        booking.ConfirmSafety(SafetyPhase.TimeOut, AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.TimeOut]), Staff(Now.AddMinutes(75))).IsSuccess.ShouldBeTrue();
-        booking.Start(Now.AddMinutes(80)).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn]), Staff(Now.AddMinutes(60)), Consents).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.TimeOut, AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.TimeOut]), Staff(Now.AddMinutes(75)), Consents).IsSuccess.ShouldBeTrue();
+        booking.Start(Now.AddMinutes(80), Consents).IsSuccess.ShouldBeTrue();
         return booking;
     }
 }

@@ -1,16 +1,32 @@
 import { ApiError, formatDateOnly, formatInr } from '@hc360/core';
 import { describe, expect, it } from 'vitest';
-import type { OtCalendarBooking, OtStoreItem, SafetyPhaseDto, SurgeryStatus } from './api';
+import type {
+  ConsentOnRecord,
+  OtCalendarBooking,
+  OtStoreItem,
+  SafetyPhaseDto,
+  SurgeryStatus,
+  SurgicalConsentCheck,
+  SurgicalConsentDto,
+} from './api';
 import {
   batchForLot,
   batchLabel,
+  careChangeAfterSignIn,
   completeGate,
+  consentGate,
+  consentProblem,
+  consentRecordedBy,
+  consentSummary,
   countsGate,
   currentStepId,
   dayWindow,
   issuableQuantity,
+  keepsAnaesthesiaConsent,
   localClashes,
   materialsLocked,
+  missingConsents,
+  moveEndsWaiver,
   onCaseTeam,
   otStoreProblem,
   overlaps,
@@ -20,12 +36,16 @@ import {
   preOpGate,
   priceForBatch,
   receiveGate,
+  saidNoConsent,
+  saidNoNotice,
   siteChangeVoidsChecklist,
   siteNeedsMarking,
   slotConflicts,
   startGate,
+  surgeonChangeEndsWaiver,
   surgerySteps,
   utilisationTotals,
+  waiverGate,
   whoProgress,
 } from './logic';
 
@@ -431,3 +451,337 @@ describe('the theatre where a second person or a second look decides (maker-chec
     expect(countsGate({ status: 'Requested', safetyChecklist: phases() }).allowed).toBe(false);
   });
 });
+
+describe('consent before surgery and anaesthesia (mirrors SurgicalConsent)', () => {
+  const procedure: SurgicalConsentCheck = {
+    kind: 'Procedure',
+    state: 'Recorded',
+    consent: {
+      id: 'c-1',
+      kind: 'Procedure',
+      granted: true,
+      capturedAt: T,
+      revokedAt: null,
+      capturedByName: 'Priya R',
+      signedFormAttached: true,
+      reliedOnBy: null,
+    },
+  };
+  const anaesthesia: SurgicalConsentCheck = {
+    kind: 'Anaesthesia',
+    state: 'Recorded',
+    consent: {
+      id: 'c-2',
+      kind: 'Anaesthesia',
+      granted: true,
+      capturedAt: T,
+      revokedAt: null,
+      capturedByName: 'Priya R',
+      signedFormAttached: false,
+      reliedOnBy: null,
+    },
+  };
+  const recorded: SurgicalConsentDto = {
+    satisfied: true,
+    recorded: true,
+    since: '2026-09-25T03:00:00Z',
+    checks: [procedure, anaesthesia],
+    waiver: null,
+    procedureConsentId: null,
+    anaesthesiaConsentId: null,
+    refused: false,
+    anaesthesiaConsentRequiredAtSignIn: false,
+    saidNo: false,
+  };
+  /** Nothing recorded under the patient's consents. */
+  const missing: SurgicalConsentDto = {
+    ...recorded,
+    satisfied: false,
+    recorded: false,
+    checks: [
+      { kind: 'Procedure', state: 'Missing', consent: null },
+      { kind: 'Anaesthesia', state: 'Missing', consent: null },
+    ],
+  };
+  const withdrawnCheck: SurgicalConsentCheck = {
+    kind: 'Anaesthesia',
+    state: 'Withdrawn',
+    consent: {
+      id: 'c-2',
+      kind: 'Anaesthesia',
+      granted: true,
+      capturedAt: T,
+      revokedAt: T,
+      capturedByName: 'Priya R',
+      signedFormAttached: false,
+      reliedOnBy: null,
+    },
+  };
+  /** Nothing recorded for the operation; the patient withdrew the consent to anaesthesia given since the booking. */
+  const withdrawn: SurgicalConsentDto = {
+    ...missing,
+    saidNo: true,
+    checks: [{ kind: 'Procedure', state: 'Missing', consent: null }, withdrawnCheck],
+  };
+  const waived: SurgicalConsentDto = {
+    ...missing,
+    satisfied: true,
+    waiver: {
+      at: T,
+      surgeonUserId: 'u-surgeon',
+      surgeonName: 'Dr. Arjun Rao',
+      concurringUserId: 'u-second',
+      concurringName: 'Dr. Kavita Shah',
+      reason: 'Ruptured spleen, in shock; no relative reachable',
+    },
+  };
+  const signedIn = (consent: SurgicalConsentDto | undefined) => ({
+    ...booking({ safetyChecklist: phases(true, true) }),
+    consent,
+  });
+
+  it('holds the incision until the patient’s consent is recorded, and says what is missing', () => {
+    const gate = startGate(signedIn(missing));
+    expect(gate.allowed).toBe(false);
+    expect(gate.reason).toMatch(/consent to the operation \(high-risk procedure consent\) is not recorded/);
+    expect(gate.reason).toMatch(/consent to anaesthesia is not recorded/);
+    expect(startGate(signedIn(withdrawn)).reason).toMatch(/consent to anaesthesia was withdrawn/);
+    expect(startGate(signedIn(recorded)).allowed).toBe(true);
+    expect(startGate(signedIn(waived)).allowed).toBe(true);
+  });
+
+  it('holds the Sign-in and the Time-out, never the Sign-out', () => {
+    const preOpDone = { ...booking(), consent: missing };
+    expect(phaseGate(preOpDone, 'SignIn')).toMatchObject({ allowed: false, locked: false });
+    expect(phaseGate({ ...preOpDone, safetyChecklist: phases(true) }, 'TimeOut').reason).toMatch(/consent/);
+    expect(
+      phaseGate({ ...preOpDone, safetyChecklist: phases(true, true), status: 'InProgress' }, 'SignOut').allowed,
+    ).toBe(true);
+    expect(phaseGate({ ...booking(), consent: recorded }, 'SignIn').allowed).toBe(true);
+  });
+
+  it('leaves a booking read without its consent to the server', () => {
+    expect(consentGate({ consent: undefined }).allowed).toBe(true);
+    expect(startGate(signedIn(undefined)).allowed).toBe(true);
+  });
+
+  it('says a waiver no longer stands once the booking is no longer an emergency', () => {
+    expect(consentGate({ consent: { ...waived, satisfied: false } }).reason).toMatch(/no longer an emergency/);
+  });
+
+  it('offers the emergency path only to the operating surgeon of an emergency booking that has not started', () => {
+    const emergency = {
+      consent: missing,
+      priority: 'Emergency' as const,
+      status: 'InPreOp' as const,
+      surgeonId: 'p-surgeon',
+    };
+    expect(waiverGate(emergency, 'p-surgeon').allowed).toBe(true);
+    expect(waiverGate(emergency, 'p-anaesthetist').reason).toMatch(/Only the operating surgeon/);
+    expect(waiverGate({ ...emergency, priority: 'Elective' }, 'p-surgeon').reason).toMatch(
+      /Only an emergency operation/,
+    );
+    expect(waiverGate({ ...emergency, status: 'InProgress' }, 'p-surgeon').allowed).toBe(false);
+    expect(waiverGate({ ...emergency, status: 'Postponed' }, 'p-surgeon').reason).toMatch(
+      /neither closed nor postponed/,
+    );
+    expect(waiverGate({ ...emergency, consent: recorded }, 'p-surgeon').allowed).toBe(false);
+    expect(waiverGate({ ...emergency, consent: waived }, 'p-surgeon').reason).toMatch(
+      /already waived by Dr. Arjun Rao/,
+    );
+  });
+
+  it('says what the incision relied on once the operation has started, never today’s consents', () => {
+    expect(consentSummary({ consent: recorded, startedAt: null })).toBe('Recorded at the front office');
+    expect(consentSummary({ consent: withdrawn, startedAt: null })).toBe(
+      'Not recorded: consent to the operation (high-risk procedure consent) is not recorded; consent to anaesthesia was withdrawn',
+    );
+    expect(consentSummary({ consent: waived, startedAt: null })).toMatch(
+      /^Waived in an emergency by Dr. Arjun Rao, Dr. Kavita Shah agreeing \(.+\): Ruptured spleen/,
+    );
+    // A waiver that no longer stands (the booking is no longer an emergency) is not shown as the consent.
+    expect(consentSummary({ consent: { ...waived, satisfied: false }, startedAt: null })).toMatch(
+      /^Not recorded: .+\. Consent was waived in an emergency, but the booking is no longer an emergency$/,
+    );
+    // The consent the incision relied on was withdrawn afterwards: the operation was still done with consent.
+    const reliedOn = { ...missing, procedureConsentId: 'c-1', anaesthesiaConsentId: 'c-2' };
+    expect(consentSummary({ consent: reliedOn, startedAt: T })).toBe(
+      'Recorded at the front office before the incision',
+    );
+    expect(consentSummary({ consent: waived, startedAt: T })).toMatch(/^Waived in an emergency by Dr. Arjun Rao/);
+    // The consent to the operation recorded, the consent to anaesthesia alone waived: the incision relied on the waiver too.
+    expect(consentSummary({ consent: { ...waived, procedureConsentId: 'c-1' }, startedAt: T })).toMatch(
+      /^Consent to the operation recorded at the front office before the incision; consent to anaesthesia waived in an emergency by Dr. Arjun Rao, Dr. Kavita Shah agreeing \(.+\): Ruptured spleen/,
+    );
+    // Under local anaesthesia no consent to anaesthesia was needed: the consent to the operation was all it relied on.
+    const local: SurgicalConsentDto = {
+      ...waived,
+      procedureConsentId: 'c-1',
+      checks: [procedure, { kind: 'Anaesthesia', state: 'NotNeeded', consent: null }],
+    };
+    expect(consentSummary({ consent: local, startedAt: T })).toBe('Recorded at the front office before the incision');
+    // Started before the theatre read consents: nothing is on the booking either way, and nothing is claimed.
+    expect(consentSummary({ consent: missing, startedAt: T })).toBeNull();
+    expect(consentSummary({ consent: undefined, startedAt: null })).toBeNull();
+  });
+
+  it('words each missing consent as the server does', () => {
+    expect(missingConsents(withdrawn).map(consentProblem)).toEqual([
+      'consent to the operation (high-risk procedure consent) is not recorded',
+      'consent to anaesthesia was withdrawn',
+    ]);
+    expect(consentProblem({ kind: 'Anaesthesia', state: 'BeforeBooking', consent: null })).toMatch(
+      /recorded before this operation was booked/,
+    );
+    expect(consentProblem({ kind: 'Procedure', state: 'Refused', consent: null })).toBe(
+      'the patient refused consent to the operation (high-risk procedure consent)',
+    );
+  });
+
+  it('words a consent another operation relied on as one to take again for this operation', () => {
+    const relied: SurgicalConsentCheck = {
+      kind: 'Procedure',
+      state: 'OtherOperation',
+      consent: { ...recordedConsent('c-9', 'Procedure'), reliedOnBy: 'NHOT2600012' },
+    };
+    expect(consentProblem(relied)).toBe(
+      'consent to the operation (high-risk procedure consent) was relied on by another operation (NHOT2600012); take it again for this operation',
+    );
+    // Another branch's operation is not named by its booking number (server `SurgicalConsent.AnotherBranch`).
+    expect(
+      consentProblem({ ...relied, consent: { ...recordedConsent('c-9', 'Procedure'), reliedOnBy: 'another branch' } }),
+    ).toBe(
+      'consent to the operation (high-risk procedure consent) was relied on by another operation (another branch); take it again for this operation',
+    );
+    expect(missingConsents({ ...recorded, satisfied: false, recorded: false, checks: [relied, anaesthesia] })).toEqual([
+      relied,
+    ]);
+  });
+
+  it('never offers the emergency path against the patient’s refusal, and says why', () => {
+    const refusedCheck: SurgicalConsentCheck = {
+      kind: 'Anaesthesia',
+      state: 'Refused',
+      consent: { ...recordedConsent('c-3', 'Anaesthesia'), granted: false },
+    };
+    const refused: SurgicalConsentDto = {
+      ...missing,
+      refused: true,
+      saidNo: true,
+      checks: [{ kind: 'Procedure', state: 'Missing', consent: null }, refusedCheck],
+    };
+    const emergency = {
+      consent: refused,
+      priority: 'Emergency' as const,
+      status: 'InPreOp' as const,
+      surgeonId: 'p-surgeon',
+    };
+
+    expect(saidNoConsent(refused)).toBe(refusedCheck);
+    expect(saidNoConsent(missing)).toBeNull();
+    expect(waiverGate(emergency, 'p-surgeon')).toEqual({
+      allowed: false,
+      reason:
+        'The patient refused consent to anaesthesia: an emergency does not override a refusal. If the patient now agrees, record the new consent at the front office.',
+    });
+    expect(saidNoNotice(refusedCheck)).toMatch(/^The patient refused consent to anaesthesia/);
+    expect(consentGate({ consent: refused }).reason).toMatch(/An emergency does not override the patient’s refusal/);
+    expect(consentGate({ consent: refused }).reason).not.toMatch(/may go ahead without it/);
+
+    // A refusal recorded after a waiver: the waiver no longer stands, and the screen says why.
+    const waivedThenRefused: SurgicalConsentDto = { ...waived, ...refused, waiver: waived.waiver, satisfied: false };
+    expect(consentSummary({ consent: waivedThenRefused, startedAt: null })).toMatch(
+      /Consent was waived in an emergency, but the patient refused, and an emergency does not override a refusal$/,
+    );
+  });
+
+  it('treats a withdrawal as the patient’s “no”, as a refusal: no waiver is offered, and one given before no longer stands', () => {
+    const emergency = {
+      consent: withdrawn,
+      priority: 'Emergency' as const,
+      status: 'InPreOp' as const,
+      surgeonId: 'p-surgeon',
+    };
+
+    expect(saidNoConsent(withdrawn)).toBe(withdrawnCheck);
+    expect(waiverGate(emergency, 'p-surgeon')).toEqual({
+      allowed: false,
+      reason:
+        'The patient withdrew consent to anaesthesia: an emergency does not override a withdrawal. If the patient now agrees, record the new consent at the front office.',
+    });
+    const gate = consentGate({ consent: withdrawn });
+    expect(gate.reason).toMatch(/consent to anaesthesia was withdrawn/);
+    expect(gate.reason).toMatch(/An emergency does not override a consent the patient withdrew/);
+    expect(gate.reason).not.toMatch(/may go ahead without it/);
+
+    // A withdrawal recorded after a waiver: the server says the waiver no longer stands, and the screen says why.
+    const waivedThenWithdrawn: SurgicalConsentDto = { ...withdrawn, waiver: waived.waiver, satisfied: false };
+    expect(startGate(signedIn(waivedThenWithdrawn)).allowed).toBe(false);
+    expect(consentSummary({ consent: waivedThenWithdrawn, startedAt: null })).toMatch(
+      /Consent was waived in an emergency, but the patient withdrew consent, and an emergency does not override a withdrawal$/,
+    );
+
+    // A refusal and a withdrawal on record: the refusal is named first, as the server names it.
+    const refusedProcedure: SurgicalConsentCheck = {
+      kind: 'Procedure',
+      state: 'Refused',
+      consent: { ...recordedConsent('c-5', 'Procedure'), granted: false },
+    };
+    expect(saidNoConsent({ ...withdrawn, refused: true, checks: [withdrawnCheck, refusedProcedure] })).toBe(
+      refusedProcedure,
+    );
+  });
+
+  it('says who recorded each consent and whether the signed form is attached', () => {
+    expect(consentRecordedBy(recordedConsent('c-1', 'Procedure'))).toBe('Recorded by Priya R; signed form attached');
+    expect(
+      consentRecordedBy({ ...recordedConsent('c-1', 'Procedure'), capturedByName: null, signedFormAttached: false }),
+    ).toBe('Who recorded it is not known; no signed form attached');
+  });
+
+  it('asks the case team for a reason to change the anaesthesia or the priority after the Sign-in', () => {
+    const signedIn = {
+      anaesthesiaType: 'Spinal' as const,
+      priority: 'Elective' as const,
+      safetyChecklist: phases(true),
+    };
+    expect(careChangeAfterSignIn(signedIn, { anaesthesiaType: 'Local', priority: 'Elective' })).toBe(true);
+    expect(careChangeAfterSignIn(signedIn, { anaesthesiaType: 'Spinal', priority: 'Emergency' })).toBe(true);
+    expect(careChangeAfterSignIn(signedIn, { anaesthesiaType: 'Spinal', priority: 'Elective' })).toBe(false);
+    expect(
+      careChangeAfterSignIn(
+        { ...signedIn, safetyChecklist: phases() },
+        { anaesthesiaType: 'Local', priority: 'Emergency' },
+      ),
+    ).toBe(false);
+
+    const heldAtSignIn = { consent: { ...recorded, anaesthesiaConsentRequiredAtSignIn: true } };
+    expect(keepsAnaesthesiaConsent(heldAtSignIn, { anaesthesiaType: 'Local' })).toBe(true);
+    expect(keepsAnaesthesiaConsent(heldAtSignIn, { anaesthesiaType: 'GA' })).toBe(false);
+    expect(keepsAnaesthesiaConsent({ consent: recorded }, { anaesthesiaType: 'Topical' })).toBe(false);
+  });
+
+  it('warns that a move to another slot or another surgeon ends a consent waived in an emergency', () => {
+    expect(moveEndsWaiver({ consent: waived, status: 'Scheduled' })).toBe(true);
+    expect(moveEndsWaiver({ consent: waived, status: 'Requested' })).toBe(false);
+    expect(moveEndsWaiver({ consent: recorded, status: 'Scheduled' })).toBe(false);
+
+    expect(surgeonChangeEndsWaiver({ consent: waived, surgeonId: 'p-surgeon' }, 'p-other')).toBe(true);
+    expect(surgeonChangeEndsWaiver({ consent: waived, surgeonId: 'p-surgeon' }, 'p-surgeon')).toBe(false);
+    expect(surgeonChangeEndsWaiver({ consent: recorded, surgeonId: 'p-surgeon' }, 'p-other')).toBe(false);
+  });
+});
+
+/** A consent the front office recorded for the patient, given, by Priya R with the signed form attached. */
+function recordedConsent(id: string, kind: SurgicalConsentCheck['kind']): ConsentOnRecord {
+  return {
+    id,
+    kind,
+    granted: true,
+    capturedAt: T,
+    revokedAt: null,
+    capturedByName: 'Priya R',
+    signedFormAttached: true,
+    reliedOnBy: null,
+  };
+}

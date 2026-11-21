@@ -10,6 +10,11 @@ namespace HyFib.HealthCare360.Modules.Analytics.Domain.Journeys;
 /// <param name="RecoveryReceivedAt">The recovery nurse received the patient (the recovery record's time in).</param>
 /// <param name="RecoveryReceivedBy">Who received the patient in recovery.</param>
 /// <param name="RecoveryDischargedAt">The patient left the recovery room (time out), for <paramref name="RecoveryDestination"/>.</param>
+/// <param name="ConsentWaived">
+/// The operation goes ahead, or went ahead, without a consent it needed, on the operating surgeon's emergency waiver (a
+/// second doctor agreeing) rather than on a consent recorded at the front office: the incision relied on no consent of that
+/// kind, or, before it, the waiver stands and the consent is not recorded (<c>SurgeryBooking.ReliesOnWaiver</c>).
+/// </param>
 public sealed record SurgeryFacts(
     SurgeryStatus Status,
     DateTimeOffset RequestedAt,
@@ -27,7 +32,8 @@ public sealed record SurgeryFacts(
     DateTimeOffset? RecoveryReceivedAt = null,
     string? RecoveryReceivedBy = null,
     DateTimeOffset? RecoveryDischargedAt = null,
-    RecoveryDestination? RecoveryDestination = null);
+    RecoveryDestination? RecoveryDestination = null,
+    bool ConsentWaived = false);
 
 /// <summary>
 /// An operation from request until the patient leaves the recovery room (PACU) for the ward or intensive care, with the OT
@@ -72,8 +78,8 @@ public static class SurgeryJourney
             : f.Status == SurgeryStatus.Postponed ? Scheduled.Open(f.PostponeReason is { } reason ? $"Postponed: {reason}" : "Postponed")
             : Scheduled.Open("Waiting for a theatre and time"),
             PreOpChecklist.IsComplete(f.PreOpChecks)
-                ? PreOp.Reached(Facts.Latest(f.PreOpChecks.Select(c => c.RecordedAt)))
-                : PreOp.Open($"{preOpDone} of {PreOpChecklist.Items.Count} checks done{(Consented(f) ? "" : ", consent not recorded")}"),
+                ? PreOp.Reached(Facts.Latest(f.PreOpChecks.Select(c => c.RecordedAt)), f.ConsentWaived ? WaivedInAnEmergency : null)
+                : PreOp.Open($"{preOpDone} of {PreOpChecklist.Items.Count} checks done{(f.ConsentWaived ? $", {WaivedInAnEmergency.ToLowerInvariant()}" : Consented(f) ? "" : ", consent not recorded")}"),
             f.ReceivedInPreOpAt is { } receivedAt ? Received.Reached(receivedAt) : Received.Open(),
             f.SignInAt is { } signInAt ? SignIn.Reached(signInAt) : SignIn.Open(),
             f.TimeOutAt is { } timeOutAt ? TimeOut.Reached(timeOutAt) : TimeOut.Open(),
@@ -105,9 +111,12 @@ public static class SurgeryJourney
     private static string Slot(SurgeryFacts f) =>
         $"Slot {AnalyticsClock.FormatDateTime(f.ScheduledStart!.Value)}{(f.Theatre is null ? "" : $" in {f.Theatre}")}";
 
-    /// <summary>Consent for surgery and anaesthesia is an item of the pre-op checklist, not a consent of the patient's record.</summary>
-    private static bool Consented(SurgeryFacts f) => f.PreOpChecks.Any(c => c.Key == ConsentItem && c.State == ChecklistItemState.Done);
+    private const string WaivedInAnEmergency = "Consent waived in an emergency";
 
-    /// <summary>The key of the consent item in <see cref="PreOpChecklist.Items"/>.</summary>
-    private const string ConsentItem = "consent";
+    /// <summary>
+    /// The pre-op "consent signed" item is answered. The theatre ticks it only over the patient's consents to the operation
+    /// and the anaesthesia as the front office recorded them, or over a consent waived in an emergency
+    /// (<see cref="SurgicalConsent"/>), and checks them again at the WHO Sign-in, Time-out and incision.
+    /// </summary>
+    private static bool Consented(SurgeryFacts f) => f.PreOpChecks.Any(c => c.Key == PreOpChecklist.ConsentItem && c.State == ChecklistItemState.Done);
 }

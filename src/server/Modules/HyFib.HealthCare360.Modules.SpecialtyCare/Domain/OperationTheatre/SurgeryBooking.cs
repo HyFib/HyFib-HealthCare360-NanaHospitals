@@ -4,7 +4,8 @@ namespace HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 
 /// <summary>
 /// A surgery from request to completion (OT-01..03). The booking owns the pre-op and WHO checklists so that the
-/// safety gates — no incision before Sign-in and Time-out, no completion before Sign-out — are enforced by the
+/// safety gates — no incision before Sign-in and Time-out, no completion before Sign-out, and no "consent signed", Sign-in,
+/// Time-out or incision without the patient's recorded consent (<see cref="SurgicalConsent"/>) — are enforced by the
 /// aggregate itself and cannot be bypassed by any endpoint.
 /// </summary>
 public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
@@ -86,6 +87,33 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     /// <summary>WHO checklist phases voided by a change of side or procedure after the Sign-in, with who changed it and why.</summary>
     public List<ChecklistVoid> ChecklistVoids { get; set; } = [];
 
+    /// <summary>The patient's consent to the procedure (front office, high-risk procedure) the incision relied on.</summary>
+    public Guid? ProcedureConsentId { get; set; }
+
+    /// <summary>The patient's consent to anaesthesia the incision relied on; none for local or topical anaesthesia.</summary>
+    public Guid? AnaesthesiaConsentId { get; set; }
+
+    /// <summary>When the operating surgeon waived consent in an emergency (<see cref="ConsentWaiver"/>).</summary>
+    public DateTimeOffset? ConsentWaivedAt { get; set; }
+
+    public Guid? ConsentWaivedByUserId { get; set; }
+    public string? ConsentWaivedByName { get; set; }
+
+    /// <summary>The second doctor who agreed, confirming at the surgeon's screen with their own credentials.</summary>
+    public Guid? ConsentWaiverConcurredByUserId { get; set; }
+
+    public string? ConsentWaiverConcurredByName { get; set; }
+
+    /// <summary>The clinical reason the operation could not wait for consent.</summary>
+    public string? ConsentWaiverReason { get; set; }
+
+    /// <summary>
+    /// A WHO Sign-in of this booking was completed under anaesthesia given by an anaesthetist, when the patient's consent to
+    /// anaesthesia was needed: it stays needed though the technique is changed to local or topical after it
+    /// (<see cref="ConsentsNeeded"/>). Cleared by a postponement, with the day's checks.
+    /// </summary>
+    public bool AnaesthesiaConsentRequiredAtSignIn { get; set; }
+
     public string? Notes { get; set; }
     public string? CancelReason { get; set; }
     public string? PostponeReason { get; set; }
@@ -108,6 +136,42 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
     /// <summary>The procedure and where on the patient, as the WHO checklist confirms it.</summary>
     public SurgicalSite Site => new(ProcedureServiceItemId, ProcedureName, Laterality, SiteLevel);
 
+    /// <summary>Consent waived in an emergency by the operating surgeon, with the second doctor who agreed, if it was.</summary>
+    public SurgicalConsentWaiver? ConsentWaiver => ConsentWaivedAt is { } at
+        ? new SurgicalConsentWaiver(at, ConsentWaivedByUserId, ConsentWaivedByName ?? string.Empty, ConsentWaiverConcurredByUserId,
+            ConsentWaiverConcurredByName ?? string.Empty, ConsentWaiverReason ?? string.Empty)
+        : null;
+
+    /// <summary>
+    /// The consents this operation needs: to the procedure, and to anaesthesia unless the surgeon gives it locally or
+    /// topically, or when it was needed at the WHO Sign-in (<see cref="AnaesthesiaConsentRequiredAtSignIn"/>).
+    /// </summary>
+    public IReadOnlyList<SurgicalConsentKind> ConsentsNeeded => AnaesthesiaConsentRequiredAtSignIn
+        ? [SurgicalConsentKind.Procedure, SurgicalConsentKind.Anaesthesia]
+        : SurgicalConsent.Needed(AnaesthesiaType);
+
+    /// <summary>
+    /// Where the patient's consent to this operation stands, from <paramref name="consents"/> (the patient's consents on
+    /// record): each counts from the booking (<see cref="AuditableEntity.CreatedAt"/>). A waiver stands only while the
+    /// booking is an emergency, one no longer marked so goes ahead on the patient's consent, and never once the patient has
+    /// said no, by a refusal or a withdrawal, whichever was recorded first (<see cref="SurgicalConsentStatus.WaiverStands"/>).
+    /// </summary>
+    public SurgicalConsentStatus Consent(IEnumerable<ConsentOnRecord> consents) =>
+        SurgicalConsent.Assess(CreatedAt, ConsentsNeeded, consents, Priority == SurgeryPriority.Emergency ? ConsentWaiver : null);
+
+    /// <summary>
+    /// The operation goes ahead, or went ahead, on consent waived in an emergency rather than on the patient's consent. Once
+    /// the incision is made: it relied on no consent of a kind it needed (<see cref="ProcedureConsentId"/>, or
+    /// <see cref="AnaesthesiaConsentId"/> when the consent to anaesthesia was needed), under a waiver. Before it: the gates
+    /// stand on the waiver (<see cref="SurgicalConsentStatus.OnWaiver"/>): it stands, and a consent needed is not recorded.
+    /// An operation started before the theatre read consents relied on none, and on no waiver either.
+    /// </summary>
+    /// <param name="consents">The patient's consents on record; only read before the incision.</param>
+    public bool ReliesOnWaiver(IEnumerable<ConsentOnRecord> consents) => StartedAt is not null
+        ? ConsentWaivedAt is not null
+          && ConsentsNeeded.Any(kind => (kind == SurgicalConsentKind.Procedure ? ProcedureConsentId : AnaesthesiaConsentId) is null)
+        : Consent(consents).OnWaiver;
+
     /// <summary>
     /// Implants and consumables are corrected, not removed, once the operation has started (maker-checker slice 10): they have
     /// been used, charged and taken from stock, and an implant is in the patient.
@@ -129,7 +193,11 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
             ? Result.Success()
             : Error.Rule("surgery.plan_locked", "The surgical plan cannot be changed once surgery has started or the booking is closed.");
 
-    /// <summary>Gives the booking a theatre and slot (or moves it). Conflict checks are done by the caller under a lock.</summary>
+    /// <summary>
+    /// Gives the booking a theatre and slot (or moves it). Conflict checks are done by the caller under a lock. Moving a
+    /// booking already scheduled to another theatre or start ends a consent waived in an emergency, as a postponement does:
+    /// the consent is taken for the new slot, or waived again if the operation still cannot wait.
+    /// </summary>
     public Result Schedule(Guid theatreId, DateTimeOffset start, DateTimeOffset end, DateTimeOffset now)
     {
         if (Status is not (SurgeryStatus.Requested or SurgeryStatus.Scheduled or SurgeryStatus.Postponed))
@@ -158,11 +226,30 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
             return Error.Field("anaesthetistId", "Choose the anaesthetist (required for every technique except local and topical anaesthesia).");
         }
 
+        if (Status == SurgeryStatus.Scheduled && (TheatreId != theatreId || ScheduledStart != start))
+        {
+            EndConsentWaiver();
+        }
+
         TheatreId = theatreId;
         ScheduledStart = start;
         ScheduledEnd = end;
         Status = SurgeryStatus.Scheduled;
         return Result.Success();
+    }
+
+    /// <summary>
+    /// Names the operating surgeon. A consent waived in an emergency was the operating surgeon's judgement, so it ends when
+    /// another surgeon takes the case, who waives it again, with a second doctor, if the operation still cannot wait.
+    /// </summary>
+    public void AssignSurgeon(Guid? surgeonId)
+    {
+        if (surgeonId != SurgeonId)
+        {
+            EndConsentWaiver();
+        }
+
+        SurgeonId = surgeonId;
     }
 
     public Result ReceiveInPreOp(DateTimeOffset now)
@@ -177,10 +264,16 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
+    /// <summary>
+    /// Records pre-operative checklist answers. "Consent signed" (<see cref="PreOpChecklist.ConsentItem"/>) is answered (with
+    /// anything but pending) only over the patient's consent to this operation as the front office recorded it, or consent
+    /// waived in an emergency (<see cref="SurgicalConsent"/>): never on a tick alone.
+    /// </summary>
+    /// <param name="consents">The patient's consents on record, read as the checklist is saved.</param>
     /// <param name="canMarkSite">
     /// The signed-in user is a surgeon (holds the permission to operate), who may record that they marked the site.
     /// </param>
-    public Result RecordPreOp(IReadOnlyList<ChecklistInput> items, StaffStamp by, bool canMarkSite = false)
+    public Result RecordPreOp(IReadOnlyList<ChecklistInput> items, StaffStamp by, IReadOnlyCollection<ConsentOnRecord> consents, bool canMarkSite = false)
     {
         if (Status is not (SurgeryStatus.Requested or SurgeryStatus.Scheduled or SurgeryStatus.InPreOp or SurgeryStatus.Postponed))
         {
@@ -192,6 +285,15 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
             return Error.Rule("surgery.preop_locked", "The pre-operative checklist is locked after the WHO Sign-in.");
         }
 
+        if (items.Any(i => i.Key == PreOpChecklist.ConsentItem && i.State != ChecklistItemState.Pending))
+        {
+            var consented = SurgicalConsent.Require(Consent(consents));
+            if (consented.IsFailure)
+            {
+                return consented;
+            }
+        }
+
         var marking = SiteMarking.CheckPreOp(Site, PreOpChecks, items, canMarkSite);
         if (marking.IsFailure)
         {
@@ -201,8 +303,15 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         return PreOpChecklist.Apply(PreOpChecks, SiteMarking.KeepMark(PreOpChecks, items), by);
     }
 
-    /// <summary>Records WHO checklist items for one phase, enforcing the phase order and the surgery state.</summary>
-    public Result ConfirmSafety(SafetyPhase phase, IReadOnlyList<ChecklistInput> items, StaffStamp by)
+    /// <summary>
+    /// Records WHO checklist items for one phase, enforcing the phase order and the surgery state. The Sign-in (whose first
+    /// item confirms consent with the patient) and the Time-out are recorded only while the patient's consent to this
+    /// operation is on record, or was waived in an emergency (<see cref="SurgicalConsent"/>), read as they are saved. A
+    /// Sign-in completed under anaesthesia given by an anaesthetist keeps the consent to anaesthesia needed
+    /// (<see cref="AnaesthesiaConsentRequiredAtSignIn"/>).
+    /// </summary>
+    /// <param name="consents">The patient's consents on record, read as the phase is saved.</param>
+    public Result ConfirmSafety(SafetyPhase phase, IReadOnlyList<ChecklistInput> items, StaffStamp by, IReadOnlyCollection<ConsentOnRecord> consents)
     {
         if (IsPhaseComplete(phase))
         {
@@ -229,6 +338,15 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         if (phase == SafetyPhase.SignIn && !PreOpChecklist.IsComplete(PreOpChecks))
         {
             return Error.Rule("surgery.preop_incomplete", "Complete the pre-operative checklist before the WHO Sign-in.");
+        }
+
+        if (phase is SafetyPhase.SignIn or SafetyPhase.TimeOut)
+        {
+            var consented = SurgicalConsent.Require(Consent(consents));
+            if (consented.IsFailure)
+            {
+                return consented;
+            }
         }
 
         if (phase == SafetyPhase.SignIn)
@@ -261,6 +379,7 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
             case SafetyPhase.SignIn:
                 SignInCompletedAt = by.At;
                 InRoomAt ??= by.At;
+                AnaesthesiaConsentRequiredAtSignIn |= SurgicalConsent.Needed(AnaesthesiaType).Contains(SurgicalConsentKind.Anaesthesia);
                 break;
             case SafetyPhase.TimeOut:
                 TimeOutCompletedAt = by.At;
@@ -273,8 +392,13 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    /// <summary>Knife to skin. WHO: never before the Sign-in and the Time-out are complete.</summary>
-    public Result Start(DateTimeOffset now)
+    /// <summary>
+    /// Knife to skin. WHO: never before the Sign-in and the Time-out are complete. NABH: never without the patient's consent
+    /// to the operation (and to the anaesthesia, unless the surgeon gives it locally) on record, read as the incision is
+    /// saved, or waived in an emergency (<see cref="SurgicalConsent"/>); the consents relied on are kept on the booking.
+    /// </summary>
+    /// <param name="consents">The patient's consents on record, read as the incision is saved.</param>
+    public Result Start(DateTimeOffset now, IReadOnlyCollection<ConsentOnRecord> consents)
     {
         if (Status is not (SurgeryStatus.Scheduled or SurgeryStatus.InPreOp))
         {
@@ -286,8 +410,93 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
             return Error.Rule("surgery.checklist_incomplete", "Surgery cannot start until the WHO Sign-in and Time-out are complete.");
         }
 
+        var consent = Consent(consents);
+        var consented = SurgicalConsent.Require(consent);
+        if (consented.IsFailure)
+        {
+            return consented;
+        }
+
         Status = SurgeryStatus.InProgress;
         StartedAt = now;
+        ProcedureConsentId = consent.ConsentIdOf(SurgicalConsentKind.Procedure);
+        AnaesthesiaConsentId = consent.ConsentIdOf(SurgicalConsentKind.Anaesthesia);
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// The emergency doctrine: an emergency operation that cannot wait goes ahead without the patient's consent. Only before
+    /// the incision, for a booking marked an emergency, once, and while the consent is not on record; never when the
+    /// patient's latest word since the booking on a consent the operation needs is "no", a refusal or a withdrawal (the
+    /// doctrine is for a patient who cannot consent: a change of mind is recorded as a new consent at the front office).
+    /// Waived by the operating surgeon from their own sign-in (<paramref name="surgeonPractitionerId"/> is the case's
+    /// surgeon), with the clinical reason (at least <see cref="SurgicalConsent.MinimumReasonLength"/> characters), and a
+    /// second doctor who agrees: a doctor on record, never the surgeon. The consent gates then stand on the waiver
+    /// (<see cref="ConsentWaiver"/>) while it stands.
+    /// </summary>
+    public Result WaiveConsent(string? reason, StaffStamp surgeon, Guid? surgeonPractitionerId, ConcurringDoctor concurring, IReadOnlyCollection<ConsentOnRecord> consents)
+    {
+        ArgumentNullException.ThrowIfNull(surgeon);
+        ArgumentNullException.ThrowIfNull(concurring);
+        if (Status is not (SurgeryStatus.Requested or SurgeryStatus.Scheduled or SurgeryStatus.InPreOp))
+        {
+            return Error.Rule("surgery.consent_waiver_closed",
+                "Consent is waived only before the operation starts, for a booking that is neither closed nor postponed.");
+        }
+
+        if (Priority != SurgeryPriority.Emergency)
+        {
+            return Error.Rule("surgery.consent_waiver_not_emergency",
+                "Only an emergency operation goes ahead without the patient's consent (the emergency doctrine). Record the consent, or mark the booking an emergency if it is one.");
+        }
+
+        if (ConsentWaiver is { } waived)
+        {
+            return Error.Rule("surgery.consent_waived", $"Consent was already waived for this operation by {waived.SurgeonName}, {waived.ConcurringName} agreeing.");
+        }
+
+        var consent = Consent(consents);
+        if (consent.Recorded)
+        {
+            return Error.Rule("surgery.consent_waiver_not_needed", "The patient's consent to this operation is recorded: there is nothing to waive.");
+        }
+
+        if (consent.No is { } no)
+        {
+            return no.State == SurgicalConsentState.Refused
+                ? Error.Rule(SurgicalConsent.RefusedCode,
+                    $"The patient refused {SurgicalConsent.What(no.Kind)} after this operation was booked, and an emergency does not override a refusal: "
+                    + "the emergency doctrine is for a patient who cannot consent. If the patient now agrees, record the new consent under the patient's consents (front office).")
+                : Error.Rule(SurgicalConsent.WithdrawnCode,
+                    $"The patient withdrew {SurgicalConsent.What(no.Kind)} after this operation was booked, and an emergency does not override a withdrawal: "
+                    + "the emergency doctrine is for a patient who cannot consent. If the patient now agrees, record the new consent under the patient's consents (front office).");
+        }
+
+        if (surgeonPractitionerId is not { } by || by != SurgeonId)
+        {
+            return Error.Forbidden("surgery.consent_waiver_surgeon", "Only the operating surgeon of this case waives consent, from their own sign-in.");
+        }
+
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length < SurgicalConsent.MinimumReasonLength)
+        {
+            return Error.Field("reason", "Give the clinical reason the operation cannot wait for the patient's consent (at least 10 characters).");
+        }
+
+        if (concurring.UserId == surgeon.UserId || (concurring.PractitionerId is { } second && second == SurgeonId))
+        {
+            return Error.Rule("surgery.consent_waiver_same_doctor", "A second doctor, not the operating surgeon, agrees that the operation cannot wait.");
+        }
+
+        if (!concurring.IsDoctor)
+        {
+            return Error.Rule("surgery.consent_waiver_not_doctor",
+                $"{concurring.Name} is not a doctor on record: the doctor who agrees has an account linked to an active doctor's practitioner record.");
+        }
+
+        ConsentWaivedAt = surgeon.At;
+        (ConsentWaivedByUserId, ConsentWaivedByName) = (surgeon.UserId, surgeon.Name);
+        (ConsentWaiverConcurredByUserId, ConsentWaiverConcurredByName) = (concurring.UserId, concurring.Name);
+        ConsentWaiverReason = reason.Trim();
         return Result.Success();
     }
 
@@ -429,7 +638,10 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
 
     /// <summary>
     /// Frees the slot. The WHO checklist is reset because its checks (identity, site, equipment) are only valid on
-    /// the day they were done; the pre-op checklist keeps its timestamps so staff can judge what to re-verify.
+    /// the day they were done; the pre-op checklist keeps its timestamps so staff can judge what to re-verify. A consent
+    /// waived in an emergency ends too: the operation waited, so the consent is taken for the new slot, or waived again if
+    /// it still cannot wait (the waiver stays in the audit trail, <c>surgery.consent_waived</c>). The consent to
+    /// anaesthesia kept needed by the day's Sign-in (<see cref="AnaesthesiaConsentRequiredAtSignIn"/>) goes with it.
     /// </summary>
     public Result Postpone(string reason)
     {
@@ -445,7 +657,20 @@ public sealed class SurgeryBooking : AuditableEntity, IFacilityScoped
         InRoomAt = null;
         SafetyChecks = SurgicalSafetyChecklist.NewEntries();
         SignInCompletedAt = TimeOutCompletedAt = SignOutCompletedAt = null;
+        AnaesthesiaConsentRequiredAtSignIn = false;
+        EndConsentWaiver();
         return Result.Success();
+    }
+
+    /// <summary>
+    /// A consent waived in an emergency no longer stands (the operation waited, or another surgeon took the case); the
+    /// waiver stays in the audit trail (<c>surgery.consent_waived</c>) and in the booking's change history.
+    /// </summary>
+    private void EndConsentWaiver()
+    {
+        ConsentWaivedAt = null;
+        (ConsentWaivedByUserId, ConsentWaivedByName, ConsentWaiverConcurredByUserId, ConsentWaiverConcurredByName, ConsentWaiverReason) =
+            (null, null, null, null, null);
     }
 
     public Result Cancel(string reason)

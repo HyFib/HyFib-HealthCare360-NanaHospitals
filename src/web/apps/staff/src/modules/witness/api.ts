@@ -14,6 +14,8 @@ export type WitnessPurposeKey =
   | 'ot.count'
   // The anaesthetist's handover of a patient in the recovery room, confirmed at the recovery nurse's screen.
   | 'ot.recovery_handover'
+  // A second doctor agreeing, at the operating surgeon's screen, that an emergency operation goes ahead without consent.
+  | 'ot.consent_waiver'
   // The second registered medical practitioner's opinion on a termination from 20 weeks, confirmed at the first's screen.
   | 'mtp.second_opinion'
   // A body released from the mortuary on the police's clearance: a second member of the mortuary staff witnesses.

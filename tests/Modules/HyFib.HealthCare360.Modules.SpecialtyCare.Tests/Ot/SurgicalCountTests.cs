@@ -35,8 +35,8 @@ public sealed class SurgicalCountTests
 
         (discrepancy.Category, discrepancy.Expected, discrepancy.Counted, discrepancy.IsOpen).ShouldBe((CountCategory.Swabs, 10, 9, true));
         var signOut = TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]);
-        booking.ConfirmSafety(SafetyPhase.SignOut, signOut, TestData.Staff()).Error!.Code.ShouldBe("surgery.count_discrepancy_open");
-        booking.ConfirmSafety(SafetyPhase.SignOut, [new ChecklistInput("procedure_recorded", ChecklistItemState.Done, null)], TestData.Staff())
+        booking.ConfirmSafety(SafetyPhase.SignOut, signOut, TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.count_discrepancy_open");
+        booking.ConfirmSafety(SafetyPhase.SignOut, [new ChecklistInput("procedure_recorded", ChecklistItemState.Done, null)], TestData.Staff(), TestData.Consents)
             .Error!.Code.ShouldBe("surgery.count_discrepancy_open", "nothing of the Sign-out is recorded while a count is open");
         booking.SignOutCompletedAt.ShouldBeNull();
     }
@@ -54,7 +54,7 @@ public sealed class SurgicalCountTests
 
         settled.Value.IsOpen.ShouldBeFalse();
         settled.Value.ResolvedByName.ShouldBe("Sr. Anita Joseph");
-        booking.ConfirmSafety(SafetyPhase.SignOut, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignOut, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
         booking.SignOutCompletedAt.ShouldNotBeNull();
     }
 
@@ -80,15 +80,15 @@ public sealed class SurgicalCountTests
     public void Counts_are_confirmed_at_the_sign_out_only_once_every_category_is_counted_at_the_end()
     {
         var booking = TestData.InProgress();
-        booking.ConfirmSafety(SafetyPhase.SignOut, [CountsCorrect], TestData.Staff()).Error!.Code.ShouldBe("surgery.counts_missing", "a tick alone is not a count");
+        booking.ConfirmSafety(SafetyPhase.SignOut, [CountsCorrect], TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.counts_missing", "a tick alone is not a count");
 
         booking.RecordCount(TestData.Count(CountCategory.Swabs, CountStage.Initial, 10)).IsSuccess.ShouldBeTrue();
         booking.RecordCount(TestData.Count(CountCategory.Instruments, CountStage.Initial, 40)).IsSuccess.ShouldBeTrue();
         booking.RecordCount(TestData.Count(CountCategory.Swabs, CountStage.Final, 10)).IsSuccess.ShouldBeTrue();
-        booking.ConfirmSafety(SafetyPhase.SignOut, [CountsCorrect], TestData.Staff()).Error!.Code.ShouldBe("surgery.counts_incomplete");
+        booking.ConfirmSafety(SafetyPhase.SignOut, [CountsCorrect], TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.counts_incomplete");
 
         booking.RecordCount(TestData.Count(CountCategory.Instruments, CountStage.Final, 40)).IsSuccess.ShouldBeTrue();
-        booking.ConfirmSafety(SafetyPhase.SignOut, [CountsCorrect], TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignOut, [CountsCorrect], TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -97,8 +97,8 @@ public sealed class SurgicalCountTests
         var counted = TestData.CountsTallied(TestData.InProgress());
         var notApplicable = new ChecklistInput(SurgicalSafetyChecklist.CountsItem, ChecklistItemState.NotApplicable, "Nothing to count");
 
-        counted.ConfirmSafety(SafetyPhase.SignOut, [notApplicable], TestData.Staff()).Error!.Code.ShouldBe("surgery.counts_recorded");
-        TestData.InProgress().ConfirmSafety(SafetyPhase.SignOut, [notApplicable], TestData.Staff()).IsSuccess.ShouldBeTrue();
+        counted.ConfirmSafety(SafetyPhase.SignOut, [notApplicable], TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.counts_recorded");
+        TestData.InProgress().ConfirmSafety(SafetyPhase.SignOut, [notApplicable], TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class SurgicalCountTests
     public void Counts_close_with_the_sign_out()
     {
         var booking = TestData.CountsTallied(TestData.InProgress());
-        booking.ConfirmSafety(SafetyPhase.SignOut, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignOut, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignOut]), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
         booking.RecordCount(TestData.Count(CountCategory.Needles, CountStage.Initial, 2)).Error!.Code.ShouldBe("surgery.counts_closed");
         TestData.NewBooking().RecordCount(TestData.Count(CountCategory.Needles, CountStage.Initial, 2)).Error!.Code.ShouldBe("surgery.counts_closed");

@@ -29,10 +29,10 @@ public sealed class SiteMarkingTests
     {
         var booking = Sided(laterality, level);
 
-        booking.RecordPreOp([NotMarked], TestData.Staff(), canMarkSite: true).Error!.Code.ShouldBe("checklist.site_marking_required");
-        booking.RecordPreOp([Marked], TestData.Staff(name: "Dr. Rao"), canMarkSite: true).IsSuccess.ShouldBeTrue();
-        booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items), TestData.Staff()).IsSuccess.ShouldBeTrue();
-        booking.ConfirmSafety(SafetyPhase.SignIn, [NotMarked], TestData.Staff()).Error!.Code.ShouldBe("checklist.site_marking_required");
+        booking.RecordPreOp([NotMarked], TestData.Staff(), TestData.Consents, canMarkSite: true).Error!.Code.ShouldBe("checklist.site_marking_required");
+        booking.RecordPreOp([Marked], TestData.Staff(name: "Dr. Rao"), TestData.Consents, canMarkSite: true).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, [NotMarked], TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("checklist.site_marking_required");
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class SiteMarkingTests
     {
         var booking = Sided(Laterality.NotApplicable);
 
-        booking.RecordPreOp([NotMarked with { Remarks = "Midline laparotomy" }], TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp([NotMarked with { Remarks = "Midline laparotomy" }], TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -48,11 +48,11 @@ public sealed class SiteMarkingTests
     {
         var booking = Sided();
 
-        booking.RecordPreOp([Marked], TestData.Staff(), canMarkSite: false).Error!.Code.ShouldBe("checklist.site_marked_by_surgeon");
-        booking.RecordPreOp([Marked], TestData.Staff(name: "Dr. Rao"), canMarkSite: true).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp([Marked], TestData.Staff(), TestData.Consents, canMarkSite: false).Error!.Code.ShouldBe("checklist.site_marked_by_surgeon");
+        booking.RecordPreOp([Marked], TestData.Staff(name: "Dr. Rao"), TestData.Consents, canMarkSite: true).IsSuccess.ShouldBeTrue();
 
         // The ward nurse then completes the checklist, sending it whole: the mark keeps the surgeon's name.
-        booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items), TestData.Staff(name: "Sr. Anita Joseph")).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items), TestData.Staff(name: "Sr. Anita Joseph"), TestData.Consents).IsSuccess.ShouldBeTrue();
         booking.PreOpChecks.Single(e => e.Key == SiteMarking.Item).RecordedByName.ShouldBe("Dr. Rao");
     }
 
@@ -60,14 +60,14 @@ public sealed class SiteMarkingTests
     public void A_mark_on_the_old_side_is_redone_when_the_side_changes()
     {
         var booking = Sided(Laterality.Left);
-        booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items), TestData.Staff(name: "Dr. Rao"), canMarkSite: true).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items), TestData.Staff(name: "Dr. Rao"), TestData.Consents, canMarkSite: true).IsSuccess.ShouldBeTrue();
         var before = booking.Site;
 
         booking.Laterality = Laterality.Right;
         booking.ResetSiteMarkingIfMoved(before);
 
         booking.PreOpChecks.Single(e => e.Key == SiteMarking.Item).State.ShouldBe(ChecklistItemState.Pending);
-        booking.ConfirmSafety(SafetyPhase.SignIn, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn]), TestData.Staff())
+        booking.ConfirmSafety(SafetyPhase.SignIn, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn]), TestData.Staff(), TestData.Consents)
             .Error!.Code.ShouldBe("surgery.preop_incomplete");
     }
 
@@ -76,12 +76,12 @@ public sealed class SiteMarkingTests
     {
         var booking = Sided(Laterality.NotApplicable);
         booking.RecordPreOp(TestData.AllDone(PreOpChecklist.Items).Select(i => i.Key == SiteMarking.Item ? NotMarked with { Remarks = "Midline" } : i).ToList(),
-            TestData.Staff()).IsSuccess.ShouldBeTrue();
+            TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
         // A level is written in afterwards, past the pre-op mark that said not applicable (a booking edited outside the plan).
         booking.SiteLevel = "T12";
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn]), TestData.Staff())
+        booking.ConfirmSafety(SafetyPhase.SignIn, TestData.AllDone(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn]), TestData.Staff(), TestData.Consents)
             .Error!.Code.ShouldBe("surgery.site_not_marked");
     }
 }

@@ -14,7 +14,7 @@ public sealed class SurgicalSafetyChecklistTests
     {
         var booking = TestData.ReadyForSignIn();
 
-        var result = booking.Start(TestData.Now);
+        var result = booking.Start(TestData.Now, TestData.Consents);
 
         result.Error!.Code.ShouldBe("surgery.checklist_incomplete");
         booking.Status.ShouldBe(SurgeryStatus.InPreOp);
@@ -24,9 +24,9 @@ public sealed class SurgicalSafetyChecklistTests
     public void Surgery_cannot_start_after_sign_in_alone()
     {
         var booking = TestData.ReadyForSignIn();
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
-        booking.Start(TestData.Now).Error!.Code.ShouldBe("surgery.checklist_incomplete");
+        booking.Start(TestData.Now, TestData.Consents).Error!.Code.ShouldBe("surgery.checklist_incomplete");
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class SurgicalSafetyChecklistTests
     public void Surgery_completes_after_sign_out()
     {
         var booking = TestData.CountsTallied(TestData.InProgress());
-        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3))).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3)), TestData.Consents).IsSuccess.ShouldBeTrue();
 
         booking.Complete(TestData.Now.AddHours(3).AddMinutes(5)).IsSuccess.ShouldBeTrue();
 
@@ -66,7 +66,7 @@ public sealed class SurgicalSafetyChecklistTests
         var booking = TestData.CountsTallied(TestData.InProgress());
         booking.Laterality = Laterality.Right;
         booking.ProcedureCode = "0FT44ZZ";
-        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3))).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(TestData.Now.AddHours(3)), TestData.Consents).IsSuccess.ShouldBeTrue();
         booking.DomainEvents.ShouldBeEmpty("Nothing is announced before the operation is over.");
 
         booking.Complete(TestData.Now.AddHours(3).AddMinutes(5)).IsSuccess.ShouldBeTrue();
@@ -84,25 +84,25 @@ public sealed class SurgicalSafetyChecklistTests
 
     [Fact]
     public void Time_out_requires_the_sign_in_first() =>
-        TestData.ReadyForSignIn().ConfirmSafety(SafetyPhase.TimeOut, Phase(SafetyPhase.TimeOut), TestData.Staff()).Error!.Code.ShouldBe("surgery.phase_order");
+        TestData.ReadyForSignIn().ConfirmSafety(SafetyPhase.TimeOut, Phase(SafetyPhase.TimeOut), TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.phase_order");
 
     [Fact]
     public void Sign_out_is_only_possible_during_surgery()
     {
         var booking = TestData.ReadyForSignIn();
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).IsSuccess.ShouldBeTrue();
-        booking.ConfirmSafety(SafetyPhase.TimeOut, Phase(SafetyPhase.TimeOut), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.TimeOut, Phase(SafetyPhase.TimeOut), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
-        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff()).Error!.Code.ShouldBe("surgery.not_in_progress");
+        booking.ConfirmSafety(SafetyPhase.SignOut, Phase(SafetyPhase.SignOut), TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.not_in_progress");
     }
 
     [Fact]
     public void Sign_in_requires_a_complete_pre_operative_checklist()
     {
         var booking = TestData.Scheduled();
-        booking.RecordPreOp([new ChecklistInput("consent", ChecklistItemState.Done, null)], TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.RecordPreOp([new ChecklistInput("consent", ChecklistItemState.Done, null)], TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).Error!.Code.ShouldBe("surgery.preop_incomplete");
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.preop_incomplete");
     }
 
     [Fact]
@@ -111,10 +111,10 @@ public sealed class SurgicalSafetyChecklistTests
         var booking = TestData.ReadyForSignIn();
         var allButOne = Phase(SafetyPhase.SignIn).Skip(1).ToList();
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, allButOne, TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, allButOne, TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
         booking.SignInCompletedAt.ShouldBeNull();
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn).Take(1).ToList(), TestData.Staff(TestData.Now.AddMinutes(5))).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn).Take(1).ToList(), TestData.Staff(TestData.Now.AddMinutes(5)), TestData.Consents).IsSuccess.ShouldBeTrue();
         booking.SignInCompletedAt.ShouldBe(TestData.Now.AddMinutes(5));
     }
 
@@ -124,7 +124,7 @@ public sealed class SurgicalSafetyChecklistTests
         var booking = TestData.ReadyForSignIn();
         var nurse = TestData.Staff(TestData.Now.AddMinutes(2), "Sr. Mary");
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), nurse).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), nurse, TestData.Consents).IsSuccess.ShouldBeTrue();
 
         booking.SafetyChecks.Where(e => e.Phase == SafetyPhase.SignIn).ShouldAllBe(e =>
             e.ConfirmedByName == "Sr. Mary" && e.ConfirmedByUserId == nurse.UserId && e.ConfirmedAt == nurse.At);
@@ -135,9 +135,9 @@ public sealed class SurgicalSafetyChecklistTests
     {
         var booking = TestData.ReadyForSignIn();
         var first = TestData.Staff(TestData.Now, "Dr. First");
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn).Take(2).ToList(), first).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn).Take(2).ToList(), first, TestData.Consents).IsSuccess.ShouldBeTrue();
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(TestData.Now.AddMinutes(9), "Dr. Second")).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(TestData.Now.AddMinutes(9), "Dr. Second"), TestData.Consents).IsSuccess.ShouldBeTrue();
 
         var key = SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn][0].Key;
         booking.SafetyChecks.Single(e => e.Phase == SafetyPhase.SignIn && e.Key == key).ConfirmedByName.ShouldBe("Dr. First");
@@ -147,9 +147,9 @@ public sealed class SurgicalSafetyChecklistTests
     public void Completed_phase_is_locked()
     {
         var booking = TestData.ReadyForSignIn();
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).Error!.Code.ShouldBe("surgery.phase_locked");
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.phase_locked");
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class SurgicalSafetyChecklistTests
         var booking = TestData.ReadyForSignIn();
         var pending = new ChecklistInput(SurgicalSafetyChecklist.Phases[SafetyPhase.SignIn][0].Key, ChecklistItemState.Pending, null);
 
-        booking.ConfirmSafety(SafetyPhase.SignIn, [pending], TestData.Staff()).Error!.Code.ShouldBe("checklist.cannot_reset");
+        booking.ConfirmSafety(SafetyPhase.SignIn, [pending], TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("checklist.cannot_reset");
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public sealed class SurgicalSafetyChecklistTests
     {
         var booking = TestData.ReadyForSignIn();
 
-        var result = booking.ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("pulse_oximeter", ChecklistItemState.NotApplicable, "Not needed")], TestData.Staff());
+        var result = booking.ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("pulse_oximeter", ChecklistItemState.NotApplicable, "Not needed")], TestData.Staff(), TestData.Consents);
 
         result.Error!.Code.ShouldBe("checklist.not_applicable_refused");
     }
@@ -176,32 +176,51 @@ public sealed class SurgicalSafetyChecklistTests
     {
         var booking = TestData.ReadyForSignIn();
 
-        var withoutReason = booking.ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("site_marked", ChecklistItemState.NotApplicable, " ")], TestData.Staff());
-        var withReason = booking.ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("site_marked", ChecklistItemState.NotApplicable, "Midline incision")], TestData.Staff());
+        var withoutReason = booking.ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("site_marked", ChecklistItemState.NotApplicable, " ")], TestData.Staff(), TestData.Consents);
+        var withReason = booking.ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("site_marked", ChecklistItemState.NotApplicable, "Midline incision")], TestData.Staff(), TestData.Consents);
 
         withoutReason.IsFailure.ShouldBeTrue();
         withReason.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
+    public void An_answer_that_is_not_done_not_applicable_or_pending_is_refused_on_either_checklist()
+    {
+        // A number the JSON enum converter lets through: stored, a checklist would count it as given (anything but pending).
+        const ChecklistItemState notAnAnswer = (ChecklistItemState)7;
+        var booking = TestData.Scheduled();
+        var preOp = TestData.AllDone(PreOpChecklist.Items).Select(i => i.Key == "npo" ? i with { State = notAnAnswer } : i).ToList();
+
+        booking.RecordPreOp(preOp, TestData.Staff(), TestData.Consents).Error!.Fields!.ShouldContainKey("items");
+        PreOpChecklist.IsComplete(booking.PreOpChecks).ShouldBeFalse();
+        booking.PreOpChecks.ShouldAllBe(e => e.State == ChecklistItemState.Pending);
+
+        var ready = TestData.ReadyForSignIn();
+        var signIn = Phase(SafetyPhase.SignIn).Select(i => i with { State = notAnAnswer }).ToList();
+        ready.ConfirmSafety(SafetyPhase.SignIn, signIn, TestData.Staff(), TestData.Consents).Error!.Fields!.ShouldContainKey("items");
+        ready.SignInCompletedAt.ShouldBeNull();
+        ready.SafetyChecks.ShouldAllBe(e => e.State == ChecklistItemState.Pending);
+    }
+
+    [Fact]
     public void Unknown_checklist_items_are_rejected() =>
-        TestData.ReadyForSignIn().ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("made_up", ChecklistItemState.Done, null)], TestData.Staff())
+        TestData.ReadyForSignIn().ConfirmSafety(SafetyPhase.SignIn, [new ChecklistInput("made_up", ChecklistItemState.Done, null)], TestData.Staff(), TestData.Consents)
             .Error!.Type.ShouldBe(ErrorType.Validation);
 
     [Fact]
     public void Pre_operative_checklist_is_locked_after_sign_in()
     {
         var booking = TestData.ReadyForSignIn();
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
-        booking.RecordPreOp([new ChecklistInput("npo", ChecklistItemState.Pending, null)], TestData.Staff()).Error!.Code.ShouldBe("surgery.preop_locked");
+        booking.RecordPreOp([new ChecklistInput("npo", ChecklistItemState.Pending, null)], TestData.Staff(), TestData.Consents).Error!.Code.ShouldBe("surgery.preop_locked");
     }
 
     [Fact]
     public void Postponing_resets_the_day_of_surgery_checks()
     {
         var booking = TestData.ReadyForSignIn();
-        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff()).IsSuccess.ShouldBeTrue();
+        booking.ConfirmSafety(SafetyPhase.SignIn, Phase(SafetyPhase.SignIn), TestData.Staff(), TestData.Consents).IsSuccess.ShouldBeTrue();
 
         booking.Postpone("Anaesthesia machine fault").IsSuccess.ShouldBeTrue();
 

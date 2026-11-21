@@ -33,7 +33,7 @@ import {
   type SurgeryDetail,
 } from './api';
 import { anaesthesiaLabel, anaesthesiaShort, phaseLabel, phaseMoment } from './labels';
-import { phaseGate, preOpGate } from './logic';
+import { consentGate, phaseGate, preOpGate, saidNoConsent } from './logic';
 import { SideBadge } from './OtBadges';
 import { ActionError, WhoWhen } from './shared/feedback';
 
@@ -99,6 +99,9 @@ function recordedText(item: ChecklistItemDto): string {
 /** The site-marking item, on the pre-op checklist and the WHO Sign-in (server `SiteMarking.Item`). */
 const SITE_MARKED = 'site_marked';
 
+/** The consent item: ticked only over the patient's consent as the front office recorded it (server `PreOpChecklist.ConsentItem`). */
+const CONSENT = 'consent';
+
 /** The Sign-out's count item: confirmed from the recorded counts (server `SurgicalSafetyChecklist.CountsItem`). */
 const COUNTS_CORRECT = 'counts_correct';
 
@@ -163,6 +166,10 @@ export function PreOpChecklistPanel({
   const editable = gate.allowed && canRecord;
   // With a side or level booked, the site mark is recorded by a surgeon from their own sign-in (server SiteMarking).
   const canMarkSite = usePermission('ot.surgery.perform');
+  // "Consent signed" stands on the consents the front office records, or a waiver in an emergency (server SurgicalConsent),
+  // never against the patient's "no" (a refusal or a withdrawal).
+  const consented = consentGate(booking).allowed;
+  const saidNo = booking.consent ? saidNoConsent(booking.consent) : null;
   const [edits, setEdits] = useState<Record<string, PreOpEdit>>({});
   // The booking as it was when the first unsaved tick was made: the save is refused if it changed since (REL-04).
   const [baseVersion, setBaseVersion] = useState<number | null>(null);
@@ -268,6 +275,19 @@ export function PreOpChecklistPanel({
                     {!canMarkSite && editable ? ' Ask the surgeon to record it.' : ''}
                   </Caption1>
                 )}
+                {item.key === CONSENT && booking.consent && booking.startedAt === null && (
+                  <Caption1 className={consented ? styles.muted : undefined}>
+                    {consented
+                      ? booking.consent.recorded
+                        ? 'The patient’s consent to the operation is recorded at the front office.'
+                        : 'Consent was waived in an emergency by the operating surgeon, a second doctor agreeing.'
+                      : saidNo
+                        ? saidNo.state === 'Refused'
+                          ? 'The patient refused: ticked only once a new consent is recorded at the front office.'
+                          : 'The patient withdrew consent: ticked only once a new consent is recorded at the front office.'
+                        : 'Ticked only once the patient’s consent is recorded at the front office, or waived in an emergency.'}
+                  </Caption1>
+                )}
                 {editable && (
                   <div className={styles.controls}>
                     <RadioGroup
@@ -280,10 +300,11 @@ export function PreOpChecklistPanel({
                         value="Done"
                         label="Done"
                         disabled={
-                          item.key === SITE_MARKED &&
-                          booking.siteMarkingRequired &&
-                          !canMarkSite &&
-                          item.state !== 'Done'
+                          (item.key === SITE_MARKED &&
+                            booking.siteMarkingRequired &&
+                            !canMarkSite &&
+                            item.state !== 'Done') ||
+                          (item.key === CONSENT && !consented && item.state !== 'Done')
                         }
                       />
                       {offersNotApplicable(item, booking) && <Radio value="NotApplicable" label="Not applicable" />}

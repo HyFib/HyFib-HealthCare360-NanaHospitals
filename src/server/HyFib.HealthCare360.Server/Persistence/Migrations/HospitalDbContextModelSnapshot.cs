@@ -18,7 +18,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
@@ -39521,6 +39521,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("admission_id");
 
+                    b.Property<Guid?>("AnaesthesiaConsentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("anaesthesia_consent_id");
+
+                    b.Property<bool>("AnaesthesiaConsentRequiredAtSignIn")
+                        .HasColumnType("boolean")
+                        .HasColumnName("anaesthesia_consent_required_at_sign_in");
+
                     b.Property<string>("AnaesthesiaType")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -39566,6 +39574,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset?>("ConsentWaivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consent_waived_at");
+
+                    b.Property<string>("ConsentWaivedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_waived_by_name");
+
+                    b.Property<Guid?>("ConsentWaivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_waived_by_user_id");
+
+                    b.Property<string>("ConsentWaiverConcurredByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_waiver_concurred_by_name");
+
+                    b.Property<Guid?>("ConsentWaiverConcurredByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_waiver_concurred_by_user_id");
+
+                    b.Property<string>("ConsentWaiverReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("consent_waiver_reason");
 
                     b.Property<string>("CountDiscrepancies")
                         .IsRequired()
@@ -39661,6 +39696,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("procedure_code");
+
+                    b.Property<Guid?>("ProcedureConsentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("procedure_consent_id");
 
                     b.Property<string>("ProcedureName")
                         .IsRequired()
