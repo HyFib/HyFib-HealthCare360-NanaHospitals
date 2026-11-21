@@ -1,4 +1,7 @@
+using System.Buffers.Binary;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
@@ -231,7 +234,21 @@ public sealed class SurgeryService(
     /// as the incision is saved, or waived in an emergency (<see cref="SurgicalConsent"/>, <see cref="WaiveConsentAsync"/>).
     /// </summary>
     public Task<Result> StartAsync(Guid id, CancellationToken ct) =>
-        TakeIntoTheatreAsync(id, async b => b.Start(time.GetUtcNow(), await SurgicalConsentRecords.ForBookingAsync(db, b, ct)), ct);
+        TakeIntoTheatreAsync(id, async b =>
+        {
+            // A consent is relied on by one operation only. The stay's lock does not cover out-patient bookings or bookings on
+            // different stays, so the incision takes the patient's consent lock before it reads the consents, held to its
+            // commit: of two incisions on the same patient, the second reads the consent the first relied on as taken.
+            await LockPatientConsentsAsync(b.PatientId, ct);
+            return b.Start(time.GetUtcNow(), await SurgicalConsentRecords.ForBookingAsync(db, b, ct));
+        }, ct);
+
+    /// <summary>The patient's consent lock (a transaction-scoped advisory lock, the same on every server node), in the caller's transaction.</summary>
+    private Task LockPatientConsentsAsync(Guid patientId, CancellationToken ct) =>
+        db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({ConsentLockKey(patientId)})", ct);
+
+    internal static long ConsentLockKey(Guid patientId) =>
+        BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes($"surgical-consent:{patientId:N}")));
 
     /// <summary>
     /// The emergency doctrine: an emergency operation goes ahead without the patient's consent when it cannot wait for it.
