@@ -155,6 +155,16 @@ internal static class RestraintEndpoints
             return Error.Forbidden("restraint.doctor_required", "A restraint is ordered by a doctor, signed in as themselves.").ToProblem();
         }
 
+        // Under the stay's lock (the one a discharge or cancellation takes): the stay and the restraints are read again, so an order
+        // saved while the stay closes is never left Active on a closed stay.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await EncounterLocks.LockAsync(db, [admissionId], ct);
+        var status = await db.Set<Admission>().AsNoTracking().Where(a => a.Id == admissionId).Select(a => a.Status).FirstAsync(ct);
+        if (status is not (AdmissionStatus.Admitted or AdmissionStatus.DischargeInitiated))
+        {
+            return Error.Rule("restraint.stay_closed", "The stay has ended: there is no patient on the ward to restrain.").ToProblem();
+        }
+
         if (await db.Set<RestraintEpisode>().AnyAsync(e => e.AdmissionId == admissionId && e.Status == RestraintStatus.Active, ct))
         {
             return Error.Conflict("restraint.already_active", "The patient is already restrained: renew that order, or release them first.").ToProblem();
@@ -174,6 +184,7 @@ internal static class RestraintEndpoints
         Audit(audit, episode, "restraint.ordered",
             $"{episode.Type} restraint ordered for {request.Hours} h, checks every {episode.CheckIntervalMinutes} min: {episode.Method} ({episode.Reason})");
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         return TypedResults.Ok(Dto(episode, [], now));
     }
 
@@ -288,14 +299,15 @@ internal static class RestraintEndpoints
         return await DtoAsync(db, episode, now, ct);
     }
 
-    /// <summary>The ward's restrained patients, the check due first (an overdue check, or a lapsed order, at the top).</summary>
+    /// <summary>The restrained patients now on the ward (open stays only, by where the stay is, so a transferred patient shows on the receiving ward), the check due first (an overdue check, or a lapsed order, at the top).</summary>
     private static async Task<IResult> WardList(Guid wardId, HospitalDbContext db, IAuditLogger audit, TimeProvider time, CancellationToken ct)
     {
         var rows = await (
                 from e in db.Set<RestraintEpisode>().AsNoTracking()
-                where e.WardId == wardId && e.Status == RestraintStatus.Active
+                where e.Status == RestraintStatus.Active
                 join p in db.Set<Patient>() on e.PatientId equals p.Id
                 join a in db.Set<Admission>() on e.AdmissionId equals a.Id
+                where a.WardId == wardId && (a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated)
                 join b in db.Set<Bed>() on a.BedId equals b.Id into beds
                 from b in beds.DefaultIfEmpty()
                 select new { Episode = e, p.Uhid, p.FullName, BedLabel = b != null ? b.Label : null })

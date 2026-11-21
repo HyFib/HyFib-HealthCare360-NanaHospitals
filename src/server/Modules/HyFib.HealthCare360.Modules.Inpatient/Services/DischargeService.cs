@@ -280,7 +280,7 @@ public sealed class DischargeService(
             declared = recorded.Value;
         }
 
-        var closed = await CloseAsync(admission, type, currentUser.UserId, request.Notes, dischargedAt, request.NotifyPatient, now, ct);
+        var closed = await CloseAsync(admission, type, currentUser.UserId, currentUser.DisplayName, request.Notes, dischargedAt, request.NotifyPatient, now, ct);
         if (closed.IsFailure)
         {
             return closed.Error!;
@@ -400,7 +400,7 @@ public sealed class DischargeService(
         }
 
         var dues = (await billing.GetDischargeClearanceAsync(admission.Id, ct)).Outstanding;
-        var closed = await CloseAsync(admission, asked.Type, request.RequestedBy, asked.Notes, asked.DischargedAt, notify: false, time.GetUtcNow(), ct);
+        var closed = await CloseAsync(admission, asked.Type, request.RequestedBy, request.RequestedByName, asked.Notes, asked.DischargedAt, notify: false, time.GetUtcNow(), ct);
         if (closed.IsFailure)
         {
             return closed.Error!;
@@ -428,7 +428,7 @@ public sealed class DischargeService(
     /// completed, the bed released for cleaning, the patient told (routine discharges). Returns the bed released, if any.
     /// </summary>
     private async Task<Result<Bed?>> CloseAsync(
-        Admission admission, DischargeType type, Guid? by, string? notes, DateTimeOffset dischargedAt, bool notify, DateTimeOffset now, CancellationToken ct)
+        Admission admission, DischargeType type, Guid? by, string? byName, string? notes, DateTimeOffset dischargedAt, bool notify, DateTimeOffset now, CancellationToken ct)
     {
         // The stay's lock, held to this commit, is the one the theatre takes to receive the patient in pre-op or start
         // the operation (EncounterLocks): a case taken into the theatre meanwhile is committed first and found here.
@@ -442,6 +442,23 @@ public sealed class DischargeService(
         if (completed.IsFailure)
         {
             return completed.Error!;
+        }
+
+        if (type == DischargeType.Expired)
+        {
+            // A death ends an active restraint, with the reason recorded and audited as a Critical (sentinel) entry.
+            var restraints = await db.Set<RestraintEpisode>().Where(e => e.AdmissionId == admission.Id && e.Status == RestraintStatus.Active).ToListAsync(ct);
+            foreach (var restraint in restraints.Where(r => r.EndForDeath(by, byName, dischargedAt).IsSuccess))
+            {
+                audit.Add(new AuditEntry(AuditCategories.Clinical, "restraint.released", $"{restraint.Type} restraint ended: {RestraintRules.ExpiredReason}")
+                {
+                    PatientId = restraint.PatientId,
+                    EntityType = nameof(RestraintEpisode),
+                    EntityId = restraint.Id.ToString(),
+                    Severity = AuditSeverity.Critical,
+                    Details = new { admissionId = restraint.AdmissionId, type = restraint.Type.ToString(), until = restraint.OrderedUntil, death = true },
+                });
+            }
         }
 
         var visit = await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == admission.VisitId, ct);
@@ -527,6 +544,14 @@ public sealed class DischargeService(
     /// </summary>
     private async Task<Error?> HoldAsync(Guid admissionId, DischargeType type, CancellationToken ct)
     {
+        // A restrained patient is not discharged: a doctor releases the restraint first (a death ends it instead, in CloseAsync).
+        var restrained = type != DischargeType.Expired
+                         && await db.Set<RestraintEpisode>().AnyAsync(e => e.AdmissionId == admissionId && e.Status == RestraintStatus.Active, ct);
+        if (RestraintRules.DischargeHold(type, restrained) is { } restraintHold)
+        {
+            return restraintHold;
+        }
+
         var planned = DischargeRules.IsPlanned(type);
         var holds = new List<DischargeHold>();
         foreach (var source in holdSources)

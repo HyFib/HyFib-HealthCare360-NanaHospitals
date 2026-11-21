@@ -25635,6 +25635,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("alternatives_tried");
 
+                    b.Property<DateTimeOffset?>("CheckAlertedForDue")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("check_alerted_for_due");
+
                     b.Property<int>("CheckIntervalMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("check_interval_minutes");
@@ -25676,6 +25680,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset?>("LapseAlertedFor")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lapse_alerted_for");
 
                     b.Property<DateTimeOffset?>("LastCheckedAt")
                         .HasColumnType("timestamp with time zone")

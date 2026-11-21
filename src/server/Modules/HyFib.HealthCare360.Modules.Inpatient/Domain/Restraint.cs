@@ -79,6 +79,12 @@ public sealed class RestraintEpisode : AuditableEntity, IFacilityScoped
     public DateTimeOffset? DebriefedAt { get; private set; }
     public string? DebriefedByName { get; private set; }
 
+    /// <summary>The due time of the nurse's check an overdue alert was last raised for, so one overdue period is alerted once.</summary>
+    public DateTimeOffset? CheckAlertedForDue { get; private set; }
+
+    /// <summary>The <see cref="OrderedUntil"/> a lapsed-order alert was last raised for; a renewal that lapses is alerted again.</summary>
+    public DateTimeOffset? LapseAlertedFor { get; private set; }
+
     public bool IsActive => Status == RestraintStatus.Active;
 
     /// <summary>When the next nurse's check is due: an interval after the last check, or after the order for the first.</summary>
@@ -88,6 +94,31 @@ public sealed class RestraintEpisode : AuditableEntity, IFacilityScoped
 
     /// <summary>The order ran out with the patient still restrained: no doctor renewed it or released them.</summary>
     public bool IsOrderLapsed(DateTimeOffset now) => IsActive && now > OrderedUntil;
+
+    /// <summary>A nurse's check is overdue and its alert has not been raised yet for this overdue period.</summary>
+    public bool IsCheckAlertDue(DateTimeOffset now) => IsCheckOverdue(now) && CheckAlertedForDue != NextCheckDue;
+
+    public void MarkCheckAlerted() => CheckAlertedForDue = NextCheckDue;
+
+    /// <summary>The order has lapsed and its alert has not been raised yet for this order or renewal.</summary>
+    public bool IsLapseAlertDue(DateTimeOffset now) => IsOrderLapsed(now) && LapseAlertedFor != OrderedUntil;
+
+    public void MarkLapseAlerted() => LapseAlertedFor = OrderedUntil;
+
+    /// <summary>The patient moved to another ward: an active restraint goes with them. Returns whether the ward changed.</summary>
+    public bool MoveToWard(Guid wardId)
+    {
+        if (!IsActive || WardId == wardId)
+        {
+            return false;
+        }
+
+        WardId = wardId;
+        return true;
+    }
+
+    /// <summary>The patient died: the restraint ends with the stay, with the recorded reason <see cref="RestraintRules.ExpiredReason"/>.</summary>
+    public Result EndForDeath(Guid? userId, string? name, DateTimeOffset now) => Release(RestraintRules.ExpiredReason, userId, name, now);
 
     public static Result<RestraintEpisode> Order(
         Guid facilityId, Guid admissionId, Guid patientId, Guid? wardId, RestraintType type, string method, string reason, string alternativesTried,
@@ -253,4 +284,30 @@ public sealed class RestraintCheck : AuditableEntity, IFacilityScoped
 
     /// <summary>Whether the check found something wrong: poor circulation or broken skin.</summary>
     public bool HasConcern => !CirculationOk || !SkinIntact;
+}
+
+/// <summary>What a restraint means for the stay's end.</summary>
+public static class RestraintRules
+{
+    public const string DischargeHoldCode = "discharge.restraint_active";
+
+    public const string CancelHoldCode = "admission.restraint_active";
+
+    /// <summary>The reason recorded when a death ends an active restraint.</summary>
+    public const string ExpiredReason = "Patient expired: the stay ended with the restraint in place.";
+
+    /// <summary>
+    /// A stay does not end while the patient is restrained: a doctor releases the restraint first. A death is the one
+    /// exception (the restraint is then ended with the reason <see cref="ExpiredReason"/>).
+    /// </summary>
+    public static Error? DischargeHold(DischargeType type, bool hasActiveRestraint) =>
+        hasActiveRestraint && type != DischargeType.Expired
+            ? Error.Rule(DischargeHoldCode, "The patient is restrained. Release the restraint first (a doctor ends it), then complete the discharge.")
+            : null;
+
+    /// <summary>An admission is not cancelled while the patient is restrained: a doctor releases the restraint first.</summary>
+    public static Error? CancelHold(bool hasActiveRestraint) =>
+        hasActiveRestraint
+            ? Error.Rule(CancelHoldCode, "The patient is restrained. Release the restraint first (a doctor ends it), then cancel the admission.")
+            : null;
 }
