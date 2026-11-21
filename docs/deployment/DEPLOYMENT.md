@@ -552,6 +552,9 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    facility with one blood bank officer on duty sets `bloodbank.separateVerifier` to `false`: that officer then does both,
    and what they release so is listed on the Donations and Blood requests screens for the medical officer's review.
    Uncross-matched blood is released only on a doctor's own sign-in, so give doctors' accounts their practitioner record.
+   A patient with no blood group on record is grouped on two separately drawn samples before group-specific blood goes
+   (the two-sample rule), unless the facility's transfusion committee documents another policy and sets
+   `bloodbank.twoSampleRule` to `false`; ask the wards to label each sample with the time it was drawn and who drew it.
    A facility that does ultrasounds in pregnancy sets `pcpndt.registrationNumber` (for that facility) to its PCPNDT
    registration: until then Form F cannot be recorded, and those scans cannot start. Mark each obstetric ultrasound
    procedure "Ultrasound in pregnancy" under Radiology › Procedures and templates; the seeded obstetric and anomaly
@@ -563,7 +566,7 @@ On the server open `https://localhost:7360/`. The browser warns once, because th
    off a control another person's check relies on, lets more money out, or sends money, patients' data or critical
    alerts somewhere else. The screen asks why, says the change was asked for, and the setting stays as it is until
    another administrator approves it. They are: switching off `lab.separateVerifier`,
-   `mrd.deathCertificateConfirmation`, `bloodbank.separateVerifier`, `security.administrationRequiresDesktop`,
+   `mrd.deathCertificateConfirmation`, `bloodbank.separateVerifier`, `bloodbank.twoSampleRule`, `security.administrationRequiresDesktop`,
    `lab.requirePaymentBeforeCollection` or `billing.shift.required`; switching on `ui.biometricUnlock` or `ai.enabled`;
    raising `billing.discount.defaultMaxPercent`, `pharmacy.discount.max_percent`, `billing.chargeCancel.approvalAbove`,
    `billing.claimWriteOff.approvalAbove`, `billing.shift.shortageTolerance`, `supportservices.canteen.staffCreditLimit`, `security.maxSessionsPerUser`, `ui.idleLockMinutes`,

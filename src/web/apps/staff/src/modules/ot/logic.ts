@@ -1,13 +1,20 @@
-import { formatDateOnly, formatInr, formatNumber, isApiError } from '@hc360/core';
-import type {
-  ChecklistItemDto,
-  OtCalendarBooking,
-  OtStoreBatch,
-  OtStoreItem,
-  SafetyPhase,
-  SchedulingConflict,
-  SurgeryDetail,
-  SurgeryStatus,
+import { formatDateOnly, formatDateTime, formatInr, formatNumber, isApiError } from '@hc360/core';
+import {
+  givenBySurgeon,
+  type AnaesthesiaType,
+  type ChecklistItemDto,
+  type ConsentOnRecord,
+  type OtCalendarBooking,
+  type OtStoreBatch,
+  type OtStoreItem,
+  type SafetyPhase,
+  type SchedulingConflict,
+  type SurgeryDetail,
+  type SurgeryPriority,
+  type SurgeryStatus,
+  type SurgicalConsentCheck,
+  type SurgicalConsentDto,
+  type SurgicalConsentKind,
 } from './api';
 import { phaseLabel, sideShort } from './labels';
 import { minutesIntoIstDay } from './shared/datetime';
@@ -26,7 +33,7 @@ const ALLOWED: Gate = { allowed: true, reason: null };
 const refuse = (reason: string): Gate => ({ allowed: false, reason });
 
 /** The fields of a booking the gates look at (a `SurgeryDetail` satisfies it). */
-export type GateInput = Pick<SurgeryDetail, 'status' | 'preOpComplete' | 'safetyChecklist'>;
+export type GateInput = Pick<SurgeryDetail, 'status' | 'preOpComplete' | 'safetyChecklist' | 'consent'>;
 
 export function isPhaseComplete(detail: Pick<SurgeryDetail, 'safetyChecklist'>, phase: SafetyPhase): boolean {
   return detail.safetyChecklist.some((p) => p.phase === phase && p.isComplete);
@@ -49,7 +56,8 @@ export interface PhaseGate extends Gate {
 /**
  * Whether items of a WHO phase can be confirmed now — same order of checks as `SurgeryBooking.ConfirmSafety`:
  * locked when complete, phases in order, Sign-in/Time-out on the day of surgery, Sign-out only during surgery,
- * and the Sign-in only after a complete pre-operative checklist.
+ * the Sign-in only after a complete pre-operative checklist, and the Sign-in and Time-out only with the patient's consent
+ * on record (or waived in an emergency).
  */
 export function phaseGate(detail: GateInput, phase: SafetyPhase): PhaseGate {
   if (isPhaseComplete(detail, phase)) {
@@ -80,6 +88,12 @@ export function phaseGate(detail: GateInput, phase: SafetyPhase): PhaseGate {
   if (phase === 'SignIn' && !detail.preOpComplete) {
     return { allowed: false, locked: false, reason: 'Complete the pre-operative checklist first.' };
   }
+  if (phase !== 'SignOut') {
+    const consented = consentGate(detail);
+    if (!consented.allowed) {
+      return { ...consented, locked: false };
+    }
+  }
   return { allowed: true, locked: false, reason: null };
 }
 
@@ -108,7 +122,7 @@ export function receiveGate(detail: Pick<SurgeryDetail, 'status'>): Gate {
   }
 }
 
-/** Knife to skin — never before the WHO Sign-in and Time-out (`SurgeryBooking.Start`). */
+/** Knife to skin — never before the WHO Sign-in and Time-out, nor without the patient's consent (`SurgeryBooking.Start`). */
 export function startGate(detail: GateInput): Gate {
   switch (detail.status) {
     case 'Scheduled':
@@ -129,7 +143,209 @@ export function startGate(detail: GateInput): Gate {
       `Surgery cannot start until the ${missing.map((p) => phaseLabel[p]).join(' and ')} ${missing.length > 1 ? 'are' : 'is'} complete.`,
     );
   }
+  return consentGate(detail);
+}
+
+// ---------------------------------------------------------------- consent before surgery and anaesthesia
+
+/** The consents needed that are not on record (server `SurgicalConsentStatus.Missing`). */
+export function missingConsents(consent: SurgicalConsentDto): SurgicalConsentCheck[] {
+  return consent.checks.filter((check) => check.state !== 'Recorded' && check.state !== 'NotNeeded');
+}
+
+/** "consent to anaesthesia": one consent the operation needs, in the screen's words. */
+function consentWhat(kind: SurgicalConsentKind): string {
+  return kind === 'Procedure' ? 'consent to the operation (high-risk procedure consent)' : 'consent to anaesthesia';
+}
+
+/** Why one consent the operation needs is not on record, as the server says it (`SurgicalConsent.Describe`). */
+export function consentProblem(check: SurgicalConsentCheck): string {
+  const what = consentWhat(check.kind);
+  switch (check.state) {
+    case 'BeforeBooking':
+      return `${what} was recorded before this operation was booked; take it again for this operation`;
+    case 'Withdrawn':
+      return `${what} was withdrawn`;
+    case 'Refused':
+      return `the patient refused ${what}`;
+    case 'OtherOperation':
+      return `${what} was relied on by another operation${check.consent?.reliedOnBy ? ` (${check.consent.reliedOnBy})` : ''}; take it again for this operation`;
+    default:
+      return `${what} is not recorded`;
+  }
+}
+
+/**
+ * The consent the patient said no to, their latest word on it since the booking: a refusal, or a withdrawal (server
+ * `SurgicalConsentStatus.No`, a refusal before a withdrawal). No emergency waiver is given or stands against it.
+ */
+export function saidNoConsent(consent: SurgicalConsentDto): SurgicalConsentCheck | null {
+  return (
+    consent.checks.find((check) => check.state === 'Refused') ??
+    consent.checks.find((check) => check.state === 'Withdrawn') ??
+    null
+  );
+}
+
+/**
+ * "The patient refused consent to anaesthesia: an emergency does not override a refusal. …", or withdrew it (server
+ * `surgery.consent_refused`, `surgery.consent_withdrawn`).
+ */
+export function saidNoNotice(check: SurgicalConsentCheck): string {
+  const [did, what] = check.state === 'Refused' ? ['refused', 'a refusal'] : ['withdrew', 'a withdrawal'];
+  return `The patient ${did} ${consentWhat(check.kind)}: an emergency does not override ${what}. If the patient now agrees, record the new consent at the front office.`;
+}
+
+/**
+ * "Recorded by Priya R; signed form attached": who recorded a consent at the front office, and whether the signed form is
+ * attached to it.
+ */
+export function consentRecordedBy(record: ConsentOnRecord): string {
+  const by = record.capturedByName ? `Recorded by ${record.capturedByName}` : 'Who recorded it is not known';
+  return `${by}; ${record.signedFormAttached ? 'signed form attached' : 'no signed form attached'}`;
+}
+
+/**
+ * "The patient refused this on 21 Nov 2026, 9:30 am (recorded by Dr X), before this operation was booked.": a refusal
+ * recorded before the booking, which the gates do not count (server `EarlierRefusal`); null when there is none.
+ */
+export function earlierRefusalNotice(check: SurgicalConsentCheck): string | null {
+  const earlier = check.earlierRefusal;
+  if (!earlier) {
+    return null;
+  }
+  const by = earlier.recordedByName ? ` (recorded by ${earlier.recordedByName})` : '';
+  return `The patient refused this on ${formatDateTime(earlier.recordedAt)}${by}, before this operation was booked.`;
+}
+
+/**
+ * The patient's consent as the gates read it (server `SurgicalConsent`): "consent signed", the WHO Sign-in and Time-out and
+ * the incision wait for the consents the front office records, or a waiver in an emergency, which never stands against the
+ * patient's refusal or withdrawal. A booking read without the consent (an older server) is left to the server, which
+ * checks it anyway.
+ */
+export function consentGate(detail: Pick<SurgeryDetail, 'consent'>): Gate {
+  const consent = detail.consent;
+  if (!consent || consent.satisfied) {
+    return ALLOWED;
+  }
+  const problems = missingConsents(consent).map(consentProblem).join('; ');
+  const no = saidNoConsent(consent);
+  const next = no
+    ? no.state === 'Refused'
+      ? ' An emergency does not override the patient’s refusal: if the patient now agrees, record the new consent at the front office.'
+      : ' An emergency does not override a consent the patient withdrew: if the patient now agrees, record the new consent at the front office.'
+    : consent.waiver
+      ? ' Record it under the patient’s consents at the front office: consent was waived in an emergency, but the booking is no longer an emergency.'
+      : ' Record it under the patient’s consents at the front office. In an emergency the operating surgeon may go ahead without it, with a second doctor who agrees.';
+  return refuse(`The patient's consent is not recorded for this operation: ${problems}.${next}`);
+}
+
+/**
+ * The consent line of a booking's details. Before the incision: where the patient's consent stands now (recorded, waived
+ * in an emergency, or what is missing). Once the operation has started: what the incision relied on, the consents recorded
+ * then (kept on the booking) or the emergency waiver for a consent it needed and did not rely on (the consent to
+ * anaesthesia alone, it may be), never today's consents read back over a past operation, so a consent withdrawn afterwards
+ * does not make it look unconsented. An operation started before the theatre read consents has neither, and nothing is
+ * said.
+ */
+export function consentSummary(detail: Pick<SurgeryDetail, 'consent' | 'startedAt'>): string | null {
+  const consent = detail.consent;
+  if (!consent) {
+    return null;
+  }
+  const waiver = consent.waiver;
+  const waived = waiver
+    ? `Waived in an emergency by ${waiver.surgeonName}, ${waiver.concurringName} agreeing (${formatDateTime(waiver.at)}): ${waiver.reason}`
+    : null;
+  if (detail.startedAt) {
+    // The consents the operation needed do not change once it has started (server `SurgeryBooking.ReliesOnWaiver`).
+    const anaesthesiaNeeded = consent.checks.some(
+      (check) => check.kind === 'Anaesthesia' && check.state !== 'NotNeeded',
+    );
+    if (consent.procedureConsentId && (!anaesthesiaNeeded || consent.anaesthesiaConsentId)) {
+      return 'Recorded at the front office before the incision';
+    }
+    return consent.procedureConsentId && waived
+      ? `Consent to the operation recorded at the front office before the incision; consent to anaesthesia ${waived.charAt(0).toLowerCase()}${waived.slice(1)}`
+      : waived;
+  }
+  if (consent.recorded) {
+    return 'Recorded at the front office';
+  }
+  if (waived && consent.satisfied) {
+    return waived;
+  }
+  const missing = `Not recorded: ${missingConsents(consent).map(consentProblem).join('; ')}`;
+  if (!waived) {
+    return missing;
+  }
+  const no = saidNoConsent(consent);
+  if (!no) {
+    return `${missing}. Consent was waived in an emergency, but the booking is no longer an emergency`;
+  }
+  return no.state === 'Refused'
+    ? `${missing}. Consent was waived in an emergency, but the patient refused, and an emergency does not override a refusal`
+    : `${missing}. Consent was waived in an emergency, but the patient withdrew consent, and an emergency does not override a withdrawal`;
+}
+
+/**
+ * Whether the signed-in user may take an emergency operation ahead without consent (server `SurgeryBooking.WaiveConsent`):
+ * the operating surgeon of an emergency booking that has not started, while the consent is not recorded, once, and never
+ * against the patient's refusal or withdrawal.
+ */
+export function waiverGate(
+  detail: Pick<SurgeryDetail, 'consent' | 'priority' | 'status' | 'surgeonId'>,
+  practitionerId: string | null | undefined,
+): Gate {
+  const consent = detail.consent;
+  if (!consent || consent.recorded) {
+    return refuse("The patient's consent is recorded: there is nothing to waive.");
+  }
+  if (consent.waiver) {
+    return refuse(
+      `Consent was already waived by ${consent.waiver.surgeonName}, ${consent.waiver.concurringName} agreeing.`,
+    );
+  }
+  const no = saidNoConsent(consent);
+  if (no) {
+    return refuse(saidNoNotice(no));
+  }
+  if (!(['Requested', 'Scheduled', 'InPreOp'] as SurgeryStatus[]).includes(detail.status)) {
+    return refuse(
+      'Consent is waived only before the operation starts, for a booking that is neither closed nor postponed.',
+    );
+  }
+  if (detail.priority !== 'Emergency') {
+    return refuse(
+      "Only an emergency operation goes ahead without the patient's consent. Record the consent at the front office, or mark the booking an emergency if it is one.",
+    );
+  }
+  if (!practitionerId || practitionerId !== detail.surgeonId) {
+    return refuse(
+      'Only the operating surgeon of this case goes ahead without consent, from their own sign-in, with a second doctor who agrees.',
+    );
+  }
   return ALLOWED;
+}
+
+/**
+ * Moving this scheduled operation to another theatre or start ends the consent waived in an emergency: the operation waits,
+ * so the consent is taken for the new slot, or waived again (server `SurgeryBooking.Schedule`).
+ */
+export function moveEndsWaiver(booking: Pick<SurgeryDetail, 'consent' | 'status'>): boolean {
+  return booking.status === 'Scheduled' && booking.consent?.waiver != null;
+}
+
+/**
+ * Another operating surgeon ends the consent waived in an emergency: it was the first surgeon's judgement, and the new one
+ * waives it again, with a second doctor, if the operation still cannot wait (server `SurgeryBooking.AssignSurgeon`).
+ */
+export function surgeonChangeEndsWaiver(
+  booking: Pick<SurgeryDetail, 'consent' | 'surgeonId'>,
+  surgeonId: string | null,
+): boolean {
+  return booking.consent?.waiver != null && surgeonId !== booking.surgeonId;
 }
 
 /** Wheels-out — never before the WHO Sign-out (`SurgeryBooking.Complete`). */
@@ -215,6 +431,39 @@ export function siteChangeVoidsChecklist(
   plan: SitePlan,
 ): boolean {
   return isPhaseComplete(booking, 'SignIn') && siteDiffers(booking, plan);
+}
+
+/** The anaesthesia technique and the priority of a plan (server `TechniqueOrPriorityChangeRule`). */
+export interface CarePlan {
+  anaesthesiaType: AnaesthesiaType;
+  priority: SurgeryPriority;
+}
+
+/**
+ * Saving this plan changes the anaesthesia technique or the priority after the WHO Sign-in. Both bear on the patient's
+ * consent (local anaesthesia needs no consent to anaesthesia; only an emergency goes ahead without consent), so only the
+ * operating surgeon or the anaesthetist may then save it, with a reason; the checklist stands (server
+ * `TechniqueOrPriorityChangeRule`).
+ */
+export function careChangeAfterSignIn(
+  booking: Pick<SurgeryDetail, 'anaesthesiaType' | 'priority' | 'safetyChecklist'>,
+  plan: CarePlan,
+): boolean {
+  return (
+    isPhaseComplete(booking, 'SignIn') &&
+    (booking.anaesthesiaType !== plan.anaesthesiaType || booking.priority !== plan.priority)
+  );
+}
+
+/**
+ * The plan turns to local or topical anaesthesia after a Sign-in done under anaesthesia given by an anaesthetist: the
+ * patient's consent to anaesthesia, needed then, stays needed (server `SurgeryBooking.AnaesthesiaConsentRequiredAtSignIn`).
+ */
+export function keepsAnaesthesiaConsent(
+  booking: Pick<SurgeryDetail, 'consent'>,
+  plan: Pick<CarePlan, 'anaesthesiaType'>,
+): boolean {
+  return booking.consent?.anaesthesiaConsentRequiredAtSignIn === true && givenBySurgeon(plan.anaesthesiaType);
 }
 
 /** The signed-in user is the case's operating surgeon or anaesthetist, who alone change the site after the Sign-in. */

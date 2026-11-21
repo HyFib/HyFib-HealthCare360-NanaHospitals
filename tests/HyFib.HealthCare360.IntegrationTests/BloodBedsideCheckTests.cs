@@ -296,7 +296,84 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
                 $"Unit {issue.UnitNumber}"));
     }
 
+    [Fact]
+    public async Task A_unit_issued_on_one_sample_is_not_started_once_another_sample_of_the_patient_disagrees()
+    {
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        var doctor = await server.SignInAsync(HospitalServer.Users.Doctor);
+        var nurse = await RecordingNurseAsync();
+        var officer = await BloodBankOfficerAsync();
+        var patient = await TeleconsultationJourneyTests.RegisterPatientAsync(frontOffice);
+        var admission = await AdmitAsync(server, frontOffice, doctor, patient.Id);
+        await ConsentAsync(frontOffice, patient.Id);
+
+        // An emergency: O Rh(D)-negative red cells released by the doctor and issued; then, the patient having no group on
+        // record, an A+ unit cross-matched and issued on the one sample under the doctor's override.
+        var aPositive = await UnitAsync(server, officer.Client, BloodGroup.APositive);
+        var oNegative = await UnitAsync(server, officer.Client, BloodGroup.ONegative);
+        var request = await AskAsync(doctor, patient.Id, admission.Id, BloodComponentType.PRBC);
+        await server.AuthoriseEmergencyReleaseAsync(request.Id, "Massive postpartum haemorrhage, no time to group and cross-match");
+        var released = await officer.Client.PostAsync<BloodIssueDto>($"{Bank}/requests/{request.Id}/issues", new IssueBloodRequest(oNegative, "Staff nurse Asha"));
+        await officer.Client.PostAsync($"{Bank}/requests/{request.Id}/grouping",
+            HospitalServer.BloodSample(BloodGroup.APositive, drawnMinutesAgo: 50, drawnBy: "Sr. Kavya Menon"));
+        await doctor.PostAsync($"{Bank}/requests/{request.Id}/single-sample-override",
+            new SingleSampleOverrideRequest("O-negative stock nearly gone, haemorrhage ongoing"));
+        await server.CrossMatchAsSecondOfficerAsync(request.Id, aPositive);
+        var issued = await officer.Client.PostAsync<BloodIssueDto>($"{Bank}/requests/{request.Id}/issues", new IssueBloodRequest(aPositive, "Staff nurse Asha"));
+        (released.IsEmergencyRelease, issued.IsEmergencyRelease).ShouldBe((true, false));
+
+        // On the ward the A+ unit's group is shown as resting on one sample, not as the patient's group.
+        var units = await nurse.GetAsync<PatientBloodUnits>($"{Bank}/patients/{patient.Id}/units");
+        units.Units.Single(u => u.IssueId == issued.Id).ShouldSatisfyAllConditions(
+            u => (u.PatientBloodGroup, u.GroupStanding).ShouldBe((BloodGroup.APositive, PatientGroupStanding.OneSample)),
+            u => u.DisputedGroups.ShouldBeEmpty());
+        units.PatientBloodGroup.ShouldBe(BloodGroup.Unknown, "a group on one sample is not the patient's group on record");
+
+        // The plasma request's own sample, drawn separately by another nurse, groups O+: one of the tubes holds another patient's
+        // blood. The ward sees the disagreement instead of the first sample's group.
+        var plasma = await AskAsync(doctor, patient.Id, admission.Id, BloodComponentType.FFP);
+        await officer.Client.PostAsync($"{Bank}/requests/{plasma.Id}/grouping",
+            HospitalServer.BloodSample(BloodGroup.OPositive, drawnMinutesAgo: 15, drawnBy: "Sr. Leela Thomas"));
+        var unit = (await nurse.GetAsync<PatientBloodUnits>($"{Bank}/patients/{patient.Id}/units")).Units.Single(u => u.IssueId == issued.Id);
+        unit.GroupStanding.ShouldBe(PatientGroupStanding.SamplesDisagree);
+        unit.DisputedGroups.ShouldBe([BloodGroup.APositive, BloodGroup.OPositive]);
+
+        // The A+ unit is not started, in date and within its four hours though it is: a near miss on the trail. The O
+        // Rh(D)-negative unit suits every group found, and is started.
+        var witness = await nurse.PostAsync<WitnessConfirmed>(Witness, Confirm(HospitalServer.Users.SecondNurse, patient.Id));
+        (await RefusalAsync(nurse, $"{Bank}/issues/{issued.Id}/transfusion", Start(patient.Uhid, issued.UnitNumber, witness)))
+            .ShouldBe("bloodbank.grouping_discrepancy");
+        (await AuditAsync(nameof(BloodIssue), issued.Id)).ShouldContain(e => e.Action == "bloodbank.bedside_mismatch" && e.Severity == AuditSeverity.Critical);
+        (await nurse.PostAsync<TransfusionDto>($"{Bank}/issues/{released.Id}/transfusion", Start(patient.Uhid, released.UnitNumber, witness))).Status
+            .ShouldBe(TransfusionStatus.InProgress);
+    }
+
     internal static async Task<BloodIssueDto> IssueUnitAsync(HospitalServer server, ApiClient officer, ApiClient doctor, Guid patientId, Guid admissionId, BloodGroup group, bool emergency)
+    {
+        var unitId = await UnitAsync(server, officer, group);
+        var request = await doctor.PostAsync<Created>($"{Bank}/requests", new CreateBloodRequestRequest(
+            patientId, admissionId, VisitId: null, BloodComponentType.PRBC, Units: 1,
+            emergency ? BloodRequestUrgency.Emergency : BloodRequestUrgency.Routine, "Symptomatic anaemia, Hb 6.8 g/dl",
+            RequiredBy: null, HaemoglobinGdl: 6.8m, PlateletCount: null));
+        if (emergency)
+        {
+            await server.AuthoriseEmergencyReleaseAsync(request.Id, "Massive bleeding after a road accident, no time to group and cross-match");
+        }
+        else
+        {
+            // The officer groups the patient's sample, a second officer groups the second sample a patient with no group on
+            // record needs (the two-sample rule) and cross-matches, so the unit goes out neither on one sample nor on one
+            // officer's checks.
+            await officer.PostAsync($"{Bank}/requests/{request.Id}/grouping", HospitalServer.BloodSample(group));
+            await server.ConfirmGroupOnSecondSampleAsync(request.Id, group);
+            await server.CrossMatchAsSecondOfficerAsync(request.Id, unitId);
+        }
+
+        return await officer.PostAsync<BloodIssueDto>($"{Bank}/requests/{request.Id}/issues", new IssueBloodRequest(unitId, "Staff nurse Asha"));
+    }
+
+    /// <summary>A unit of <paramref name="group"/> packed red cells collected, tested and verified by a second officer.</summary>
+    private static async Task<Guid> UnitAsync(HospitalServer server, ApiClient officer, BloodGroup group)
     {
         var donor = await officer.PostAsync<Created>($"{Bank}/donors", new SaveDonorRequest(
             FirstName: "Ravi", LastName: "Donor" + Letters(8), Gender: Gender.Male, DateOfBirth: new DateOnly(1985, 1, 1).AddDays(Random.Shared.Next(3650)),
@@ -313,25 +390,14 @@ public sealed class BloodBedsideCheckTests(HospitalServer server)
         await officer.PutAsync($"{Bank}/donations/{donation.Id}/lab-results", new RecordLabResultsRequest(
             group, TtiResult.NonReactive, TtiResult.NonReactive, TtiResult.NonReactive, TtiResult.NonReactive, TtiResult.NonReactive, loaded.Version));
         await server.VerifyDonationAsync(donation.Id);
-        var unitId = units.Single().Id;
-
-        var request = await doctor.PostAsync<Created>($"{Bank}/requests", new CreateBloodRequestRequest(
-            patientId, admissionId, VisitId: null, BloodComponentType.PRBC, Units: 1,
-            emergency ? BloodRequestUrgency.Emergency : BloodRequestUrgency.Routine, "Symptomatic anaemia, Hb 6.8 g/dl",
-            RequiredBy: null, HaemoglobinGdl: 6.8m, PlateletCount: null));
-        if (emergency)
-        {
-            await server.AuthoriseEmergencyReleaseAsync(request.Id, "Massive bleeding after a road accident, no time to group and cross-match");
-        }
-        else
-        {
-            // The officer groups the patient and a second officer cross-matches, so the unit does not go out on one officer's checks.
-            await officer.PostAsync($"{Bank}/requests/{request.Id}/grouping", new GroupPatientRequest(group));
-            await server.CrossMatchAsSecondOfficerAsync(request.Id, unitId);
-        }
-
-        return await officer.PostAsync<BloodIssueDto>($"{Bank}/requests/{request.Id}/issues", new IssueBloodRequest(unitId, "Staff nurse Asha"));
+        return units.Single().Id;
     }
+
+    /// <summary>An emergency request for two units of <paramref name="component"/>, asked for by the doctor during the stay.</summary>
+    private static Task<Created> AskAsync(ApiClient doctor, Guid patientId, Guid admissionId, BloodComponentType component) =>
+        doctor.PostAsync<Created>($"{Bank}/requests", new CreateBloodRequestRequest(
+            patientId, admissionId, VisitId: null, component, Units: 2, BloodRequestUrgency.Emergency, "Massive postpartum haemorrhage, Hb 5.4 g/dl",
+            RequiredBy: null, HaemoglobinGdl: 5.4m, PlateletCount: null));
 
     /// <summary>
     /// The nurse who starts the unit, from the test's own address: each witness's password counts against the address it is

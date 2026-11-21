@@ -12,6 +12,7 @@ using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
 using HyFib.HealthCare360.Modules.Pharmacy.Domain;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
+using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 using BillingChargeStatus = HyFib.HealthCare360.Modules.Billing.Domain.ChargeStatus;
 using OtChargeStatus = HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common.ChargeStatus;
 
@@ -532,12 +533,30 @@ public sealed class JourneyQueries(HospitalDbContext db, PatientAccessGuard guar
         var recovery = await db.Set<RecoveryRecord>().AsNoTracking().Where(r => bookingIds.Contains(r.SurgeryBookingId))
             .ToDictionaryAsync(r => r.SurgeryBookingId, r => new { r.ReceivedAt, r.ReceivedByName }, ct);
 
+        // Whether a waiver stands before the incision depends on the patient's consents, read as the theatre's gates read
+        // them; only for the (rare) operations waived and not yet started.
+        var consents = new Dictionary<Guid, IReadOnlyCollection<ConsentOnRecord>>();
+        foreach (var waived in bookings.Where(b => b.ConsentWaivedAt is not null && b.StartedAt is null))
+        {
+            consents[waived.Id] = await SurgicalConsentRecords.ForBookingAsync(db, waived, ct);
+        }
+
         return [.. bookings.Select(b => Journey(JourneyKind.Surgery, b.Id, b.BookingNumber, Procedure(b), b.CreatedAt, SurgeryJourney.Progress(new SurgeryFacts(
             b.Status, b.CreatedAt, b.ScheduledStart, b.TheatreId is { } t ? theatres.GetValueOrDefault(t) : null, b.PostponeReason, b.PreOpChecks,
             b.ReceivedInPreOpAt, b.SignInCompletedAt, b.TimeOutCompletedAt, b.StartedAt, b.SignOutCompletedAt, b.CompletedAt,
             ChargesFailed: b.ChargeStatus == OtChargeStatus.Failed, recovery.GetValueOrDefault(b.Id)?.ReceivedAt, recovery.GetValueOrDefault(b.Id)?.ReceivedByName,
-            b.RecoveryDischargedAt, b.RecoveryDestination), now)))];
+            b.RecoveryDischargedAt, b.RecoveryDestination, ConsentWaived(b, consents.GetValueOrDefault(b.Id) ?? [])), now)))];
     }
+
+    /// <summary>
+    /// The operation goes ahead, or went ahead, on consent waived in an emergency (<see cref="SurgeryBooking.ReliesOnWaiver"/>):
+    /// once the incision is made, it relied on no consent for a kind it needed (to the procedure, or to anaesthesia when that
+    /// was needed), so an operation whose consent to anaesthesia alone was waived stays waived; before it, only while the
+    /// waiver stands (the booking is an emergency and the patient has not refused or withdrawn since) and a consent needed
+    /// is not recorded, so a waiver overtaken by the patient's consents, or by their "no", is not said.
+    /// </summary>
+    /// <param name="consents">The patient's consents as the booking reads them; only read before the incision.</param>
+    internal static bool ConsentWaived(SurgeryBooking b, IReadOnlyCollection<ConsentOnRecord> consents) => b.ReliesOnWaiver(consents);
 
     /// <summary>"Total knee replacement (left)".</summary>
     private static string Procedure(SurgeryBooking b) =>

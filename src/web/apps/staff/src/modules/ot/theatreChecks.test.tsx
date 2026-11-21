@@ -10,7 +10,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeServer, SCREEN_TESTS, SLOW, STAFF_USER, stubBrowserApis } from '@/test/appScreen';
 import { json } from '@/test/fakeApi';
-import type { SafetyPhaseDto, SurgeryDetail, SurgeryMaterialDto } from './api';
+import type { SafetyPhaseDto, SurgeryDetail, SurgeryMaterialDto, SurgicalConsentDto } from './api';
 import { PlanDialog } from './BookingDialogs';
 import { PreOpChecklistPanel } from './ChecklistPanels';
 import { CountsPanel } from './CountsPanel';
@@ -190,6 +190,65 @@ describe('the theatre where a second person or a second look decides', SCREEN_TE
       await within(dialog).findByText(/Only the operating surgeon or the anaesthetist of this case/),
     ).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Save and redo the checklist' })).toBeDisabled();
+    expect(within(dialog).queryByRole('textbox', { name: /^Reason for the change/ })).toBeNull();
+  });
+
+  it('asks the case team for a reason to change the anaesthesia after the Sign-in, and keeps the consent to anaesthesia', async () => {
+    server = fakeServer({ [`PUT /api/v1/ot/bookings/${BOOKING_ID}`]: null });
+    const u = userEvent.setup();
+    // The Sign-in was done under spinal anaesthesia, which needed the patient's consent to anaesthesia.
+    const consent: SurgicalConsentDto = {
+      satisfied: true,
+      recorded: true,
+      since: '2026-11-07T04:00:00Z',
+      checks: [],
+      waiver: null,
+      procedureConsentId: null,
+      anaesthesiaConsentId: null,
+      refused: false,
+      anaesthesiaConsentRequiredAtSignIn: true,
+      saidNo: false,
+    };
+    show(<PlanDialog booking={{ ...BOOKING, consent }} onClose={vi.fn()} />, SURGEON_USER);
+
+    const dialog = await screen.findByRole('dialog', {}, SLOW);
+    await u.selectOptions(within(dialog).getByRole('combobox', { name: 'Anaesthesia' }), 'Local');
+
+    expect(await within(dialog).findByText('Anaesthesia or priority changed after the Sign-in')).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/The consent to anaesthesia, needed at the Sign-in, stays needed/),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText('The WHO checklist will be done again')).toBeNull();
+    const save = within(dialog).getByRole('button', { name: 'Save plan' });
+    await expectNoAxeViolations();
+    await u.click(save);
+    expect(
+      await within(dialog).findByText(/Give the reason for changing the anaesthesia or the priority/),
+    ).toBeInTheDocument();
+    expect(server.requests.some((r) => r.method === 'PUT')).toBe(false);
+
+    await u.type(within(dialog).getByRole('textbox', { name: /^Reason for the change/ }), 'Spinal failed twice');
+    await u.click(save);
+    await waitFor(() => expect(notify.success).toHaveBeenCalledWith('Surgical plan saved'));
+    expect(server.requests.find((r) => r.method === 'PUT')?.body).toMatchObject({
+      anaesthesiaType: 'Local',
+      changeReason: 'Spinal failed twice',
+      version: 9,
+    });
+  });
+
+  it('does not let a doctor outside the case make the operation an emergency after the Sign-in', async () => {
+    server = fakeServer({});
+    const u = userEvent.setup();
+    show(<PlanDialog booking={BOOKING} onClose={vi.fn()} />, OTHER_DOCTOR);
+
+    const dialog = await screen.findByRole('dialog', {}, SLOW);
+    await u.click(within(dialog).getByRole('radio', { name: 'Emergency' }));
+
+    expect(
+      await within(dialog).findByText(/Only the operating surgeon or the anaesthetist of this case changes them now/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Save plan' })).toBeDisabled();
     expect(within(dialog).queryByRole('textbox', { name: /^Reason for the change/ })).toBeNull();
   });
 

@@ -140,6 +140,12 @@ public sealed record AuditEntry(string Category, string Action, string? Summary 
     public Guid? UserId { get; init; }
 
     public string? UserName { get; init; }
+
+    /// <summary>
+    /// Overrides the facility the event is filed under (otherwise the signed-in user's): for an event about a record of
+    /// another facility, so that a view filtered to that facility finds it.
+    /// </summary>
+    public Guid? FacilityId { get; init; }
 }
 
 public interface IAuditLogger
@@ -186,7 +192,7 @@ internal sealed class AuditLogger(
         PatientId = entry.PatientId,
         UserId = entry.UserId ?? currentUser.UserId,
         UserName = entry.UserName ?? currentUser.UserName,
-        FacilityId = currentUser.FacilityId,
+        FacilityId = entry.FacilityId ?? currentUser.FacilityId,
         DeviceId = currentUser.DeviceId,
         SessionId = currentUser.SessionId,
         IpAddress = currentUser.IpAddress,

@@ -1,4 +1,6 @@
 using System.Net;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.Patients.Features.Patients;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.BloodBank;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Dialysis;
@@ -193,6 +195,14 @@ public sealed class ClinicalEditVersionTests(HospitalServer server)
         booking.Status.ShouldBe(SurgeryStatus.Scheduled);
 
         var path = $"/api/v1/ot/bookings/{booking.Id}";
+
+        // The front office records the patient's consents to the operation and to the anaesthesia, which the theatre checks.
+        var frontOffice = await server.SignInAsync(HospitalServer.Users.FrontOffice);
+        foreach (var type in new[] { ConsentType.HighRiskProcedure, ConsentType.Anaesthesia })
+        {
+            await frontOffice.PostAsync<Created>($"/api/v1/patients/{patient.Id}/consents",
+                new CaptureConsentRequest(type, null, true, "Staff nurse Asha", null, null, null, null));
+        }
 
         // The left forearm is booked, so the surgeon marks the site and records it first (maker-checker slice 10).
         var booked = await doctor.GetAsync<SurgeryDetail>(path);

@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using HyFib.HealthCare360.Modules.Patients.Domain;
+using HyFib.HealthCare360.Modules.Patients.Features.FrontOffice;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Services;
@@ -27,26 +29,55 @@ internal sealed class TheatreCases(HospitalServer server)
 
     public sealed record Case(Guid BookingId, Guid PatientId, Guid VisitId, string Path);
 
-    /// <summary>The case booked and the patient received in pre-op.</summary>
-    public async Task<Case> InPreOpAsync(Laterality laterality, string procedure = "Inguinal hernia repair", string? level = null)
+    /// <summary>The case booked and the patient received in pre-op; no consent is recorded yet.</summary>
+    public async Task<Case> InPreOpAsync(
+        Laterality laterality, string procedure = "Inguinal hernia repair", string? level = null, SurgeryPriority priority = SurgeryPriority.Elective)
     {
         var frontOffice = await server.SignInAsync(Users.FrontOffice);
-        var doctor = await server.SignInAsync(Users.Doctor);
         var nurse = await server.SignInAsync(Users.Nurse);
+        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
+        var c = await BookAsync(patientId, visit.Id, laterality, procedure, level, priority);
+        await nurse.PostAsync($"{c.Path}/receive");
+        return c;
+    }
+
+    /// <summary>
+    /// The case booked into a slot and left there, not received in pre-op (a booking a slot is still moved for); no consent
+    /// is recorded yet.
+    /// </summary>
+    public async Task<Case> BookedAsync(string procedure, SurgeryPriority priority = SurgeryPriority.Elective)
+    {
+        var frontOffice = await server.SignInAsync(Users.FrontOffice);
+        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
+        return await BookAsync(patientId, visit.Id, Laterality.NotApplicable, procedure, null, priority);
+    }
+
+    /// <summary>
+    /// Another operation for the patient of <paramref name="c"/>, booked now into a slot of its own (and left there, not
+    /// received in pre-op); no consent is recorded for it.
+    /// </summary>
+    public Task<Case> AnotherOperationAsync(Case c, string procedure, SurgeryPriority priority = SurgeryPriority.Elective) =>
+        BookAsync(c.PatientId, c.VisitId, Laterality.NotApplicable, procedure, null, priority);
+
+    /// <summary>
+    /// The doctor books the operation into a slot, the doctor operating and the second doctor giving a spinal anaesthetic: a
+    /// random slot years ahead, where nothing else of the run should be. The surgeon and anaesthetist are the same in every
+    /// case, so on the rare clash with another case (of another test, or of the same patient) another slot is tried.
+    /// </summary>
+    private async Task<Case> BookAsync(Guid patientId, Guid visitId, Laterality laterality, string procedure, string? level, SurgeryPriority priority)
+    {
+        var doctor = await server.SignInAsync(Users.Doctor);
         var surgeonId = (await doctor.GetAsync<AuthUser>("/api/v1/auth/me")).PractitionerId.ShouldNotBeNull();
         var anaesthetistId = (await (await server.SignInAsync(Users.SecondDoctor)).GetAsync<AuthUser>("/api/v1/auth/me")).PractitionerId.ShouldNotBeNull();
-        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
         var theatre = (await doctor.GetAsync<List<TheatreDto>>("/api/v1/ot/theatres")).First();
-        // A random slot years ahead, where nothing else of the run should be; the surgeon and anaesthetist are the same in
-        // every case, so on the rare clash with another test's case another slot is tried.
         SurgeryCreated? booking = null;
         for (var attempt = 0; booking is null; attempt++)
         {
             var start = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(400 + Random.Shared.Next(1500)).AddMinutes(30 * Random.Shared.Next(40)), TimeSpan.Zero);
             using var response = await doctor.SendRawAsync(HttpMethod.Post, Bookings, new CreateSurgeryBookingRequest(
-                PatientId: patientId, AdmissionId: null, VisitId: visit.Id, ProcedureServiceItemId: null, ProcedureCode: null, ProcedureName: procedure,
+                PatientId: patientId, AdmissionId: null, VisitId: visitId, ProcedureServiceItemId: null, ProcedureCode: null, ProcedureName: procedure,
                 Laterality: laterality, Diagnosis: "For the theatre's checks", SurgeonId: surgeonId, AssistantIds: null, AnaesthetistId: anaesthetistId,
-                AnaesthesiaType: AnaesthesiaType.Spinal, Priority: SurgeryPriority.Elective, PreferredDate: null, TheatreId: theatre.Id,
+                AnaesthesiaType: AnaesthesiaType.Spinal, Priority: priority, PreferredDate: null, TheatreId: theatre.Id,
                 ScheduledStart: start, ScheduledEnd: start.AddMinutes(90), Notes: null, SiteLevel: level));
             if (response.StatusCode == HttpStatusCode.Conflict && attempt < 5)
             {
@@ -56,16 +87,50 @@ internal sealed class TheatreCases(HospitalServer server)
             booking = await ApiClient.ReadAsync<SurgeryCreated>(response, HttpMethod.Post, Bookings);
         }
 
-        await nurse.PostAsync($"{Bookings}/{booking.Id}/receive");
-        return new Case(booking.Id, patientId, visit.Id, $"{Bookings}/{booking.Id}");
+        return new Case(booking.Id, patientId, visitId, $"{Bookings}/{booking.Id}");
     }
 
-    /// <summary>The surgeon marks the site (when one is booked) and the ward nurse completes the pre-op checklist.</summary>
+    /// <summary>A doctor who may book surgery and operate, but is on no team of these cases (an account with no practitioner record).</summary>
+    public async Task<ApiClient> OutsideDoctorAsync()
+    {
+        var userName = "otdoc" + Guid.NewGuid().ToString("N")[..8];
+        await server.CreateStaffAccountAsync(userName, HyFib.HealthCare360.Platform.Security.SystemRoles.Doctor);
+        return await server.SignInAsync(userName);
+    }
+
+    /// <summary>
+    /// The front office records the patient's consent to the operation (a high-risk procedure) and to the anaesthesia, as
+    /// the theatre's consent gates ask (<see cref="SurgicalConsent"/>): the two consents' ids.
+    /// </summary>
+    public async Task<(Guid Procedure, Guid Anaesthesia)> ConsentedAsync(Case c) =>
+        (await ConsentAsync(c, ConsentType.HighRiskProcedure), await ConsentAsync(c, ConsentType.Anaesthesia));
+
+    /// <summary>
+    /// The front office records one consent of the patient's, given (or, with <paramref name="granted"/> false, refused),
+    /// with the signed form's witness named, and the signed form's file when one is given.
+    /// </summary>
+    public async Task<Guid> ConsentAsync(Case c, ConsentType type, bool granted = true, Guid? documentFileId = null)
+    {
+        var frontOffice = await server.SignInAsync(Users.FrontOffice);
+        return (await frontOffice.PostAsync<Created>($"/api/v1/patients/{c.PatientId}/consents",
+            new CaptureConsentRequest(type, null, granted, "Staff nurse Asha", null, null, documentFileId,
+                granted ? "Explained by the surgeon" : "Refuses after the surgeon explained"))).Id;
+    }
+
+    /// <summary>
+    /// The patient's consents are recorded at the front office (unless they already stand, or were waived in an emergency),
+    /// the surgeon marks the site (when one is booked) and the ward nurse completes the pre-op checklist.
+    /// </summary>
     public async Task PreOpDoneAsync(Case c)
     {
         var doctor = await server.SignInAsync(Users.Doctor);
         var nurse = await server.SignInAsync(Users.Nurse);
         var detail = await doctor.GetAsync<SurgeryDetail>(c.Path);
+        if (detail.Consent?.Satisfied != true)
+        {
+            await ConsentedAsync(c);
+        }
+
         if (detail.SiteMarkingRequired)
         {
             await doctor.PutAsync($"{c.Path}/pre-op-checklist",
@@ -160,4 +225,6 @@ internal sealed class TheatreCases(HospitalServer server)
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>(ApiClient.Json, Ct);
         return (response.StatusCode, problem.TryGetProperty("code", out var code) ? code.GetString() : null);
     }
+
+    private sealed record Created(Guid Id);
 }

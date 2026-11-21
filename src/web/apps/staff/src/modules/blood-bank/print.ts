@@ -87,6 +87,20 @@ async function unitLabelsPage(units: readonly BloodUnitDto[]): Promise<string> {
   });
 }
 
+/**
+ * What the slip says when the patient's group rests on one sample that no second sample has confirmed: bedside staff check
+ * the bag against the slip, on paper during downtime, so the slip must not read as a confirmed group.
+ */
+export function oneSampleNote(
+  request: Pick<BloodRequestDetail, 'awaitingSecondSample' | 'singleSampleOverrideBy'>,
+): string {
+  if (!request.awaitingSecondSample) return '';
+  const doctor = request.singleSampleOverrideBy
+    ? `, blood authorised by ${escapeHtml(request.singleSampleOverrideBy)}`
+    : '';
+  return `<div class="alert">on one sample only (not confirmed)${doctor}</div>`;
+}
+
 export interface IssueSlipUnit {
   expiresAt: string;
   volumeMl: number;
@@ -121,7 +135,7 @@ export async function printIssueSlip(
       <hr/>
       <div class="name">${escapeHtml(request.patientName)}</div>
       <div>UHID ${escapeHtml(request.uhid)}</div>
-      <div>Patient group (blood bank): <b>${escapeHtml(groupLabel(request.patientBloodGroup))}</b></div>
+      <div>Patient group (blood bank): <b>${escapeHtml(groupLabel(request.patientBloodGroup))}</b>${oneSampleNote(request)}</div>
       <hr/>
       <div class="barcode">${barcode}</div>
       <div class="unit">${escapeHtml(issue.unitNumber)}</div>

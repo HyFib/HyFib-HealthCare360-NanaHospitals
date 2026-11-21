@@ -369,6 +369,8 @@ export interface BloodRequestListItem {
   patientBloodGroup: BloodGroup;
   createdAt: string;
   requiredBy: string | null;
+  /** The patient's first grouping waits for a second, separately drawn sample (the two-sample rule). */
+  awaitingSecondSample: boolean;
 }
 
 export interface CrossMatchDto {
@@ -430,11 +432,43 @@ export interface BloodRequestDetail {
   groupedByName: string | null;
   /** The group of the patient's earlier requests, when this request's sample grouped otherwise. */
   earlierGroup: BloodGroup | null;
-  /** The first sample's group, kept when another officer's new sample replaced it. */
+  /** The first sample's group, kept when another officer's new sample replaced or confirmed it. */
   firstSampleGroup: BloodGroup | null;
   regroupedAt: string | null;
-  /** Nothing is cross-matched or issued on the grouping until another officer groups a new sample. */
+  /**
+   * Nothing group-specific is cross-matched or issued on the grouping until another officer groups a new sample: it
+   * disagreed with earlier requests, it waits for a second sample and no doctor has overridden that, or a sample disagreed
+   * with the one it rests on (`disagreeingSampleGroup`).
+   */
   groupingHeld: boolean;
+  /** When the sample the grouping uses was drawn and who drew it (as the tube says), and when the blood bank received it. */
+  sampleDrawnAt: string | null;
+  sampleDrawnBy: string | null;
+  sampleReceivedAt: string | null;
+  /** The first sample's draw, kept once a new sample's grouping replaced or confirmed it. */
+  firstSampleDrawnAt: string | null;
+  firstSampleDrawnBy: string | null;
+  /** The patient had no group on record when the first sample was grouped (the two-sample rule, bloodbank.twoSampleRule). */
+  secondSampleRequired: boolean;
+  /** The second, separately drawn sample is not grouped yet. */
+  awaitingSecondSample: boolean;
+  /**
+   * The group of a sample that disagreed with the one the request rests on while it waited for its second sample (possible
+   * wrong blood in tube): a later sample of its own, or one grouped on another request of the patient
+   * (`disagreeingSampleRequestNumber`). With when it was grouped (when recorded), when it was drawn and who drew it. Held,
+   * whatever a doctor authorised on one sample, until a sample drawn separately agrees with the first.
+   */
+  disagreeingSampleGroup: BloodGroup | null;
+  disagreeingSampleAt: string | null;
+  disagreeingSampleDrawnAt: string | null;
+  disagreeingSampleDrawnBy: string | null;
+  /** The patient's other request the disagreeing sample was grouped on; null for a sample of this request's own. */
+  disagreeingSampleRequestNumber: string | null;
+  /** The doctor who authorised group-specific blood on one sample from their own sign-in, when, and why. */
+  singleSampleOverrideBy: string | null;
+  singleSampleOverrideByUserId: string | null;
+  singleSampleOverrideAt: string | null;
+  singleSampleOverrideReason: string | null;
   /** The doctor who authorised uncross-matched release from their own sign-in. */
   emergencyReleaseAuthorisedBy: string | null;
   emergencyReleaseByUserId: string | null;
@@ -456,6 +490,12 @@ export interface CompatibleUnitDto {
   volumeMl: number;
   expiresAt: string;
   reservedForThisRequest: boolean;
+}
+
+/** When a patient sample was drawn (ISO instant) and who drew it, as the tube and the request form say. */
+export interface SampleDraw {
+  drawnAt: string;
+  drawnBy: string;
 }
 
 export interface ReportReactionRequest {
@@ -701,11 +741,23 @@ export const bloodApi = {
   createRequest: (request: CreateBloodRequestRequest) =>
     api.post<{ id: string; requestNumber: string }>('/api/v1/blood-bank/requests', request),
   cancelRequest: (id: string, reason: string) => api.post<void>(`/api/v1/blood-bank/requests/${id}/cancel`, { reason }),
-  groupPatient: (id: string, bloodGroup: BloodGroup, newSample = false) =>
-    api.post<void>(`/api/v1/blood-bank/requests/${id}/grouping`, { bloodGroup, newSample }),
+  /** The sample's group, when it was drawn (ISO instant) and who drew it; `newSample` for a new or second sample. */
+  groupPatient: (id: string, bloodGroup: BloodGroup, draw: SampleDraw, newSample = false) =>
+    api.post<void>(`/api/v1/blood-bank/requests/${id}/grouping`, {
+      bloodGroup,
+      sampleDrawnAt: draw.drawnAt,
+      sampleDrawnBy: draw.drawnBy,
+      newSample,
+    }),
   /** The treating doctor authorises uncross-matched release from their own sign-in. */
   emergencyRelease: (id: string, reason: string) =>
     api.post<void>(`/api/v1/blood-bank/requests/${id}/emergency-release`, { reason }),
+  /**
+   * The treating doctor authorises group-specific blood on one sample, before a second confirms it, with the reason: the
+   * emergency override, for emergency requests only.
+   */
+  singleSampleOverride: (id: string, reason: string) =>
+    api.post<void>(`/api/v1/blood-bank/requests/${id}/single-sample-override`, { reason }),
   crossMatch: (
     id: string,
     componentId: string,

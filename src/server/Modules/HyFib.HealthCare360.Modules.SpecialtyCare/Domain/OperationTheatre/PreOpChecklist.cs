@@ -23,9 +23,15 @@ public sealed record ChecklistInput(string Key, ChecklistItemState State, string
 /// </summary>
 public static class PreOpChecklist
 {
+    /// <summary>
+    /// The consent item: confirmed only over the patient's consents as the front office recorded them, or consent waived in
+    /// an emergency (<see cref="SurgicalConsent"/>), never on a tick alone.
+    /// </summary>
+    public const string ConsentItem = "consent";
+
     public static IReadOnlyList<ChecklistItemDefinition> Items { get; } =
     [
-        new("consent", "Informed consent for surgery and anaesthesia signed", false),
+        new(ConsentItem, "Informed consent for surgery and anaesthesia signed", false),
         new("pac", "Pre-anaesthesia check-up (PAC) done and patient declared fit", false),
         new("npo", "Nil-by-mouth (NPO) status confirmed and time of last intake recorded", false),
         new("identity_band", "Identity band on the patient matches the case sheet", false),
@@ -54,6 +60,10 @@ public static class PreOpChecklist
 /// <summary>Shared mechanics of the pre-op and WHO checklists.</summary>
 internal static class ChecklistRules
 {
+    /// <summary>
+    /// Applies submitted answers. Each is done, not applicable or pending: any other value is refused, never stored as an
+    /// answer (a checklist counts every answer but pending as given).
+    /// </summary>
     public static Result Apply(
         IReadOnlyList<ChecklistItemDefinition> definitions,
         List<ChecklistEntry> entries,
@@ -67,6 +77,11 @@ internal static class ChecklistRules
             if (definition is null)
             {
                 return Error.Field("items", $"'{input.Key}' is not an item of this checklist.");
+            }
+
+            if (!Enum.IsDefined(input.State))
+            {
+                return Error.Field("items", $"Answer \"{definition.Text}\" as done, not applicable or pending.");
             }
 
             if (input.State == ChecklistItemState.NotApplicable)

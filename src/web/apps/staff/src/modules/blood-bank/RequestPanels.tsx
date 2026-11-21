@@ -47,7 +47,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type KeyboardEvent } from 'react';
 import { useLetterhead } from '@/lib/letterhead';
-import { formatDuration } from '@/modules/ot/shared/datetime';
+import { formatDuration, fromIstInput } from '@/modules/ot/shared/datetime';
 import { ActionError, ChargeBadge, WhoWhen } from '@/modules/ot/shared/feedback';
 import {
   bloodApi,
@@ -72,6 +72,7 @@ import {
   issueCheck,
   ownChecksReason,
   returnOutcome,
+  sampleDrawProblem,
   ttiState,
 } from './rules';
 
@@ -104,10 +105,30 @@ const useStyles = makeStyles({
 
 // ---------------------------------------------------------------- grouping
 
+/** When and by whom a sample was drawn, as the screen says it. */
+function drawnText(drawnAt: string | null, drawnBy: string | null): string {
+  return `drawn ${drawnAt ? formatDateTime(drawnAt) : 'at an unrecorded time'} by ${drawnBy ?? 'an unrecorded collector'}`;
+}
+
+/**
+ * The sample that disagreed with the one a request waiting for its second rests on: a later sample of its own, or one
+ * grouped on another request of the patient, with that sample's draw.
+ */
+function disagreementText(request: BloodRequestDetail, disagreeing: BloodGroup): string {
+  const draw = drawnText(request.disagreeingSampleDrawnAt, request.disagreeingSampleDrawnBy);
+  return request.disagreeingSampleRequestNumber
+    ? `A sample grouped on the patient’s request ${request.disagreeingSampleRequestNumber} came out ${groupLabel(disagreeing)}, this request’s one sample ${groupLabel(request.patientBloodGroup)}. That sample was ${draw}.`
+    : `A later sample grouped ${groupLabel(disagreeing)}, the first ${groupLabel(request.patientBloodGroup)}. The later sample was ${draw}.`;
+}
+
 /**
  * The patient's group from the blood bank's own grouping of the request sample (never the registration group), with who
- * grouped it. A grouping that disagrees with the patient's earlier requests holds the request: another officer groups a
- * new sample, which replaces the first.
+ * grouped it and when and by whom the sample was drawn. A grouping that disagrees with the patient's earlier requests holds
+ * the request: another officer groups a new sample, which replaces the first. A patient with no group on record waits for
+ * a second, separately drawn sample (the two-sample rule), which another officer groups as a new sample and which must
+ * agree with the first. One that disagrees, or a sample grouped on another request of the patient that disagrees, holds
+ * the request, whatever a doctor authorised on one sample, until a fresh sample groups the same as the first; the
+ * disagreeing sample's draw is shown for the investigation.
  */
 export function GroupingCard({ request, canGroup }: { request: BloodRequestDetail; canGroup: boolean }) {
   const styles = useStyles();
@@ -116,6 +137,10 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
   const grouped = isKnownGroup(request.patientBloodGroup) && request.groupedAt !== null;
   const closed = request.status === 'Issued' || request.status === 'Cancelled';
   const groupedByMe = request.groupedByUserId !== null && request.groupedByUserId === userId;
+  const historyHeld = request.earlierGroup !== null && request.regroupedAt === null;
+  const awaiting = request.awaitingSecondSample;
+  const disagreeing = awaiting ? request.disagreeingSampleGroup : null;
+  const confirmed = request.secondSampleRequired && request.regroupedAt !== null;
   return (
     <div className={styles.stack}>
       <div className={styles.row}>
@@ -126,7 +151,9 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
         />
         {grouped ? (
           <WhoWhen
-            prefix={request.regroupedAt ? 'New sample grouped by' : 'Grouped by'}
+            prefix={
+              confirmed ? 'Second sample grouped by' : request.regroupedAt ? 'New sample grouped by' : 'Grouped by'
+            }
             by={request.groupedByName}
             at={request.groupedAt}
           />
@@ -134,7 +161,53 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
           <Text>Not grouped yet. Group the request sample before cross-matching.</Text>
         )}
       </div>
-      {request.groupingHeld && request.earlierGroup && (
+      {grouped && request.sampleDrawnAt && (
+        <Caption1 className={styles.muted}>
+          Sample drawn {formatDateTime(request.sampleDrawnAt)} by {request.sampleDrawnBy ?? 'an unrecorded collector'}
+          {request.sampleReceivedAt ? ` · received ${formatDateTime(request.sampleReceivedAt)}` : ''}
+        </Caption1>
+      )}
+      {disagreeing ? (
+        <MessageBar intent="error" layout="multiline" icon={<ShieldErrorRegular />}>
+          <MessageBarBody>
+            <MessageBarTitle>The samples disagree: possible wrong blood in tube</MessageBarTitle>
+            {disagreementText(request, disagreeing)} Nothing group-specific is cross-matched or issued until a fresh
+            sample, drawn separately, groups the same as the first.
+            {request.singleSampleOverrideBy
+              ? ` The blood on one sample ${request.singleSampleOverrideBy} authorised no longer goes, and units already issued on it may be incompatible: check the patient.`
+              : ''}{' '}
+            Collect a fresh sample and investigate. In an emergency the doctor can still release O Rh(D)-negative red
+            cells or AB plasma uncross-matched.
+          </MessageBarBody>
+        </MessageBar>
+      ) : (
+        awaiting && (
+          <MessageBar intent="warning" layout="multiline" icon={<BeakerRegular />}>
+            <MessageBarBody>
+              <MessageBarTitle>A second sample is needed</MessageBarTitle>
+              {request.patientName} has no blood group on record. Before group-specific red cells or plasma are
+              cross-matched or issued, a second sample, drawn separately (at another time, its collector named on the
+              tube), must group the same. Another blood bank officer groups it as a new sample.
+              {request.singleSampleOverrideBy
+                ? ''
+                : ' In an emergency the doctor can release O Rh(D)-negative red cells or AB plasma uncross-matched, or authorise group-specific blood on this one sample.'}
+            </MessageBarBody>
+          </MessageBar>
+        )
+      )}
+      {confirmed && (
+        <Caption1>
+          Group confirmed on two samples: the first drawn{' '}
+          {request.firstSampleDrawnAt ? formatDateTime(request.firstSampleDrawnAt) : 'at an unrecorded time'} by{' '}
+          {request.firstSampleDrawnBy ?? 'an unrecorded collector'}, the second{' '}
+          {request.sampleDrawnAt ? formatDateTime(request.sampleDrawnAt) : 'at an unrecorded time'} by{' '}
+          {request.sampleDrawnBy ?? 'an unrecorded collector'}.
+          {request.disagreeingSampleGroup
+            ? ` A sample grouped between them${request.disagreeingSampleRequestNumber ? ` on request ${request.disagreeingSampleRequestNumber}` : ''} came out ${groupLabel(request.disagreeingSampleGroup)}, ${drawnText(request.disagreeingSampleDrawnAt, request.disagreeingSampleDrawnBy)}: investigate it (possible wrong blood in tube).`
+            : ''}
+        </Caption1>
+      )}
+      {historyHeld && request.earlierGroup && (
         <MessageBar intent="error" layout="multiline" icon={<ShieldErrorRegular />}>
           <MessageBarBody>
             <MessageBarTitle>The group differs from the patient’s earlier requests</MessageBarTitle>
@@ -145,7 +218,7 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
           </MessageBarBody>
         </MessageBar>
       )}
-      {request.regroupedAt && request.firstSampleGroup && (
+      {request.regroupedAt && request.firstSampleGroup && !request.secondSampleRequired && (
         <Caption1 className={styles.muted}>
           The first sample grouped {groupLabel(request.firstSampleGroup)}
           {request.earlierGroup ? ` and earlier requests ${groupLabel(request.earlierGroup)}` : ''}; the new sample
@@ -155,12 +228,29 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
       <Caption1 className={styles.muted}>The group recorded at registration is never used for transfusion.</Caption1>
       {canGroup && !closed && (
         <div>
-          {request.groupingHeld ? (
+          {historyHeld ? (
             groupedByMe ? (
               <Text>You grouped the first sample: another blood bank officer groups the new one.</Text>
             ) : (
               <Button icon={<BeakerRegular />} appearance="primary" onClick={() => setOpen('new')}>
                 Group a new sample
+              </Button>
+            )
+          ) : awaiting ? (
+            groupedByMe && request.separateVerifier ? (
+              // The officer who grouped the first sample does not confirm it, but a second tube that groups otherwise is
+              // recorded whoever groups it: possible wrong blood in tube is not left unsaid.
+              <div className={styles.stack}>
+                <Text>You grouped the first sample: another blood bank officer groups the second.</Text>
+                <div>
+                  <Button icon={<ShieldErrorRegular />} onClick={() => setOpen('new')}>
+                    Record a sample that disagrees
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button icon={<BeakerRegular />} appearance="primary" onClick={() => setOpen('new')}>
+                {disagreeing ? 'Group a fresh sample' : 'Group the second sample'}
               </Button>
             )
           ) : (
@@ -169,7 +259,7 @@ export function GroupingCard({ request, canGroup }: { request: BloodRequestDetai
               appearance={grouped ? 'secondary' : 'primary'}
               onClick={() => setOpen('second')}
             >
-              {grouped ? 'Group a second sample' : 'Record the patient’s group'}
+              {grouped ? 'Group another sample' : 'Record the patient’s group'}
             </Button>
           )}
         </div>
@@ -191,14 +281,62 @@ function GroupDialog({
   const styles = useStyles();
   const notify = useNotify();
   const queryClient = useQueryClient();
+  const userId = useSession((s) => s.user?.id);
+  const second = newSample && request.awaitingSecondSample;
+  // A later sample disagreed with the first: the sample grouped now decides, and must group the same as the first.
+  const fresh = second && request.disagreeingSampleGroup !== null;
+  // The officer who grouped the first sample records a second only when it groups otherwise.
+  const ownFirst =
+    second && request.separateVerifier && request.groupedByUserId !== null && request.groupedByUserId === userId;
   const [group, setGroup] = useState<BloodGroup | ''>('');
+  const [drawnAt, setDrawnAt] = useState('');
+  const [drawnBy, setDrawnBy] = useState('');
+  // The dialog reads the clock once when it opens: a draw time is checked against then.
+  const [openedAt] = useState(() => Date.now());
+  const drawnIso = fromIstInput(drawnAt);
+  const strictProblem = drawnAt
+    ? sampleDrawProblem(
+        drawnIso,
+        openedAt,
+        newSample ? request.sampleDrawnAt : null,
+        fresh ? request.disagreeingSampleDrawnAt : null,
+      )
+    : null;
+  // A sample that groups differently from the first of a request waiting for its second is recorded as a disagreement
+  // (possible wrong blood in tube) before the server checks its draw time, so the same draw minute only warns: the screen
+  // must let the officer record it.
+  const disagrees = second && group !== '' && group !== request.patientBloodGroup;
+  const drawProblem = disagrees && drawnAt ? sampleDrawProblem(drawnIso, openedAt) : strictProblem;
+  const drawWarning = disagrees && !drawProblem ? strictProblem : null;
   const record = useMutation({
-    mutationFn: () => bloodApi.groupPatient(request.id, group || 'Unknown', newSample),
+    mutationFn: () =>
+      bloodApi.groupPatient(
+        request.id,
+        group || 'Unknown',
+        { drawnAt: drawnIso ?? '', drawnBy: drawnBy.trim() },
+        newSample,
+      ),
     onSuccess: () => {
-      notify.success(newSample ? 'New sample grouped' : 'Patient grouped');
+      notify.success(
+        fresh
+          ? 'Fresh sample grouped'
+          : second
+            ? 'Second sample grouped'
+            : newSample
+              ? 'New sample grouped'
+              : 'Patient grouped',
+      );
       void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
       void queryClient.invalidateQueries({ queryKey: bloodKeys.compatible(request.id) });
       onClose();
+    },
+    // A disagreement with the first sample of a request waiting for its second is refused and holds the request: the
+    // screen shows the hold.
+    onError: (error) => {
+      if (isApiError(error) && error.code === 'bloodbank.grouping_discrepancy') {
+        void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
+        void queryClient.invalidateQueries({ queryKey: bloodKeys.compatible(request.id) });
+      }
     },
   });
   const discrepancy = isApiError(record.error) && record.error.code === 'bloodbank.grouping_discrepancy';
@@ -207,14 +345,30 @@ function GroupDialog({
       <DialogSurface style={{ maxWidth: 520 }}>
         <DialogBody>
           <DialogTitle>
-            {newSample ? 'Group a new sample' : 'Group the patient’s sample'}
+            {ownFirst
+              ? 'Record a sample that disagrees'
+              : fresh
+                ? 'Group a fresh sample'
+                : second
+                  ? 'Group the second sample'
+                  : newSample
+                    ? 'Group a new sample'
+                    : 'Group the patient’s sample'}
             <Caption1 block className={styles.muted}>
               {request.patientName} · {request.uhid} · {request.requestNumber}
             </Caption1>
           </DialogTitle>
           <DialogContent className={styles.stack}>
             <Field
-              label={newSample ? 'ABO and Rh(D) group of the new sample' : 'ABO and Rh(D) group of this sample'}
+              label={
+                fresh
+                  ? 'ABO and Rh(D) group of the fresh sample'
+                  : second
+                    ? 'ABO and Rh(D) group of the second sample'
+                    : newSample
+                      ? 'ABO and Rh(D) group of the new sample'
+                      : 'ABO and Rh(D) group of this sample'
+              }
               required
             >
               <Select value={group} onChange={(_, d) => setGroup(d.value as BloodGroup | '')} autoFocus>
@@ -226,10 +380,43 @@ function GroupDialog({
                 ))}
               </Select>
             </Field>
+            <Field
+              label="Drawn at"
+              required
+              hint="When the sample was taken from the patient, as the tube or the form says, not when it reached the blood bank."
+              validationMessage={
+                drawProblem ??
+                (drawWarning
+                  ? `${drawWarning} This sample groups differently from the first, so it is recorded all the same: possible wrong blood in tube.`
+                  : undefined)
+              }
+              validationState={drawProblem ? 'error' : drawWarning ? 'warning' : 'none'}
+            >
+              <Input type="datetime-local" value={drawnAt} onChange={(_, d) => setDrawnAt(d.value)} />
+            </Field>
+            <Field label="Drawn by" required hint="The collector named on the tube or the form.">
+              <Input value={drawnBy} onChange={(_, d) => setDrawnBy(d.value)} maxLength={200} />
+            </Field>
+            {ownFirst && (
+              <MessageBar intent="info" layout="multiline">
+                <MessageBarBody>
+                  <MessageBarTitle>
+                    You grouped the first sample ({groupLabel(request.patientBloodGroup)})
+                  </MessageBarTitle>
+                  A second sample that groups the same is grouped by another blood bank officer to confirm the group;
+                  one that groups otherwise is recorded whoever groups it, and holds the request as possible wrong blood
+                  in tube.
+                </MessageBarBody>
+              </MessageBar>
+            )}
             <Caption1 className={styles.muted}>
-              {newSample
-                ? 'Group a sample freshly collected from the patient, not the first one. Its group replaces the first sample’s; one that matches neither the first sample nor the earlier requests is refused.'
-                : 'A result that disagrees with an earlier grouping of this request is refused: it may be the wrong blood in the tube. Collect a fresh sample and investigate. One that disagrees with the patient’s earlier requests holds the request until another officer groups a new sample.'}
+              {fresh
+                ? `Two samples disagreed: the first grouped ${groupLabel(request.patientBloodGroup)} (${drawnText(request.sampleDrawnAt, request.sampleDrawnBy)}), ${request.disagreeingSampleRequestNumber ? `one grouped on request ${request.disagreeingSampleRequestNumber}` : 'a later one'} ${groupLabel(request.disagreeingSampleGroup ?? 'Unknown')} (${drawnText(request.disagreeingSampleDrawnAt, request.disagreeingSampleDrawnBy)}). Group a fresh sample, drawn separately, not either tube again. It must group the same as the first; one that does not is refused.`
+                : second
+                  ? `The patient has no blood group on record. Group a second sample, drawn separately from the first (drawn ${request.sampleDrawnAt ? formatDateTime(request.sampleDrawnAt) : 'at an unrecorded time'} by ${request.sampleDrawnBy ?? 'an unrecorded collector'}), not the first tube again. It must group the same as the first; one that does not is refused as possible wrong blood in tube.`
+                  : newSample
+                    ? 'Group a sample freshly collected from the patient, not the first one. Its group replaces the first sample’s; one that matches neither the first sample nor the earlier requests is refused.'
+                    : 'A result that disagrees with an earlier grouping of this request is refused: it may be the wrong blood in the tube. Collect a fresh sample and investigate. One that disagrees with the patient’s earlier requests holds the request until another officer groups a new sample, and a patient with no group on record waits for a second sample.'}
             </Caption1>
             {discrepancy ? (
               <MessageBar intent="error" layout="multiline" politeness="assertive" icon={<ShieldErrorRegular />}>
@@ -249,7 +436,7 @@ function GroupDialog({
             </Button>
             <Button
               appearance="primary"
-              disabled={!group || record.isPending}
+              disabled={!group || !drawnIso || !drawnBy.trim() || drawProblem !== null || record.isPending}
               icon={record.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               onClick={() => record.mutate()}
             >
@@ -287,8 +474,11 @@ export function CompatibleUnitsPanel({ request, now }: { request: BloodRequestDe
   if (request.groupingHeld) {
     return (
       <Text className={styles.muted}>
-        Compatible units appear once another officer has grouped a new sample: this grouping differs from the patient’s
-        earlier requests.
+        {request.awaitingSecondSample && request.disagreeingSampleGroup
+          ? 'Compatible units appear once a fresh sample, drawn separately, groups the same as the first: two samples of this patient disagree.'
+          : request.awaitingSecondSample
+            ? 'Compatible units appear once a second, separately drawn sample confirms the group, or the doctor authorises group-specific blood on this one sample.'
+            : 'Compatible units appear once another officer has grouped a new sample: this grouping differs from the patient’s earlier requests.'}
       </Text>
     );
   }
@@ -619,6 +809,155 @@ function EmergencyReleaseDialog({ request, onClose }: { request: BloodRequestDet
   );
 }
 
+// ---------------------------------------------------------------- group-specific blood on one sample
+
+/**
+ * The emergency override of the two-sample rule: the treating doctor authorises group-specific blood on the one sample a
+ * patient with no group on record was grouped on, from their own sign-in, with the clinical reason (at least 10
+ * characters), on an emergency request only (for others the blood bank groups the second sample first). It is audited at
+ * Critical, and the second sample is still grouped when it comes. Shown once authorised; offered only to the doctor. Once
+ * a sample disagrees with the one the request rests on (a later sample of its own, or one grouped on another request of
+ * the patient), it neither stands nor is offered: the grouping card says why.
+ */
+export function SingleSampleOverridePanel({
+  request,
+  canAuthorise,
+}: {
+  request: BloodRequestDetail;
+  canAuthorise: boolean;
+}) {
+  const styles = useStyles();
+  const [open, setOpen] = useState(false);
+  if (
+    !request.awaitingSecondSample ||
+    request.disagreeingSampleGroup !== null ||
+    request.status === 'Issued' ||
+    request.status === 'Cancelled'
+  ) {
+    return null;
+  }
+  if (request.singleSampleOverrideBy) {
+    return (
+      <MessageBar intent="error" layout="multiline" icon={<WarningRegular />}>
+        <MessageBarBody>
+          <MessageBarTitle>
+            Group-specific blood on one sample authorised by {request.singleSampleOverrideBy}
+            {request.singleSampleOverrideAt ? ` · ${formatDateTime(request.singleSampleOverrideAt)}` : ''}
+          </MessageBarTitle>
+          {request.singleSampleOverrideReason} The patient’s group rests on one sample: group the second sample as soon
+          as it arrives.
+        </MessageBarBody>
+      </MessageBar>
+    );
+  }
+  if (!canAuthorise || request.urgency !== 'Emergency') {
+    return null;
+  }
+  return (
+    <div className={styles.emergency}>
+      <Text weight="semibold">
+        <WarningRegular /> Blood needed before the second sample?
+      </Text>
+      <Text>
+        This patient’s group rests on one sample. If that tube held another patient’s blood, group-specific blood
+        cross-matched on it can still be ABO-incompatible. In this emergency the treating doctor can authorise it on
+        this one sample from their own sign-in, with the clinical reason; the emergency release (O Rh(D)-negative red
+        cells, AB plasma) needs no group.
+      </Text>
+      <div>
+        <Button
+          appearance="primary"
+          icon={<WarningRegular />}
+          style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
+          onClick={() => setOpen(true)}
+        >
+          Authorise blood on one sample
+        </Button>
+      </div>
+      {open && <SingleSampleOverrideDialog request={request} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
+function SingleSampleOverrideDialog({ request, onClose }: { request: BloodRequestDetail; onClose: () => void }) {
+  const styles = useStyles();
+  const notify = useNotify();
+  const queryClient = useQueryClient();
+  const doctor = useSession((s) => s.user?.displayName);
+  const [reason, setReason] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const authorise = useMutation({
+    mutationFn: () => bloodApi.singleSampleOverride(request.id, reason.trim()),
+    onSuccess: () => {
+      notify.warning(
+        'Blood on one sample authorised',
+        'The blood bank may cross-match and issue group-specific blood. The second sample is still grouped when it comes.',
+      );
+      void queryClient.invalidateQueries({ queryKey: bloodKeys.request(request.id) });
+      void queryClient.invalidateQueries({ queryKey: bloodKeys.compatible(request.id) });
+      onClose();
+    },
+  });
+  const valid = reason.trim().length >= 10 && confirmed;
+  const guard = useUnsavedChanges({
+    dirty: useValuesChanged({ reason, confirmed }),
+    busy: authorise.isPending,
+    onClose,
+  });
+
+  return (
+    <Dialog open onOpenChange={guard.onOpenChange} modalType="alert">
+      <DialogSurface style={{ maxWidth: 600 }}>
+        <DialogBody>
+          <DialogTitle>Authorise blood on one sample</DialogTitle>
+          <DialogContent className={styles.stack}>
+            <MessageBar intent="error" layout="multiline" icon={<WarningRegular />}>
+              <MessageBarBody>
+                <MessageBarTitle>The patient’s group is not confirmed</MessageBarTitle>
+                {request.patientName} has no blood group on record, and this request’s one sample grouped{' '}
+                {groupLabel(request.patientBloodGroup)}. Authorise group-specific blood on it only when waiting for the
+                second sample would endanger life, and send the second sample at once.
+              </MessageBarBody>
+            </MessageBar>
+            <Text>
+              Patient: <Text weight="semibold">{request.patientName}</Text> ({request.uhid}) · request{' '}
+              {request.requestNumber}
+            </Text>
+            <Field
+              label="Clinical reason"
+              required
+              hint="At least 10 characters, e.g. ongoing haemorrhage, O-negative stock used up."
+            >
+              <Textarea value={reason} onChange={(_, d) => setReason(d.value)} rows={3} maxLength={500} autoFocus />
+            </Field>
+            <Checkbox
+              checked={confirmed}
+              onChange={(_, d) => setConfirmed(d.checked === true)}
+              label={`I, ${doctor ?? 'the signed-in doctor'}, am treating this patient and authorise group-specific blood on one sample’s grouping.`}
+            />
+            <ActionError error={authorise.error} />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={guard.requestClose} disabled={authorise.isPending}>
+              Cancel
+            </Button>
+            <Button
+              appearance="primary"
+              disabled={!valid || authorise.isPending}
+              icon={authorise.isPending ? <Spinner size="tiny" aria-hidden /> : <WarningRegular />}
+              style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
+              onClick={() => authorise.mutate()}
+            >
+              Authorise
+            </Button>
+          </DialogActions>
+        </DialogBody>
+        {guard.dialogs}
+      </DialogSurface>
+    </Dialog>
+  );
+}
+
 // ---------------------------------------------------------------- issue
 
 /**
@@ -678,6 +1017,8 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
           ttiCleared: ttiState(u.tti).cleared,
           reservedForOtherRequest: u.status === 'Reserved' && u.reservedForRequestId !== request.id,
           groupingHeld: request.groupingHeld,
+          awaitingSecondSample: request.awaitingSecondSample,
+          samplesDisagree: request.awaitingSecondSample && request.disagreeingSampleGroup !== null,
         })
     : null;
   // Grouping, cross-match and issue are not all one person: refused where the facility has a second officer, and
@@ -821,7 +1162,16 @@ export function IssuePanel({ request, now }: { request: BloodRequestDetail; now:
               </MessageBarBody>
             </MessageBar>
           )}
-          {check?.allowed && !refusedOwnChecks && !check.emergency && (
+          {check?.allowed && !refusedOwnChecks && !check.emergency && request.awaitingSecondSample && (
+            <MessageBar intent="warning" layout="multiline">
+              <MessageBarBody>
+                <MessageBarTitle>Group-specific blood on one sample</MessageBarTitle>
+                Allowed on the override {request.singleSampleOverrideBy} authorised: the patient’s group rests on one
+                sample until the second is grouped. This is recorded in the audit log.
+              </MessageBarBody>
+            </MessageBar>
+          )}
+          {check?.allowed && !refusedOwnChecks && !check.emergency && !request.awaitingSecondSample && (
             <MessageBar intent="success">
               <MessageBarBody>All checks passed for {request.patientName}.</MessageBarBody>
             </MessageBar>

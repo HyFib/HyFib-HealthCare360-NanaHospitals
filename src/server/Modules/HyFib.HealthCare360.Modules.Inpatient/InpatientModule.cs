@@ -108,6 +108,8 @@ public sealed class InpatientModule : IModule
         services.AddHostedService<BedDayChargeJob>();
         services.AddHostedService<CountersignOverdueJob>();
         services.AddHostedService<EarlyWarningReminderJob>();
+        services.AddScoped<RestraintAlertService>();
+        services.AddHostedService<RestraintAlertJob>();
         services.AddHostedService<MarChartAheadJob>();
     }
 

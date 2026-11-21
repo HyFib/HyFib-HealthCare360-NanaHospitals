@@ -52,6 +52,51 @@ public sealed record ScheduleSurgeryRequest(Guid TheatreId, DateTimeOffset Sched
 
 public sealed record SurgeryReasonRequest(string Reason);
 
+/// <summary>
+/// An emergency operation going ahead without the patient's consent (the emergency doctrine): the operating surgeon's
+/// clinical reason it cannot wait (at least 10 characters), and the confirmation of the second doctor who agrees, given at
+/// the surgeon's screen with their own user name and password (<c>POST /api/v1/auth/witness</c>, purpose
+/// <c>ot.consent_waiver</c>, the patient).
+/// </summary>
+public sealed record WaiveSurgicalConsentRequest(string Reason, Guid ConcurringDoctorConfirmationId);
+
+/// <summary>
+/// The patient's consent to the operation as the theatre's gates read it: each consent needed (to the procedure, and to
+/// anaesthesia unless it is local or topical) with where it stands, counted from <paramref name="Since"/> (the booking), who
+/// recorded it and whether the signed form is attached; the emergency waiver, if any; and the consents the incision relied on.
+/// Each check carries, nullable, the patient's latest refusal of that consent recorded before the booking
+/// (<see cref="EarlierRefusal"/>) while nothing of that kind is recorded since: it is shown, and audited with a waiver, but
+/// blocks nothing.
+/// </summary>
+/// <param name="Satisfied">
+/// The gates open: every consent needed is recorded, or consent was waived in an emergency, the booking is still one and
+/// the patient has not said no since (refused, or withdrawn a consent).
+/// </param>
+/// <param name="Recorded">Every consent needed is recorded.</param>
+/// <param name="Waiver">
+/// The emergency waiver on the booking; it stands only while the booking is an emergency and the patient has not said no.
+/// </param>
+/// <param name="Refused">The patient's latest word since the booking on a consent the operation needs is a refusal.</param>
+/// <param name="SaidNo">
+/// The patient's latest word since the booking on a consent the operation needs is "no": a refusal (<paramref name="Refused"/>)
+/// or a withdrawal. No emergency waiver is given or stands against it.
+/// </param>
+/// <param name="AnaesthesiaConsentRequiredAtSignIn">
+/// The WHO Sign-in was done under anaesthesia given by an anaesthetist, so the consent to anaesthesia stays needed though
+/// the technique is now local or topical.
+/// </param>
+public sealed record SurgicalConsentDto(
+    bool Satisfied,
+    bool Recorded,
+    DateTimeOffset Since,
+    IReadOnlyList<SurgicalConsentCheck> Checks,
+    SurgicalConsentWaiver? Waiver,
+    Guid? ProcedureConsentId,
+    Guid? AnaesthesiaConsentId,
+    bool Refused = false,
+    bool AnaesthesiaConsentRequiredAtSignIn = false,
+    bool SaidNo = false);
+
 public sealed record SurgeryCreated(Guid Id, string BookingNumber, SurgeryStatus Status);
 
 /// <param name="InRecovery">Between the WHO Sign-out and the discharge from recovery.</param>
@@ -138,7 +183,8 @@ public sealed record SurgeryDetail(
     IReadOnlyList<ChecklistVoid>? ChecklistVoids = null,
     bool InRecovery = false,
     DateTimeOffset? RecoveryDischargedAt = null,
-    RecoveryDestination? RecoveryDestination = null);
+    RecoveryDestination? RecoveryDestination = null,
+    SurgicalConsentDto? Consent = null);
 
 public sealed class CreateSurgeryBookingRequestValidator : AbstractValidator<CreateSurgeryBookingRequest>
 {
@@ -186,4 +232,18 @@ public sealed class SurgeryReasonRequestValidator : AbstractValidator<SurgeryRea
 {
     public SurgeryReasonRequestValidator() =>
         RuleFor(x => x.Reason).NotEmpty().WithMessage("Give a reason.").SafeText(500);
+}
+
+public sealed class WaiveSurgicalConsentRequestValidator : AbstractValidator<WaiveSurgicalConsentRequest>
+{
+    public WaiveSurgicalConsentRequestValidator()
+    {
+        RuleFor(x => x.Reason).NotEmpty().WithMessage(ReasonMessage).SafeText(500);
+        RuleFor(x => x.Reason).Must(r => r!.Trim().Length >= SurgicalConsent.MinimumReasonLength).When(x => !string.IsNullOrWhiteSpace(x.Reason))
+            .WithMessage(ReasonMessage);
+        RuleFor(x => x.ConcurringDoctorConfirmationId).NotEmpty()
+            .WithMessage("A second doctor agrees that the operation cannot wait, confirming here with their own user name and password.");
+    }
+
+    internal const string ReasonMessage = "Give the clinical reason the operation cannot wait for the patient's consent (at least 10 characters).";
 }

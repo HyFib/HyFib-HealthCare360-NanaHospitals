@@ -612,7 +612,8 @@ and grants nothing.
     answers 202, and 400 on `reason` without one), and another approves, shown the setting, what it controls, where it
     applies, the value in force and the one asked ("Second pathologist for lab corrections: on → off"). That is
     switching off the second pathologist (`lab.separateVerifier`), the second doctor on death certificates
-    (`mrd.deathCertificateConfirmation`), the second blood bank officer (`bloodbank.separateVerifier`), administration
+    (`mrd.deathCertificateConfirmation`), the second blood bank officer (`bloodbank.separateVerifier`), the second
+    sample of a patient's first blood group (`bloodbank.twoSampleRule`), administration
     only on enrolled desktops (`security.administrationRequiresDesktop`), payment before a lab sample
     (`lab.requirePaymentBeforeCollection`) or the cash counter shift (`billing.shift.required`); switching on Windows
     Hello unlock (`ui.biometricUnlock`) or AI (`ai.enabled`); raising an own-authority discount limit
@@ -670,7 +671,14 @@ and grants nothing.
     bank types (`bloodbank.doctor_required`, 403). The request keeps the doctor's account, practitioner record and the
     time; the authorisation and each unit issued on it are audited at Warning, naming the doctor and the issuing
     officer. The doctor's authorisation is the second person: no approval inbox stands in the way of blood in an
-    emergency.
+    emergency. A patient with no blood group on record has it confirmed on a second, separately drawn sample, grouped by
+    another officer, before group-specific red cells or plasma go (the two-sample rule, `bloodbank.twoSampleRule`);
+    group-specific blood on the one sample is the same doctor's emergency authorisation from their own sign-in, on an
+    emergency request only (`bloodbank.not_emergency`), with a clinical reason
+    (`POST …/requests/{id}/single-sample-override`), audited at Critical with each unit issued on it. Any other sample of
+    the patient that disagrees, on that request or another, ends it and holds every request of the patient resting on one
+    sample (`bloodbank.grouping_discrepancy`), and a unit already issued on it is not started at the bedside unless it
+    suits every group found.
   - the prescribing-safety tables loosened (MAKER-CHECKER.md, slice 5; `clinical.drug_interaction`,
     `clinical.dose_limit`): a drug interaction switched off, made less severe or moved to another pair of drugs, and a
     maximum daily dose switched off, raised, or moved to another drug or a narrower route, are asked for, with the
@@ -884,6 +892,22 @@ and grants nothing.
       (`surgery.count_discrepancy_open`): found, an X-ray with its result, or a retained item, which raises a never event
       in the Quality incident register (sentinel, the harm graded, the quality team alerted) in the same transaction,
       audited at Critical (`surgery.count_discrepancy_settled`). "Counts are correct" is confirmed only from the counts;
+    - consent before surgery and anaesthesia: "consent signed" on the pre-op checklist, the WHO Sign-in and Time-out and
+      the incision read the patient's consents as the front office recorded them, never a tick
+      (`surgery.consent_required`). An emergency operation goes ahead without them only on the operating surgeon's word,
+      from their own sign-in, with the clinical reason, and a second doctor who agrees at the surgeon's screen with their
+      own user name and password (`POST /api/v1/auth/witness`, purpose `ot.consent_waiver`, `ot.surgery.perform`; never
+      the surgeon, used once, for that patient), audited at Critical (`surgery.consent_waived`), and never against the
+      patient's "no": a refusal (`surgery.consent_refused`) or a withdrawal (`surgery.consent_withdrawn`) recorded since
+      the booking blocks the waiver, and one recorded after it ends it, whichever of the two was entered first. A
+      withdrawal or refusal is the patient's latest word: an older consent still on record does not count after it, nor
+      does one another operation's incision relied on, and a withdrawal since the booking counts whenever the consent
+      withdrawn was given. The theatre shows who recorded each consent, and a signed form as attached only when the file
+      is in the document store for that patient; a consent another branch's operation relied on is not named by that
+      booking's number. A refusal recorded before the booking is shown on the panel, the waiver form and the waiver's
+      audit, but does not block the waiver; whether it should is an open question for the hospital. After
+      the Sign-in, the anaesthesia technique and the priority, which bear on consent, are changed only by the operating
+      surgeon or the anaesthetist, with a reason, audited at Warning (`surgery.plan_changed_after_sign_in`);
     - an implant or consumable line once the operation has started: not removed (`surgery.material_locked`); a
       correction of its batch, serial, expiry or quantity (`POST …/materials/{id}/corrections` answers 202,
       `ot.material_correction`) is approved by the OT in-charge (the new `ot.materials.approve`: OT coordinators and the

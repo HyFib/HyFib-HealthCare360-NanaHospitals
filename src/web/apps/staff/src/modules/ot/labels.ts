@@ -20,6 +20,8 @@ import type {
   SpecimenDestination,
   SurgeryPriority,
   SurgeryStatus,
+  SurgicalConsentKind,
+  SurgicalConsentState,
   TheatreType,
 } from './api';
 
@@ -116,6 +118,22 @@ export const phaseMoment: Record<SafetyPhase, string> = {
   SignIn: 'Before induction of anaesthesia',
   TimeOut: 'Before skin incision',
   SignOut: 'Before the patient leaves the theatre',
+};
+
+/** The consents an operation needs, as the front office records them (server `SurgicalConsentKind`). */
+export const consentKindLabel: Record<SurgicalConsentKind, string> = {
+  Procedure: 'Consent to the operation (high-risk procedure)',
+  Anaesthesia: 'Consent to anaesthesia',
+};
+
+export const consentStateLabel: Record<SurgicalConsentState, string> = {
+  Recorded: 'Recorded',
+  Missing: 'Not recorded',
+  BeforeBooking: 'Recorded before this booking',
+  Withdrawn: 'Withdrawn',
+  Refused: 'Refused',
+  NotNeeded: 'Not needed',
+  OtherOperation: 'Relied on by another operation',
 };
 
 export const asaLabel: Record<AsaGrade, string> = {

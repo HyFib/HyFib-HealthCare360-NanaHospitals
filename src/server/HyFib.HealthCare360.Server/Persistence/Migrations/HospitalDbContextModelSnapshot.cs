@@ -18,7 +18,7 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.14")
+                .HasAnnotation("ProductVersion", "10.0.15")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
@@ -25635,6 +25635,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("alternatives_tried");
 
+                    b.Property<DateTimeOffset?>("CheckAlertedForDue")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("check_alerted_for_due");
+
                     b.Property<int>("CheckIntervalMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("check_interval_minutes");
@@ -25676,6 +25680,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean")
                         .HasColumnName("is_deleted");
+
+                    b.Property<DateTimeOffset?>("LapseAlertedFor")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("lapse_alerted_for");
 
                     b.Property<DateTimeOffset?>("LastCheckedAt")
                         .HasColumnType("timestamp with time zone")
@@ -36839,6 +36847,29 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("deleted_by");
 
+                    b.Property<DateTimeOffset?>("DisagreeingSampleAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disagreeing_sample_at");
+
+                    b.Property<DateTimeOffset?>("DisagreeingSampleDrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("disagreeing_sample_drawn_at");
+
+                    b.Property<string>("DisagreeingSampleDrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("disagreeing_sample_drawn_by");
+
+                    b.Property<string>("DisagreeingSampleGroup")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("disagreeing_sample_group");
+
+                    b.Property<string>("DisagreeingSampleRequestNumber")
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("disagreeing_sample_request_number");
+
                     b.Property<string>("EarlierGroup")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -36869,6 +36900,15 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<Guid>("FacilityId")
                         .HasColumnType("uuid")
                         .HasColumnName("facility_id");
+
+                    b.Property<DateTimeOffset?>("FirstSampleDrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("first_sample_drawn_at");
+
+                    b.Property<string>("FirstSampleDrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("first_sample_drawn_by");
 
                     b.Property<string>("FirstSampleGroup")
                         .HasMaxLength(64)
@@ -36944,9 +36984,44 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("required_by");
 
+                    b.Property<DateTimeOffset?>("SampleDrawnAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sample_drawn_at");
+
+                    b.Property<string>("SampleDrawnBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("sample_drawn_by");
+
                     b.Property<DateTimeOffset?>("SampleReceivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("sample_received_at");
+
+                    b.Property<bool>("SecondSampleRequired")
+                        .HasColumnType("boolean")
+                        .HasColumnName("second_sample_required");
+
+                    b.Property<DateTimeOffset?>("SingleSampleOverrideAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("single_sample_override_at");
+
+                    b.Property<string>("SingleSampleOverrideBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("single_sample_override_by");
+
+                    b.Property<Guid?>("SingleSampleOverrideByPractitionerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("single_sample_override_by_practitioner_id");
+
+                    b.Property<Guid?>("SingleSampleOverrideByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("single_sample_override_by_user_id");
+
+                    b.Property<string>("SingleSampleOverrideReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("single_sample_override_reason");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -39521,6 +39596,14 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("admission_id");
 
+                    b.Property<Guid?>("AnaesthesiaConsentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("anaesthesia_consent_id");
+
+                    b.Property<bool>("AnaesthesiaConsentRequiredAtSignIn")
+                        .HasColumnType("boolean")
+                        .HasColumnName("anaesthesia_consent_required_at_sign_in");
+
                     b.Property<string>("AnaesthesiaType")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -39566,6 +39649,33 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset?>("ConsentWaivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("consent_waived_at");
+
+                    b.Property<string>("ConsentWaivedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_waived_by_name");
+
+                    b.Property<Guid?>("ConsentWaivedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_waived_by_user_id");
+
+                    b.Property<string>("ConsentWaiverConcurredByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("consent_waiver_concurred_by_name");
+
+                    b.Property<Guid?>("ConsentWaiverConcurredByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("consent_waiver_concurred_by_user_id");
+
+                    b.Property<string>("ConsentWaiverReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("consent_waiver_reason");
 
                     b.Property<string>("CountDiscrepancies")
                         .IsRequired()
@@ -39661,6 +39771,10 @@ namespace HyFib.HealthCare360.Server.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)")
                         .HasColumnName("procedure_code");
+
+                    b.Property<Guid?>("ProcedureConsentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("procedure_consent_id");
 
                     b.Property<string>("ProcedureName")
                         .IsRequired()

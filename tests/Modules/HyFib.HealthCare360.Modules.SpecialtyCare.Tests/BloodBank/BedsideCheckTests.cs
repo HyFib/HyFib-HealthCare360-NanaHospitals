@@ -21,6 +21,29 @@ public sealed class BedsideCheckTests
     }
 
     [Fact]
+    public void A_unit_is_not_started_on_a_group_samples_disagree_on_unless_it_suits_every_group_found()
+    {
+        // The unit's request rested on one sample that grouped A+; another sample of the patient grouped O+.
+        IReadOnlyList<BloodGroup> disputed = [BloodGroup.APositive, BloodGroup.OPositive];
+
+        var refused = BedsideCheck.Grouping(BloodComponentType.PRBC, BloodGroup.APositive, emergencyRelease: false, disputed);
+        refused.Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
+        refused.Error.Message.ShouldContain("APositive and OPositive");
+
+        // Red cells that suit both, and plasma that suits both, may be started; plasma that does not may not.
+        BedsideCheck.Grouping(BloodComponentType.PRBC, BloodGroup.OPositive, emergencyRelease: false, disputed).IsSuccess.ShouldBeTrue();
+        BedsideCheck.Grouping(BloodComponentType.PRBC, BloodGroup.ONegative, emergencyRelease: false, disputed).IsSuccess.ShouldBeTrue();
+        BedsideCheck.Grouping(BloodComponentType.FFP, BloodGroup.APositive, emergencyRelease: false, disputed).IsSuccess.ShouldBeTrue();
+        BedsideCheck.Grouping(BloodComponentType.FFP, BloodGroup.OPositive, emergencyRelease: false, disputed).Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
+        BedsideCheck.Grouping(BloodComponentType.WholeBlood, BloodGroup.OPositive, emergencyRelease: false, disputed).Error!.Code
+            .ShouldBe("bloodbank.grouping_discrepancy", "whole blood is ABO-identical, so it suits only one of them");
+
+        // A unit released in an emergency, and a group no samples dispute, go as before.
+        BedsideCheck.Grouping(BloodComponentType.PRBC, BloodGroup.APositive, emergencyRelease: true, disputed).IsSuccess.ShouldBeTrue();
+        BedsideCheck.Grouping(BloodComponentType.PRBC, BloodGroup.APositive, emergencyRelease: false, []).IsSuccess.ShouldBeTrue();
+    }
+
+    [Fact]
     public void A_unit_is_usable_in_date_with_a_standing_cross_match_and_within_four_hours_of_leaving_the_bank()
     {
         var crossMatch = new CrossMatch { Result = CrossmatchResult.Compatible, PerformedAt = Issued.AddHours(-2) };

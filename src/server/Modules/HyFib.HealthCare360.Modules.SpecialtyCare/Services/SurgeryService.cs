@@ -1,6 +1,8 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
 using HyFib.HealthCare360.Platform.Numbering;
@@ -20,8 +22,16 @@ public sealed class SurgeryService(
     ICurrentUser currentUser,
     IAuditLogger audit,
     INotificationService notifications,
+    IWitnessConfirmations witnesses,
     TimeProvider time)
 {
+    /// <summary>
+    /// The second doctor who agrees, at the operating surgeon's screen, that an emergency operation cannot wait for the
+    /// patient's consent (<see cref="WaiveConsentAsync"/>): a doctor who may operate (<c>ot.surgery.perform</c>), never the surgeon.
+    /// </summary>
+    public static readonly WitnessPurpose ConsentWaiverWitness = new("ot.consent_waiver", SpecialtyCarePermissions.OtSurgery,
+        "a second doctor's agreement that an emergency operation goes ahead without the patient's consent");
+
     public async Task<Result<SurgeryCreated>> CreateAsync(CreateSurgeryBookingRequest request, CancellationToken ct)
     {
         if (currentUser.FacilityId is not { } facilityId)
@@ -72,8 +82,11 @@ public sealed class SurgeryService(
     /// <summary>
     /// Edits the plan. Before the WHO Sign-in, as asked. After it, a change of side, level or procedure is made only by the
     /// operating surgeon or the anaesthetist, from their own sign-in, with a reason (<see cref="SiteChangeRule"/>): the Sign-in
-    /// and Time-out done are voided and redone, the change is audited at Warning, and the theatre team is told. After the
-    /// incision it is refused (maker-checker slice 10).
+    /// and Time-out done are voided and redone, the change is audited at Warning, and the theatre team is told. A change of
+    /// anaesthesia technique or priority after it is made the same way (<see cref="TechniqueOrPriorityChangeRule"/>) and
+    /// audited at Warning, without voiding the checklist; a consent to anaesthesia needed at the Sign-in stays needed. After
+    /// the incision the plan is refused (maker-checker slice 10). Another operating surgeon ends a consent waived in an
+    /// emergency (<see cref="SurgeryBooking.AssignSurgeon"/>).
     /// </summary>
     public async Task<Result> UpdatePlanAsync(Guid id, UpdateSurgeryPlanRequest request, CancellationToken ct)
     {
@@ -84,8 +97,9 @@ public sealed class SurgeryService(
         }
 
         var before = booking.Site;
+        var signedIn = booking.SignInCompletedAt is not null;
         var asked = new SurgicalSite(request.ProcedureServiceItemId, request.ProcedureName, request.Laterality, Clean(request.SiteLevel));
-        var siteChange = SiteChangeRule.Check(booking.Status, booking.SignInCompletedAt is not null, before, asked, booking.SurgeonId, booking.AnaesthetistId,
+        var siteChange = SiteChangeRule.Check(booking.Status, signedIn, before, asked, booking.SurgeonId, booking.AnaesthetistId,
             currentUser.PractitionerId, request.ChangeReason);
         var editable = booking.CanChangePlan();
         if (editable.IsFailure && booking.Status != SurgeryStatus.InProgress)
@@ -103,6 +117,14 @@ public sealed class SurgeryService(
             return editable;
         }
 
+        var (anaesthesiaBefore, priorityBefore) = (booking.AnaesthesiaType, booking.Priority);
+        var careChange = TechniqueOrPriorityChangeRule.Check(signedIn, anaesthesiaBefore, request.AnaesthesiaType, priorityBefore, request.Priority,
+            booking.SurgeonId, booking.AnaesthetistId, currentUser.PractitionerId, request.ChangeReason);
+        if (careChange.IsFailure)
+        {
+            return careChange;
+        }
+
         var checks = await ValidateReferencesAsync(
             booking.PatientId, request.SurgeonId, request.AnaesthetistId, request.AssistantIds, request.NurseId, request.ProcedureServiceItemId, ct);
         if (checks.IsFailure)
@@ -111,11 +133,33 @@ public sealed class SurgeryService(
         }
 
         db.SetExpectedVersion(booking, request.Version);
-        var voids = booking.SignInCompletedAt is not null && before.Differs(asked);
+        var voids = signedIn && before.Differs(asked);
         booking.PreferredDate = request.PreferredDate;
         await ApplyPlanAsync(booking, request.ProcedureServiceItemId, request.ProcedureCode, request.ProcedureName, request.Laterality, request.SiteLevel,
             request.Diagnosis, request.SurgeonId, request.AssistantIds, request.AnaesthetistId, request.NurseId, request.AnaesthesiaType, request.Priority,
             request.Notes, ct);
+        if (signedIn && (anaesthesiaBefore, priorityBefore) != (booking.AnaesthesiaType, booking.Priority))
+        {
+            var change = TechniqueOrPriorityChangeRule.Describe(anaesthesiaBefore, booking.AnaesthesiaType, priorityBefore, booking.Priority);
+            var by = currentUser.Stamp(time.GetUtcNow());
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "surgery.plan_changed_after_sign_in",
+                Fit($"Surgery {booking.BookingNumber} ({booking.Site.Words}): {change} after the WHO Sign-in, by {by.Name}: {request.ChangeReason!.Trim()}."
+                    + (booking.AnaesthesiaConsentRequiredAtSignIn ? " The consent to anaesthesia needed at the Sign-in stays needed." : string.Empty), 1000))
+            {
+                PatientId = booking.PatientId,
+                EntityType = nameof(SurgeryBooking),
+                EntityId = booking.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+                Details = new
+                {
+                    anaesthesia = new { before = anaesthesiaBefore, after = booking.AnaesthesiaType },
+                    priority = new { before = priorityBefore, after = booking.Priority },
+                    reason = request.ChangeReason!.Trim(),
+                    anaesthesiaConsentStillNeeded = booking.AnaesthesiaConsentRequiredAtSignIn,
+                },
+            });
+        }
+
         booking.ResetSiteMarkingIfMoved(before);
         var voided = voids ? booking.VoidChecklistForSiteChange(before, request.ChangeReason!, currentUser.Stamp(time.GetUtcNow())) : null;
         if (voided is not null)
@@ -176,13 +220,106 @@ public sealed class SurgeryService(
         return Result.Success();
     }
 
-    public Task<Result> ReceiveInPreOpAsync(Guid id, CancellationToken ct) => TakeIntoTheatreAsync(id, b => b.ReceiveInPreOp(time.GetUtcNow()), ct);
+    public Task<Result> ReceiveInPreOpAsync(Guid id, CancellationToken ct) =>
+        TakeIntoTheatreAsync(id, b => Task.FromResult(b.ReceiveInPreOp(time.GetUtcNow())), ct);
 
     public Task<Result> PostponeAsync(Guid id, string reason, CancellationToken ct) => ChangeAsync(id, b => b.Postpone(reason), ct);
 
     public Task<Result> CancelAsync(Guid id, string reason, CancellationToken ct) => ChangeAsync(id, b => b.Cancel(reason), ct);
 
-    public Task<Result> StartAsync(Guid id, CancellationToken ct) => TakeIntoTheatreAsync(id, b => b.Start(time.GetUtcNow()), ct);
+    /// <summary>
+    /// Knife to skin: after the WHO Sign-in and Time-out, and only with the patient's consent to the operation on record, read
+    /// as the incision is saved, or waived in an emergency (<see cref="SurgicalConsent"/>, <see cref="WaiveConsentAsync"/>).
+    /// </summary>
+    public Task<Result> StartAsync(Guid id, CancellationToken ct) =>
+        TakeIntoTheatreAsync(id, async b =>
+        {
+            // A consent is relied on by one operation only, and the front office may record a refusal or a withdrawal at any
+            // moment. The stay's lock covers neither out-patient bookings, bookings on different stays nor the front office, so
+            // the incision takes the patient's consent lock before it reads the consents and holds it to its commit
+            // (SurgicalConsentLocks): the consents it reads cannot change before it saves.
+            await SurgicalConsentLocks.LockAsync(db, b.PatientId, ct);
+            return b.Start(time.GetUtcNow(), await SurgicalConsentRecords.ForBookingAsync(db, b, ct));
+        }, ct);
+
+    /// <summary>
+    /// The emergency doctrine: an emergency operation goes ahead without the patient's consent when it cannot wait for it.
+    /// The operating surgeon waives it from their own sign-in, with the clinical reason, and a second doctor agrees at the
+    /// surgeon's screen with their own user name and password (<see cref="ConsentWaiverWitness"/>), their confirmation spent
+    /// in this save. Only for an emergency booking that has not started, while the consent is not on record and the
+    /// patient's latest word is not a refusal or a withdrawal (<see cref="SurgeryBooking.WaiveConsent"/>). Audited at
+    /// Critical; the booking names both doctors and the reason, and the consent gates (the pre-op item, the WHO Sign-in and
+    /// Time-out, the incision) then stand on it while it stands.
+    /// </summary>
+    public async Task<Result> WaiveConsentAsync(Guid id, WaiveSurgicalConsentRequest request, CancellationToken ct)
+    {
+        var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == id, ct);
+        if (booking is null)
+        {
+            return Error.NotFound(nameof(SurgeryBooking), id);
+        }
+
+        if (currentUser.UserId is null)
+        {
+            return Error.Forbidden("surgery.consent_waiver_surgeon", "Only the operating surgeon of this case waives consent, from their own sign-in.");
+        }
+
+        // Under the patient's consent lock, held to the commit (SurgicalConsentLocks), and with the booking read again under it:
+        // a refusal or a withdrawal recorded at the same moment is either read here, refusing the waiver, or recorded after it,
+        // ending the waiver; the booking and its Critical audit never say consent was waived over a refusal saved first.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await SurgicalConsentLocks.LockAsync(db, booking.PatientId, ct);
+        await db.Entry(booking).ReloadAsync(ct);
+        var consents = await SurgicalConsentRecords.ForBookingAsync(db, booking, ct);
+        var witness = await witnesses.UseAsync(request.ConcurringDoctorConfirmationId, ConsentWaiverWitness.Key, booking.PatientId, nameof(SurgeryBooking), booking.Id, ct);
+        if (witness.IsFailure)
+        {
+            return witness.Error!;
+        }
+
+        // The doctor who agrees is a doctor on record: their account is linked to an active doctor's practitioner record.
+        var practitioner = await (from u in db.Set<User>().AsNoTracking()
+                                  join p in db.Set<Practitioner>().AsNoTracking() on u.PractitionerId equals p.Id
+                                  where u.Id == witness.Value.UserId
+                                  select new { p.Id, p.Kind, p.IsActive }).FirstOrDefaultAsync(ct);
+        var concurring = new ConcurringDoctor(witness.Value.UserId, witness.Value.Name, practitioner?.Id,
+            practitioner is { IsActive: true } && PractitionerKinds.IsDoctor(practitioner.Kind));
+        var missing = booking.Consent(consents).Missing;
+        var earlierRefusals = booking.Consent(consents).Checks.Where(c => c.EarlierRefusal is not null).ToList();
+        var waived = booking.WaiveConsent(request.Reason, currentUser.Stamp(time.GetUtcNow()), currentUser.PractitionerId, concurring, consents);
+        if (waived.IsFailure)
+        {
+            return waived;
+        }
+
+        var waiver = booking.ConsentWaiver!;
+        audit.Add(new AuditEntry(AuditCategories.Clinical, "surgery.consent_waived",
+            Fit($"Surgery {booking.BookingNumber} ({booking.Site.Words}) goes ahead in an emergency without the patient's consent "
+                + $"({string.Join("; ", missing.Select(SurgicalConsent.Describe))}): waived by the operating surgeon {waiver.SurgeonName}, "
+                + $"{waiver.ConcurringName} agreeing at the surgeon's screen."
+                + string.Concat(earlierRefusals.Select(c =>
+                    $" {SurgicalConsent.What(c.Kind)}: a refusal recorded on "
+                    + $"{SpecialtyClock.ToLocal(c.EarlierRefusal!.RecordedAt).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)} before the booking was on record."))
+                + $" Reason: {waiver.Reason}", 1000))
+        {
+            PatientId = booking.PatientId,
+            EntityType = nameof(SurgeryBooking),
+            EntityId = booking.Id.ToString(),
+            Severity = AuditSeverity.Critical,
+            Details = new
+            {
+                reason = waiver.Reason,
+                surgeon = waiver.SurgeonUserId,
+                concurringDoctor = waiver.ConcurringUserId,
+                missing = missing.Select(m => new { m.Kind, m.State }).ToList(),
+                earlierRefusals = earlierRefusals.Select(c => new { c.Kind, c.EarlierRefusal!.ConsentId, c.EarlierRefusal.RecordedAt, c.EarlierRefusal.RecordedByName }).ToList(),
+            },
+        });
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        await realtime.OtChangedAsync(booking.FacilityId, booking.Id, ct);
+        return Result.Success();
+    }
 
     /// <summary>Completes the surgery (WHO Sign-out gate in the aggregate) and posts OT charges to the patient's bill.</summary>
     public async Task<Result> CompleteAsync(Guid id, CancellationToken ct)
@@ -232,7 +369,7 @@ public sealed class SurgeryService(
     /// under it. A discharge saved at the same moment either commits first, and its stay's cases are then cancelled or given
     /// back before this reads the case again, or waits for this and finds the patient in the theatre.
     /// </summary>
-    private async Task<Result> TakeIntoTheatreAsync(Guid id, Func<SurgeryBooking, Result> change, CancellationToken ct)
+    private async Task<Result> TakeIntoTheatreAsync(Guid id, Func<SurgeryBooking, Task<Result>> change, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var booking = await db.Set<SurgeryBooking>().FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -250,7 +387,7 @@ public sealed class SurgeryService(
             return Error.NotFound(nameof(SurgeryBooking), id);
         }
 
-        var result = change(booking);
+        var result = await change(booking);
         if (result.IsFailure)
         {
             return result;
@@ -384,7 +521,7 @@ public sealed class SurgeryService(
         booking.Laterality = laterality;
         booking.SiteLevel = Clean(siteLevel);
         booking.Diagnosis = Clean(diagnosis);
-        booking.SurgeonId = surgeonId;
+        booking.AssignSurgeon(surgeonId);
         booking.AssistantIds = (assistants ?? []).Distinct().Where(a => a != surgeonId).ToList();
         booking.AnaesthetistId = anaesthetistId;
         booking.NurseId = nurseId;

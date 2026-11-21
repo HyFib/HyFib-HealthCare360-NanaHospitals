@@ -21,7 +21,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, useWatch } from 'react-hook-form';
 import { givenBySurgeon, otApi, otKeys, type SurgeryDetail } from './api';
 import { phaseLabel } from './labels';
-import { onCaseTeam, planGate, procedureWithSide, siteChangeVoidsChecklist, slotConflicts } from './logic';
+import {
+  careChangeAfterSignIn,
+  keepsAnaesthesiaConsent,
+  moveEndsWaiver,
+  onCaseTeam,
+  planGate,
+  procedureWithSide,
+  siteChangeVoidsChecklist,
+  slotConflicts,
+  surgeonChangeEndsWaiver,
+} from './logic';
 import { ConflictAlert } from './OtBadges';
 import { applyFormErrors } from './shared/errors';
 import { ActionError } from './shared/feedback';
@@ -113,6 +123,15 @@ export function ScheduleDialog({
                 </MessageBar>
               )}
               <SlotFields form={form} bookingId={booking.id} />
+              {moveEndsWaiver(booking) && (
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>Consent was waived in an emergency</MessageBarTitle>
+                    Moving the operation to another theatre or start ends the waiver: the patient&apos;s consent is
+                    taken for the new slot, or the operating surgeon waives it again with a second doctor.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
               {conflicts ? (
                 <ConflictAlert conflicts={conflicts} />
               ) : (
@@ -157,10 +176,20 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
   });
 
   const practitionerId = useSession((s) => s.user?.practitionerId ?? null);
-  const [procedureServiceItemId, procedureName, laterality, siteLevel] = useWatch({
-    control: form.control,
-    name: ['procedureServiceItemId', 'procedureName', 'laterality', 'siteLevel'],
-  });
+  const [procedureServiceItemId, procedureName, laterality, siteLevel, anaesthesiaType, priority, surgeonId] = useWatch(
+    {
+      control: form.control,
+      name: [
+        'procedureServiceItemId',
+        'procedureName',
+        'laterality',
+        'siteLevel',
+        'anaesthesiaType',
+        'priority',
+        'surgeonId',
+      ],
+    },
+  );
   // After the WHO Sign-in a change of side, level or procedure voids it (and the Time-out): only the operating surgeon or
   // the anaesthetist saves it, with a reason (server SiteChangeRule).
   const voidsChecklist = siteChangeVoidsChecklist(booking, {
@@ -169,6 +198,10 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
     laterality,
     siteLevel,
   });
+  // So is a change of anaesthesia or priority, which bears on the patient's consent; the checklist stands
+  // (server TechniqueOrPriorityChangeRule).
+  const careChange = careChangeAfterSignIn(booking, { anaesthesiaType, priority });
+  const asksReason = voidsChecklist || careChange;
   const mayChangeSite = onCaseTeam(booking, practitionerId);
   const voidedPhases = booking.safetyChecklist
     .filter((p) => p.phase !== 'SignOut' && p.isComplete)
@@ -196,13 +229,15 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
       <DialogSurface style={{ maxWidth: 820 }}>
         <form
           onSubmit={form.handleSubmit((values) => {
-            if (voidsChecklist && !values.changeReason.trim()) {
+            if (asksReason && !values.changeReason.trim()) {
               form.setError('changeReason', {
-                message: 'Give the reason for changing the side or procedure after the Sign-in.',
+                message: voidsChecklist
+                  ? 'Give the reason for changing the side or procedure after the Sign-in.'
+                  : 'Give the reason for changing the anaesthesia or the priority after the Sign-in.',
               });
               return;
             }
-            save.mutate(voidsChecklist ? values : { ...values, changeReason: '' });
+            save.mutate(asksReason ? values : { ...values, changeReason: '' });
           })}
           noValidate
         >
@@ -236,14 +271,42 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
                   </MessageBarBody>
                 </MessageBar>
               )}
-              {voidsChecklist && mayChangeSite && (
+              {careChange && (
+                <MessageBar intent={mayChangeSite ? 'warning' : 'error'} layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>Anaesthesia or priority changed after the Sign-in</MessageBarTitle>
+                    Both bear on the patient&apos;s consent: local anaesthesia needs no consent to anaesthesia, and only
+                    an emergency goes ahead without consent.
+                    {keepsAnaesthesiaConsent(booking, { anaesthesiaType })
+                      ? ' The consent to anaesthesia, needed at the Sign-in, stays needed.'
+                      : ''}
+                    {mayChangeSite
+                      ? ' Give the reason; it is recorded with your name.'
+                      : ' Only the operating surgeon or the anaesthetist of this case changes them now, from their own sign-in.'}
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              {surgeonChangeEndsWaiver(booking, surgeonId) && (
+                <MessageBar intent="warning" layout="multiline">
+                  <MessageBarBody>
+                    <MessageBarTitle>Consent was waived in an emergency</MessageBarTitle>
+                    Another operating surgeon ends the waiver: it was the first surgeon&apos;s judgement. The
+                    patient&apos;s consent is taken, or the new surgeon waives it again with a second doctor.
+                  </MessageBarBody>
+                </MessageBar>
+              )}
+              {asksReason && mayChangeSite && (
                 <TextField
                   control={form.control}
                   name="changeReason"
                   label="Reason for the change"
                   required
                   maxLength={500}
-                  hint="For example: consent form and imaging say the right side."
+                  hint={
+                    voidsChecklist
+                      ? 'For example: consent form and imaging say the right side.'
+                      : 'For example: spinal failed twice, converting to general anaesthesia.'
+                  }
                 />
               )}
               {conflicts ? (
@@ -262,7 +325,7 @@ export function PlanDialog({ booking, onClose }: { booking: SurgeryDetail; onClo
               <Button
                 type="submit"
                 appearance="primary"
-                disabled={save.isPending || !gate.allowed || (voidsChecklist && !mayChangeSite)}
+                disabled={save.isPending || !gate.allowed || (asksReason && !mayChangeSite)}
                 icon={save.isPending ? <Spinner size="tiny" aria-hidden /> : undefined}
               >
                 {voidsChecklist ? 'Save and redo the checklist' : 'Save plan'}

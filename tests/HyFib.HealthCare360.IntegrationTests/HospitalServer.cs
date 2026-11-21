@@ -91,6 +91,7 @@ public sealed class HospitalServer : IAsyncLifetime
         [Users.SecondSystemAdmin] = SystemAdministrationRole,
         [Users.BloodBankOfficer] = SystemRoles.BloodBankOfficer,
         [Users.SecondBloodBankOfficer] = SystemRoles.BloodBankOfficer,
+        [Users.BloodBankMedicalOfficer] = SystemRoles.BloodBankOfficer,
         [Users.Gynaecologist] = MtpRole,
         [Users.SecondGynaecologist] = MtpRole,
         [Users.InsuranceDesk] = SystemRoles.InsuranceDesk,
@@ -105,6 +106,7 @@ public sealed class HospitalServer : IAsyncLifetime
     {
         [Users.BloodBankOfficer] = "Santosh Gaikwad",
         [Users.SecondBloodBankOfficer] = "Priya Nair",
+        [Users.BloodBankMedicalOfficer] = "Dr. Vikram Rao",
         [Users.Gynaecologist] = "Dr. Sneha Iyer",
         [Users.SecondGynaecologist] = "Dr. Meera Pillai",
         [Users.InsuranceDesk] = "Farah Qureshi",
@@ -122,6 +124,7 @@ public sealed class HospitalServer : IAsyncLifetime
     {
         [Users.Gynaecologist] = "DR004",
         [Users.SecondGynaecologist] = "DR006",
+        [Users.BloodBankMedicalOfficer] = "DR005",
     };
 
     /// <summary>
@@ -1000,6 +1003,33 @@ public sealed class HospitalServer : IAsyncLifetime
     }
 
     /// <summary>
+    /// A patient's sample as the blood bank groups it: its group, and when the ward drew it (<paramref name="drawnMinutesAgo"/>
+    /// before now, to the minute, as a tube is labelled) and who drew it; <paramref name="newSample"/> for a new sample of a
+    /// held request, or the second sample of a patient with no group on record.
+    /// </summary>
+    public static GroupPatientRequest BloodSample(BloodGroup group, int drawnMinutesAgo = 45, string drawnBy = "Sr. Kavya Menon", bool newSample = false)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var minute = new DateTimeOffset(now.Year, now.Month, now.Day, now.Hour, now.Minute, 0, TimeSpan.Zero);
+        return new GroupPatientRequest(group, minute.AddMinutes(-drawnMinutesAgo), drawnBy, newSample);
+    }
+
+    /// <summary>
+    /// The two-sample rule: a request whose patient had no group on record waits for a second sample. When it does, a second
+    /// sample, drawn separately by another nurse, grouped <paramref name="group"/> as a new sample by
+    /// <see cref="Users.SecondBloodBankOfficer"/>, who then grouped the sample the request goes on.
+    /// </summary>
+    public async Task ConfirmGroupOnSecondSampleAsync(Guid requestId, BloodGroup group)
+    {
+        var checker = await SignInAsync(Users.SecondBloodBankOfficer);
+        var path = $"/api/v1/blood-bank/requests/{requestId}";
+        if ((await checker.GetAsync<BloodRequestDetail>(path)).AwaitingSecondSample)
+        {
+            await checker.PostAsync($"{path}/grouping", BloodSample(group, drawnMinutesAgo: 10, drawnBy: "Sr. Leela Thomas", newSample: true));
+        }
+    }
+
+    /// <summary>
     /// Uncross-matched blood is released on the treating doctor's own authority: authorised for an emergency request as
     /// <see cref="Users.Doctor"/>, signed in as themselves.
     /// </summary>
@@ -1695,6 +1725,13 @@ public sealed class HospitalServer : IAsyncLifetime
         /// use.
         /// </summary>
         public const string SecondBloodBankOfficer = "bloodbank2";
+
+        /// <summary>
+        /// A blood bank officer whose account is linked to a doctor in the practitioner list (Dr. Vikram Rao, DR005): a blood
+        /// bank medical officer, who can both group a sample and, signed in as the doctor, authorise blood on one sample.
+        /// Created on first use.
+        /// </summary>
+        public const string BloodBankMedicalOfficer = "bloodbank3";
 
         /// <summary>
         /// A gynaecologist the place's MTP approval names (Dr. Sneha Iyer, linked to practitioner DR004): opens and certifies

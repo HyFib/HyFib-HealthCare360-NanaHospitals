@@ -24,7 +24,11 @@ public sealed class BedsideTransfusionService(
     /// </summary>
     public static readonly WitnessPurpose BedsideWitness = new("blood.bedside_check", SpecialtyCarePermissions.BloodBankTransfuse, "a unit of blood checked at the bedside");
 
-    /// <summary>The patient's units issued to the ward, newest first, with what became of each and the consent a start would rely on.</summary>
+    /// <summary>
+    /// The patient's units issued to the ward, newest first, with what became of each, the consent a start would rely on, and
+    /// how far the group of each unit's request may be relied on (<see cref="BloodRequest.StandingGiven"/>): resting on one
+    /// sample, or disputed by samples of the patient that disagree, instead of the first sample's group.
+    /// </summary>
     public async Task<Result<PatientBloodUnits>> ForPatientAsync(Guid patientId, CancellationToken ct)
     {
         var patient = await db.Set<Patient>().AsNoTracking().Where(p => p.Id == patientId).Select(p => new { p.Uhid, p.FullName }).FirstOrDefaultAsync(ct);
@@ -39,9 +43,15 @@ public sealed class BedsideTransfusionService(
                 join c in db.Set<BloodComponent>() on i.ComponentId equals c.Id
                 where i.PatientId == patientId
                 orderby i.IssuedAt descending
-                select new { Issue = i, r.RequestNumber, r.PatientBloodGroup, r.AdmissionId, RequestedAt = r.CreatedAt, c.VolumeMl, c.ExpiresAt })
+                select new { Issue = i, r.RequestNumber, r.AdmissionId, RequestedAt = r.CreatedAt, c.VolumeMl, c.ExpiresAt })
             .Take(30)
             .ToListAsync(ct);
+        var requestIds = issues.Select(i => i.Issue.RequestId).Distinct().ToList();
+        var groupings = await db.Set<BloodRequest>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
+            .Where(r => r.PatientId == patientId && (r.GroupedAt != null || requestIds.Contains(r.Id)))
+            .OrderByDescending(r => r.GroupedAt)
+            .ToListAsync(ct);
+        var standings = requestIds.ToDictionary(id => id, id => GroupStanding(groupings.FirstOrDefault(r => r.Id == id), groupings));
         var crossMatchIds = issues.Where(i => i.Issue.CrossMatchId is not null).Select(i => i.Issue.CrossMatchId!.Value).ToList();
         var crossMatchedAt = await db.Set<CrossMatch>().AsNoTracking().Where(x => crossMatchIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, x => x.PerformedAt, ct);
@@ -57,14 +67,42 @@ public sealed class BedsideTransfusionService(
                 i.Issue.CrossMatchId is { } x && crossMatchedAt.TryGetValue(x, out var at) ? at + CrossMatch.Validity : null,
                 i.Issue.IssuedAt, i.Issue.IssuedToName, i.Issue.IssuedAt + BedsideCheck.OutOfStorageLimit, i.Issue.ReturnedAt,
                 ConsentFor(consents, BedsideCheck.ConsentSince(i.RequestedAt, i.AdmissionId is { } a ? admittedAt.GetValueOrDefault(a) : null))?.CapturedAt,
-                transfusions.TryGetValue(i.Issue.Id, out var t) ? ToDto(t) : null))
+                transfusions.TryGetValue(i.Issue.Id, out var t) ? ToDto(t) : null)
+        {
+            PatientBloodGroup = standings[i.Issue.RequestId].Group,
+            GroupStanding = standings[i.Issue.RequestId].Standing,
+            DisputedGroups = standings[i.Issue.RequestId].Disputed,
+        })
             .ToList();
-        return new PatientBloodUnits(patientId, patient.Uhid, patient.FullName, issues.FirstOrDefault()?.PatientBloodGroup ?? BloodGroup.Unknown, units);
+        var newest = units.FirstOrDefault();
+        return new PatientBloodUnits(patientId, patient.Uhid, patient.FullName,
+            newest is { GroupStanding: PatientGroupStanding.Grouped } ? newest.PatientBloodGroup : BloodGroup.Unknown, units);
+    }
+
+    /// <summary>
+    /// The group <paramref name="request"/> goes on and how far it may be relied on, given the samples grouped on the
+    /// patient's other requests (<paramref name="patientRequests"/>): a group resting on one sample is disputed while another
+    /// sample of the patient disagrees with it.
+    /// </summary>
+    private static (BloodGroup Group, PatientGroupStanding Standing, IReadOnlyList<BloodGroup> Disputed) GroupStanding(
+        BloodRequest? request, IReadOnlyList<BloodRequest> patientRequests)
+    {
+        if (request is null)
+        {
+            return (BloodGroup.Unknown, PatientGroupStanding.NotGrouped, []);
+        }
+
+        var contrary = request.AwaitingSecondSample
+            ? GroupingHistory.Contrary(request.PatientBloodGroup, patientRequests.Where(r => r.Id != request.Id).SelectMany(GroupingHistory.SamplesOf))
+            : null;
+        return (request.IsGrouped ? request.PatientBloodGroup : BloodGroup.Unknown, request.StandingGiven(contrary), request.DisputedGroups(contrary));
     }
 
     /// <summary>
     /// The bedside check and the start. Refused, before anything is saved, once the stay has ended, for another patient's
-    /// wristband or another bag (each audited as a near miss), a unit no longer usable, or no consent; the witness's
+    /// wristband or another bag (each audited as a near miss), a unit not released in an emergency whose request's group
+    /// samples of the patient now disagree on, unless it suits every group found (audited as a near miss, at Critical: it
+    /// may have been cross-matched on another patient's blood), a unit no longer usable, or no consent; the witness's
     /// confirmation is spent in the same save as the start.
     /// <para>
     /// Two things that may happen to the unit at the same moment are each kept to one. The start is saved under the stay's
@@ -84,8 +122,11 @@ public sealed class BedsideTransfusionService(
             return Error.NotFound(nameof(BloodIssue), issueId);
         }
 
-        var bloodRequest = await db.Set<BloodRequest>().AsNoTracking().Where(r => r.Id == issue.RequestId)
-            .Select(r => new { r.AdmissionId, r.CreatedAt }).FirstAsync(ct);
+        // The patient's grouping lock first (BloodGroupingLocks), held to the commit, and the request read under it: a
+        // disagreeing sample grouped at the same moment is either seen here, refusing the start, or recorded after it. Taken
+        // before the stay's lock; nothing that takes the stay's lock takes this one after it, so the two never wait on each other.
+        await BloodGroupingLocks.LockAsync(db, issue.PatientId, ct);
+        var bloodRequest = await db.Set<BloodRequest>().AsNoTracking().FirstAsync(r => r.Id == issue.RequestId, ct);
         DateTimeOffset? admittedAt = null;
         if (bloodRequest.AdmissionId is { } stayId)
         {
@@ -126,6 +167,23 @@ public sealed class BedsideTransfusionService(
                 Severity = AuditSeverity.Warning,
             }, ct);
             return identity.Error!;
+        }
+
+        // Samples of the patient that disagree on the group the unit was cross-matched for (possible wrong blood in a tube,
+        // found after it was issued): the unit is started only if it suits every group found. A near miss again.
+        var disputed = bloodRequest.DisputedGroups(await PatientGroupings.ContraryAsync(db, bloodRequest, ct));
+        var grouping = BedsideCheck.Grouping(issue.ComponentType, issue.UnitBloodGroup, issue.IsEmergencyRelease, disputed);
+        if (grouping.IsFailure)
+        {
+            await audit.WriteAsync(new AuditEntry(AuditCategories.Clinical, "bloodbank.bedside_mismatch",
+                $"Bedside check of unit {issue.UnitNumber} ({issue.UnitBloodGroup}) refused ({grouping.Error!.Code}): samples of the patient grouped {string.Join(" and ", disputed)}, possible wrong blood in tube")
+            {
+                EntityType = nameof(BloodIssue),
+                EntityId = issue.Id.ToString(),
+                PatientId = issue.PatientId,
+                Severity = AuditSeverity.Critical,
+            }, ct);
+            return grouping.Error!;
         }
 
         var now = time.GetUtcNow();

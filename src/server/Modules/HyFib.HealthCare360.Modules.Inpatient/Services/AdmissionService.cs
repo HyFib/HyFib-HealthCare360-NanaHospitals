@@ -30,6 +30,7 @@ public sealed class AdmissionService(
     ICurrentUser currentUser,
     IPayerDirectory payers,
     MlcApprovals mlc,
+    IAuditLogger audit,
     TimeProvider time)
 {
     /// <summary>
@@ -423,6 +424,10 @@ public sealed class AdmissionService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
+        // Under the stay's lock, held to the commit (the one a restraint order takes): a restraint ordered at the same moment
+        // is either committed first and moved below, or ordered after the move, on the new ward.
+        await EncounterLocks.LockAsync(db, [admission.Id], ct);
+
         // Phase 1: vacate the old bed (the unique "one bed per admission" index must never see two beds at once).
         var fromBed = current is null ? null : await db.Set<Bed>().FirstOrDefaultAsync(b => b.Id == current.BedId, ct);
         current?.Close(at);
@@ -437,6 +442,22 @@ public sealed class AdmissionService(
 
         admission.ConsultantPractitionerId = request.ConsultantPractitionerId ?? admission.ConsultantPractitionerId;
         admission.DepartmentId = request.DepartmentId ?? admission.DepartmentId;
+
+        // A restraint follows the patient: the receiving ward sees it (and its checks), in the move's own transaction.
+        var restraints = await db.Set<RestraintEpisode>().Where(e => e.AdmissionId == admission.Id && e.Status == RestraintStatus.Active).ToListAsync(ct);
+        foreach (var restraint in restraints.Where(r => r.MoveToWard(ward.Id)))
+        {
+            audit.Add(new AuditEntry(AuditCategories.Clinical, "restraint.moved",
+                $"{restraint.Type} restraint moved with the patient to {ward.Name}")
+            {
+                PatientId = restraint.PatientId,
+                EntityType = nameof(RestraintEpisode),
+                EntityId = restraint.Id.ToString(),
+                Severity = AuditSeverity.Warning,
+                Details = new { admissionId = restraint.AdmissionId, toWardId = ward.Id },
+            });
+        }
+
         var vacated = await SaveAsync(target, ct);
         if (vacated.IsFailure)
         {
@@ -489,13 +510,21 @@ public sealed class AdmissionService(
 
         var now = time.GetUtcNow();
         var reason = request.Reason.Trim();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+        // Under the stay's lock (the one an order on the stay takes): a restraint ordered meanwhile is committed first and found here.
+        await EncounterLocks.LockAsync(db, [admission.Id, admission.VisitId], ct);
+        var restrained = await db.Set<RestraintEpisode>().AnyAsync(e => e.AdmissionId == admissionId && e.Status == RestraintStatus.Active, ct);
+        if (RestraintRules.CancelHold(restrained) is { } restraintHold)
+        {
+            return restraintHold;
+        }
+
         var cancelled = admission.Cancel(reason, now);
         if (cancelled.IsFailure)
         {
             return cancelled;
         }
-
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         var visit = await db.Set<Visit>().FirstOrDefaultAsync(v => v.Id == admission.VisitId, ct);
         visit?.Cancel($"Admission cancelled: {reason}", now);
@@ -567,6 +596,11 @@ public sealed class AdmissionService(
         {
             await db.SaveChangesAsync(ct);
             return Result.Success();
+        }
+        catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(e => e.Entity is RestraintEpisode))
+        {
+            // A nurse's check, a doctor's renewal or release, or the alert job's marker changed the restraint at the same moment.
+            return Error.Conflict("restraint.changed", "The patient's restraint was updated a moment ago; try the transfer again.");
         }
         catch (DbUpdateConcurrencyException)
         {

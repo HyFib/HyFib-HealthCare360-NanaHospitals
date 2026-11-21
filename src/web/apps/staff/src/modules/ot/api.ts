@@ -239,6 +239,99 @@ export interface SafetyPhaseDto {
   items: ChecklistItemDto[];
 }
 
+/** The consents an operation needs (server `SurgicalConsentKind`): to the procedure, and to anaesthesia unless local or topical. */
+export type SurgicalConsentKind = 'Procedure' | 'Anaesthesia';
+
+/**
+ * Where one consent stands (server `SurgicalConsentState`), counted from the booking. `Withdrawn` and `Refused` are the
+ * patient's latest word, their "no": a consent given before it does not count, and no emergency waiver stands against it.
+ * A withdrawal since the booking counts whenever the consent withdrawn was given. `OtherOperation`: given since the
+ * booking, but another operation's incision relied on it.
+ */
+export type SurgicalConsentState =
+  'Recorded' | 'Missing' | 'BeforeBooking' | 'Withdrawn' | 'Refused' | 'NotNeeded' | 'OtherOperation';
+
+/** A consent of the patient's as the front office recorded it. */
+export interface ConsentOnRecord {
+  id: string;
+  kind: SurgicalConsentKind;
+  granted: boolean;
+  capturedAt: string;
+  revokedAt: string | null;
+  /** Who recorded it, as their account names them; null when it is not known. */
+  capturedByName: string | null;
+  /** The signed consent form is attached to the record. */
+  signedFormAttached: boolean;
+  /**
+   * Another operation whose incision relied on this consent, which does not count for this one: its booking number, or
+   * "another branch" when it is another branch's (server `SurgicalConsent.AnotherBranch`).
+   */
+  reliedOnBy: string | null;
+}
+
+/**
+ * The patient's latest refusal of a consent recorded before the operation was booked (server `EarlierRefusal`), carried
+ * while nothing of that kind is recorded since. Shown, never blocking: it changes no state and no gate.
+ */
+export interface EarlierRefusal {
+  consentId: string;
+  recordedAt: string;
+  /** Who recorded it, as their account names them; null when it is not known. */
+  recordedByName: string | null;
+}
+
+export interface SurgicalConsentCheck {
+  kind: SurgicalConsentKind;
+  state: SurgicalConsentState;
+  /** The record that says so: the consent in force, the refusal, the withdrawn or the earlier consent; none when missing. */
+  consent: ConsentOnRecord | null;
+  /** The patient's latest refusal of it recorded before the booking, while nothing is recorded since; else null. */
+  earlierRefusal?: EarlierRefusal | null;
+}
+
+/** An emergency operation going ahead without consent: the operating surgeon, the second doctor who agreed, and why. */
+export interface SurgicalConsentWaiver {
+  at: string;
+  surgeonUserId: string | null;
+  surgeonName: string;
+  concurringUserId: string | null;
+  concurringName: string;
+  reason: string;
+}
+
+/** The patient's consent to the operation as the theatre's gates read it (server `SurgicalConsentDto`). */
+export interface SurgicalConsentDto {
+  /**
+   * The gates open: the consents are recorded, or waived in an emergency while the booking is still one and the patient
+   * has not said no since (refused, or withdrawn a consent).
+   */
+  satisfied: boolean;
+  /** Every consent needed is recorded. */
+  recorded: boolean;
+  /** The booking: a consent counts from then. */
+  since: string;
+  checks: SurgicalConsentCheck[];
+  /** The emergency waiver on the booking (it stands only while the booking is an emergency and the patient has not said no). */
+  waiver: SurgicalConsentWaiver | null;
+  /** The consents the incision relied on. */
+  procedureConsentId: string | null;
+  anaesthesiaConsentId: string | null;
+  /** The patient's latest word since the booking on a consent needed is a refusal: no emergency waiver overrides it. */
+  refused: boolean;
+  /** The patient's latest word since the booking on a consent needed is "no": a refusal or a withdrawal (see `saidNoConsent`). */
+  saidNo: boolean;
+  /** The WHO Sign-in was done under anaesthesia given by an anaesthetist: the consent to anaesthesia stays needed. */
+  anaesthesiaConsentRequiredAtSignIn: boolean;
+}
+
+/** The operating surgeon goes ahead without consent in an emergency; a second doctor agrees at this screen. */
+export interface WaiveSurgicalConsentRequest {
+  /** The clinical reason the operation cannot wait (at least 10 characters). */
+  reason: string;
+  /** From `POST /api/v1/auth/witness`, purpose `ot.consent_waiver`, by the second doctor at this screen. */
+  concurringDoctorConfirmationId: string;
+}
+
 export interface SurgeryDetail {
   id: string;
   bookingNumber: string;
@@ -295,6 +388,8 @@ export interface SurgeryDetail {
   inRecovery?: boolean;
   recoveryDischargedAt?: string | null;
   recoveryDestination?: RecoveryDestination | null;
+  /** The patient's consent to the operation: what the consent item, the Sign-in, the Time-out and the incision need. */
+  consent?: SurgicalConsentDto | null;
 }
 
 /** One count, by one member of the theatre team and witnessed by a second at the same screen. */
@@ -906,6 +1001,9 @@ export const otApi = {
   confirmSafety: (id: string, phase: SafetyPhase, items: ChecklistInput[]) =>
     api.post<void>(`/api/v1/ot/bookings/${id}/safety-checklist/${phasePath[phase]}`, { items }),
   start: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/start`),
+  /** The emergency doctrine: the operating surgeon, with the reason and the second doctor's confirmation (audited at Critical). */
+  waiveConsent: (id: string, request: WaiveSurgicalConsentRequest) =>
+    api.post<void>(`/api/v1/ot/bookings/${id}/consent-waiver`, request),
   complete: (id: string) => api.post<void>(`/api/v1/ot/bookings/${id}/complete`),
   retryCharges: (id: string) => api.post<ChargeOutcome>(`/api/v1/ot/bookings/${id}/charges/retry`),
   saveAnaesthesia: (id: string, request: SaveAnaesthesiaRecordRequest) =>

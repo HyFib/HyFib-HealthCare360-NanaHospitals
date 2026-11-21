@@ -4,7 +4,7 @@
   "totals": {
     "roles": 32,
     "permissions": 289,
-    "guardedEndpoints": 1759,
+    "guardedEndpoints": 1761,
     "approvalKinds": 85
   },
   "security": {
@@ -24,7 +24,7 @@
       "defaultPermissions": [
         "*"
       ],
-      "endpoints": 1759,
+      "endpoints": 1761,
       "mfa": "required-by-role",
       "canBeTurnedOff": false
     },
@@ -333,7 +333,7 @@
         "visits.manage",
         "visits.read"
       ],
-      "endpoints": 523,
+      "endpoints": 525,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -426,7 +426,7 @@
         "visits.manage",
         "visits.read"
       ],
-      "endpoints": 551,
+      "endpoints": 552,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -935,7 +935,7 @@
         "quality.incidents.report",
         "visits.read"
       ],
-      "endpoints": 115,
+      "endpoints": 116,
       "mfa": "optional",
       "canBeTurnedOff": true
     },
@@ -1842,7 +1842,7 @@
         "Nurse"
       ],
       "administrative": false,
-      "endpoints": 3
+      "endpoints": 4
     },
     {
       "name": "bloodbank.transfuse",
@@ -3661,7 +3661,7 @@
         "Doctor"
       ],
       "administrative": false,
-      "endpoints": 3
+      "endpoints": 4
     },
     {
       "name": "ot.theatres.manage",

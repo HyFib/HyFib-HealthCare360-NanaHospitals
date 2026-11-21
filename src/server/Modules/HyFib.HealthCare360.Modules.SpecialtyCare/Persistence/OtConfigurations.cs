@@ -36,6 +36,11 @@ internal sealed class SurgeryBookingConfiguration : IEntityTypeConfiguration<Sur
         b.Property(x => x.Counts).HasJsonRows();
         b.Property(x => x.CountDiscrepancies).HasJsonRows();
         b.Property(x => x.ChecklistVoids).HasJsonRows();
+        b.Property(x => x.ConsentWaivedByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.ConsentWaiverConcurredByName).HasMaxLength(SpecialtyCareSchema.Name200);
+        b.Property(x => x.ConsentWaiverReason).HasMaxLength(SpecialtyCareSchema.Reason);
+        b.Ignore(x => x.ConsentWaiver);
+        b.Ignore(x => x.ConsentsNeeded);
         b.Ignore(x => x.RequiresAnaesthetist);
         b.Ignore(x => x.IsClosed);
         b.Ignore(x => x.Site);

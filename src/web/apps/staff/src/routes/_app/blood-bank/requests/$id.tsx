@@ -33,6 +33,7 @@ import {
   GroupingCard,
   IssuePanel,
   IssuesTable,
+  SingleSampleOverridePanel,
 } from '@/modules/blood-bank/RequestPanels';
 import { Detail, DetailGrid, NoAccess, ReasonDialog, RecordLoadError } from '@/modules/ot/shared/feedback';
 import { useFacilityId, useNow } from '@/modules/ot/shared/hooks';
@@ -156,6 +157,7 @@ function RequestView({ request: r }: { request: BloodRequestDetail }) {
       </div>
 
       <EmergencyReleasePanel request={r} canAuthorise={canCreate && isPractitioner} />
+      <SingleSampleOverridePanel request={r} canAuthorise={canCreate && isPractitioner} />
 
       <Section title="Patient’s blood group">
         <GroupingCard request={r} canGroup={canCrossmatch} />

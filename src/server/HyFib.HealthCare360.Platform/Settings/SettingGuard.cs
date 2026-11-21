@@ -220,6 +220,11 @@ public static class SettingGuard
             "Whether a second blood bank officer verifies a donation's screening results before its units leave quarantine, and issues blood one officer both grouped and cross-matched. Off, one officer does all of it, and what they release so is listed for the medical officer's review.",
             DefaultOn: true),
 
+        // BloodBankSettings.TwoSampleRule (the SpecialtyCare module): on unless set to false.
+        ["bloodbank.twoSampleRule"] = new SettingSwitch("Second sample for a patient's first blood group",
+            "Whether a patient with no blood group on record has the group confirmed on a second, separately drawn sample before group-specific red cells or plasma are cross-matched or issued. Off, blood goes on one sample's grouping, and a sample from the wrong patient is not found before it is given.",
+            DefaultOn: true),
+
         // AmbulanceService.WaiverApprovalSetting (the SupportServices module): on unless set to false.
         ["ambulance.waiverApproval"] = new SettingSwitch("Second person for an ambulance charge waived",
             "Whether waiving a completed trip's charge waits for a second person who approves waivers. Off, the desk waives the charge alone, audited.",

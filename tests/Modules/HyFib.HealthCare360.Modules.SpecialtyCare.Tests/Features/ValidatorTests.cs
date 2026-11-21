@@ -26,6 +26,35 @@ public sealed class ValidatorTests
     }
 
     [Fact]
+    public void Operating_without_consent_needs_the_clinical_reason_and_the_second_doctor()
+    {
+        var validator = new WaiveSurgicalConsentRequestValidator();
+        var waiver = new WaiveSurgicalConsentRequest("Ruptured spleen, in shock; no relative reachable", Guid.CreateVersion7());
+
+        validator.Validate(waiver).IsValid.ShouldBeTrue();
+        validator.Validate(waiver with { Reason = " Emergency " }).Errors.ShouldContain(e => e.PropertyName == nameof(WaiveSurgicalConsentRequest.Reason));
+        validator.Validate(waiver with { Reason = "" }).IsValid.ShouldBeFalse();
+        validator.Validate(waiver with { ConcurringDoctorConfirmationId = Guid.Empty }).Errors
+            .ShouldContain(e => e.PropertyName == nameof(WaiveSurgicalConsentRequest.ConcurringDoctorConfirmationId));
+    }
+
+    [Fact]
+    public void A_checklist_item_is_answered_done_not_applicable_or_pending_and_nothing_else()
+    {
+        var validator = new RecordChecklistRequestValidator();
+        RecordChecklistRequest Answer(ChecklistItemState state) => new([new ChecklistInput(PreOpChecklist.ConsentItem, state, null)], 3);
+
+        foreach (var state in Enum.GetValues<ChecklistItemState>())
+        {
+            validator.Validate(Answer(state)).IsValid.ShouldBeTrue($"{state} is an answer");
+        }
+
+        validator.Validate(Answer((ChecklistItemState)7)).Errors
+            .ShouldContain(e => e.PropertyName.EndsWith(nameof(ChecklistInput.State), StringComparison.Ordinal),
+                "a number the JSON enum converter lets through is not an answer: \"consent signed\" would count as given");
+    }
+
+    [Fact]
     public void Implant_entry_requires_lot_or_serial()
     {
         var validator = new AddSurgeryMaterialRequestValidator();
@@ -66,6 +95,33 @@ public sealed class ValidatorTests
         validator.Validate(donor).IsValid.ShouldBeTrue();
         validator.Validate(donor with { Phone = "" }).IsValid.ShouldBeFalse();
         validator.Validate(donor with { Phone = "12345" }).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void A_grouping_says_when_the_sample_was_drawn_and_who_drew_it()
+    {
+        var validator = new GroupPatientRequestValidator(Time);
+        var grouping = new GroupPatientRequest(BloodGroup.APositive, TestData.Now.AddMinutes(-40), "Sr. Kavya Menon");
+
+        validator.Validate(grouping).IsValid.ShouldBeTrue();
+        validator.Validate(grouping with { NewSample = true }).IsValid.ShouldBeTrue();
+        validator.Validate(grouping with { SampleDrawnAt = null }).IsValid.ShouldBeFalse();
+        validator.Validate(grouping with { SampleDrawnBy = " " }).IsValid.ShouldBeFalse();
+        validator.Validate(grouping with { SampleDrawnBy = new string('x', 201) }).IsValid.ShouldBeFalse();
+        validator.Validate(grouping with { SampleDrawnAt = TestData.Now.AddMinutes(30) }).IsValid.ShouldBeFalse("not drawn in the future");
+        validator.Validate(grouping with { SampleDrawnAt = TestData.Now.AddDays(-8) }).IsValid.ShouldBeFalse("too old to group for transfusion");
+        validator.Validate(grouping with { BloodGroup = BloodGroup.Unknown }).IsValid.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Blood_on_one_sample_needs_the_doctors_clinical_reason()
+    {
+        var validator = new SingleSampleOverrideRequestValidator();
+
+        validator.Validate(new SingleSampleOverrideRequest("Ongoing PPH, no O-negative in stock")).IsValid.ShouldBeTrue();
+        validator.Validate(new SingleSampleOverrideRequest("Bleeding")).IsValid.ShouldBeFalse();
+        validator.Validate(new SingleSampleOverrideRequest("   Bleeding   ")).IsValid.ShouldBeFalse("spaces are not a reason");
+        validator.Validate(new SingleSampleOverrideRequest(new string('x', 501))).IsValid.ShouldBeFalse();
     }
 
     [Fact]

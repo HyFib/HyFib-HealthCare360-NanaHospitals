@@ -13,6 +13,7 @@ import {
   plasmaCompatible,
   redCellsCompatible,
   returnOutcome,
+  sampleDrawProblem,
   separationCheck,
   stockLevel,
   ttiState,
@@ -197,6 +198,85 @@ describe('issue gate (mirrors IssueCompatibility and BloodComponent.Issue)', () 
         unitStatus: 'Available',
       }),
     ).toEqual({ allowed: true, emergency: true, reasons: [] });
+  });
+
+  it('keeps group-specific blood back while a patient never grouped before waits for a second sample', () => {
+    const waiting = { ...base, patientGroup: 'Unknown' as const, groupingHeld: true, awaitingSecondSample: true };
+    expect(issueCheck({ ...waiting, hasValidCompatibleCrossmatch: false }).reasons).toEqual([
+      'The patient has no blood group on record: a second, separately drawn sample confirms the group before group-specific blood is issued.',
+      'Red cells can only be issued against a compatible cross-match done in the last 72 hours.',
+    ]);
+    // The emergency release is not slowed: O Rh(D)-negative red cells and AB plasma still go.
+    const released = {
+      ...waiting,
+      hasValidCompatibleCrossmatch: false,
+      emergencyReleaseAuthorised: true,
+      unitStatus: 'Available' as const,
+    };
+    expect(issueCheck({ ...released, unitGroup: 'ONegative' })).toEqual({
+      allowed: true,
+      emergency: true,
+      reasons: [],
+    });
+    expect(issueCheck({ ...released, component: 'FFP', unitGroup: 'ABPositive' })).toEqual({
+      allowed: true,
+      emergency: true,
+      reasons: [],
+    });
+    expect(issueCheck({ ...released, unitGroup: 'APositive' }).allowed).toBe(false);
+    // On the doctor's override the grouping is no longer held: group-specific blood goes on its cross-match.
+    expect(issueCheck({ ...base, awaitingSecondSample: true, groupingHeld: false }).allowed).toBe(true);
+  });
+
+  it('keeps group-specific blood back once two samples disagree, whatever was authorised on one', () => {
+    const disagree = { ...base, patientGroup: 'Unknown' as const, groupingHeld: true, awaitingSecondSample: true };
+    expect(issueCheck({ ...disagree, samplesDisagree: true }).reasons[0]).toBe(
+      'Two samples of this patient grouped differently (possible wrong blood in tube): nothing group-specific is issued until a fresh sample groups the same as the first.',
+    );
+    // The emergency release still lets O Rh(D)-negative red cells go.
+    expect(
+      issueCheck({
+        ...disagree,
+        samplesDisagree: true,
+        hasValidCompatibleCrossmatch: false,
+        emergencyReleaseAuthorised: true,
+        unitStatus: 'Available',
+        unitGroup: 'ONegative',
+      }),
+    ).toEqual({ allowed: true, emergency: true, reasons: [] });
+  });
+});
+
+describe('a sample’s draw time (mirrors GroupPatientRequestValidator and BloodRequest.Regroup)', () => {
+  const now = Date.parse('2026-09-25T04:30:00Z');
+  const minutesAgo = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
+
+  it('is required, not in the future and not more than 7 days ago', () => {
+    expect(sampleDrawProblem(minutesAgo(40), now)).toBeNull();
+    expect(sampleDrawProblem(null, now)).toBe('Enter when the sample was drawn, as the tube or the form says.');
+    expect(sampleDrawProblem(minutesAgo(-4), now)).toBeNull();
+    expect(sampleDrawProblem(minutesAgo(-30), now)).toBe('The time cannot be in the future.');
+    expect(sampleDrawProblem(minutesAgo(8 * 24 * 60), now)).toMatch(/more than 7 days ago is too old/);
+  });
+
+  it('refuses the first sample’s draw time for a new sample: the same draw confirms nothing', () => {
+    const first = minutesAgo(40);
+    expect(sampleDrawProblem(first, now, first)).toMatch(/first sample’s draw time/);
+    expect(sampleDrawProblem(new Date(Date.parse(first) + 30_000).toISOString(), now, first)).toMatch(
+      /first sample’s draw time/,
+    );
+    expect(sampleDrawProblem(minutesAgo(10), now, first)).toBeNull();
+  });
+
+  it('refuses the draw time of the sample that disagreed for the one that decides: that tube decides nothing', () => {
+    const first = minutesAgo(40);
+    const disagreeing = minutesAgo(20);
+    expect(sampleDrawProblem(disagreeing, now, first, disagreeing)).toMatch(/draw time of the sample that disagreed/);
+    expect(
+      sampleDrawProblem(new Date(Date.parse(disagreeing) + 45_000).toISOString(), now, first, disagreeing),
+    ).toMatch(/draw time of the sample that disagreed/);
+    expect(sampleDrawProblem(minutesAgo(5), now, first, disagreeing)).toBeNull();
+    expect(sampleDrawProblem(disagreeing, now, first, null)).toBeNull();
   });
 });
 

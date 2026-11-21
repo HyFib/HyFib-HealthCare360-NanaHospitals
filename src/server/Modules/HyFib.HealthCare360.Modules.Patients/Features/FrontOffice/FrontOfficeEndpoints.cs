@@ -1,5 +1,6 @@
 using HyFib.HealthCare360.Modules.Patients.Domain;
 using HyFib.HealthCare360.Modules.Patients.Services;
+using HyFib.HealthCare360.Platform.Contracts;
 using HyFib.HealthCare360.Platform.Files;
 using HyFib.HealthCare360.Platform.Identity;
 using HyFib.HealthCare360.Platform.Notifications;
@@ -628,11 +629,33 @@ internal static class FrontOfficeEndpoints
             await RevokeStandingAsync(db, patientId, consent.Type, null, RefusedLaterReason, user.UserId, consent.CapturedAt, ct);
         }
 
-        await db.SaveChangesAsync(ct);
+        await SaveConsentAsync(db, consent, ct);
         return TypedResults.Created($"/api/v1/patients/{patientId}/consents", new { consent.Id });
     }
 
     private const string RefusedLaterReason = "The patient refused when asked again.";
+
+    /// <summary>
+    /// Saves a consent given, refused or withdrawn. One to a high-risk procedure or to anaesthesia first takes the patient's
+    /// surgical consent lock (<see cref="SurgicalConsentLocks"/>), held to the commit: an incision reading the patient's
+    /// consents at the same moment either sees this change, or relied on what was there before and this is recorded after it.
+    /// </summary>
+    private static async Task SaveConsentAsync(HospitalDbContext db, PatientConsent consent, CancellationToken ct)
+    {
+        if (consent.Type is not (ConsentType.HighRiskProcedure or ConsentType.Anaesthesia))
+        {
+            await db.SaveChangesAsync(ct);
+            return;
+        }
+
+        await using var transaction = db.Database.CurrentTransaction is null ? await db.Database.BeginTransactionAsync(ct) : null;
+        await SurgicalConsentLocks.LockAsync(db, consent.PatientId, ct);
+        await db.SaveChangesAsync(ct);
+        if (transaction is not null)
+        {
+            await transaction.CommitAsync(ct);
+        }
+    }
 
     /// <summary>
     /// Withdraws a consent (DPDP Act 2023 s6(4): as easy as giving it). It takes effect at once wherever the consent is
@@ -666,7 +689,7 @@ internal static class FrontOfficeEndpoints
             await RevokeStandingAsync(db, consent.PatientId, consent.Type, consent.Id, request.Reason, user.UserId, now, ct);
         }
 
-        await db.SaveChangesAsync(ct);
+        await SaveConsentAsync(db, consent, ct);
         return TypedResults.NoContent();
     }
 

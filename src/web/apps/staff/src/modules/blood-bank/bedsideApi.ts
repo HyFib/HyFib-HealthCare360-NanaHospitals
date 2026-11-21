@@ -45,6 +45,13 @@ export interface TransfusionDto {
   version: number;
 }
 
+/**
+ * How far the bedside may rely on the patient's group a unit's request goes on: not grouped (emergency release only),
+ * grouped, resting on one sample (no group on record, the second sample not grouped yet), or disputed by samples of the
+ * patient that disagree (possible wrong blood in tube).
+ */
+export type PatientGroupStanding = 'NotGrouped' | 'Grouped' | 'OneSample' | 'SamplesDisagree';
+
 /** A unit issued for the patient, as the ward sees it. */
 export interface WardBloodUnit {
   issueId: string;
@@ -65,12 +72,19 @@ export interface WardBloodUnit {
   /** The patient's transfusion consent for this stay, if recorded. */
   consentCapturedAt: string | null;
   transfusion: TransfusionDto | null;
+  /** The patient's group as the blood bank found it on the unit's request ('Unknown' when not grouped). */
+  patientBloodGroup: BloodGroup;
+  /** How far that group may be relied on at the bedside. */
+  groupStanding: PatientGroupStanding;
+  /** Every group the patient's samples were found to be when they disagree; empty otherwise. */
+  disputedGroups: BloodGroup[];
 }
 
 export interface PatientBloodUnits {
   patientId: string;
   uhid: string;
   patientName: string;
+  /** The newest unit's request group when it is not in doubt; 'Unknown' while it rests on one sample or samples disagree. */
   patientBloodGroup: BloodGroup;
   units: WardBloodUnit[];
 }

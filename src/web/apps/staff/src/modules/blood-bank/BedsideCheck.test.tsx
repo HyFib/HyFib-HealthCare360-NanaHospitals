@@ -63,6 +63,9 @@ const unit = (over: Partial<BedsideApi.WardBloodUnit> = {}): BedsideApi.WardBloo
   returnedAt: null,
   consentCapturedAt: '2026-11-03T09:00:00Z',
   transfusion: null,
+  patientBloodGroup: 'BPositive',
+  groupStanding: 'Grouped',
+  disputedGroups: [],
   ...over,
 });
 
@@ -70,7 +73,7 @@ function open(u: BedsideApi.WardBloodUnit = unit()) {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <FluentProvider theme={webLightTheme}>
-        <BedsideCheckDialog unit={u} patientId="p1" patientBloodGroup="BPositive" onClose={vi.fn()} />
+        <BedsideCheckDialog unit={u} patientId="p1" onClose={vi.fn()} />
       </FluentProvider>
     </QueryClientProvider>,
   );
@@ -191,6 +194,57 @@ describe('the bedside check of a unit of blood', () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it('does not start a unit that may not suit the groups samples of the patient disagree on', async () => {
+    confirm.mockResolvedValue(CONFIRMED);
+    start.mockResolvedValue({});
+    open(
+      unit({
+        unitBloodGroup: 'APositive',
+        patientBloodGroup: 'APositive',
+        groupStanding: 'SamplesDisagree',
+        disputedGroups: ['APositive', 'OPositive'],
+      }),
+    );
+
+    // The disagreement is shown in place of the first sample's group.
+    expect(screen.getByText('Samples disagree: A+ and O+')).toBeInTheDocument();
+    expect(screen.getByText(/this A\+ unit may be incompatible\. Do not start it/)).toBeInTheDocument();
+    await readAndObserve();
+    await witnessConfirms();
+
+    const startButton = screen.getByRole('button', { name: 'Start transfusion' });
+    expect(startButton).toBeDisabled();
+    await userEvent.click(startButton);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('starts a unit that suits every group the samples disagree on', async () => {
+    confirm.mockResolvedValue(CONFIRMED);
+    start.mockResolvedValue({});
+    open(
+      unit({
+        unitBloodGroup: 'ONegative',
+        patientBloodGroup: 'APositive',
+        groupStanding: 'SamplesDisagree',
+        disputedGroups: ['APositive', 'OPositive'],
+      }),
+    );
+
+    expect(screen.getByText(/This unit suits every one of them, and may be started\./)).toBeInTheDocument();
+    await readAndObserve();
+    await witnessConfirms();
+    await userEvent.click(screen.getByRole('button', { name: 'Start transfusion' }));
+
+    await waitFor(() => expect(start).toHaveBeenCalledTimes(1));
+  });
+
+  it('says when the patient’s group rests on one sample, not as the group on record', () => {
+    open(unit({ unitBloodGroup: 'APositive', patientBloodGroup: 'APositive', groupStanding: 'OneSample' }));
+
+    expect(screen.getByText('A+, on one sample only: not confirmed')).toBeInTheDocument();
+    expect(screen.getByText('The patient’s group rests on one sample')).toBeInTheDocument();
+  });
+
   it('asks the witness again when the confirmation ran out before the start was saved', async () => {
     confirm.mockResolvedValue(CONFIRMED);
     start.mockRejectedValue(
@@ -235,6 +289,13 @@ describe("the ward's list of a patient's blood units", () => {
         unit({ issueId: 'i1', unitNumber: 'NH26000123-R' }),
         unit({ issueId: 'i2', unitNumber: 'NH26000124-R', transfusion: transfusion('InProgress') }),
         unit({ issueId: 'i3', unitNumber: 'NH26000125-R', returnedAt: '2026-11-04T08:20:00Z' }),
+        unit({
+          issueId: 'i4',
+          unitNumber: 'NH26000126-R',
+          returnedAt: '2026-11-04T08:40:00Z',
+          groupStanding: 'SamplesDisagree',
+          disputedGroups: ['BPositive', 'OPositive'],
+        }),
       ],
     } satisfies BedsideApi.PatientBloodUnits;
     render(
@@ -252,7 +313,9 @@ describe("the ward's list of a patient's blood units", () => {
     expect(await screen.findByText('NH26000123-R')).toBeInTheDocument();
     expect(screen.getByText('Not started')).toBeInTheDocument();
     expect(screen.getByText('Running')).toBeInTheDocument();
-    expect(screen.getByText('Returned')).toBeInTheDocument();
+    expect(screen.getAllByText('Returned')).toHaveLength(2);
+    // A unit whose request's samples disagree says so on the list.
+    expect(screen.getAllByText('Samples disagree')).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'Bedside check' })).toHaveLength(1);
     expect(screen.getAllByRole('button', { name: 'End transfusion' })).toHaveLength(1);
     expect(screen.getByText(/checked with Sister Rani Thomas/)).toBeInTheDocument();

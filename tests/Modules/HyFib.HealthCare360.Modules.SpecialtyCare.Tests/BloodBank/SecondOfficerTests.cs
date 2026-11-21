@@ -119,6 +119,21 @@ public sealed class SecondOfficerTests
     }
 
     [Fact]
+    public void The_doctor_who_authorised_blood_on_one_sample_does_not_issue_it()
+    {
+        // A blood bank medical officer is also a doctor: grouping the sample, authorising blood on it and issuing it would be one person's word.
+        var onOneSample = new IssueChecks(GroupedBy: Santosh, CrossMatchedBy: Priya, CrossMatched: true, EmergencyRelease: false, ReleaseAuthorisedBy: null, OneSampleAuthorisedBy: DrRao);
+        var plasma = new IssueChecks(GroupedBy: Santosh, CrossMatchedBy: null, CrossMatched: false, EmergencyRelease: false, ReleaseAuthorisedBy: null, OneSampleAuthorisedBy: DrRao);
+
+        IssueSeparation.OwnChecksReason(DrRao, onOneSample).ShouldNotBeNull("the doctor's own override is not a second person's check");
+        IssueSeparation.OwnChecksReason(DrRao, plasma).ShouldNotBeNull();
+        IssueSeparation.OwnChecksReason(Priya, onOneSample).ShouldBeNull("another officer issues it");
+        IssueSeparation.OwnChecksReason(DrRao, onOneSample with { OneSampleAuthorisedBy = null }).ShouldBeNull("no override rests on the issue");
+        IssueSeparation.OwnChecksReason(DrRao, onOneSample with { EmergencyRelease = true, CrossMatched = false, ReleaseAuthorisedBy = Priya })
+            .ShouldBeNull("an uncross-matched release goes on no group, so the override is not what it rests on");
+    }
+
+    [Fact]
     public void A_grouping_is_compared_with_the_patients_earlier_confirmed_groups()
     {
         GroupingHistory.Disagreement(BloodGroup.BPositive, []).ShouldBeNull("a first request has nothing to compare with");
@@ -133,18 +148,25 @@ public sealed class SecondOfficerTests
     {
         var request = new BloodRequest { UnitsRequested = 1, Status = BloodRequestStatus.Pending };
 
-        request.RecordGrouping(BloodGroup.BPositive, Officer(Santosh, "Mr. Santosh Gaikwad"), earlierGroup: BloodGroup.APositive).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.BPositive, Officer(Santosh, "Mr. Santosh Gaikwad"), earlierGroup: BloodGroup.APositive, TestData.Drawn(40), needsSecondSample: false)
+            .IsSuccess.ShouldBeTrue();
         (request.GroupingHeld, request.EarlierGroup, request.PatientBloodGroup).ShouldBe((true, (BloodGroup?)BloodGroup.APositive, BloodGroup.BPositive));
 
-        // The same officer does not regroup their own sample's request, and a third group is a discrepancy.
-        request.Regroup(BloodGroup.APositive, Officer(Santosh, "Mr. Santosh Gaikwad")).Error!.Code.ShouldBe("bloodbank.regroup_own_sample");
-        request.Regroup(BloodGroup.OPositive, Officer(Priya, "Ms. Priya Nair")).Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
+        // The same officer does not regroup their own sample's request (whatever the second-officer setting), the same draw is
+        // no new sample, and a third group is a discrepancy.
+        request.Regroup(BloodGroup.APositive, Officer(Santosh, "Mr. Santosh Gaikwad"), TestData.Drawn(5), separateVerifier: false)
+            .Error!.Code.ShouldBe("bloodbank.regroup_own_sample");
+        request.Regroup(BloodGroup.APositive, Officer(Priya, "Ms. Priya Nair"), TestData.Drawn(40), separateVerifier: true)
+            .Error!.Code.ShouldBe("bloodbank.sample_not_separate");
+        request.Regroup(BloodGroup.OPositive, Officer(Priya, "Ms. Priya Nair"), TestData.Drawn(5), separateVerifier: true)
+            .Error!.Code.ShouldBe("bloodbank.grouping_discrepancy");
         request.GroupingHeld.ShouldBeTrue();
 
         // Another officer groups a new sample A+, as the earlier requests: the first sample was the wrong blood in the tube.
-        request.Regroup(BloodGroup.APositive, Officer(Priya, "Ms. Priya Nair")).IsSuccess.ShouldBeTrue();
+        request.Regroup(BloodGroup.APositive, Officer(Priya, "Ms. Priya Nair"), TestData.Drawn(5, "Sr. Leela Thomas"), separateVerifier: true).IsSuccess.ShouldBeTrue();
         (request.GroupingHeld, request.PatientBloodGroup, request.FirstSampleGroup, request.GroupedByUserId)
             .ShouldBe((false, BloodGroup.APositive, (BloodGroup?)BloodGroup.BPositive, (Guid?)Priya));
+        (request.SampleDrawnBy, request.FirstSampleDrawnBy).ShouldBe(("Sr. Leela Thomas", "Sr. Kavya Menon"));
     }
 
     [Fact]
@@ -152,9 +174,10 @@ public sealed class SecondOfficerTests
     {
         var request = new BloodRequest { UnitsRequested = 1, Status = BloodRequestStatus.Pending };
 
-        request.RecordGrouping(BloodGroup.APositive, Officer(Santosh, "Mr. Santosh Gaikwad"), earlierGroup: null).IsSuccess.ShouldBeTrue();
+        request.RecordGrouping(BloodGroup.APositive, Officer(Santosh, "Mr. Santosh Gaikwad"), earlierGroup: null, TestData.Drawn(), needsSecondSample: false)
+            .IsSuccess.ShouldBeTrue();
 
         (request.GroupingHeld, request.EarlierGroup).ShouldBe((false, (BloodGroup?)null));
-        request.Regroup(BloodGroup.APositive, Officer(Priya, "Ms. Priya Nair")).Error!.Code.ShouldBe("bloodbank.regroup_not_needed");
+        request.Regroup(BloodGroup.APositive, Officer(Priya, "Ms. Priya Nair"), TestData.Drawn(5), separateVerifier: true).Error!.Code.ShouldBe("bloodbank.regroup_not_needed");
     }
 }
