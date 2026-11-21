@@ -61,7 +61,10 @@ Merged since, in pull requests #363 to #379:
   EF Core and ASP.NET Core 10.0.15, Quartz 4.7.2 and WebView2; and jsdom 31.
   - The report of 16 November advised leaving version updates until after 1.0.0. These stay within .NET 10, and CI
     passed on each.
-  - The .NET 11 updates (#362, #367 to #370) are still held.
+  - The .NET 11 updates (#362, #367 to #370) were merged on 19 November, after this report's candidate. CI passed on
+    the result (`f26a6308`): SDK 11.0.100 builds HC360 for .NET 10 and its packages still carry runtime 10.0.15. The
+    release now refuses a package that carries an older runtime than its ASP.NET Core packages
+    (`tools/release/Test-BundledRuntime.ps1`).
 - **An advisory accepted** (#379): GHSA-fc5q-39xc-vjpf, a ReDoS in picomatch 4.0.7. Only build and test tools use
   picomatch, and no fixed version exists. It is accepted in `src/web/pnpm-workspace.yaml` until 2 December (section 8).
 - **This report** (#374).
@@ -358,7 +361,8 @@ Two lessons came from the pull request of #377:
     `offlineUnlock.ts:238`).
   - **Actions:** none.
   - The 13 medium findings are the ones SECURITY.md's table rules false positives.
-- **Dependabot.** Five pull requests are open: the .NET 11 updates, held until after 1.0.0. The alerts are R6.
+- **Dependabot.** The five .NET 11 updates were merged on 19 November (SDK 11.0.100, building for .NET 10). The
+  alerts are R6.
 
 ### 3.4 The scans
 
@@ -542,7 +546,7 @@ After go-live, the pharmacist-in-charge signs the parallel run (NANA-THENI-READI
 
 From GitHub, on 18 November 2026:
 
-- Releases and tags: none. Open issues: none. Open pull requests: Dependabot's #362 and #367 to #370 (.NET 11).
+- Releases and tags: none. Open issues: none. Open pull requests at `31eb025f`: Dependabot's #362 and #367 to #370 (.NET 11), merged on 19 November.
 - CI on the candidate: run #1215 (44242861292, `31eb025f`, a push to `main`), with six jobs, all passed.
   - The .NET job (134594673331) printed `total: 12473, failed: 0, succeeded: 12463, skipped: 10, duration: 39m 58s`.
   - Its test step ran from 05:40 to 06:20 UTC, and the end-to-end tests took 38 min 46 s.

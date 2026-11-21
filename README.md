@@ -61,7 +61,8 @@ docs/                       Requirements (SRS), architecture, module API referen
 ## Developer quick start
 
 Prerequisites:
-- .NET SDK 10.0.401 or later (see `global.json`).
+- .NET SDK 11.0.100 or later (see `global.json`). It builds HC360 for .NET 10 (`net10.0`); the packages carry the
+  .NET 10 runtime the SDK brings (10.0.15 with SDK 11.0.100), and the tests run on the .NET 10 runtime.
 - Node 22 or later, with pnpm 10.
 - Docker (for the development database).
 - The WebView2 Runtime (Windows 11 includes it).

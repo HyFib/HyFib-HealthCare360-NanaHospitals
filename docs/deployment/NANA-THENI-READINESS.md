@@ -503,7 +503,9 @@ within a minute, without anyone signing in.
 
 The release installed on 23 November must include .NET's security release of 10 November 2026 (runtime 10.0.15):
 the advisories published that day (one of them high) affect the runtime of earlier builds. It is built with the .NET
-SDK 10.0.404 (`global.json`), which carries it, and the server takes its runtime with it (self-contained).
+SDK 11.0.100 (`global.json`), which carries it for .NET 10 programs, and the server takes its runtime with it
+(self-contained). The release stops if a package carries an older runtime than the ASP.NET Core packages HC360 is built
+with (`tools/release/Test-BundledRuntime.ps1`, run by `Publish-HC360.ps1`).
 *Check:* once installed, on the server:
 
 ```powershell
