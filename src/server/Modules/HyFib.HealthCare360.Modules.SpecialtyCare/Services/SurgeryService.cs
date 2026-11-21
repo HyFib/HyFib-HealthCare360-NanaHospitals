@@ -264,6 +264,12 @@ public sealed class SurgeryService(
             return Error.Forbidden("surgery.consent_waiver_surgeon", "Only the operating surgeon of this case waives consent, from their own sign-in.");
         }
 
+        // Under the patient's consent lock, held to the commit (SurgicalConsentLocks), and with the booking read again under it:
+        // a refusal or a withdrawal recorded at the same moment is either read here, refusing the waiver, or recorded after it,
+        // ending the waiver; the booking and its Critical audit never say consent was waived over a refusal saved first.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await SurgicalConsentLocks.LockAsync(db, booking.PatientId, ct);
+        await db.Entry(booking).ReloadAsync(ct);
         var consents = await SurgicalConsentRecords.ForBookingAsync(db, booking, ct);
         var witness = await witnesses.UseAsync(request.ConcurringDoctorConfirmationId, ConsentWaiverWitness.Key, booking.PatientId, nameof(SurgeryBooking), booking.Id, ct);
         if (witness.IsFailure)
@@ -310,6 +316,7 @@ public sealed class SurgeryService(
             },
         });
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         await realtime.OtChangedAsync(booking.FacilityId, booking.Id, ct);
         return Result.Success();
     }
