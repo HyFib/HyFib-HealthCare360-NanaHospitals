@@ -20,20 +20,41 @@ public sealed class RestraintAlertService(HospitalDbContext db, INotificationSer
 {
     private const string Category = "inpatient";
 
-    /// <summary>Raises the alerts due now, for the patients still in a bed (open stays); returns how many it raised.</summary>
+    /// <summary>How many episodes are read at a time; every active episode is looked at, page after page.</summary>
+    internal const int PageSize = 500;
+
+    /// <summary>
+    /// Raises the alerts due now, for the patients still in a bed (open stays), in every facility; returns how many it raised.
+    /// Every active episode is looked at: their ids are read first, then the episodes a page at a time, so none is left out
+    /// however many there are, and one released while the run goes on is not skipped by the paging.
+    /// </summary>
     public async Task<int> RaiseAlertsAsync(CancellationToken ct)
     {
         var now = time.GetUtcNow();
         var ignore = new[] { HospitalDbContext.FacilityFilter };
-        var active = await (
+        var ids = await (
                 from e in db.Set<RestraintEpisode>().IgnoreQueryFilters(ignore)
                 where e.Status == RestraintStatus.Active
                 join a in db.Set<Admission>().IgnoreQueryFilters(ignore) on e.AdmissionId equals a.Id
                 where a.Status == AdmissionStatus.Admitted || a.Status == AdmissionStatus.DischargeInitiated
-                orderby e.OrderedAt
-                select e)
-            .Take(500)
+                orderby e.OrderedAt, e.Id
+                select e.Id)
             .ToListAsync(ct);
+        var raised = 0;
+        foreach (var page in ids.Chunk(PageSize))
+        {
+            var episodes = await db.Set<RestraintEpisode>().IgnoreQueryFilters(ignore)
+                .Where(e => page.Contains(e.Id) && e.Status == RestraintStatus.Active)
+                .OrderBy(e => e.OrderedAt).ThenBy(e => e.Id)
+                .ToListAsync(ct);
+            raised += await RaiseAsync(episodes, now, ct);
+        }
+
+        return raised;
+    }
+
+    private async Task<int> RaiseAsync(IReadOnlyList<RestraintEpisode> active, DateTimeOffset now, CancellationToken ct)
+    {
         var raised = 0;
         foreach (var episode in active)
         {
@@ -124,8 +145,10 @@ public sealed class RestraintAlertService(HospitalDbContext db, INotificationSer
         }
 
         await notifications.NotifyPermissionHoldersAsync(InpatientPermissions.NursingInCharge, episode.FacilityId, title, body, link, Category, "critical", ct);
+        // The job runs for every facility with no one signed in: the entry is filed under the episode's own facility.
         await audit.WriteAsync(new AuditEntry(AuditCategories.Clinical, auditAction, summary)
         {
+            FacilityId = episode.FacilityId,
             PatientId = episode.PatientId,
             EntityType = nameof(RestraintEpisode),
             EntityId = episode.Id.ToString(),
