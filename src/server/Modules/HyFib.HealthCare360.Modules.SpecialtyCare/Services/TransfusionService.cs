@@ -554,6 +554,13 @@ public sealed class TransfusionService(
             return Error.NotFound(nameof(BloodRequest), requestId);
         }
 
+        // Under the patient's grouping lock, held to the commit (BloodGroupingLocks), and with the request read again under it:
+        // a disagreeing sample grouped at the same moment is either read here, holding the issue, or grouped after the unit
+        // went out, and neither save undoes the other.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await BloodGroupingLocks.LockAsync(db, bloodRequest.PatientId, ct);
+        await db.Entry(bloodRequest).ReloadAsync(ct);
+
         var open = bloodRequest.EnsureOpen();
         if (open.IsFailure)
         {
@@ -681,6 +688,7 @@ public sealed class TransfusionService(
         ], ct);
         issue.RecordCharges(outcome.Status, outcome.Error);
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
         await PublishAsync(bloodRequest.FacilityId, ct);
         return issue;
     }
