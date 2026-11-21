@@ -12,8 +12,9 @@
     fix, with nothing else to say so.
 
     So: the published program's runtimeconfig.json names the runtimes it carries (includedFrameworks), and each of them
-    must be at least the version of the Microsoft.AspNetCore packages in Directory.Packages.props. Publish-HC360.ps1 runs
-    this after each self-contained publish. Exit code 1, with the reasons, when a check fails.
+    must be at least the newest Microsoft.AspNetCore package in Directory.Packages.props: a patch any of those packages
+    has reached exists, and the runtime must carry it too. Publish-HC360.ps1 runs this after each self-contained publish.
+    Exit code 1, with the reasons, when a check fails.
 
 .EXAMPLE
     .\tools\release\Test-BundledRuntime.ps1 -PublishDir .\artifacts\server -Program HyFib.HealthCare360.Server
@@ -44,13 +45,13 @@ function ConvertTo-RuntimeVersion([string] $Text) {
 
 $problems = New-Object System.Collections.Generic.List[string]
 
-# The patch the server's ASP.NET Core packages are at: the lowest version of any Microsoft.AspNetCore package, so one
-# package left behind cannot raise the bar above what the others were tested with.
+# The newest patch any Microsoft.AspNetCore package is at. A package left behind (one only the tests use, say) must not
+# let a runtime older than the others' patch through: that patch exists, so the runtime has to carry it.
 [xml] $packages = Get-Content -LiteralPath $PackagesPath -Raw
 $floor = $null
 foreach ($node in $packages.SelectNodes("//PackageVersion[starts-with(@Include, 'Microsoft.AspNetCore.')]")) {
     $version = ConvertTo-RuntimeVersion $node.GetAttribute('Version')
-    if ($null -ne $version -and ($null -eq $floor -or $version -lt $floor)) { $floor = $version }
+    if ($null -ne $version -and ($null -eq $floor -or $version -gt $floor)) { $floor = $version }
 }
 
 if ($null -eq $floor) {

@@ -67,11 +67,12 @@ try {
     Test-Case 'the same patch passes' @('10.0.15') $server 0 'at least the ASP.NET Core packages'' 10.0.15'
     Test-Case 'a newer runtime passes' @('10.0.15') @{ 'Microsoft.NETCore.App' = '10.0.16'; 'Microsoft.AspNetCore.App' = '10.0.16' } 0
     Test-Case 'a desktop runtime of the same patch passes' @('10.0.15') @{ 'Microsoft.NETCore.App' = '10.0.15'; 'Microsoft.WindowsDesktop.App' = '10.0.15' } 0
-    Test-Case 'the lowest ASP.NET Core package sets the bar' @('10.0.15', '10.0.14') @{ 'Microsoft.NETCore.App' = '10.0.14' } 0
+    Test-Case 'a runtime of the newest ASP.NET Core package passes' @('10.0.14', '10.0.15') @{ 'Microsoft.NETCore.App' = '10.0.15' } 0
 
     Write-Host 'A package missing the patch'
     Test-Case 'an older runtime fails' @('10.0.15') @{ 'Microsoft.NETCore.App' = '10.0.14'; 'Microsoft.AspNetCore.App' = '10.0.14' } 1 'carries Microsoft.NETCore.App 10.0.14, older than the ASP.NET Core packages it is built with (10.0.15)'
     Test-Case 'one older runtime among them fails' @('10.0.15') @{ 'Microsoft.NETCore.App' = '10.0.15'; 'Microsoft.AspNetCore.App' = '10.0.14' } 1 'Microsoft.AspNetCore.App 10.0.14'
+    Test-Case 'the newest ASP.NET Core package sets the bar, not one left behind' @('10.0.16', '10.0.15') @{ 'Microsoft.NETCore.App' = '10.0.15' } 1 'older than the ASP.NET Core packages it is built with (10.0.16)'
     Test-Case 'a framework-dependent program fails' @('10.0.15') $null 1 'is not self-contained'
     Test-Case 'no runtimeconfig.json fails' @('10.0.15') 'missing' 1 'does not exist'
     Test-Case 'no ASP.NET Core package fails' @() $server 1 'names no Microsoft.AspNetCore package'
