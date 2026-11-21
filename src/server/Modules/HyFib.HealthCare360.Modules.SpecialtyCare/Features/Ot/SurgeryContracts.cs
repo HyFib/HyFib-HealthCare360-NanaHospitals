@@ -64,6 +64,9 @@ public sealed record WaiveSurgicalConsentRequest(string Reason, Guid ConcurringD
 /// The patient's consent to the operation as the theatre's gates read it: each consent needed (to the procedure, and to
 /// anaesthesia unless it is local or topical) with where it stands, counted from <paramref name="Since"/> (the booking), who
 /// recorded it and whether the signed form is attached; the emergency waiver, if any; and the consents the incision relied on.
+/// Each check carries, nullable, the patient's latest refusal of that consent recorded before the booking
+/// (<see cref="EarlierRefusal"/>) while nothing of that kind is recorded since: it is shown, and audited with a waiver, but
+/// blocks nothing.
 /// </summary>
 /// <param name="Satisfied">
 /// The gates open: every consent needed is recorded, or consent was waived in an emergency, the booking is still one and

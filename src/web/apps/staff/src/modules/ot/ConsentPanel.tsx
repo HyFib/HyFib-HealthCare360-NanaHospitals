@@ -36,7 +36,7 @@ import {
   type SurgicalConsentCheck,
 } from './api';
 import { anaesthesiaShort, consentKindLabel } from './labels';
-import { consentGate, consentRecordedBy, saidNoConsent, saidNoNotice, waiverGate } from './logic';
+import { consentGate, consentRecordedBy, earlierRefusalNotice, saidNoConsent, saidNoNotice, waiverGate } from './logic';
 import { ActionError } from './shared/feedback';
 
 /** The shortest clinical reason for operating without consent (server `SurgicalConsent.MinimumReasonLength`). */
@@ -156,6 +156,14 @@ export function SurgicalConsentPanel({ booking }: { booking: SurgeryDetail }) {
                   {consentKindLabel[check.kind]}: {consentLineText(check, booking, consent.since)}
                 </Text>
                 {check.consent && <Caption1 className={styles.muted}>{consentRecordedBy(check.consent)}</Caption1>}
+                {earlierRefusalNotice(check) && (
+                  <MessageBar intent="warning" layout="multiline" icon={<ShieldErrorRegular />}>
+                    <MessageBarBody>
+                      <MessageBarTitle>Refused before this operation was booked</MessageBarTitle>
+                      {earlierRefusalNotice(check)}
+                    </MessageBarBody>
+                  </MessageBar>
+                )}
                 {check.kind === 'Anaesthesia' &&
                   check.state !== 'NotNeeded' &&
                   consent.anaesthesiaConsentRequiredAtSignIn &&
@@ -262,6 +270,8 @@ function ConsentWaiverForm({ booking, onDone }: { booking: SurgeryDetail; onDone
   const [reason, setReason] = useState('');
   const [witness, setWitness] = useState<WitnessConfirmed | null>(null);
   const no = booking.consent ? saidNoConsent(booking.consent) : null;
+  // A refusal recorded before the booking: shown above the reason, though it does not hold the waiver.
+  const earlier = (booking.consent?.checks ?? []).filter((check) => earlierRefusalNotice(check) !== null);
   const waive = useMutation({
     mutationFn: () =>
       otApi.waiveConsent(booking.id, {
@@ -295,6 +305,18 @@ function ConsentWaiverForm({ booking, onDone }: { booking: SurgeryDetail; onDone
           <MessageBarBody>
             <MessageBarTitle>{saidNoTitle(no)}</MessageBarTitle>
             {saidNoNotice(no)}
+          </MessageBarBody>
+        </MessageBar>
+      )}
+      {earlier.length > 0 && (
+        <MessageBar intent="warning" layout="multiline" icon={<ShieldErrorRegular />}>
+          <MessageBarBody>
+            <MessageBarTitle>Refused before this operation was booked</MessageBarTitle>
+            {earlier.map((check) => (
+              <div key={check.kind}>
+                {consentKindLabel[check.kind]}: {earlierRefusalNotice(check)}
+              </div>
+            ))}
           </MessageBarBody>
         </MessageBar>
       )}

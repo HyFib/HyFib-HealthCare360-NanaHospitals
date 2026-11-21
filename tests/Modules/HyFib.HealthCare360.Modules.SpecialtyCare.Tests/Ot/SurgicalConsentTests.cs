@@ -29,6 +29,36 @@ public sealed class SurgicalConsentTests
     }
 
     [Fact]
+    public void A_refusal_recorded_before_the_booking_is_carried_on_the_check_but_changes_nothing()
+    {
+        var booking = TestData.Scheduled();
+        var earlier = TestData.Consent(SurgicalConsentKind.Procedure, TestData.BookedAt.AddHours(-3), granted: false) with { CapturedByName = "Dr Casualty" };
+        var older = TestData.Consent(SurgicalConsentKind.Procedure, TestData.BookedAt.AddHours(-5), granted: false);
+
+        var status = booking.Consent([older, earlier]);
+
+        var procedure = status.Checks.Single(c => c.Kind == SurgicalConsentKind.Procedure);
+        procedure.State.ShouldBe(SurgicalConsentState.Missing);
+        procedure.EarlierRefusal.ShouldBe(new EarlierRefusal(earlier.Id, earlier.CapturedAt, "Dr Casualty"), "the patient's latest refusal before the booking");
+        status.Checks.Single(c => c.Kind == SurgicalConsentKind.Anaesthesia).EarlierRefusal.ShouldBeNull();
+        (status.Satisfied, status.SaidNo, status.Refused).ShouldBe((false, false, false));
+    }
+
+    [Fact]
+    public void An_earlier_refusal_is_not_carried_once_a_consent_or_refusal_is_recorded_since_the_booking()
+    {
+        var booking = TestData.Scheduled();
+        var earlier = TestData.Consent(SurgicalConsentKind.Procedure, TestData.BookedAt.AddHours(-3), granted: false);
+
+        var consented = booking.Consent([earlier, TestData.Consent(SurgicalConsentKind.Procedure, TestData.BookedAt.AddHours(1))]);
+        consented.Checks.Single(c => c.Kind == SurgicalConsentKind.Procedure).EarlierRefusal.ShouldBeNull();
+
+        var refused = booking.Consent([earlier, TestData.Consent(SurgicalConsentKind.Procedure, TestData.BookedAt.AddHours(1), granted: false)]);
+        var check = refused.Checks.Single(c => c.Kind == SurgicalConsentKind.Procedure);
+        (check.State, check.EarlierRefusal).ShouldBe((SurgicalConsentState.Refused, (EarlierRefusal?)null));
+    }
+
+    [Fact]
     public void A_nurse_cannot_tick_consent_signed_when_no_consent_is_recorded()
     {
         var booking = TestData.Scheduled();

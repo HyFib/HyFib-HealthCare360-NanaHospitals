@@ -62,8 +62,23 @@ public sealed record ConsentOnRecord(
     bool SignedFormAttached = false,
     string? ReliedOnBy = null);
 
-/// <summary>One consent the operation needs, where it stands, and the record that says so (none when nothing is recorded).</summary>
-public sealed record SurgicalConsentCheck(SurgicalConsentKind Kind, SurgicalConsentState State, ConsentOnRecord? Consent);
+/// <summary>
+/// The patient's latest refusal of a consent, recorded before the operation was booked (for instance in the emergency
+/// department, before the patient lost consciousness): shown to the surgeon, the second doctor and the audit, but it counts
+/// for nothing in <see cref="SurgicalConsentStatus.SaidNo"/> or any gate. Whether it should block the emergency waiver is an
+/// open question for the hospital.
+/// </summary>
+/// <param name="ConsentId">The refusal on the patient's consents.</param>
+/// <param name="RecordedAt">When it was recorded.</param>
+/// <param name="RecordedByName">Who recorded it, as their account names them; null when it is not known.</param>
+public sealed record EarlierRefusal(Guid ConsentId, DateTimeOffset RecordedAt, string? RecordedByName);
+
+/// <summary>
+/// One consent the operation needs, where it stands, and the record that says so (none when nothing is recorded).
+/// <paramref name="EarlierRefusal"/> is the patient's latest refusal of it recorded before the booking, carried only while
+/// no consent or refusal of that kind has been recorded since; it does not change <paramref name="State"/>.
+/// </summary>
+public sealed record SurgicalConsentCheck(SurgicalConsentKind Kind, SurgicalConsentState State, ConsentOnRecord? Consent, EarlierRefusal? EarlierRefusal = null);
 
 /// <summary>
 /// An emergency operation going ahead without the patient's consent (the emergency doctrine): the operating surgeon, from
@@ -225,6 +240,19 @@ public static class SurgicalConsent
     /// by another operation's incision; otherwise why there is none.
     /// </summary>
     private static SurgicalConsentCheck Check(SurgicalConsentKind kind, DateTimeOffset since, List<ConsentOnRecord> all)
+    {
+        var check = Resolve(kind, since, all);
+        if (all.Any(c => c.Kind == kind && c.CapturedAt >= since))
+        {
+            return check;
+        }
+
+        return all.Where(c => c.Kind == kind && !c.Granted && c.CapturedAt < since).MaxBy(c => c.CapturedAt) is { } earlier
+            ? check with { EarlierRefusal = new EarlierRefusal(earlier.Id, earlier.CapturedAt, earlier.CapturedByName) }
+            : check;
+    }
+
+    private static SurgicalConsentCheck Resolve(SurgicalConsentKind kind, DateTimeOffset since, List<ConsentOnRecord> all)
     {
         var ofKind = all.Where(c => c.Kind == kind).ToList();
         var current = ofKind.Where(c => c.CapturedAt >= since).ToList();

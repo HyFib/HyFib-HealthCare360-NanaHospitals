@@ -206,6 +206,19 @@ export function consentRecordedBy(record: ConsentOnRecord): string {
 }
 
 /**
+ * "The patient refused this on 21 Nov 2026, 9:30 am (recorded by Dr X), before this operation was booked.": a refusal
+ * recorded before the booking, which the gates do not count (server `EarlierRefusal`); null when there is none.
+ */
+export function earlierRefusalNotice(check: SurgicalConsentCheck): string | null {
+  const earlier = check.earlierRefusal;
+  if (!earlier) {
+    return null;
+  }
+  const by = earlier.recordedByName ? ` (recorded by ${earlier.recordedByName})` : '';
+  return `The patient refused this on ${formatDateTime(earlier.recordedAt)}${by}, before this operation was booked.`;
+}
+
+/**
  * The patient's consent as the gates read it (server `SurgicalConsent`): "consent signed", the WHO Sign-in and Time-out and
  * the incision wait for the consents the front office records, or a waiver in an emergency, which never stands against the
  * patient's refusal or withdrawal. A booking read without the consent (an older server) is left to the server, which

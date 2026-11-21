@@ -56,7 +56,8 @@ internal sealed class TheatreCases(HospitalServer server)
     /// Another operation for the patient of <paramref name="c"/>, booked now into a slot of its own (and left there, not
     /// received in pre-op); no consent is recorded for it.
     /// </summary>
-    public Task<Case> AnotherOperationAsync(Case c, string procedure) => BookAsync(c.PatientId, c.VisitId, Laterality.NotApplicable, procedure, null, SurgeryPriority.Elective);
+    public Task<Case> AnotherOperationAsync(Case c, string procedure, SurgeryPriority priority = SurgeryPriority.Elective) =>
+        BookAsync(c.PatientId, c.VisitId, Laterality.NotApplicable, procedure, null, priority);
 
     /// <summary>
     /// The doctor books the operation into a slot, the doctor operating and the second doctor giving a spinal anaesthetic: a

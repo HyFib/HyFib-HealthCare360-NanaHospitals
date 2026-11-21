@@ -1,3 +1,4 @@
+using System.Globalization;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.Common;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Domain.OperationTheatre;
 using HyFib.HealthCare360.Modules.SpecialtyCare.Features.Ot;
@@ -269,6 +270,7 @@ public sealed class SurgeryService(
         var concurring = new ConcurringDoctor(witness.Value.UserId, witness.Value.Name, practitioner?.Id,
             practitioner is { IsActive: true } && PractitionerKinds.IsDoctor(practitioner.Kind));
         var missing = booking.Consent(consents).Missing;
+        var earlierRefusals = booking.Consent(consents).Checks.Where(c => c.EarlierRefusal is not null).ToList();
         var waived = booking.WaiveConsent(request.Reason, currentUser.Stamp(time.GetUtcNow()), currentUser.PractitionerId, concurring, consents);
         if (waived.IsFailure)
         {
@@ -279,7 +281,11 @@ public sealed class SurgeryService(
         audit.Add(new AuditEntry(AuditCategories.Clinical, "surgery.consent_waived",
             Fit($"Surgery {booking.BookingNumber} ({booking.Site.Words}) goes ahead in an emergency without the patient's consent "
                 + $"({string.Join("; ", missing.Select(SurgicalConsent.Describe))}): waived by the operating surgeon {waiver.SurgeonName}, "
-                + $"{waiver.ConcurringName} agreeing at the surgeon's screen. Reason: {waiver.Reason}", 1000))
+                + $"{waiver.ConcurringName} agreeing at the surgeon's screen."
+                + string.Concat(earlierRefusals.Select(c =>
+                    $" {SurgicalConsent.What(c.Kind)}: a refusal recorded on "
+                    + $"{SpecialtyClock.ToLocal(c.EarlierRefusal!.RecordedAt).ToString("dd MMM yyyy", CultureInfo.InvariantCulture)} before the booking was on record."))
+                + $" Reason: {waiver.Reason}", 1000))
         {
             PatientId = booking.PatientId,
             EntityType = nameof(SurgeryBooking),
@@ -291,6 +297,7 @@ public sealed class SurgeryService(
                 surgeon = waiver.SurgeonUserId,
                 concurringDoctor = waiver.ConcurringUserId,
                 missing = missing.Select(m => new { m.Kind, m.State }).ToList(),
+                earlierRefusals = earlierRefusals.Select(c => new { c.Kind, c.EarlierRefusal!.ConsentId, c.EarlierRefusal.RecordedAt, c.EarlierRefusal.RecordedByName }).ToList(),
             },
         });
         await db.SaveChangesAsync(ct);

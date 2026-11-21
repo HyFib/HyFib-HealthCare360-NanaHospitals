@@ -269,11 +269,24 @@ export interface ConsentOnRecord {
   reliedOnBy: string | null;
 }
 
+/**
+ * The patient's latest refusal of a consent recorded before the operation was booked (server `EarlierRefusal`), carried
+ * while nothing of that kind is recorded since. Shown, never blocking: it changes no state and no gate.
+ */
+export interface EarlierRefusal {
+  consentId: string;
+  recordedAt: string;
+  /** Who recorded it, as their account names them; null when it is not known. */
+  recordedByName: string | null;
+}
+
 export interface SurgicalConsentCheck {
   kind: SurgicalConsentKind;
   state: SurgicalConsentState;
   /** The record that says so: the consent in force, the refusal, the withdrawn or the earlier consent; none when missing. */
   consent: ConsentOnRecord | null;
+  /** The patient's latest refusal of it recorded before the booking, while nothing is recorded since; else null. */
+  earlierRefusal?: EarlierRefusal | null;
 }
 
 /** An emergency operation going ahead without consent: the operating surgeon, the second doctor who agreed, and why. */

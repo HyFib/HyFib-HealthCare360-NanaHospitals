@@ -251,6 +251,42 @@ public sealed class TheatreConsentTests(HospitalServer server)
     }
 
     [Fact]
+    public async Task A_refusal_recorded_before_the_booking_is_shown_and_audited_but_does_not_block_the_waiver()
+    {
+        var cases = new TheatreCases(server);
+        var surgeon = await server.SignInAsync(Users.Doctor);
+        var nurse = await server.SignInAsync(Users.Nurse);
+        var frontOffice = await server.SignInAsync(Users.FrontOffice);
+
+        // In the emergency department the patient refuses the laparotomy, and the front office records it; only then is the
+        // emergency operation booked.
+        var (patientId, visit) = await EmergencyDepartmentTests.EmergencyVisitAsync(frontOffice);
+        var before = new TheatreCases.Case(Guid.Empty, patientId, visit.Id, string.Empty);
+        var refusal = await cases.ConsentAsync(before, ConsentType.HighRiskProcedure, granted: false);
+        var c = await cases.AnotherOperationAsync(before, "Laparotomy for perforation", SurgeryPriority.Emergency);
+        await nurse.PostAsync($"{c.Path}/receive");
+
+        // The booking carries it on the consent check; it does not count as the patient's "no" since the booking.
+        var consent = (await nurse.GetAsync<SurgeryDetail>(c.Path)).Consent.ShouldNotBeNull();
+        var procedure = consent.Checks.Single(x => x.Kind == SurgicalConsentKind.Procedure);
+        procedure.State.ShouldBe(SurgicalConsentState.Missing);
+        var earlier = procedure.EarlierRefusal.ShouldNotBeNull();
+        earlier.ConsentId.ShouldBe(refusal);
+        earlier.RecordedAt.ShouldBeLessThan(consent.Since);
+        (consent.Refused, consent.SaidNo).ShouldBe((false, false));
+        consent.Checks.Single(x => x.Kind == SurgicalConsentKind.Anaesthesia).EarlierRefusal.ShouldBeNull();
+
+        // The waiver still goes through, and its Critical audit entry names the refusal.
+        var concurs = await server.WitnessAsync(surgeon, Users.SecondDoctor, SurgeryService.ConsentWaiverWitness.Key, c.PatientId);
+        await surgeon.PostAsync($"{c.Path}/consent-waiver", new WaiveSurgicalConsentRequest(Emergency, concurs.ConfirmationId));
+        (await nurse.GetAsync<SurgeryDetail>(c.Path)).Consent.ShouldNotBeNull().Waiver.ShouldNotBeNull();
+        var (summary, severity) = await cases.AuditAsync(c.PatientId, "surgery.consent_waived");
+        severity.ShouldBe(AuditSeverity.Critical);
+        summary.ShouldContain("a refusal recorded on");
+        summary.ShouldContain("before the booking was on record");
+    }
+
+    [Fact]
     public async Task The_emergency_doctrine_does_not_override_a_consent_the_patient_withdrew()
     {
         var cases = new TheatreCases(server);

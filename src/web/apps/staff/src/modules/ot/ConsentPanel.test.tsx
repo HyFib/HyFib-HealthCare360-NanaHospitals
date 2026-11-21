@@ -401,6 +401,49 @@ describe('informed consent before surgery and anaesthesia', SCREEN_TESTS, () => 
     expect(within(panel).getByText('Consent not recorded')).toBeInTheDocument();
   });
 
+  it('warns of a refusal recorded before the booking, on the panel and above the reason of the waiver form', async () => {
+    const earlier: SurgicalConsentDto = {
+      ...MISSING,
+      checks: [
+        {
+          kind: 'Procedure',
+          state: 'Missing',
+          consent: null,
+          earlierRefusal: {
+            consentId: '0192a000-0000-7000-8000-0000000c1c06',
+            recordedAt: '2026-11-20T04:00:00Z',
+            recordedByName: 'Dr. Meera Iyer',
+          },
+        },
+        MISSING.checks[1]!,
+      ],
+    };
+    const warning =
+      /The patient refused this on 20 Nov 2026, .* \(recorded by Dr\. Meera Iyer\), before this operation was booked\./;
+    server = fakeServer({});
+    const u = userEvent.setup();
+    show(<SurgicalConsentPanel booking={{ ...BOOKING, consent: earlier }} />, SURGEON_USER);
+
+    const panel = await screen.findByRole('region', { name: 'Consent to the operation' }, SLOW);
+    expect(within(panel).getAllByText(warning)).toHaveLength(1);
+    // It blocks nothing: the line still says not recorded and the surgeon can still open the waiver.
+    expect(
+      within(panel).getByText(/^Consent to the operation \(high-risk procedure\): not recorded/),
+    ).toBeInTheDocument();
+    await expectNoAxeViolations();
+    await u.click(within(panel).getByRole('button', { name: 'Go ahead without consent (emergency)' }));
+    const form = screen.getByRole('group', { name: 'Go ahead without consent' });
+    expect(within(form).getByText('Refused before this operation was booked')).toBeInTheDocument();
+    expect(within(form).getByText(warning)).toBeInTheDocument();
+  });
+
+  it('shows no earlier-refusal warning when there is none', async () => {
+    server = fakeServer({});
+    show(<SurgicalConsentPanel booking={BOOKING} />, SURGEON_USER);
+    const panel = await screen.findByRole('region', { name: 'Consent to the operation' }, SLOW);
+    expect(within(panel).queryByText(/The patient refused this on/)).toBeNull();
+  });
+
   it('never offers the emergency path against the patient’s refusal, and says why', async () => {
     server = fakeServer({});
     show(<SurgicalConsentPanel booking={{ ...BOOKING, consent: REFUSED }} />, SURGEON_USER);

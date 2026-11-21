@@ -896,7 +896,8 @@ and grants nothing.
       does one another operation's incision relied on, and a withdrawal since the booking counts whenever the consent
       withdrawn was given. The theatre shows who recorded each consent, and a signed form as attached only when the file
       is in the document store for that patient; a consent another branch's operation relied on is not named by that
-      booking's number. After
+      booking's number. A refusal recorded before the booking is shown on the panel, the waiver form and the waiver's
+      audit, but does not block the waiver; whether it should is an open question for the hospital. After
       the Sign-in, the anaesthesia technique and the priority, which bear on consent, are changed only by the operating
       surgeon or the anaesthetist, with a reason, audited at Warning (`surgery.plan_changed_after_sign_in`);
     - an implant or consumable line once the operation has started: not removed (`surgery.material_locked`); a
