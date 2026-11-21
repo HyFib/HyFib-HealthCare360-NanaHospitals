@@ -37,6 +37,14 @@ function Invoke-Checked([string] $Description, [scriptblock] $Command) {
     if ($LASTEXITCODE -ne 0) { throw "$Description failed (exit code $LASTEXITCODE)." }
 }
 
+# Each package carries its own .NET runtime, so the runtime's security patches reach the hospital only through the SDK
+# that built it: stop when a program carries a runtime older than the ASP.NET Core packages HC360 is built with.
+function Assert-BundledRuntime([string] $PublishDir, [string] $Program) {
+    Invoke-Checked "The runtime check of $Program" {
+        & (Join-Path $repo 'tools\release\Test-BundledRuntime.ps1') -PublishDir $PublishDir -Program $Program
+    }
+}
+
 Push-Location $repo
 try {
     if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
@@ -69,6 +77,7 @@ try {
     if (Test-Path (Join-Path $serverOut 'appsettings.Development.json')) {
         throw 'The server publish contains appsettings.Development.json (developer settings: backups and MFA off). Remove it from the publish before packaging.'
     }
+    Assert-BundledRuntime $serverOut 'HyFib.HealthCare360.Server'
 
     Write-Step 'Publishing HC360 Desktop'
     $desktopOut = Join-Path $OutputDir 'desktop'
@@ -76,6 +85,7 @@ try {
         dotnet publish src\desktop\HyFib.HealthCare360.Desktop\HyFib.HealthCare360.Desktop.csproj -c $Configuration -r $Runtime --self-contained true -o $desktopOut `
             -p:DebugType=None -p:DebugSymbols=false
     }
+    Assert-BundledRuntime $desktopOut 'HC360Desktop'
     Copy-Item (Join-Path $PSScriptRoot 'Install-HC360Desktop.ps1') $desktopOut
 
     # The updater installs HC360 Desktop's updates as SYSTEM (SRS DED-18): one self-contained file, so it can replace
@@ -86,6 +96,15 @@ try {
         dotnet publish src\desktop\HyFib.HealthCare360.DesktopUpdater\HyFib.HealthCare360.DesktopUpdater.csproj -c $Configuration -r $Runtime --self-contained true -o $updaterOut `
             -p:DebugType=None -p:DebugSymbols=false
     }
+    # One self-contained file embeds its runtimeconfig.json, so the publish folder has none to read. The build the publish
+    # made (bin\<Configuration>\<TFM>\<Runtime>) wrote the same file: the updater runs as SYSTEM, so its runtime is
+    # checked there like the other programs'.
+    $updaterConfig = Get-ChildItem (Join-Path $repo "src\desktop\HyFib.HealthCare360.DesktopUpdater\bin\$Configuration") -Recurse -Filter 'HC360DesktopUpdater.runtimeconfig.json' |
+        Where-Object { $_.Directory.Name -eq $Runtime } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $updaterConfig) {
+        throw "The HC360 Desktop updater's runtimeconfig.json is not under its build output for $Runtime, so the runtime it carries cannot be checked."
+    }
+    Assert-BundledRuntime $updaterConfig.DirectoryName 'HC360DesktopUpdater'
     Copy-Item (Join-Path $updaterOut 'HC360DesktopUpdater.exe') $desktopOut
 
     Write-Step 'Publishing the HC360 lab agent'
@@ -94,6 +113,7 @@ try {
         dotnet publish src\agent\HyFib.HealthCare360.LabAgent\HyFib.HealthCare360.LabAgent.csproj -c $Configuration -r $Runtime --self-contained true -o $agentOut `
             -p:DebugType=None -p:DebugSymbols=false
     }
+    Assert-BundledRuntime $agentOut 'HC360LabAgent'
     Copy-Item (Join-Path $PSScriptRoot 'Install-HC360LabAgent.ps1') $agentOut
 
     Write-Step 'Packaging'
