@@ -424,6 +424,10 @@ public sealed class AdmissionService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
+        // Under the stay's lock, held to the commit (the one a restraint order takes): a restraint ordered at the same moment
+        // is either committed first and moved below, or ordered after the move, on the new ward.
+        await EncounterLocks.LockAsync(db, [admission.Id], ct);
+
         // Phase 1: vacate the old bed (the unique "one bed per admission" index must never see two beds at once).
         var fromBed = current is null ? null : await db.Set<Bed>().FirstOrDefaultAsync(b => b.Id == current.BedId, ct);
         current?.Close(at);

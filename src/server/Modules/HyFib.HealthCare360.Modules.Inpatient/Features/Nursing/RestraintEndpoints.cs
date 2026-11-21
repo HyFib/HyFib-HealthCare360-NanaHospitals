@@ -155,12 +155,13 @@ internal static class RestraintEndpoints
             return Error.Forbidden("restraint.doctor_required", "A restraint is ordered by a doctor, signed in as themselves.").ToProblem();
         }
 
-        // Under the stay's lock (the one a discharge or cancellation takes): the stay and the restraints are read again, so an order
-        // saved while the stay closes is never left Active on a closed stay.
+        // Under the stay's lock (the one a discharge, a cancellation or a transfer takes): the stay, its ward and the restraints
+        // are read again, so an order saved while the stay closes is never left Active on a closed stay, nor on the ward the
+        // patient was just moved from.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await EncounterLocks.LockAsync(db, [admissionId], ct);
-        var status = await db.Set<Admission>().AsNoTracking().Where(a => a.Id == admissionId).Select(a => a.Status).FirstAsync(ct);
-        if (status is not (AdmissionStatus.Admitted or AdmissionStatus.DischargeInitiated))
+        var stay = await db.Set<Admission>().AsNoTracking().Where(a => a.Id == admissionId).Select(a => new { a.Status, a.WardId }).FirstAsync(ct);
+        if (stay.Status is not (AdmissionStatus.Admitted or AdmissionStatus.DischargeInitiated))
         {
             return Error.Rule("restraint.stay_closed", "The stay has ended: there is no patient on the ward to restrain.").ToProblem();
         }
@@ -172,7 +173,7 @@ internal static class RestraintEndpoints
 
         var now = time.GetUtcNow();
         var ordered = RestraintEpisode.Order(
-            admission.FacilityId, admission.Id, admission.PatientId, admission.WardId, request.Type, request.Method, request.Reason, request.AlternativesTried,
+            admission.FacilityId, admission.Id, admission.PatientId, stay.WardId, request.Type, request.Method, request.Reason, request.AlternativesTried,
             request.Hours, request.CheckIntervalMinutes, user.UserId, doctor, user.DisplayName, now);
         if (ordered.IsFailure)
         {
