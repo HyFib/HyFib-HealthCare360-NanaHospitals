@@ -50,7 +50,6 @@ public sealed class BedsideTransfusionService(
         var groupings = await db.Set<BloodRequest>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(r => r.PatientId == patientId && (r.GroupedAt != null || requestIds.Contains(r.Id)))
             .OrderByDescending(r => r.GroupedAt)
-            .Take(200)
             .ToListAsync(ct);
         var standings = requestIds.ToDictionary(id => id, id => GroupStanding(groupings.FirstOrDefault(r => r.Id == id), groupings));
         var crossMatchIds = issues.Where(i => i.Issue.CrossMatchId is not null).Select(i => i.Issue.CrossMatchId!.Value).ToList();

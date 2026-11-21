@@ -13,13 +13,15 @@ namespace HyFib.HealthCare360.Modules.SpecialtyCare.Services;
 /// </summary>
 internal static class PatientGroupings
 {
-    /// <summary>The samples grouped on the patient's requests other than <paramref name="request"/>, the most recently grouped request first.</summary>
+    /// <summary>
+    /// The samples grouped on the patient's requests other than <paramref name="request"/>, every one of them (an old sample
+    /// that disagrees must not drop out of the comparison), the most recently grouped request first.
+    /// </summary>
     public static async Task<List<FoundGrouping>> OtherThanAsync(HospitalDbContext db, BloodRequest request, CancellationToken ct)
     {
         var others = await db.Set<BloodRequest>().AsNoTracking().IgnoreQueryFilters([HospitalDbContext.FacilityFilter])
             .Where(r => r.PatientId == request.PatientId && r.Id != request.Id && r.GroupedAt != null)
             .OrderByDescending(r => r.GroupedAt)
-            .Take(200)
             .ToListAsync(ct);
         return [.. others.SelectMany(GroupingHistory.SamplesOf)];
     }

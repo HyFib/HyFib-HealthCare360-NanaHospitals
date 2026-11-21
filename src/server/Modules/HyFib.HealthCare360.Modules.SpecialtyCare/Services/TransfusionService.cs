@@ -906,7 +906,8 @@ public sealed class TransfusionService(
     private static string IssueReference(BloodIssue issue) => $"issue:{issue.Id}";
 
     /// <summary>
-    /// The groups the blood bank confirmed on the patient's other requests, most recent first, in every facility (a
+    /// The groups the blood bank confirmed on the patient's other requests, every one of them (a patient transfused for years
+    /// has many, and an old one that disagrees must not drop out of the comparison), most recent first, in every facility (a
     /// patient's group does not change with the branch), with when each sample was drawn (<see cref="GroupingHistory.OnRecord"/>:
     /// both samples of a group a second sample confirmed): a request held for a disagreement and not regrouped confirms
     /// nothing, nor does one whose samples disagree.
@@ -918,7 +919,6 @@ public sealed class TransfusionService(
                         && (r.EarlierGroup == null || r.RegroupedAt != null))
             .OrderByDescending(r => r.GroupedAt)
             .Select(r => new { r.PatientBloodGroup, r.SampleDrawnAt, r.FirstSampleGroup, r.FirstSampleDrawnAt, r.RegroupedAt, r.DisagreeingSampleGroup, r.GroupedByUserId })
-            .Take(20)
             .ToListAsync(ct);
         return
         [
