@@ -297,7 +297,10 @@ public sealed class BloodRequest : AuditableEntity, IFacilityScoped
     /// </summary>
     public Result Regroup(BloodGroup group, StaffStamp by, SampleDraw draw, bool separateVerifier)
     {
-        var valid = EnsureCanGroup(group, draw);
+        // A group not yet settled (resting on one sample, or held against the patient's earlier groups) takes its new sample
+        // even once every unit is issued: a unit issued on one sample may still be waiting at the bedside, and a disagreeing
+        // sample must hold it there.
+        var valid = EnsureCanGroup(group, draw, allowIssued: AwaitingSecondSample || HistoryHeld);
         if (valid.IsFailure)
         {
             return valid;
@@ -529,11 +532,14 @@ public sealed class BloodRequest : AuditableEntity, IFacilityScoped
         return Result.Success();
     }
 
-    /// <summary>A grouping is recorded only on an open request, for a known group, on a sample whose collector is named.</summary>
-    private Result EnsureCanGroup(BloodGroup group, SampleDraw draw)
+    /// <summary>
+    /// A grouping is recorded only on an open request (or, with <paramref name="allowIssued"/>, one whose units are all issued,
+    /// but never a cancelled one), for a known group, on a sample whose collector is named.
+    /// </summary>
+    private Result EnsureCanGroup(BloodGroup group, SampleDraw draw, bool allowIssued = false)
     {
         ArgumentNullException.ThrowIfNull(draw);
-        var open = EnsureOpen();
+        var open = allowIssued && Status == BloodRequestStatus.Issued ? Result.Success() : EnsureOpen();
         if (open.IsFailure)
         {
             return open;

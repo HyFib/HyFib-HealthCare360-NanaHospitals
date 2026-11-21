@@ -140,6 +140,30 @@ public sealed class TwoSampleRuleTests
     }
 
     [Fact]
+    public void A_second_sample_is_still_grouped_after_every_unit_went_out_on_one_sample_and_a_disagreement_holds_them()
+    {
+        // Every unit of an emergency request goes out on the first sample, on a doctor's authorisation.
+        var request = FirstTimePatientGrouped(BloodRequestUrgency.Emergency);
+        request.AuthoriseSingleSampleOverride(Officer(DrRao, "Dr. Ramesh Rao"), Guid.CreateVersion7(), "O-negative stock exhausted, ongoing PPH, Hb 5.2", contrary: null)
+            .IsSuccess.ShouldBeTrue();
+        request.OnUnitIssued(wasReserved: false);
+        request.OnUnitIssued(wasReserved: false);
+        request.Status.ShouldBe(BloodRequestStatus.Issued);
+
+        // The second sample still comes in: it disagrees, so the units waiting at the bedside are held there (DisputedGroups).
+        request.Regroup(BloodGroup.BPositive, PriyaLater, TestData.Drawn(5, "Sr. Leela Thomas"), separateVerifier: true)
+            .Error!.Code.ShouldBe("bloodbank.grouping_discrepancy", "the issued request takes the sample, not 'request closed'");
+        (request.DisagreeingSampleGroup, request.GroupingHeld, request.Status).ShouldBe(((BloodGroup?)BloodGroup.BPositive, true, BloodRequestStatus.Issued));
+        request.DisputedGroups(contrary: null).ShouldBe([BloodGroup.APositive, BloodGroup.BPositive], ignoreOrder: true);
+
+        // A cancelled request takes no sample, settled or not.
+        var cancelled = FirstTimePatientGrouped();
+        cancelled.Cancel("Patient transferred out", TestData.Now).IsSuccess.ShouldBeTrue();
+        cancelled.Regroup(BloodGroup.APositive, PriyaLater, TestData.Drawn(5, "Sr. Leela Thomas"), separateVerifier: true)
+            .Error!.Code.ShouldBe("bloodbank.request_closed");
+    }
+
+    [Fact]
     public void A_later_sample_on_a_request_that_needs_no_second_sample_is_not_recorded_as_a_disagreement()
     {
         var request = new BloodRequest { UnitsRequested = 1, Status = BloodRequestStatus.Pending };
