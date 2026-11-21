@@ -96,6 +96,15 @@ try {
         dotnet publish src\desktop\HyFib.HealthCare360.DesktopUpdater\HyFib.HealthCare360.DesktopUpdater.csproj -c $Configuration -r $Runtime --self-contained true -o $updaterOut `
             -p:DebugType=None -p:DebugSymbols=false
     }
+    # One self-contained file embeds its runtimeconfig.json, so the publish folder has none to read. The build the publish
+    # made (bin\<Configuration>\<TFM>\<Runtime>) wrote the same file: the updater runs as SYSTEM, so its runtime is
+    # checked there like the other programs'.
+    $updaterConfig = Get-ChildItem (Join-Path $repo "src\desktop\HyFib.HealthCare360.DesktopUpdater\bin\$Configuration") -Recurse -Filter 'HC360DesktopUpdater.runtimeconfig.json' |
+        Where-Object { $_.Directory.Name -eq $Runtime } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $updaterConfig) {
+        throw "The HC360 Desktop updater's runtimeconfig.json is not under its build output for $Runtime, so the runtime it carries cannot be checked."
+    }
+    Assert-BundledRuntime $updaterConfig.DirectoryName 'HC360DesktopUpdater'
     Copy-Item (Join-Path $updaterOut 'HC360DesktopUpdater.exe') $desktopOut
 
     Write-Step 'Publishing the HC360 lab agent'
